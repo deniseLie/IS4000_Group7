@@ -46,3 +46,23 @@ test('mobile layout fits and controls remain usable',async({page})=>{
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
  await page.screenshot({path:'test-results/mobile-chat.png',fullPage:true});
 });
+test('Singapore source shows publisher, original link and review date',async({page})=>{
+ await ask(page,'What happens with early withdrawal of a fixed deposit before maturity?');
+ await expect(page.locator('.bank-chat-message.assistant').last()).toContainText('reduce or remove interest');
+ await page.getByText('Sources',{exact:true}).click();
+ await page.getByRole('button',{name:'Singapore bank account basics'}).click();
+ const panel=page.getByRole('region',{name:'Source details'});
+ await expect(panel).toContainText('Publisher: MoneySense');
+ await expect(panel).toContainText('Source checked: 2026-10-12');
+ await expect(panel).toContainText('Not a DemoBank product policy');
+ await expect(panel.getByRole('link',{name:'Read the original source'})).toHaveAttribute('href','https://www.moneysense.gov.sg/understanding-bank-accounts/');
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+ await page.screenshot({path:'test-results/source-details.png',fullPage:true});
+});
+test('fabricated fee is withheld by backend and displayed safely',async({page})=>{
+ await ask(page,'credit card invented fee test');
+ await expect(page.locator('.bank-chat-message.assistant').last()).toContainText('could not verify');
+ await expect(page.locator('.bank-chat-message.assistant').last()).not.toContainText('199');
+ await expect(page.getByText('Sources',{exact:true})).toHaveCount(0);
+});

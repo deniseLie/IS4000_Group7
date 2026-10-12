@@ -82,7 +82,7 @@ export default function Chat({session,onSignIn}) {
         {!messages.length&&<div className="bank-chat-welcome"><h2>How can I help you today?</h2><p>General guidance works without login. Sign in for synthetic account records.</p><div className="bank-chat-suggestions">{['What does a pending transaction mean?','I lost my card','How do I find my statement?'].map(q=><button key={q} onClick={()=>setInput(q)}>{q}</button>)}</div></div>}
         {messages.map((m,i)=><div key={i} className={`bank-chat-message ${m.role}`}><div className={`bank-chat-bubble ${m.error?'error':''}`}>
           <span>{m.content||(loading?'Checking the available information…':'')}</span>
-          {!!m.sources?.length&&<details><summary>Sources</summary>{m.sources.map(s=><div key={s.id}>{s.url?<button className="source-link" onClick={()=>showSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>}
+          {!!m.sources?.length&&<details><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{m.sources.map(s=><div key={s.id}>{s.url?<button className="source-link" onClick={()=>showSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>}
           {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
         </div></div>)}<div ref={bottom}/>
       </div>
@@ -90,7 +90,11 @@ export default function Chat({session,onSignIn}) {
       <p className="bank-chat-disclaimer">Chat history is temporary. Refreshing or starting a new chat clears it. Older messages may be omitted from long chats.</p>
     </section>
     {summary!==null&&<section className="support-panel" aria-label="Human support"><h2>Prepare a support summary</h2><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div><button disabled={!approved} onClick={async()=>{try{await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setNotice('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button><button onClick={()=>setSummary(null)}>Close summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}</section>}
-    {article&&<section className="support-panel" aria-label="Source details"><h2>{article.title}</h2><p>{article.notice}</p><p>{article.content}</p><small>Version {article.version}</small><button onClick={()=>setArticle(null)}>Close source</button></section>}
+    {article&&<section className="support-panel" aria-label="Source details"><h2>{article.title}</h2><p>{article.notice}</p><p>{article.content}</p><p>Publisher: {article.publisher}</p>
+      {article.reference_url&&<p><a href={article.reference_url} target="_blank" rel="noopener noreferrer">Read the original source</a></p>}
+      {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
+      {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
+      <small>Version {article.version}</small><button onClick={()=>setArticle(null)}>Close source</button></section>}
     <footer className="bank-chat-footer">{session?'Signed in for synthetic demo records':'Guest access — general information only'}</footer>
   </div></div>;
 }

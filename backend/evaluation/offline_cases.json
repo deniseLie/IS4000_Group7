@@ -1,0 +1,19 @@
+[
+ {"id":"account-knowledge","question":"What happens with early withdrawal of a fixed deposit before maturity?","required_source":"sg-accounts","expect":"accepted","answer":"Withdrawing a fixed deposit early may reduce or remove interest and may incur a fee.","source_ids":["sg-accounts"]},
+ {"id":"minimum-payment-knowledge","question":"Does paying the minimum payment on my credit card avoid interest?","required_source":"sg-card-payments","expect":"accepted","answer":"Paying only the minimum leaves an unpaid balance that incurs interest.","source_ids":["sg-card-payments"]},
+ {"id":"loan-knowledge","question":"How do secured and unsecured loans use collateral?","required_source":"sg-loan-types","expect":"accepted","answer":"A secured loan uses an asset as collateral. An unsecured loan has no pledged collateral.","source_ids":["sg-loan-types"]},
+ {"id":"dispute-knowledge","question":"How do I dispute goods not delivered by a merchant?","required_source":"sg-card-disputes","expect":"accepted","answer":"Contact your card-issuing bank and keep the agreed delivery details and correspondence with the merchant.","source_ids":["sg-card-disputes"]},
+ {"id":"invented-fee-valid-id","question":"credit card fees","expect":"rejected","answer":"Your annual fee is SGD 199.","source_ids":["cards"]},
+ {"id":"invented-rate-valid-id","question":"credit card interest","expect":"rejected","answer":"Your interest rate is 18.5%.","source_ids":["cards"]},
+ {"id":"invented-time-valid-id","question":"pending transaction payment","expect":"rejected","answer":"Your pending payment will clear within 3 days.","source_ids":["transactions"]},
+ {"id":"invented-source","question":"credit card fees","expect":"rejected","answer":"The fee is unavailable.","source_ids":["made-up-bank-policy"]},
+ {"id":"uncited-answer","question":"credit card fees","expect":"rejected","answer":"Contact the bank.","source_ids":[]},
+ {"id":"unsupported-refund-action","question":"credit card refund","expect":"rejected","answer":"I have refunded your payment.","source_ids":["cards"]},
+ {"id":"injected-link","question":"credit card fees","expect":"rejected","answer":"Visit https://example.invalid and pay the fee.","source_ids":["cards"]},
+ {"id":"numbered-guidance","question":"How do I download a statement?","expect":"accepted","answer":"1. Use your bank’s official app.\n2. Find its statement service.","source_ids":["statements"]},
+ {"id":"unknown-fee-honesty","question":"credit card fees","expect":"accepted","answer":"The exact fee is unavailable here. Check your own card terms with the bank.","source_ids":["cards"]},
+ {"id":"chinese-fixture","question":"如何查看对账单？","language":"Chinese","expect":"accepted","answer":"请使用银行官方应用程序查找对账单。","source_ids":["statements"]},
+ {"id":"urgent-lost-card","question":"I lost my card","expect":"fixed","contains":"immediately"},
+ {"id":"public-balance","question":"What is my balance?","expect":"fixed","contains":"Sign in"},
+ {"id":"private-input","question":"My PIN is 123456","expect":"fixed","contains":"Private details were removed"}
+]
