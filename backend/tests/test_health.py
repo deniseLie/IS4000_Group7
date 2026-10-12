@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
-
 from app.main import app
 
+client = TestClient(app)
 
+
+# Check that the FastAPI backend is running and responding
 def test_health():
-    r = TestClient(app).get("/health")
-    assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
