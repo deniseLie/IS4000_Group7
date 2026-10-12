@@ -15,6 +15,7 @@ export default function Login() {
     setError("");
 
     try {
+      if (!supabase) throw new Error('Sign-in is not configured.');
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setError(error.message);
     } catch {

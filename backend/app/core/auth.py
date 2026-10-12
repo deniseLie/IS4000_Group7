@@ -3,16 +3,23 @@ import json
 import logging
 import os
 from typing import Optional
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
-from fastapi import Depends, Header, HTTPException
+from fastapi import Header, HTTPException
 from supabase import Client, create_client
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def get_user_db(authorization: Optional[str] = Header(default=None)) -> Client:
+@dataclass
+class CustomerSession:
+    db: Client
+    user_id: str
+
+
+def get_user_db(authorization: Optional[str] = Header(default=None)) -> CustomerSession:
     """Verify login and create a customer-specific database client."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Please log in")
@@ -27,7 +34,7 @@ def get_user_db(authorization: Optional[str] = Header(default=None)) -> Client:
             os.environ["SUPABASE_ANON_KEY"]
         )
     except Exception:
-        logger.exception("Supabase initialisation failed")
+        logger.warning("Supabase initialisation failed")
         raise HTTPException(status_code=503, detail="Banking service unavailable")
 
     try:
@@ -39,21 +46,27 @@ def get_user_db(authorization: Optional[str] = Header(default=None)) -> Client:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
     sb.postgrest.auth(token)
-    return sb
+    return CustomerSession(sb, user.user.id)
 
 
-def get_customer_context(sb: Client = Depends(get_user_db)) -> str:
+def get_customer_context(session: CustomerSession) -> str:
     """Retrieve customer banking records and available product information."""
     try:
-        bank = sb.schema("banking")
+        bank = session.db.schema("banking")
+        profiles = bank.table("customer_profiles").select(
+            "customer_id,income_range,employment_status"
+        ).eq("auth_user_id", session.user_id).limit(2).execute().data
+        if len(profiles) != 1:
+            raise HTTPException(403, "No unique demo customer profile is linked to this login.")
+        profile = dict(profiles[0])
+        customer_id = profile.pop("customer_id")
 
         data = {
-            "profile": bank.table("customer_profiles")
-                .select("full_name,income_range,employment_status")
-                .execute().data,
+            "profile": [profile],
 
             "accounts": bank.table("bank_accounts")
                 .select("account_type,masked_account_number,balance,currency,status")
+                .eq("customer_id", customer_id)
                 .execute().data,
 
             "credit_cards": bank.table("credit_cards")
@@ -61,7 +74,7 @@ def get_customer_context(sb: Client = Depends(get_user_db)) -> str:
                     "card_name,network,last4,credit_limit,"
                     "outstanding_balance,minimum_payment_due,"
                     "payment_due_date,status"
-                ).execute().data,
+                ).eq("customer_id", customer_id).execute().data,
 
             "credit_card_products": bank.table("credit_card_products")
                 .select(
@@ -76,7 +89,7 @@ def get_customer_context(sb: Client = Depends(get_user_db)) -> str:
                 .select(
                     "loan_type,outstanding_amount,monthly_repayment,"
                     "next_due_date,status"
-                ).execute().data,
+                ).eq("customer_id", customer_id).execute().data,
 
             "loan_products": bank.table("loan_products")
                 .select(
@@ -93,13 +106,16 @@ def get_customer_context(sb: Client = Depends(get_user_db)) -> str:
                     "txn_date,merchant,description,amount,currency,"
                     "status,failure_reason,is_overseas"
                 )
+                .eq("customer_id", customer_id)
                 .order("txn_date", desc=True)
                 .limit(15)
                 .execute().data
         }
 
+    except HTTPException:
+        raise
     except Exception:
-        logger.exception("Failed to retrieve banking data")
+        logger.warning("Failed to retrieve banking data")
         raise HTTPException(
             status_code=503,
             detail="Unable to retrieve banking information. Please try again."

@@ -91,6 +91,21 @@ body { margin: 0; font-family: system-ui, sans-serif; background: #f3f6fb; }
 .bank-chat-footer { padding-top: 15px; color: #94a3b8; text-align: center; font-size: 12px; }
 
 /* Responsive */
+.chat-actions, .chat-settings { display: flex; flex-wrap: wrap; gap: 8px; }
+.chat-settings { margin-bottom: 12px; align-items: center; color: #334155; font-size: 13px; }
+.chat-settings select { padding: 7px; margin-left: 6px; border: 1px solid #b7c4d6; border-radius: 6px; }
+.chat-notice { margin: 0; padding: 10px 18px; color: #334155; background: #eef4fc; font-size: 13px; }
+.source-link { border: 0; background: none; color: #174e8b; text-decoration: underline; cursor: pointer; }
+.answer-disclaimer { display: block; margin-top: 10px; line-height: 1.4; color: #526176; }
+.support-panel { background: white; border: 1px solid #b7c4d6; border-radius: 10px; padding: 18px; margin-top: 12px; color: #334155; }
+.support-panel h2 { font-size: 18px; margin-top: 0; }
+.support-panel textarea { width: 100%; padding: 8px; font: inherit; }
+.support-panel button { margin: 10px 8px 0 0; padding: 8px 12px; }
+.bank-chat-disclaimer, .bank-chat-footer { color: #53647b; }
+.bank-chat-layout { height: auto; min-height: calc(100dvh - 48px); }
+.bank-chat-window { min-height: 500px; }
+.bank-chat-messages { max-height: 60vh; }
+@media (max-width:650px) { .bank-chat-header { align-items:flex-start;gap:8px; } .chat-actions { justify-content:flex-end; } .bank-chat-logout { padding:8px; } }
 @media (max-width: 760px) {
   .login-page { padding: 16px; }
   .login-container { grid-template-columns: 1fr; max-width: 450px; }
