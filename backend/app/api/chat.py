@@ -15,7 +15,7 @@ router=APIRouter()
 def knowledge(article_id:str):
     article=INDEX.get(article_id)
     if not article:raise HTTPException(404,'Source not found')
-    return {**source(article),'content':article.content,'notice':'Fictional demo guidance; not a live bank policy.'}
+    return {**source(article),'content':article.content,'notice':article.notice}
 
 @router.post('/chat')
 async def chat(req:ChatRequest,authorization:str|None=Header(default=None)):

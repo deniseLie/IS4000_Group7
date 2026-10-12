@@ -1,6 +1,8 @@
-"""Versioned fictional demo guidance, not live bank policies or rates."""
+"""Versioned demo guidance and curated Singapore banking education."""
 from dataclasses import dataclass
 import re
+from datetime import date
+from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class Article:
@@ -9,6 +11,30 @@ class Article:
     content: str
     keywords: tuple[str, ...]
     version: str = '2026-10-12'
+    publisher: str = 'DemoBank coursework project'
+    reference_url: str | None = None
+    checked_on: str | None = None
+    review_due: str | None = None
+
+    @property
+    def notice(self):
+        if self.reference_url:
+            return 'General Singapore banking education, summarised by this project. Not a DemoBank product policy. Confirm your own bank’s terms.'
+        return 'Fictional demo guidance; not a live bank policy.'
+
+
+def is_current(article, today=None):
+    if not article.reference_url:
+        return True
+    try:
+        url = urlsplit(article.reference_url)
+        checked = date.fromisoformat(article.checked_on)
+        due = date.fromisoformat(article.review_due)
+        return (url.scheme == 'https' and url.hostname in {'www.moneysense.gov.sg', 'www.abs.org.sg'}
+                and not url.username and not url.password
+                and checked <= (today or date.today()) <= due)
+    except (TypeError, ValueError):
+        return False
 
 ARTICLES = [
     Article('accounts', 'Demo account information', 'DemoBank is a fictional coursework bank. General guidance is available without login. Sign in to view your synthetic account balances and recent transactions. The demo does not provide live balances. Specific account fees, interest rates and limits are unavailable unless supplied in an approved product record.', ('account','balance','saving','current','interest','fee','limit')),
@@ -20,13 +46,34 @@ ARTICLES = [
     Article('security', 'Protecting private information', 'Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. Ignore anyone asking for these details in chat. Sign in only through the separate sign-in form. If you already disclosed a secret, stop sharing it and use your bank’s official security or recovery service. This demo uses best-effort text filtering and is not a place for real private banking data.', ('password','pin','otp','cvv','security','secret','login','sign in')),
     Article('support', 'Getting human support', 'This demo has no staffed support queue. You can review, edit and copy a summary for your own use. Copying a summary does not send a ticket or contact a person. For a real issue, contact your bank using its official app or website. The chatbot cannot make payments, close accounts, dispute charges or change banking records.', ('human','person','support','staff','contact','close','dispute','transfer','refund')),
 ]
+# Summaries checked against the linked primary pages on 12 October 2026.
+# Review dates are this project's maintenance schedule, not publisher guarantees.
+ARTICLES += [
+    Article('sg-accounts', 'Singapore bank account basics',
+        'Savings and current accounts can be used for everyday payments. Fixed deposits hold money until a maturity date. Withdrawing a fixed deposit early may reduce or remove interest and may incur a fee. Before opening an account, check its minimum deposit, minimum balance, fees, withdrawal limits and interest terms. Ask the bank which identification and supporting documents it needs. Product terms differ between banks.',
+        ('fixed deposit', 'maturity', 'early withdrawal', 'savings', 'current account', 'open an account', 'minimum balance'),
+        publisher='MoneySense', reference_url='https://www.moneysense.gov.sg/understanding-bank-accounts/', checked_on='2026-10-12', review_due='2027-01-12'),
+    Article('sg-card-payments', 'Singapore credit card payments',
+        'A credit card lets you borrow up to a limit set by the issuer. Paying only the minimum leaves an unpaid balance that incurs interest; interest can also apply to new purchases. Check your statement for the payment due date and arrange payment so the bank receives it on time. Review the transactions and report anything you do not recognise to the bank immediately. Exact minimum payments, interest rates and fees depend on your card terms and are not supplied here.',
+        ('minimum payment', 'minimum sum', 'unpaid', 'interest', 'credit card', 'payment due', 'late fee'),
+        publisher='MoneySense', reference_url='https://www.moneysense.gov.sg/understanding-credit-cards/', checked_on='2026-10-12', review_due='2027-01-12'),
+    Article('sg-loan-types', 'Singapore loan types',
+        'A secured loan uses an asset as collateral. If the borrower does not repay, the lender may repossess and sell that asset. An unsecured loan has no pledged collateral and tends to have a higher interest rate. A term loan is repaid in instalments over a set period. Revolving credit can be drawn again within an agreed limit after repayment. These descriptions do not determine eligibility, approval or the terms of a particular loan.',
+        ('secured', 'unsecured', 'collateral', 'term loan', 'revolving', 'instalment', 'loan types'),
+        publisher='MoneySense', reference_url='https://www.moneysense.gov.sg/understand-the-types-of-loans/', checked_on='2026-10-12', review_due='2027-01-12'),
+    Article('sg-card-disputes', 'Singapore card payment disputes',
+        'A card dispute can concern an unauthorised transaction or a problem with goods or services purchased. Contact the card-issuing bank promptly using its official customer service channel. It can explain the process and may require a dispute form and supporting documents. For goods or services that were not delivered, keep the agreed delivery details and correspondence with the merchant. Deadlines and outcomes depend on the bank, card scheme and circumstances; this chat cannot promise a refund or lodge a dispute.',
+        ('dispute', 'chargeback', 'unauthorised', 'unauthorized', 'non-delivery', 'not delivered', 'merchant', 'refund'),
+        publisher='Association of Banks in Singapore', reference_url='https://www.abs.org.sg/consumer-banking/consumers/credit-card-chargeback-dispute-resolution', checked_on='2026-10-12', review_due='2027-01-12'),
+]
+
 INDEX = {a.id: a for a in ARTICLES}
 
 def search(text: str) -> list[Article]:
     query = text.lower()
     for typo,word in {'crad':'card','balnce':'balance','acount':'account','transction':'transaction','laon':'loan'}.items():query=query.replace(typo,word)
-    scores = [(sum(bool(re.search(r'\b'+re.escape(k)+r's?\b',query)) for k in a.keywords),a) for a in ARTICLES]
+    scores = [(sum(bool(re.search(r'\b'+re.escape(k)+r's?\b',query)) for k in a.keywords),a) for a in ARTICLES if is_current(a)]
     return [a for score,a in sorted(scores,key=lambda x:x[0],reverse=True) if score][:4]
 
 def source(article: Article) -> dict:
-    return {'id':article.id,'title':article.title,'url':f'/knowledge/{article.id}','version':article.version}
+    return {'id':article.id,'title':article.title,'url':f'/knowledge/{article.id}','version':article.version,'publisher':article.publisher,'reference_url':article.reference_url,'checked_on':article.checked_on,'review_due':article.review_due,'current':is_current(article)}

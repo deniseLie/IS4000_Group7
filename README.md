@@ -1,6 +1,6 @@
 # DemoBank customer-support chatbot
 
-The locally tested chatbot improvements have been integrated into the main working copy with user approval. The two-customer live Supabase check and further complex-query model testing are deferred. This is a coursework demo, not an official bank product.
+The chatbot improvements, including the banking knowledge and source-check changes, have been integrated into the main working copy with user approval. The two-customer live Supabase check and further complex-query model testing are deferred. This is a coursework demo, not an official bank product.
 
 ## Implemented features
 
@@ -8,24 +8,24 @@ The locally tested chatbot improvements have been integrated into the main worki
 | --- | --- | --- | --- |
 | General help | Login required before any question | Guests can ask general banking questions | Backend and browser passed |
 | Long chats | The 16th user question can exceed the backend message limit | Send a bounded recent history and warn when older messages are omitted | 18 turns in browser; 50 turns in frontend unit test |
-| Sources | No visible supporting sources | Versioned demo guidance with source buttons | Backend, browser and live model smoke test passed |
+| Sources | Only fictional demo guidance | Four Singapore education summaries with original links, publishers and review dates, alongside demo guidance | Local backend and browser checks passed; live model recheck deferred |
 | Private details | Chat input can contain common secrets | Withhold common credential/card-number patterns before sending; also check backend input/output | Backend and frontend passed; best-effort filtering only |
 | Lost cards | Depends on model output | Immediate fixed guidance; clearly says the bot cannot block a card | Backend, browser, no model needed |
 | New chat | No explicit reset | Cancel the current request and clear the conversation | Browser passed, including reset during a response |
 | Human support | No usable handoff flow | Editable summary that must be reviewed before copying | Browser passed; no ticket is sent |
-| Model response format | Free-form output | Request structured answers, validate source IDs and withhold invalid output | Contract tests and a real browser/model response passed; live reliability remains partial |
+| Model response format | A valid source ID can accompany an invented figure | Validate source IDs and reject figures absent from the cited evidence | Local regression checks passed; meaning and attribution still need review |
 | Customer separation | Queries depend on database row policies alone | Verify a unique linked profile and explicitly filter all customer tables | Local tests passed; two linked live customers remain unverified |
 | Languages and complex questions | No repeatable acceptance set | Four answer-language choices and 11 synthetic evaluation cases | Sample live checks completed; repeatability and language quality still need broader review |
 
-The source library is small, fictional demo guidance. It is not an approved real-bank knowledge base. Retrieval currently uses keywords, not embeddings or a vector database.
+The library contains eight demo guidance articles and four general Singapore banking summaries from MoneySense and the Association of Banks in Singapore. General education is labelled separately from DemoBank rules. It does not supply real product fees or rates. Retrieval uses keywords, not embeddings or a vector database.
 
 ## Validation and limits — 12 October 2026
 
-The 38 backend, 6 frontend and 8 browser checks below were rerun successfully in the main working copy after integration. The production build also passed. Live Supabase/model checks were not rerun in this integration.
+The knowledge/source-check changes were tested in an isolated copy before integration and the checks below passed again in the main working copy. No live Supabase or model checks were run in this round.
 
-- 38 backend tests passed.
+- 63 backend tests passed.
 - 6 frontend utility tests passed.
-- 8 browser integration tests passed with the real frontend and backend and a deterministic test model.
+- 10 browser integration tests passed with the real frontend and backend and a deterministic test model.
 - Earlier isolated testing: 2 separate live browser checks passed: a real model answer with a source; real synthetic login, denial of unlinked personal access, general help and sign-out.
 - The production frontend build passed. Desktop and 390-pixel mobile screenshots were inspected.
 - Live sample questions covered statements, multiple questions, clarification, loan approval, unknown fees, instruction attacks, typos, Chinese, Malay, Tamil and a corrected follow-up. These are sample observations, not a claim of 100% accuracy. Some runs failed or produced answers needing improvement; these observations do not replace the deferred live checks.
@@ -36,7 +36,7 @@ The first browser run caught a React effect error. It was fixed and the suite re
 
 1. **Two linked live customers have not been tested (deferred).** The supplied service key can manage test authentication users, but requests to the `banking` schema return `42501: permission denied for schema banking`. An authenticated test user can read the schema, sees zero rows while unlinked, and cannot insert a profile. No access policies were changed. A database owner must provide two synthetic linked profiles/accounts and test logins, or a narrowly controlled way to create and remove these fixtures. Do not solve this by disabling row-level security or putting a service key in the browser.
 2. **Complex-query model reliability is deferred.** The final two rechecks returned `RateLimitError`. The unverified provider-side minimum source-list constraint was left out of this integration; the backend still rejects answers with no valid sources. Keep structured output and validation. Evaluate a fixed compatible model instead of accepting whichever free model is routed, then repeat the cases and review the answers. No model setting in the user's real `.env` was changed.
-3. **Real product facts are missing from public guidance.** Have the project team approve versioned account, loan and card documentation before presenting real-bank fees, rules or contact details. The supplied guidance is labelled fictional.
+3. **Real product facts are missing from public guidance.** General Singapore education now has primary source references. Bank-specific fees, rates, eligibility and contact details still require approved product documentation. These are not supplied by the new general summaries.
 4. **Language and safety testing needs expansion.** Fixed safety messages and interface labels are English. The language choice applies to generated answers. Pattern filtering is not comprehensive privacy protection or a guarantee against prompt injection.
 
 One temporary synthetic authentication user was created for live verification, then deleted and verified absent. No banking rows could be created, no existing customer records were changed, and no database grants were changed.
@@ -116,15 +116,49 @@ TEST_ENV_FILE=../.env npm run test:live
 
 This uses live services and starts servers on 8038 and 5178. Without `TEST_UNLINKED_FIXTURE_FILE`, the unlinked-user test is skipped. That optional file must contain an array with one synthetic user's `email` and `password`, be stored outside Git with owner-only permissions, and be removed after testing. Test account creation/deletion is deliberately separate from the application.
 
-Optional live answer evaluation:
+Offline evaluation (no model or database calls):
 
 ```bash
 cd backend
-../.venv/bin/python -m evaluation.run
+../.venv/bin/python -m evaluation.run --output evaluation-results.json
 ```
 
-Review `evaluation-results.json` against each case's acceptance check. Recording a response is not an automatic accuracy pass. Use synthetic questions only; do not commit credentials or private conversations.
+This writes JSON and HTML reports. It uses fixed responses to test retrieval, source checks and safety paths. It does not measure live model accuracy. The stored [before](backend/evaluation/before.html) and [after](backend/evaluation/after.html) reports use the same 17 cases: 10 passed before, 17 passed after. Four improvements cover missing banking sources; three cover invented figures. Reports include dataset, knowledge and implementation hashes.
+
+Compare future runs using the same dataset and mode:
+
+```bash
+../.venv/bin/python -m evaluation.run --output evaluation-results.json --compare evaluation/after.json
+```
+
+Optional live answer evaluation (deferred; explicit opt-in required):
+
+```bash
+cd backend
+../.venv/bin/python -m evaluation.run --live
+```
+
+Review `evaluation-results.json` against each case's acceptance check. Every successful live response is marked `needs_human_review`, never an automatic accuracy pass. Review all parts of complex questions, relevant citations, factual meaning, currencies, corrections and the requested language. Use synthetic questions only; do not commit credentials or private conversations.
 
 ## Scope still outside this round
 
 Compliance document uploads, OCR, compliance tracking, advisor transfers, meeting booking, saved cross-session conversations and real staffed support are not implemented. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
+
+## Knowledge maintenance and limits
+
+Primary pages checked on 12 October 2026:
+
+- [MoneySense: bank accounts](https://www.moneysense.gov.sg/understanding-bank-accounts/)
+- [MoneySense: credit cards](https://www.moneysense.gov.sg/understanding-credit-cards/)
+- [MoneySense: loan types](https://www.moneysense.gov.sg/understand-the-types-of-loans/)
+- [ABS: card disputes](https://www.abs.org.sg/consumer-banking/consumers/credit-card-chargeback-dispute-resolution)
+
+To update knowledge, read the original page, revise the short summary in `backend/app/services/knowledge.py`, update its version and checked date, and choose a review date. The current project review interval is three months. Run the backend, offline evaluation and browser checks after edits. Have a teammate review the summary and its scope. The dates record this project's checks; they do not claim endorsement by the publisher.
+
+Expired external articles, invalid dates and references outside the allowed HTTPS domains are excluded from retrieval, including non-English requests. Old source details remain readable and show a review warning. There is no automatic website monitoring or scheduled source refresh.
+
+The figure check compares numeric values against cited evidence only. It rejects new calculations and unsupported figures, but cannot prove currency, attribution, meaning, written-out numbers or translations. A valid source can still accompany a misleading claim. The interface therefore explains that citations do not guarantee correctness. Live answer quality and manual review remain separate from offline regression results.
+
+Before: a fixed test answer saying “Your annual fee is SGD 199” with the valid `cards` ID was accepted.
+
+After: that answer is withheld because its figure is absent from the cited guidance. The user is directed to rephrase or use the bank's official support channel.
