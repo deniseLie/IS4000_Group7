@@ -1,5 +1,7 @@
 """Test-only server: real HTTP API with deterministic model responses."""
 import asyncio
+import os
+os.environ['TRACE_STORE']='0'
 import json
 from app.main import app
 from app.services.llm import llm

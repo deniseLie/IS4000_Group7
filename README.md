@@ -69,6 +69,12 @@ After: the customer reviews and edits a draft, then copies it. The page explicit
 
 The model prompt lives in `backend/app/prompts/<version>/` (`system.md`, `format.md`, `public_only.md`), not in Python. `PROMPT_VERSION` (default `v1`) selects the directory. To change wording, copy the latest directory to a new `vN`, edit it and set `PROMPT_VERSION=vN`; do not edit a released version. Each model-generated answer carries `prompt_version` (e.g. `v1+1a2b3c4d`, the version plus a content hash). Fixed no-model responses carry `null`. Evaluation reports record it too, so `--compare` can show before/after for two prompt versions.
 
+## Tracing
+
+Each `/chat` request is recorded as one trace: a session row plus timed spans (`route`, `retrieve`, `customer_context`, `llm`, `validate`). Only ids, counts, flags, enums, timings and token/cost numbers are stored, never chat text or customer records. A named `reject_reason` explains every withheld answer. Every request also writes one JSON `answer` log line.
+
+Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_KEY`). The backend writes through the `public.log_trace` function from `backend/supabase/migrations/0001_trace_tables.sql`; the `ops.traces` and `ops.spans` tables themselves are closed to the public key by RLS. A failed or slow write is logged and never affects the chat. Tests and the e2e server force `TRACE_STORE=0`. Known limits: the anon key is public, so anyone could add junk rows through `log_trace` (bounded by validation and a 10,000-per-day cap); model retries inside the provider client are not visible; cost is only as accurate as `LLM_PRICE_*_PER_M`. See `docs/tracing-plan.md`.
+
 ## Local setup
 
 Use Python 3.12 and Node.js 22. Copy `.env.example` to a private root `.env` and fill in the values. Existing environment variables take priority; a backend `.env` takes priority over the root file. Only the public Supabase URL/anonymous key and API URL use the `VITE_` prefix. The application does not need a service-role key.

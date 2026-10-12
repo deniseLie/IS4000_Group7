@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import chat
 from app.core.config import settings
+from app.core.observability import RequestIdMiddleware, setup_logging
 
+setup_logging()
 app = FastAPI(title="Chatbot API")
+app.add_middleware(RequestIdMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

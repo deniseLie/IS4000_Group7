@@ -2,6 +2,8 @@ import json
 import os
 from urllib.parse import urlsplit
 from langchain.chat_models import init_chat_model
+from langchain_core.callbacks import get_usage_metadata_callback
+from app.core.observability import span
 from app.core.config import settings
 from app.services import prompts
 
@@ -36,7 +38,12 @@ class LLMClient:
             },'required':['answer','source_ids']
         }
         model = build_model().with_structured_output(schema,method='json_schema',strict=True)
-        result = await model.ainvoke([('system',prompt)]+[(m.role,m.content) for m in messages])
+        with span('llm','llm',model=os.environ['LLM_MODEL'],prompt_version=pv['id']) as a, get_usage_metadata_callback() as usage:
+            result = await model.ainvoke([('system',prompt)]+[(m.role,m.content) for m in messages])
+            used = list(usage.usage_metadata.values())
+            if used:
+                tin = sum(u.get('input_tokens',0) for u in used); tout = sum(u.get('output_tokens',0) for u in used)
+                a.update(input_tokens=tin,output_tokens=tout,cost_usd=round(tin*settings.llm_price_in_per_m/1e6+tout*settings.llm_price_out_per_m/1e6,6))
         return json.dumps(result,ensure_ascii=False) if isinstance(result,dict) else (result or '')
 
 llm=LLMClient()
