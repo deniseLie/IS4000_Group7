@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 from unittest.mock import patch
 from app.schemas.chat import ChatRequest
-from app.services import answers
+from app.services import answers, prompts
 from app.services.knowledge import ARTICLES, search
 
 HERE = Path(__file__).parent
@@ -62,6 +62,7 @@ async def evaluate(live=False):
         'created_at':datetime.now(timezone.utc).isoformat(),
         'dataset_sha256':sha256(dataset.read_bytes()).hexdigest(),
         'knowledge_sha256':sha256(knowledge.encode()).hexdigest(),
+        'prompt_version':prompts.current()['id'],
         'implementation_sha256':sha256(implementation).hexdigest(),
         'summary':{status:sum(r['status']==status for r in results) for status in ('pass','fail','error','needs_human_review')},
         'limits':LIMITS, 'results':results,

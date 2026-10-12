@@ -5,6 +5,7 @@ from app.services.knowledge import search, source, INDEX, ARTICLES, is_current
 from app.services.privacy import redact
 from app.services.source_checks import check_sources
 from app.services.llm import llm
+from app.services import prompts
 
 NOTICE='General information only, not advice or a contract. Demo records are synthetic. Only the bank can confirm fees or approve a loan.'
 
@@ -18,7 +19,7 @@ async def make_answer(req, context=None):
     history=clean_history(req.messages)
     question=history[-1].content
     warning=any(redact(m.content)[1] for m in req.messages)
-    result={'answer':'','sources':[],'privacy_warning':warning,'history_trimmed':len(history)<len(req.messages),'disclaimer':NOTICE,'needs_human':False,'source_check':'fixed_guidance'}
+    result={'answer':'','sources':[],'privacy_warning':warning,'history_trimmed':len(history)<len(req.messages),'disclaimer':NOTICE,'needs_human':False,'source_check':'fixed_guidance','prompt_version':None}
     lost_card=bool(re.search(r'\b(lost|stolen|missing)\b.*\bcard\b|\bcard\b.*\b(lost|stolen|missing)\b',question,re.I))
     if warning:
         result.update(answer='Private details were removed. Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. If a real secret was shared, use your bank’s official security or recovery service.',sources=[source(INDEX['security'])],needs_human=True)
@@ -49,6 +50,7 @@ async def make_answer(req, context=None):
         evidence.append({'id':'customer-records','text':context})
         sources['customer-records']={'id':'customer-records','title':'Your authenticated synthetic records','url':None,'version':'Current request'}
     result['source_check']='rejected'
+    result['prompt_version']=prompts.current()['id']
     raw=await llm.answer(history,evidence,req.language)
     try:
         parsed=json.loads(raw.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip())

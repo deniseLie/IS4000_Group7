@@ -65,6 +65,10 @@ Expected answer: ask whether the problem happened at an ATM, online or in a shop
 
 After: the customer reviews and edits a draft, then copies it. The page explicitly says that copying does not send a ticket or contact staff.
 
+## Prompt versioning
+
+The model prompt lives in `backend/app/prompts/<version>/` (`system.md`, `format.md`, `public_only.md`), not in Python. `PROMPT_VERSION` (default `v1`) selects the directory. To change wording, copy the latest directory to a new `vN`, edit it and set `PROMPT_VERSION=vN`; do not edit a released version. Each model-generated answer carries `prompt_version` (e.g. `v1+1a2b3c4d`, the version plus a content hash). Fixed no-model responses carry `null`. Evaluation reports record it too, so `--compare` can show before/after for two prompt versions.
+
 ## Local setup
 
 Use Python 3.12 and Node.js 22. Copy `.env.example` to a private root `.env` and fill in the values. Existing environment variables take priority; a backend `.env` takes priority over the root file. Only the public Supabase URL/anonymous key and API URL use the `VITE_` prefix. The application does not need a service-role key.
