@@ -9,7 +9,9 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: list[Message] = Field(min_length=1, max_length=30)
+    messages: list[Message] = Field(min_length=1, max_length=61)
+    mode: Literal['public','personal'] = 'public'
+    language: Literal['English','Chinese','Malay','Tamil'] = 'English'
 
     @model_validator(mode="after")
     def validate_last_message(self):

@@ -1,16 +1,21 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(Path(__file__).resolve().parents[2] / '.env')
+load_dotenv(Path(__file__).resolve().parents[3] / '.env')
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    max_tokens: int = 1024
+    max_tokens: int = 4096
     cors_origins: list[str] = ["http://localhost:5173"]
 
     system_prompt: str = """
 You are DemoBank's customer service chatbot.
-Answer banking enquiries in clear, simple British English.
+Answer banking enquiries in clear, simple language. Use the requested answer language.
 
 GENERAL RULES:
 1. Only assist with banking-related enquiries.
@@ -28,7 +33,7 @@ ACCOUNT ENQUIRIES:
 1. Provide account balances using the customer's records only.
 2. Show account types as "Savings Account" and "Current Account".
 3. Do not display account numbers or account status unless requested.
-4. Display balances clearly using SGD formatting.
+4. Display balances using the currency in the record. Never assume SGD.
 
 LOAN ENQUIRIES:
 1. Explain available loans using only the loan_products catalogue.
@@ -66,7 +71,7 @@ RESPONSE STYLE:
 2. Only include information relevant to the question.
 3. Avoid unnecessary introductions and follow-up offers.
 4. Do not display masked account or card numbers unless requested.
-5. Use clear labels and format currency as SGD 1,234.56.
+5. Use clear labels and the currency in the record, for example SGD 1,234.56.
 6. Do not include unnecessary account or card status details.
 7. Avoid excessive headings and repetitive explanations.
 8. Do not include "Demo Data" headings.

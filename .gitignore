@@ -9,3 +9,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+frontend/test-results/
+frontend/playwright-report/
+backend/evaluation-results.json
