@@ -2,6 +2,16 @@
 
 The chatbot improvements, including the banking knowledge and source-check changes, have been integrated into the main working copy with user approval. The two-customer live Supabase check and further complex-query model testing are deferred. This is a coursework demo, not an official bank product.
 
+## Real AI update — 13 October 2026
+
+See [the review](docs/real-ai-review.md) for the code map, test evidence and remaining limitations. This update removes the fake browser model and all answer-generating test replacements. Offline checks feed sample strings directly to validators; browser checks use the normal backend and real provider. The application labels AI-generated replies separately from fixed safety guidance and withheld answers.
+
+The tested model is `nvidia/nemotron-3-super-120b-a12b:free` on OpenRouter. To use the same setup, set `LLM_MODEL` to that value and `PROMPT_VERSION=v2` in your private environment, preserving the existing API key and URL. A provider error remains an error; no stored answer is substituted. One source-check failure can request one real-model revision. This adds latency and another provider request when used.
+
+Conversation mode permits short greetings, clarifications without facts, and off-topic redirection without a banking citation. Banking facts still require sources and figure validation. These are basic checks, not a semantic guarantee; human review remains necessary. The two previously deferred checks remain deferred.
+
+The validation figures dated 12 October below are historical, including the old deterministic browser results. Use the real AI review for the latest results.
+
 ## Implemented features
 
 | Area | Before | Current behaviour | Verification |
@@ -67,13 +77,13 @@ After: the customer reviews and edits a draft, then copies it. The page explicit
 
 ## Prompt versioning
 
-The model prompt lives in `backend/app/prompts/<version>/` (`system.md`, `format.md`, `public_only.md`), not in Python. `PROMPT_VERSION` (default `v1`) selects the directory. To change wording, copy the latest directory to a new `vN`, edit it and set `PROMPT_VERSION=vN`; do not edit a released version. Each model-generated answer carries `prompt_version` (e.g. `v1+1a2b3c4d`, the version plus a content hash). Fixed no-model responses carry `null`. Evaluation reports record it too, so `--compare` can show before/after for two prompt versions.
+The model prompt lives in `backend/app/prompts/<version>/` (`system.md`, `format.md`, `public_only.md`), not in Python. `PROMPT_VERSION` (default `v2`) selects the directory. To change wording, copy the latest directory to a new `vN`, edit it and set `PROMPT_VERSION=vN`; do not edit a released version. Each model-generated answer carries `prompt_version` (e.g. `v1+1a2b3c4d`, the version plus a content hash). Fixed no-model responses carry `null`. Evaluation reports record it too, so `--compare` can show before/after for two prompt versions.
 
 ## Tracing
 
 Each `/chat` request is recorded as one trace: a session row plus timed spans (`route`, `retrieve`, `customer_context`, `llm`, `validate`). Only ids, counts, flags, enums, timings and token/cost numbers are stored, never chat text or customer records. A named `reject_reason` explains every withheld answer. Every request also writes one JSON `answer` log line.
 
-Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_KEY`). The backend writes through the `public.log_trace` function from `backend/supabase/migrations/0001_trace_tables.sql`; the `ops.traces` and `ops.spans` tables themselves are closed to the public key by RLS. A failed or slow write is logged and never affects the chat. Tests and the e2e server force `TRACE_STORE=0`. Known limits: the anon key is public, so anyone could add junk rows through `log_trace` (bounded by validation and a 10,000-per-day cap); model retries inside the provider client are not visible; cost is only as accurate as `LLM_PRICE_*_PER_M`. See `docs/tracing-plan.md`.
+Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_KEY`). The backend writes through the `public.log_trace` function from `backend/supabase/migrations/0001_trace_tables.sql`; the `ops.traces` and `ops.spans` tables themselves are closed to the public key by RLS. A failed or slow write is logged and never affects the chat. Unit and browser tests force `TRACE_STORE=0`. Known limits: the anon key is public, so anyone could add junk rows through `log_trace` (bounded by validation and a 10,000-per-day cap); model retries inside the provider client are not visible; cost is only as accurate as `LLM_PRICE_*_PER_M`. See `docs/tracing-plan.md`.
 
 ## Local setup
 
@@ -115,7 +125,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The browser tests start temporary servers on ports 8037 and 5177. They use a test-only model replacement; production application code does not contain a test bypass.
+The browser tests start the normal backend on 8038 and frontend on 5178. Both `test:e2e` and `test:live` use the real configured AI provider. They consume provider quota and fail if it cannot answer. There is no fake model server or simulated AI fallback. Set `TEST_ENV_FILE=../.env` when needed. Safety-only browser tests can be run without model calls using `npm run test:e2e -- tests/chat.spec.js`.
 
 Optional live browser check, with a private root `.env`:
 
@@ -133,12 +143,12 @@ cd backend
 ../.venv/bin/python -m evaluation.run --output evaluation-results.json
 ```
 
-This writes JSON and HTML reports. It uses fixed responses to test retrieval, source checks and safety paths. It does not measure live model accuracy. The stored [before](backend/evaluation/before.html) and [after](backend/evaluation/after.html) reports use the same 17 cases: 10 passed before, 17 passed after. Four improvements cover missing banking sources; three cover invented figures. Reports include dataset, knowledge and implementation hashes.
+This writes JSON and HTML reports. It checks sample strings directly through validators, plus retrieval and fixed safety paths. It does not replace the AI client or measure live model accuracy. The new mode is `offline_validator_checks`, so it cannot be compared automatically with the old simulated-answer reports. The historical [before](backend/evaluation/before.html) and [after](backend/evaluation/after.html) reports used the old simulated-answer method with the same 17 cases: 10 passed before, 17 passed after. Four improvements cover missing banking sources; three cover invented figures. Reports include dataset, knowledge and implementation hashes.
 
 Compare future runs using the same dataset and mode:
 
 ```bash
-../.venv/bin/python -m evaluation.run --output evaluation-results.json --compare evaluation/after.json
+../.venv/bin/python -m evaluation.run --output evaluation-results.json --compare previous-validator-results.json
 ```
 
 Optional live answer evaluation (deferred; explicit opt-in required):

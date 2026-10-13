@@ -6,6 +6,7 @@ One file per released prompt version. Prompt files live in `backend/app/prompts/
 
 | Version | Date | Change | Offline | Live (manual) | Decision |
 |---|---|---|---|---|---|
+| [v2](v2.md) | 2026-10-13 | Real AI conversation and source separation | 17 direct validator checks | See real AI review | Integrated; last live recheck pending |
 | [v1](v1.md) | 2026-10-12 | Baseline | 17/17 pass | 8 pass, 1 partial, 1 fail, 1 error (of 11) | Adopted as baseline |
 
 ## How to record a version

@@ -131,3 +131,5 @@ body { margin: 0; font-family: system-ui, sans-serif; background: #f3f6fb; }
   .bank-chat-composer button { padding: 0 15px; }
   .bank-chat-brand h1 { font-size: 18px; }
 }
+
+.answer-origin { display:block; color:#526176; font-size:11px; font-weight:600; margin-bottom:5px; }

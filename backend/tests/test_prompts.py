@@ -11,11 +11,7 @@ def test_load_known_and_unknown_versions():
     for bad in ('v999','../x','latest'):
         with pytest.raises(ValueError):prompts.load(bad)
 
-def test_make_answer_records_prompt_version(monkeypatch):
-    async def fake(*args):return '{"answer":"Cards are explained in the guide.","source_ids":["cards"]}'
-    monkeypatch.setattr(answers.llm,'answer',fake)
+def test_v2_is_separate_and_fixed_guidance_has_no_prompt():
+    assert prompts.load('v2')['id']!=prompts.load('v1')['id']
     fixed=asyncio.run(answers.make_answer(ChatRequest(messages=[{'role':'user','content':'I lost my card'}])))
-    assert fixed['prompt_version'] is None
-    monkeypatch.setattr(settings,'prompt_version','v1')
-    llm_result=asyncio.run(answers.make_answer(ChatRequest(messages=[{'role':'user','content':'What credit card fees exist?'}])))
-    assert llm_result['prompt_version']==prompts.load('v1')['id']
+    assert fixed['prompt_version'] is None and fixed['response_origin']=='safety'

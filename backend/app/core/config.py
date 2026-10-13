@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     max_tokens: int = 4096
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    prompt_version: str = "v1"
+    prompt_version: str = "v2"
     llm_price_in_per_m: float = 0
     llm_price_out_per_m: float = 0
 

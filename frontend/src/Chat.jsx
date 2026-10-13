@@ -80,9 +80,10 @@ export default function Chat({session,onSignIn}) {
       {notice&&<p className="chat-notice" role="status">{notice}</p>}
       <div className="bank-chat-messages" aria-live="polite">
         {!messages.length&&<div className="bank-chat-welcome"><h2>How can I help you today?</h2><p>General guidance works without login. Sign in for synthetic account records.</p><div className="bank-chat-suggestions">{['What does a pending transaction mean?','I lost my card','How do I find my statement?'].map(q=><button key={q} onClick={()=>setInput(q)}>{q}</button>)}</div></div>}
-        {messages.map((m,i)=><div key={i} className={`bank-chat-message ${m.role}`}><div className={`bank-chat-bubble ${m.error?'error':''}`}>
-          <span>{m.content||(loading?'Checking the available information…':'')}</span>
-          {!!m.sources?.length&&<details><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{m.sources.map(s=><div key={s.id}>{s.url?<button className="source-link" onClick={()=>showSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>}
+        {messages.map((m,i)=><div key={i} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}><div className={`bank-chat-bubble ${m.error?'error':''}`}>
+          {m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}
+          <span className="answer-text">{m.content||(loading?'Checking the available information…':'')}</span>
+          {!!m.sources?.length&&<details><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{m.sources.map(s=><div key={s.id}>{s.url?<button className="source-link" data-source-id={s.id} onClick={()=>showSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>}
           {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
         </div></div>)}<div ref={bottom}/>
       </div>

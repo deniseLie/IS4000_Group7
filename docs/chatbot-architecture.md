@@ -1,5 +1,11 @@
 # How the DemoBank chatbot works
 
+## Real-AI revision
+
+Normal replies use LangChain and the configured provider. No browser server replaces the model. The v2 schema adds `answer_kind`: banking replies need supporting source IDs; brief greetings, clarifications without facts, and off-topic redirections use conversation with no citations or figures. No keyword match supplies the small current library instead of ranking the entire old conversation. History still goes to the real model so it can understand follow-ups. The frontend distinguishes AI-generated answers, fixed safety guidance and withheld answers. Semantic correctness and model classification still need live review.
+
+The diagrams below describe the original v1 pipeline; the no-source and full-history retrieval branches are superseded by the revision above.
+
 ## 1. System overview
 
 ```
