@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {boundedHistory,redact,readEvents,supportSummary} from './chatTools.js';
+
+for(const c of JSON.parse(fs.readFileSync(new URL('../../../tests/fixtures/privacy-cases.json',import.meta.url),'utf8'))) {
+ test(`shared privacy case: ${c.text}`,()=>{
+   const cleaned=redact(c.text);
+   if(c.secret){assert.ok(!cleaned.includes(c.secret));assert.ok(cleaned.includes('[private detail removed]'));for(const part of c.secret.split(/[\s-]+/).filter(p=>p.length>=3))assert.ok(!cleaned.includes(part));}
+   else assert.equal(cleaned,c.text);
+ });
+}
 
 test('history stays bounded at the 16th and 50th questions',()=>{
  for(const turns of [16,50]) {

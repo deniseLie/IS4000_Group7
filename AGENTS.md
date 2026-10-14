@@ -9,15 +9,17 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Change the request/response flow or SSE events | `backend/app/api/chat.py` (`POST /chat`: `status` -> `answer` -> `done`/`error`; `GET /knowledge/{id}`) |
 | Change how an answer is produced | `backend/app/services/answers.py` (`make_answer`) |
 | Edit the LLM call / structured output | `backend/app/services/llm.py` (strict JSON: `answer`, `source_ids`, `answer_kind`) |
+| Switch API / local Codex subscription | `CHAT_TRANSPORT=api\|codex`; `services/codex_cli.py`; `docs/codex-local-provider.md`; `handoff.md` for another Mac. Preserve OpenRouter settings. Never pass app keys to CLI or enable its coding tools. |
 | Edit the system prompt | `backend/app/prompts/<version>/{system,format,public_only}.md`, loaded by `services/prompts.py`. **Never edit a released version**; add a new `vN` dir and a `docs/prompt-log/vN.md` (copy `TEMPLATE.md`) |
 | Add or edit knowledge articles / retrieval | `backend/app/services/knowledge.py` (in-memory, keyword search, no embeddings) |
 | Change answer validation (source IDs, figures) | `backend/app/services/source_checks.py` |
 | Change redaction | `backend/app/services/privacy.py` **and** `frontend/src/lib/chatTools.js` (keep in sync) |
+| Change lost-card detection | `backend/app/services/safety.py`; fixed urgent response stays in `answers.py` |
 | Auth, JWT, per-user DB client, customer records | `backend/app/core/auth.py` |
 | Settings / env vars | `backend/app/core/config.py`, `.env.example` |
 | Logging / tracing | `backend/app/core/observability.py` (JSON logs, ids/counts only); plan in `docs/tracing-plan.md`; tables in `backend/supabase/migrations/` |
 | Request/response schemas | `backend/app/schemas/chat.py` |
-| Chat UI | `frontend/src/Chat.jsx`; session/guest/login in `App.jsx`, `Login.jsx`; helpers (redact, history bounding, SSE parser) in `lib/chatTools.js`; Supabase client in `lib/supabase.js` |
+| Chat UI | `frontend/src/Chat.jsx`; session/guest/login in `App.jsx`, `Login.jsx`; `components/Panel.jsx` (accessible source/support dialogs), `components/Icon.jsx` (local SVG icons), `index.css` (responsive theme); helpers (redact, history bounding, SSE parser) in `lib/chatTools.js`; Supabase client in `lib/supabase.js` |
 | Evaluate quality | `backend/evaluation/` (`run.py`, `cases.json` live, `offline_cases.json`) |
 
 Legacy and unused: `frontend/src/api/chat.js`, `frontend/src/components/ChatWindow.jsx`. Ignore `backend/chatbot_backend.egg-info/` and `backend/evaluation/{before,after}.*` (generated artifacts).
@@ -33,9 +35,12 @@ Legacy and unused: `frontend/src/api/chat.js`, `frontend/src/components/ChatWind
 
 ## Tests and docs
 
-- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_llm_contract`, `test_prompts`, `test_health`; browser suites use the normal application and real provider).
+- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_prompts`, `test_health`; browser suites use the normal application and real provider).
 - Frontend tests: `frontend/src/lib/chatTools.test.js` (unit), `frontend/tests/chat.spec.js` (Playwright, real backend safety paths), `frontend/tests/live.spec.js` (live services).
 - Docs: `README.md` (setup, known limits), `docs/chatbot-architecture.md`, `docs/multi-capability-architecture.md`, `docs/prompt-log/`, `docs/tracing-plan.md`.
+- Active completion evidence: `docs/core-completion-plan.md`. Explicit currency/percentage checks and limited English attribution checks are not semantic proof. Do not count offline validation as live AI accuracy.
+- Shared synthetic privacy cases: `tests/fixtures/privacy-cases.json`, exercised by both frontend and backend. Keep ordinary password-reset questions and non-secret Unicode text unchanged.
+- Focused live evaluation: `python -m evaluation.run --live --suite focused` (three real source questions; excludes deferred complex checks). Offline evidence must include publisher/scope just like the answer pipeline. Raw live results require review; `docs/core-results-review.md` records the latest assessment and limitations.
 
 ## Commands
 

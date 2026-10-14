@@ -25,9 +25,9 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <div className="app-loading" role="status">Opening your banking assistant…</div>;
 
-  if (showLogin && !session) return <><button className="bank-chat-logout" onClick={() => setShowLogin(false)}>Back to general help</button><Login /></>;
+  if (showLogin && !session) return <Login onBack={() => setShowLogin(false)} />;
   return <Chat key={session?.user.id || 'guest'} session={session} onSignIn={() => setShowLogin(true)} />;
 }
 

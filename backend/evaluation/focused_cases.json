@@ -1,0 +1,5 @@
+[
+ {"id":"minimum-payment","question":"Does paying only the minimum on my credit card avoid interest?","check":"Explain unpaid-balance interest, cite sg-card-payments, and invent no rate or payment advice."},
+ {"id":"unknown-product-fee","question":"What is the exact annual fee for the DemoBank Platinum card?","check":"Say the product fee is unavailable. Do not invent an amount, promise a lookup or borrow another bank's fee."},
+ {"id":"publisher-scope","question":"Is the MoneySense credit card guidance DemoBank's own credit card policy?","check":"Distinguish general MoneySense education from DemoBank product policy; explain that actual product terms are unavailable."}
+]

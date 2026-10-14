@@ -15,5 +15,7 @@
  {"id":"chinese-fixture","question":"如何查看对账单？","language":"Chinese","expect":"accepted","answer":"请使用银行官方应用程序查找对账单。","source_ids":["statements"]},
  {"id":"urgent-lost-card","question":"I lost my card","expect":"fixed","contains":"immediately"},
  {"id":"public-balance","question":"What is my balance?","expect":"fixed","contains":"Sign in"},
- {"id":"private-input","question":"My PIN is 123456","expect":"fixed","contains":"Private details were removed"}
+ {"id":"private-input","question":"My PIN is 123456","expect":"fixed","contains":"Private details were removed"},
+ {"id":"external-policy-attribution","question":"credit card minimum payment interest","expect":"rejected","answer":"Our card policy says interest applies to the unpaid balance.","source_ids":["sg-card-payments"]},
+ {"id":"external-publisher-explanation","question":"credit card minimum payment interest","expect":"accepted","answer":"MoneySense explains that interest applies to the unpaid balance.","source_ids":["sg-card-payments"]}
 ]

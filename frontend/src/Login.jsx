@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { supabase } from "./lib/supabase";
 
-export default function Login() {
+export default function Login({onBack}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -27,41 +27,20 @@ export default function Login() {
 
   return (
     <div className="login-page">
+      <button className="bank-chat-logout login-back" onClick={onBack}>← Back to general help</button>
       <div className="login-container">
         <section className="login-brand">
-          <div className="brand-logo">
-            <span className="brand-symbol">◆</span> DemoBank
-          </div>
-
-          <div className="brand-visual" aria-hidden="true">
-            <div className="visual-glow"></div>
-            <div className="visual-card visual-card-back"></div>
-            <div className="visual-card visual-card-front">
-              <div className="card-top">
-                <span className="card-chip"></span>
-                <span className="card-waves">)))</span>
-              </div>
-              <div className="card-bottom">
-                <span>•••• &nbsp; •••• &nbsp; •••• &nbsp; 4829</span>
-                <strong>DemoBank</strong>
-              </div>
-            </div>
-            <div className="visual-bubble visual-bubble-one">✓</div>
-            <div className="visual-bubble visual-bubble-two">✦</div>
-          </div>
-
-          <div className="brand-bottom">
-            <span className="brand-line"></span>
-            <p>Your banking assistant</p>
-          </div>
+          <span className="brand-name">DemoBank<span className="brand-dot">.</span></span>
+          <div><span className="small-rule"/><h2>A clearer view.<br/><span>A helping hand.</span></h2><p>Sign in to explore your synthetic demo records, with guidance from your banking assistant.</p></div>
+          <small>IS4000 · Coursework demo · Not a real bank</small>
         </section>
 
         <section className="login-panel">
           <form onSubmit={handleLogin}>
             <div className="login-heading">
-              <span className="login-eyebrow">CUSTOMER PORTAL</span>
+              <span className="eyebrow">DEMO ACCOUNT ACCESS</span>
               <h1>Welcome back</h1>
-              <p>Sign in to continue to your banking assistant.</p>
+              <p>Use your demo account to view synthetic records. General banking help is available without signing in.</p>
             </div>
 
             <label htmlFor="email">Email address</label>
@@ -93,7 +72,7 @@ export default function Login() {
 
             {error && <p className="login-error" role="alert">{error}</p>}
 
-            <button className="login-submit" type="submit" disabled={loading}>
+            <button className="login-submit primary-button" type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Sign In →"}
             </button>
           </form>

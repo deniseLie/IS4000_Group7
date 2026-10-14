@@ -1,135 +1,219 @@
-/* Global */
+:root {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #262624;
+  background: #fff;
+  font-synthesis: none;
+  --ink: #262624;
+  --muted: #65655f;
+  --line: #e4e4de;
+  --canvas: #f7f7f4;
+  --red: #bd291e;
+  --tint: #faeeeb;
+}
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; background: #f3f6fb; }
+body { margin: 0; }
+button, input, textarea, select { font: inherit; }
+button, summary { cursor: pointer; }
+button { color: inherit; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+a { color: var(--red); text-underline-offset: 4px; }
+button, a, input, textarea, select, summary { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
+svg { width: 20px; height: 20px; flex-shrink: 0; }
+.skip-link { position: fixed; top: 8px; left: 16px; z-index: 10; padding: 0; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); background: white; }
+.skip-link:focus { width: auto; height: auto; padding: 12px; clip-path: none; }
+.eyebrow { display: block; color: var(--muted); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; line-height: 1.5; }
+.small-rule { display: block; width: 26px; height: 2px; background: var(--red); }
 
-/* Login Layout */
-.login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-.login-container { width: 100%; max-width: 960px; min-height: 560px; display: grid; grid-template-columns: 1fr 1fr; background: #fff; border-radius: 20px; overflow: hidden; box-shadow: 0 18px 55px #172b4d15; }
+/* A quiet, typographic shell; DemoBank keeps its own identity. */
+.bank-chat-header { min-height: 84px; padding: 18px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
+.bank-chat-brand { display: flex; align-items: center; gap: 24px; }
+.brand-name { font-size: 27px; font-weight: 700; letter-spacing: -1.3px; white-space: nowrap; }
+.brand-dot { color: var(--red); }
+.brand-caption { padding-left: 24px; border-left: 1px solid var(--line); display: grid; gap: 5px; }
+.brand-caption strong { font-size: 14px; font-weight: 500; }
+.brand-caption span { font-size: 11px; color: var(--muted); }
+.chat-actions { display: flex; gap: 10px; align-items: center; }
+.bank-chat-logout { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 12px; }
+.bank-chat-logout svg { width: 16px; height: 16px; }
+.bank-chat-logout:hover { background: var(--canvas); border-color: #aaa9a2; }
+.sign-in-action { border-color: transparent; }
+.bank-chat-layout { display: grid; grid-template-columns: 228px minmax(0,1fr); min-height: calc(100dvh - 84px); }
+.bank-sidebar { background: var(--canvas); border-right: 1px solid var(--line); padding: 32px 18px 24px; display: flex; flex-direction: column; gap: 34px; }
+.sidebar-group { display: grid; gap: 6px; }
+.sidebar-group .eyebrow { padding: 0 14px 9px; }
+.sidebar-group button, .sidebar-current { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 14px; text-align: left; font-size: 12px; border: 0; border-radius: 6px; background: transparent; }
+.sidebar-group button:hover { background: #eaeae5; }
+.sidebar-current { color: var(--red); background: var(--tint); }
+.sidebar-group svg { width: 18px; height: 18px; }
+.sidebar-note { margin: auto 14px 28px; padding-top: 40px; }
+.sidebar-note h2 { font-size: 21px; line-height: 1.35; font-weight: 400; letter-spacing: -.5px; margin: 18px 0 10px; }
+.sidebar-note p { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.sidebar-session { border-top: 1px solid var(--line); padding: 22px 10px 0; display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.session-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #eaeae5; }
+.session-avatar svg { width: 17px; height: 17px; }
+.sidebar-session small { display: block; color: var(--muted); font-size: 10px; margin-top: 5px; }
+.chat-workspace { width: 100%; max-width: 1180px; margin: 0 auto; min-width: 0; padding: 0 clamp(24px,4.5vw,72px); display: flex; flex-direction: column; }
+.chat-settings { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 65px; border-bottom: 1px solid var(--line); }
+.chat-settings label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.chat-settings select { background: white; color: var(--ink); padding: 10px 4px; max-width: 200px; border: 0; border-radius: 4px; font-size: 12px; }
+.language-note { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 12px 0 0; }
+.bank-chat-window { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.bank-chat-messages { flex: 1; min-height: 0; }
+.bank-chat-welcome { padding: 52px 0 26px; }
+.welcome-eyebrow { display: flex; align-items: center; gap: 10px; }
+.welcome-eyebrow::before { content: ''; width: 23px; height: 2px; background: var(--red); }
+.bank-chat-welcome h1 { font-size: clamp(36px,4.2vw,58px); line-height: 1.09; font-weight: 400; letter-spacing: -2.4px; margin: 22px 0 18px; }
+.bank-chat-welcome h1 span { color: #797971; }
+.bank-chat-welcome > p { font-size: 14px; line-height: 1.8; color: var(--muted); margin: 0 0 30px; }
+.bank-chat-suggestions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.bank-chat-suggestions button { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; transition: background .15s, border-color .15s; }
+.bank-chat-suggestions button:hover { background: var(--canvas); border-color: #a6a69d; }
+.bank-chat-suggestions svg { color: var(--red); width: 23px; height: 23px; margin-bottom: 8px; }
+.bank-chat-suggestions strong { font-size: 13px; font-weight: 500; }
+.bank-chat-suggestions button > span:not(.topic-arrow) { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.topic-arrow { position: absolute; top: 18px; right: 18px; font-size: 16px; color: #81817b; }
+.quick-help { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 20px; font-size: 11px; }
+.quick-help > span { color: var(--muted); }
+.quick-help button { background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 11px; }
+.quick-help button:hover { color: var(--red); border-color: var(--red); }
+.quick-help button span { margin-left: 5px; }
 
-/* Login Branding */
-.login-brand { position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: 38px; overflow: hidden; background: linear-gradient(145deg, #193c6d, #102848); color: #fff; }
-.brand-logo { position: relative; z-index: 2; font-size: 23px; font-weight: 750; letter-spacing: -.5px; }
-.brand-symbol { color: #9ec9ff; margin-right: 5px; }
-.brand-bottom { position: relative; z-index: 2; }
-.brand-bottom p { color: #c0d5f1; font-size: 14px; margin: 12px 0 0; }
-.brand-line { display: block; width: 32px; height: 3px; background: #85baff; border-radius: 5px; }
-
-/* Banking Card Illustration */
-.brand-visual { position: relative; display: flex; align-items: center; justify-content: center; height: 310px; }
-.visual-glow { position: absolute; width: 300px; height: 300px; background: radial-gradient(circle, #437bc35c, transparent 70%); }
-.visual-card { position: absolute; width: 255px; height: 160px; border-radius: 18px; box-shadow: 0 18px 35px #071b3260; }
-.visual-card-back { background: linear-gradient(135deg, #8fbdf4, #3d72b4); transform: rotate(-18deg) translate(-8px, -8px); }
-.visual-card-front { display: flex; flex-direction: column; justify-content: space-between; padding: 22px; background: linear-gradient(130deg, #285b96, #163861); border: 1px solid #ffffff35; transform: rotate(8deg) translate(15px, 10px); }
-.card-top { display: flex; justify-content: space-between; align-items: center; }
-.card-chip { width: 33px; height: 24px; border-radius: 5px; background: linear-gradient(135deg, #e8d8a4, #b6a575); }
-.card-waves { color: #d3e4fa; font-size: 21px; transform: rotate(90deg); }
-.card-bottom { display: flex; flex-direction: column; gap: 12px; }
-.card-bottom span { color: #dceaff; font-size: 14px; letter-spacing: 1.3px; }
-.card-bottom strong { font-size: 16px; font-weight: 650; }
-.visual-bubble { position: absolute; z-index: 3; display: grid; place-items: center; width: 47px; height: 47px; background: #fff; color: #24568c; border-radius: 14px; box-shadow: 0 8px 25px #091c3550; font-size: 24px; font-weight: bold; }
-.visual-bubble-one { top: 18px; right: 40px; }
-.visual-bubble-two { bottom: 20px; left: 20px; }
-
-/* Login Form */
-.login-panel { display: flex; align-items: center; padding: 50px; }
-.login-panel form { width: 100%; }
-.login-heading { margin-bottom: 34px; }
-.login-eyebrow { display: block; margin-bottom: 12px; color: #32639b; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; }
-.login-heading h1 { margin: 0 0 10px; color: #182d4e; font-size: 30px; letter-spacing: -.7px; }
-.login-heading p { margin: 0; color: #7b899c; font-size: 14px; line-height: 1.6; }
-.login-panel label { display: block; margin-bottom: 9px; color: #34445b; font-size: 13px; font-weight: 650; }
-.login-panel input { width: 100%; padding: 14px; margin-bottom: 22px; border: 1px solid #dbe3ef; border-radius: 9px; outline: none; font: inherit; font-size: 14px; transition: .2s; }
-.login-panel input:focus { border-color: #3775c2; box-shadow: 0 0 0 3px #3775c21b; }
-.password-field { position: relative; }
-.password-field input { padding-right: 66px; }
-.password-field button { position: absolute; top: 14px; right: 12px; background: none; border: 0; color: #73849a; cursor: pointer; font-size: 12px; }
-.login-error { margin: 0 0 15px; color: #dc2626; font-size: 13px; }
-.login-submit { width: 100%; padding: 14px; background: #193c6d; border: 0; border-radius: 9px; color: #fff; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: background .2s; }
-.login-submit:hover { background: #285a94; }
-.login-submit:disabled { opacity: .6; cursor: not-allowed; }
-
-/* Chat Layout */
-.bank-chat-page { min-height: 100vh; padding: 24px; }
-.bank-chat-layout { display: flex; flex-direction: column; max-width: 1000px; height: calc(100vh - 48px); min-height: 480px; margin: auto; }
-.bank-chat-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 4px 22px; }
-.bank-chat-brand { display: flex; align-items: center; gap: 14px; }
-.bank-chat-icon { display: grid; place-items: center; width: 46px; height: 46px; background: #193c6d; color: #fff; border-radius: 13px; font-size: 22px; }
-.bank-chat-brand h1 { margin: 0 0 3px; color: #193c6d; font-size: 21px; }
-.bank-chat-brand span { color: #8190a4; font-size: 12px; }
-.bank-chat-logout { padding: 10px 17px; background: #fff; border: 1px solid #dce3ed; border-radius: 9px; color: #334155; cursor: pointer; }
-.bank-chat-logout:hover { background: #e9eef7; }
-
-/* Chat Messages */
-.bank-chat-window { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #fff; border: 1px solid #e6ebf2; border-radius: 17px; overflow: hidden; box-shadow: 0 10px 35px #172b4d09; }
-.bank-chat-messages { flex: 1; display: flex; flex-direction: column; gap: 22px; padding: 30px; overflow-y: auto; }
-.bank-chat-welcome { max-width: 470px; margin: auto; text-align: center; }
-.bank-chat-welcome-icon { display: grid; place-items: center; width: 65px; height: 65px; margin: 0 auto 22px; background: #eaf1fb; color: #193c6d; border-radius: 19px; font-size: 30px; }
-.bank-chat-welcome h2 { margin: 0 0 10px; color: #172b4d; font-size: 26px; }
-.bank-chat-welcome p { color: #7b899c; font-size: 14px; line-height: 1.7; }
-
-/* Suggested Questions */
-.bank-chat-suggestions { display: grid; gap: 10px; margin-top: 28px; }
-.bank-chat-suggestions button { display: flex; justify-content: space-between; gap: 12px; padding: 14px 17px; background: #fff; border: 1px solid #dfe6ef; border-radius: 10px; color: #334155; text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
-.bank-chat-suggestions button:hover { background: #f7faff; border-color: #8aadd9; }
-
-/* Message Bubbles */
-.bank-chat-message { display: flex; align-items: flex-start; gap: 10px; }
+/* Preserve the real response text, origin labels and source controls. */
+.bank-chat-messages.has-messages { display: flex; flex-direction: column; gap: 30px; padding: 30px 8px 28px 0; overflow-y: auto; max-height: max(300px,calc(100dvh - 350px)); min-height: 260px; scrollbar-width: thin; scrollbar-color: #cccac1 transparent; }
+.bank-chat-message { display: flex; align-items: flex-start; gap: 14px; }
 .bank-chat-message.user { justify-content: flex-end; }
-.bank-chat-avatar { flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; background: #eaf1fb; color: #193c6d; border-radius: 9px; }
-.bank-chat-bubble { max-width: 76%; padding: 12px 16px; background: #f0f3f8; color: #334155; border-radius: 13px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; font-size: 14px; }
-.bank-chat-message.user .bank-chat-bubble { background: #193c6d; color: #fff; }
-.bank-chat-bubble.error { background: #fff1f2; color: #b91c1c; }
-.bank-chat-typing { color: #8291a6; font-style: italic; }
+.bank-chat-avatar { display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; color: var(--red); }
+.bank-chat-avatar svg { width: 17px; height: 17px; }
+.bank-chat-bubble { min-width: 0; max-width: 90%; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.bank-chat-message.user .bank-chat-bubble { max-width: 82%; background: #efefea; padding: 12px 18px; border-radius: 13px 13px 3px 13px; }
+.answer-text { white-space: pre-wrap; }
+.answer-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; margin-bottom: 10px; min-height: 30px; }
+.answer-origin { font-size: 10px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 4px; }
+.answer-sources { margin-top: 18px; font-size: 12px; }
+.answer-sources summary { width: fit-content; border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; background: var(--canvas); }
+.answer-sources p { color: var(--muted); font-size: 11px; line-height: 1.7; }
+.source-link { border: 0; background: none; color: var(--red); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 8px 0; text-align: left; }
+.answer-sources small { color: var(--muted); margin-left: 8px; }
+.answer-disclaimer { display: block; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 16px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+.bank-chat-bubble.error { padding: 12px 16px; background: var(--tint); color: #9c2117; border-radius: 8px; }
+.chat-notice { padding: 12px 16px; background: var(--tint); border-left: 2px solid var(--red); font-size: 12px; line-height: 1.7; margin: 16px 0 0; }
+.composer-area { margin-top: auto; padding-top: 16px; }
+.bank-chat-composer { border: 1px solid #d8d8cf; border-radius: 13px; padding: 16px; background: #fff; box-shadow: 0 4px 20px #00000004; }
+.bank-chat-composer:focus-within { border-color: #88887c; }
+.bank-chat-composer input { width: 100%; min-width: 0; padding: 4px 0 18px; border: 0; color: var(--ink); background: transparent; font-size: 16px; outline-offset: 3px; }
+.bank-chat-composer input::placeholder { color: #77776f; }
+.composer-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.composer-tools > span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.composer-tools > span svg { width: 14px; height: 14px; }
+.composer-tools button, .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--red); color: white; border: 0; border-radius: 7px; padding: 11px 14px; font-size: 12px; min-height: 42px; }
+.composer-tools button svg { width: 17px; height: 17px; }
+.composer-tools button:hover:not(:disabled), .primary-button:hover:not(:disabled) { background: #9f2118; }
+.bank-chat-disclaimer { max-width: 700px; margin: 12px auto 7px; text-align: center; color: var(--muted); font-size: 10px; line-height: 1.7; }
+.session-note { text-align: center; font-size: 10px; color: var(--muted); }
+.session-note summary { width: fit-content; margin: auto; padding: 5px; }
+.session-note p { line-height: 1.7; max-width: 680px; margin: 6px auto; }
+.bank-chat-footer { margin-top: 24px; padding: 16px 0 20px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 10px; }
 
-/* Chat Input */
-.bank-chat-composer { display: flex; gap: 12px; padding: 18px 24px 8px; border-top: 1px solid #edf0f5; }
-.bank-chat-composer input { flex: 1; min-width: 0; padding: 14px 16px; border: 1px solid #dce3ed; border-radius: 10px; outline: none; font: inherit; font-size: 14px; }
-.bank-chat-composer input:focus { border-color: #3269a8; }
-.bank-chat-composer button { padding: 0 24px; background: #193c6d; border: 0; border-radius: 10px; color: #fff; font-weight: 600; cursor: pointer; }
-.bank-chat-composer button:disabled { opacity: .5; cursor: not-allowed; }
-.bank-chat-disclaimer { margin: 0; padding: 8px 12px 15px; color: #94a3b8; text-align: center; font-size: 11px; }
-.bank-chat-footer { padding-top: 15px; color: #94a3b8; text-align: center; font-size: 12px; }
+/* Native dialogs provide focus trapping and Escape support. */
+.panel-dialog { width: min(600px,calc(100% - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); box-shadow: 0 24px 80px #00000026; }
+.panel-dialog::backdrop { background: #20201e66; backdrop-filter: blur(3px); }
+.support-panel { padding: 28px; }
+.panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.panel-heading h2 { font-size: 25px; font-weight: 400; line-height: 1.25; letter-spacing: -.5px; margin: 12px 0 16px; }
+.icon-button { display: grid; place-items: center; flex-shrink: 0; width: 42px; height: 42px; padding: 10px; border: 1px solid var(--line); border-radius: 50%; background: white; }
+.icon-button:hover { background: var(--canvas); }
+.support-panel p { color: var(--muted); font-size: 13px; line-height: 1.8; }
+.support-panel .source-notice { padding: 12px; background: var(--canvas); border-left: 2px solid var(--red); }
+.support-panel textarea { display: block; width: 100%; min-height: 150px; resize: vertical; border: 1px solid #ccccc2; border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.7; color: var(--ink); background: var(--canvas); }
+.review-summary { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.6; margin: 18px 0; }
+.review-summary input { accent-color: var(--red); margin-top: 3px; flex-shrink: 0; }
+.support-panel small { font-size: 11px; color: var(--muted); }
 
-/* Responsive */
-.chat-actions, .chat-settings { display: flex; flex-wrap: wrap; gap: 8px; }
-.chat-settings { margin-bottom: 12px; align-items: center; color: #334155; font-size: 13px; }
-.chat-settings select { padding: 7px; margin-left: 6px; border: 1px solid #b7c4d6; border-radius: 6px; }
-.chat-notice { margin: 0; padding: 10px 18px; color: #334155; background: #eef4fc; font-size: 13px; }
-.source-link { border: 0; background: none; color: #174e8b; text-decoration: underline; cursor: pointer; }
-.answer-disclaimer { display: block; margin-top: 10px; line-height: 1.4; color: #526176; }
-.support-panel { background: white; border: 1px solid #b7c4d6; border-radius: 10px; padding: 18px; margin-top: 12px; color: #334155; }
-.support-panel h2 { font-size: 18px; margin-top: 0; }
-.support-panel textarea { width: 100%; padding: 8px; font: inherit; }
-.support-panel button { margin: 10px 8px 0 0; padding: 8px 12px; }
-.bank-chat-disclaimer, .bank-chat-footer { color: #53647b; }
-.bank-chat-layout { height: auto; min-height: calc(100dvh - 48px); }
-.bank-chat-window { min-height: 500px; }
-.bank-chat-messages { max-height: 60vh; }
-@media (max-width:650px) { .bank-chat-header { align-items:flex-start;gap:8px; } .chat-actions { justify-content:flex-end; } .bank-chat-logout { padding:8px; } }
-@media (max-width: 760px) {
-  .login-page { padding: 16px; }
-  .login-container { grid-template-columns: 1fr; max-width: 450px; }
-  .login-brand { padding: 25px; }
-  .brand-logo { font-size: 20px; }
-  .brand-visual { height: 180px; }
-  .visual-card { width: 175px; height: 110px; padding: 15px; }
-  .card-bottom span { font-size: 9px; }
-  .card-bottom strong { font-size: 12px; }
-  .visual-glow { width: 180px; height: 180px; }
-  .visual-bubble { width: 35px; height: 35px; font-size: 18px; }
-  .brand-bottom { display: none; }
-  .login-panel { padding: 35px 28px; }
+/* Sign-in uses the same visual language, with synthetic data clearly labelled. */
+.login-page { min-height: 100dvh; padding: 28px; background: var(--canvas); display: flex; flex-direction: column; }
+.login-back { align-self: flex-start; background: transparent; margin-bottom: 24px; }
+.login-container { width: 100%; max-width: 960px; min-height: 560px; margin: auto; display: grid; grid-template-columns: 1fr 1fr; background: white; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.login-brand { background: #eeeee8; padding: 44px; display: flex; flex-direction: column; justify-content: space-between; gap: 48px; }
+.login-brand h2 { font-size: 42px; font-weight: 400; line-height: 1.13; letter-spacing: -1.8px; margin: 22px 0; }
+.login-brand h2 span { color: #78786e; }
+.login-brand p { font-size: 13px; line-height: 1.8; color: var(--muted); }
+.login-brand > small { color: var(--muted); font-size: 11px; }
+.login-panel { padding: 48px; display: flex; align-items: center; }
+.login-panel form { width: 100%; }
+.login-heading { margin-bottom: 30px; }
+.login-heading h1 { font-size: 30px; font-weight: 400; letter-spacing: -.8px; margin: 14px 0 10px; }
+.login-heading p { font-size: 13px; line-height: 1.8; color: var(--muted); }
+.login-panel label { display: block; font-size: 12px; margin-bottom: 10px; }
+.login-panel input { width: 100%; min-width: 0; border: 1px solid #d4d4cb; border-radius: 7px; padding: 13px; margin-bottom: 22px; font-size: 16px; }
+.password-field { position: relative; }
+.password-field input { padding-right: 65px; }
+.password-field button { position: absolute; right: 4px; top: 3px; min-height: 40px; padding: 10px; background: none; border: 0; font-size: 12px; color: var(--muted); }
+.login-submit { width: 100%; }
+.login-error { font-size: 13px; line-height: 1.6; color: var(--red); }
+.app-loading { min-height: 100dvh; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+
+@media (min-width:1600px) { .chat-workspace { padding-top: 10px; } .bank-chat-welcome { padding-top: 75px; } }
+@media (max-width:1000px) {
+  .bank-chat-layout { grid-template-columns: 192px minmax(0,1fr); }
+  .bank-sidebar { padding: 28px 10px 20px; }
+  .brand-caption { display: none; }
+  .bank-chat-suggestions button { padding: 17px 14px; }
+  .chat-settings label { flex-direction: column; align-items: flex-start; gap: 0; }
+  .chat-settings { padding: 10px 0; }
 }
-
-@media (max-width: 650px) {
-  .bank-chat-page { padding: 12px; }
-  .bank-chat-layout { height: calc(100dvh - 24px); min-height: 0; }
-  .bank-chat-messages { padding: 18px; }
-  .bank-chat-bubble { max-width: 85%; }
-  .bank-chat-welcome h2 { font-size: 22px; }
-  .bank-chat-composer { padding: 12px 12px 6px; gap: 8px; }
-  .bank-chat-composer button { padding: 0 15px; }
-  .bank-chat-brand h1 { font-size: 18px; }
+@media (max-width:760px) {
+  .bank-chat-header { padding: 16px 20px; min-height: 76px; gap: 12px; flex-wrap: wrap; }
+  .brand-name { font-size: 24px; }
+  .chat-actions { gap: 5px; }
+  .bank-chat-logout { padding: 9px 10px; font-size: 11px; }
+  .support-action { border-color: transparent; }
+  .support-action span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .bank-chat-layout { display: block; min-height: calc(100dvh - 76px); }
+  .bank-sidebar { display: none; }
+  .chat-workspace { min-height: calc(100dvh - 76px); padding: 0 22px; }
+  .bank-chat-welcome { padding: 34px 0 18px; }
+  .bank-chat-welcome h1 { font-size: 42px; letter-spacing: -1.6px; }
+  .bank-chat-welcome > p { font-size: 13px; margin-bottom: 22px; }
+  .language-note { font-size: 10px; }
+  .bank-chat-footer { margin-top: 20px; }
+  .bank-chat-bubble { max-width: calc(100% - 40px); }
+  .bank-chat-message { gap: 10px; }
+  .login-page { padding: 20px; }
+  .login-container { max-width: 480px; grid-template-columns: 1fr; }
+  .login-brand { padding: 28px; gap: 20px; }
+  .login-brand h2 { font-size: 32px; margin-bottom: 0; }
+  .login-brand p, .login-brand > small { display: none; }
+  .login-panel { padding: 30px 28px; }
 }
-
-.answer-origin { display:block; color:#526176; font-size:11px; font-weight:600; margin-bottom:5px; }
+@media (max-width:480px) {
+  .bank-chat-header { padding: 12px 16px; gap: 8px; }
+  .brand-name { font-size: 21px; }
+  .bank-chat-logout { padding: 8px; }
+  .bank-chat-logout svg { width: 14px; height: 14px; }
+  .sign-in-action svg { display: none; }
+  .chat-workspace { padding: 0 20px; }
+  .chat-settings label { font-size: 10px; }
+  .chat-settings select { font-size: 12px; max-width: 175px; padding-left: 0; }
+  .bank-chat-welcome h1 { font-size: 36px; margin: 18px 0 14px; }
+  .welcome-eyebrow { font-size: 9px; letter-spacing: 1.3px; }
+  .bank-chat-suggestions { grid-template-columns: 1fr; gap: 8px; }
+  .bank-chat-suggestions button { display: grid; grid-template-columns: 24px 1fr; column-gap: 12px; row-gap: 4px; padding: 14px; border-radius: 10px; }
+  .bank-chat-suggestions svg { grid-row: span 2; margin: 2px 0 0; width: 21px; height: 21px; }
+  .bank-chat-suggestions strong { padding-right: 12px; }
+  .bank-chat-suggestions button > span:not(.topic-arrow) { font-size: 11px; }
+  .topic-arrow { top: 13px; right: 12px; }
+  .quick-help { gap: 4px 12px; }
+  .quick-help > span { width: 100%; }
+  .bank-chat-composer { padding: 13px; }
+  .composer-tools > span { font-size: 9px; max-width: 190px; }
+  .composer-tools button { flex-shrink: 0; padding: 10px 12px; }
+  .bank-chat-messages.has-messages { max-height: max(250px,calc(100dvh - 390px)); }
+  .bank-chat-message.assistant { gap: 0; }
+  .bank-chat-avatar { display: none; }
+  .bank-chat-bubble { max-width: 100%; }
+  .bank-chat-message.user .bank-chat-bubble { max-width: 94%; }
+  .support-panel { padding: 22px; }
+  .panel-heading h2 { font-size: 23px; }
+}
+@media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }

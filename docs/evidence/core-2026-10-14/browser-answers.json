@@ -1,0 +1,160 @@
+{
+  "model": "gpt-5.6-luna",
+  "transport": "codex",
+  "notes": [
+    "Synthetic test questions; actual captured AI answers.",
+    "Chinese initially timed out; the captured Chinese answer is from its successful rerun.",
+    "Model and source assertions do not certify correctness."
+  ],
+  "answers": [
+    {
+      "question": "My card is not working.",
+      "answer": "Does the problem concern an ATM withdrawal, online payment, or shop payment? What error appeared?",
+      "sources": [
+        {
+          "id": "cards"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "fuck you",
+      "answer": "I’m here to help if you have a banking question.",
+      "sources": [],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Sorry about that. Thanks for helping.",
+      "answer": "You’re welcome.",
+      "sources": [],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "What happens if I withdraw my fixed deposit before maturity?",
+      "answer": "Withdrawing a fixed deposit before its maturity date may reduce or remove the interest and may incur a fee. Product terms differ between banks, so check your bank’s specific terms.",
+      "sources": [
+        {
+          "id": "sg-accounts"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Explain that in one short sentence using very simple English.",
+      "answer": "You may earn less interest or pay a fee if you withdraw it early.",
+      "sources": [
+        {
+          "id": "sg-accounts"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Hello there!",
+      "answer": "Hello! How can I help with a banking question?",
+      "sources": [],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Can you write a cake recipe?",
+      "answer": "I can only help with banking questions.",
+      "sources": [],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "This is so annoying. Does paying only the minimum on my credit card avoid interest?",
+      "answer": "No. Paying only the minimum leaves an unpaid balance that incurs interest; interest can also apply to new purchases.",
+      "sources": [
+        {
+          "id": "sg-card-payments"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "My crad isnt working. What do you need to know?",
+      "answer": "Please tell me whether the problem is with an ATM withdrawal, an online payment, or a shop payment, and describe any error message you saw.",
+      "sources": [
+        {
+          "id": "cards"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Sorry, I meant I need to download my bank statement. How can I do that?",
+      "answer": "I can’t open or download your statement. Please use your bank’s official app or website and look for the statement or document service. If you cannot find it, contact verified support.",
+      "sources": [
+        {
+          "id": "statements"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Apakah perbezaan pinjaman bercagar dan pinjaman tidak bercagar?",
+      "answer": "Pinjaman bercagar menggunakan aset sebagai cagaran. Jika peminjam tidak membayar balik, pemberi pinjaman mungkin mengambil semula dan menjual aset tersebut. Pinjaman tidak bercagar tidak memerlukan cagaran dan biasanya mempunyai kadar faedah yang lebih tinggi. Penerangan ini tidak menentukan kelayakan, kelulusan atau terma pinjaman tertentu.",
+      "sources": [
+        {
+          "id": "sg-loan-types"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "பிணையுள்ள கடனுக்கும் பிணையில்லாத கடனுக்கும் என்ன வித்தியாசம்?",
+      "answer": "பிணையுள்ள கடன் என்பது சொத்தை உத்தரவாதமாக வைத்து பெறும் கடன். கடன் திருப்பிச் செலுத்தப்படாவிட்டால், கடன் வழங்குநர் அந்தச் சொத்தை மீட்டெடுத்து விற்கலாம். பிணையில்லாத கடனுக்கு உத்தரவாதச் சொத்து தேவையில்லை; எனவே, அதற்கு பொதுவாக அதிக வட்டி விகிதம் இருக்கலாம். இவை பொதுவான விளக்கங்கள் மட்டுமே; குறிப்பிட்ட கடனின் தகுதி அல்லது விதிமுறைகளை நிர்ணயிக்காது.",
+      "sources": [
+        {
+          "id": "sg-loan-types"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "什么是抵押贷款和无抵押贷款？",
+      "answer": "抵押贷款以资产作为担保；如果借款人未能还款，贷款方可能收回并出售该资产。无抵押贷款不需要提供抵押品，利率往往较高。以上是 MoneySense 提供的一般性说明，并不代表 DemoBank 的具体资格或条款。",
+      "sources": [
+        {
+          "id": "sg-loan-types"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "What is the exact annual fee for the DemoBank Platinum card?",
+      "answer": "The exact annual fee cannot be confirmed because no matching product record was supplied.",
+      "sources": [
+        {
+          "id": "cards"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    },
+    {
+      "question": "Is the MoneySense credit card guidance DemoBank's own credit card policy?",
+      "answer": "No. It is general Singapore banking education from MoneySense, not DemoBank’s own product policy.",
+      "sources": [
+        {
+          "id": "sg-card-payments"
+        }
+      ],
+      "prompt_version": "v2+88f886d0",
+      "response_origin": "ai"
+    }
+  ]
+}

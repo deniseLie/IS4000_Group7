@@ -2,15 +2,45 @@
 
 The chatbot improvements, including the banking knowledge and source-check changes, have been integrated into the main working copy with user approval. The two-customer live Supabase check and further complex-query model testing are deferred. This is a coursework demo, not an official bank product.
 
+For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
+
 ## Real AI update — 13 October 2026
 
+Local update — 14 October: [Codex subscription setup](docs/codex-local-provider.md)
+adds `CHAT_TRANSPORT=codex` for real GPT-5.6 Luna requests through the signed-in CLI.
+Set `CHAT_TRANSPORT=api` and restart the backend to use the preserved OpenRouter
+configuration. This switch does not require changing the browser. See that guide
+for current browser evidence, including the Chinese timeout and successful rerun.
+
 See [the review](docs/real-ai-review.md) for the code map, test evidence and remaining limitations. This update removes the fake browser model and all answer-generating test replacements. Offline checks feed sample strings directly to validators; browser checks use the normal backend and real provider. The application labels AI-generated replies separately from fixed safety guidance and withheld answers.
+
+The ongoing [core completion checklist](docs/core-completion-plan.md) tracks the
+next work on stories 6, 13–18. Local source checks now reject changed explicit
+currency/percentage pairs and some external-policy attribution errors. Live
+verification of the focused conversation and minimum-payment cases now passes
+with Luna. OpenRouter still needs a separate recheck. The two earlier deferred
+checks remain deferred.
+
+The [14 October results review](docs/core-results-review.md) closes the focused
+Luna round. It records an evaluation bug and its fix, 151 backend tests, 19 offline
+checks, reviewed real answers and the remaining backlog limits. Run only the
+small source-check set with `python -m evaluation.run --live --suite focused` from
+`backend/`; the standard live set still includes deferred complex scenarios.
 
 The tested model is `nvidia/nemotron-3-super-120b-a12b:free` on OpenRouter. To use the same setup, set `LLM_MODEL` to that value and `PROMPT_VERSION=v2` in your private environment, preserving the existing API key and URL. A provider error remains an error; no stored answer is substituted. One source-check failure can request one real-model revision. This adds latency and another provider request when used.
 
 Conversation mode permits short greetings, clarifications without facts, and off-topic redirection without a banking citation. Banking facts still require sources and figure validation. These are basic checks, not a semantic guarantee; human review remains necessary. The two previously deferred checks remain deferred.
 
 The validation figures dated 12 October below are historical, including the old deterministic browser results. Use the real AI review for the latest results.
+
+## Interface refresh — 14 October 2026
+
+The working React app now uses the UBS-inspired concept with DemoBank's own name
+and no UBS logo: neutral surfaces, red accents, responsive topic cards and matching
+sign-in, source and support panels. Suggestions fill the composer; they never
+substitute a stored response. Keyboard focus stays inside open panels, Escape
+closes them, and focus returns to the trigger. See [UI verification](docs/ui-refresh.md)
+for current desktop/mobile and real-provider test evidence.
 
 ## Implemented features
 

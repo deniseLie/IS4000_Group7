@@ -49,6 +49,16 @@ def answer_request(evidence, language, repair=None):
 class LLMClient:
     """Initialize on demand so health and public help work without a key."""
     async def answer(self, messages, evidence, language, repair=None):
+        if os.getenv('CHAT_TRANSPORT','api')=='codex':
+            from app.services import codex_cli
+            pv,prompt,schema=answer_request(evidence,language,repair)
+            with span('llm','llm',model=os.getenv('CODEX_MODEL','gpt-5.6-luna'),prompt_version=pv['id'],transport='codex') as a:
+                result,usage=await codex_cli.answer(prompt,schema,messages)
+                # Subscription usage is not a per-token API bill. Leave cost unknown.
+                a.update(usage)
+            return json.dumps(result,ensure_ascii=False)
+        if os.getenv('CHAT_TRANSPORT','api')!='api':
+            raise RuntimeError('Unknown CHAT_TRANSPORT; choose api or codex')
         needed = ('LLM_MODEL',) + (('LLM_API_KEY','LLM_BASE_URL') if (os.getenv('LLM_PROVIDER') or 'openai') == 'openai' else ())
         if not all(os.getenv(k) for k in needed):
             raise RuntimeError('Model is not configured')

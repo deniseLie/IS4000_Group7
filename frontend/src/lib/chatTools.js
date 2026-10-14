@@ -1,9 +1,11 @@
 export function redact(text) {
-  return text
-    .replace(/\b(?:password|passcode)\s*(?:is\s+|[:=]\s*)["']?[^\s,;"']+/gi, '[private detail removed]')
-    .replace(/\b(?:pin|otp|cvv|cvc|one[- ]time (?:password|code))\s*(?:is\s+|[:=]\s*)?\d{3,10}\b/gi, '[private detail removed]')
+  const normalized=text.normalize('NFKC').replace(/[\u200b\u200c\u200d\ufeff]/g,'');
+  const cleaned=normalized
+    .replace(/\b(?:password|passcode)\s*(?:is\s+|[:=]\s*)(?:"[^"\n]+"|'[^'\n]+'|[^\s,;"']+)/gi, '[private detail removed]')
+    .replace(/\b(?:pin|otp|cvv|cvc|one[- ]time (?:password|code))\s*(?:is\s+|[:=]\s*)?(?:\d[ -]?){2,9}\d\b/gi, '[private detail removed]')
     .replace(/(?<!\d)(?:\d[ -]?){13,19}(?!\d)/g, '[private detail removed]')
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[private detail removed]');
+  return cleaned===normalized ? text : cleaned;
 }
 
 export function boundedHistory(messages) {

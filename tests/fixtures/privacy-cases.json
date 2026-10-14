@@ -1,0 +1,17 @@
+[
+  {"text":"My PIN is 1 2 3 4","secret":"1 2 3 4"},
+  {"text":"OTP: 123-456","secret":"123-456"},
+  {"text":"My PIN is １２３４","secret":"１２３４"},
+  {"text":"My P​IN is 1234","secret":"1234"},
+  {"text":"password: \"synthetic secret phrase\"","secret":"synthetic secret phrase"},
+  {"text":"passcode is 'sample test phrase'","secret":"sample test phrase"},
+  {"text":"CVV=321","secret":"321"},
+  {"text":"4111 1111 1111 1111","secret":"4111"},
+  {"text":"４１１１－１１１１－１１１１－１１１１","secret":"４１１１"},
+  {"text":"demo@example.invalid","secret":"demo@"},
+  {"text":"How do I reset my password?","secret":null},
+  {"text":"Never share your PIN, password, OTP or CVV.","secret":null},
+  {"text":"My balance is SGD 1,234.56.","secret":null},
+  {"text":"What does a ５% rate mean?","secret":null},
+  {"text":"I need a password reset.","secret":null}
+]
