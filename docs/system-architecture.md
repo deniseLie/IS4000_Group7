@@ -147,7 +147,7 @@ Priority: **P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
 **AgentResult** (Agent → Orchestrator)
 ```json
 { "task_id": "t1", "agent": "fraud", "status": "ok|needs_clarification|needs_confirmation|needs_human|error",
-  "answer_kind": "banking|conversational", "text": "string",
+  "answer_kind": "banking|conversation", "text": "string",
   "citations": [{"source_id": "kb:card-dispute@v3"}], "tool_calls": [{"call_id": "uuid", "tool": "customer.get_transactions"}],
   "pending_action": {"command_id": "uuid", "type": "card.temporary_block", "summary": "Temporarily block card ending 4821"},
   "receipts": [{"receipt_id": "rcpt_...", "command_id": "uuid"}] }
