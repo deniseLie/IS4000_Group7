@@ -16,6 +16,7 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Change redaction | `backend/app/services/privacy.py` **and** `frontend/src/lib/chatTools.js` (keep in sync) |
 | Change lost-card detection | `backend/app/services/safety.py`; fixed urgent response stays in `answers.py` |
 | Auth, JWT, per-user DB client, customer records | `backend/app/core/auth.py` |
+| Database schemas, RLS, persona seed | `backend/supabase/migrations/` (`NNNN_name.sql`, next free number, never edit an applied one); `0002` banking baseline, `0003` business schemas (read-only customer policies via `banking.my_customer_id()`), `0004` seed for Alex/Michelle/David (ids 1001-1003, spec in `docs/synthetic-data-spec.md`). New schemas must also be added to the Data API's exposed schemas (`events` stays unexposed) |
 | Settings / env vars | `backend/app/core/config.py`, `.env.example` |
 | Logging / tracing | `backend/app/core/observability.py` (JSON logs, ids/counts only); plan in `docs/tracing-plan.md`; tables in `backend/supabase/migrations/` |
 | Request/response schemas | `backend/app/schemas/chat.py` (request), `schemas/events.py` (SSE payloads) |
@@ -37,9 +38,9 @@ Legacy and unused: `frontend/src/api/chat.js`, `frontend/src/components/ChatWind
 
 ## Tests and docs
 
-- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_prompts`, `test_health`; browser suites use the normal application and real provider).
+- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_prompts`, `test_health`; `test_rls_live` is opt-in via `TEST_PERSONA_FIXTURE_FILE` (persona logins in git-ignored `personas.json`); browser suites use the normal application and real provider).
 - Frontend tests: `frontend/src/lib/chatTools.test.js` (unit), `frontend/tests/chat.spec.js` (Playwright, real backend safety paths), `frontend/tests/live.spec.js` (live services).
-- Docs: `README.md` (setup, known limits), `docs/chatbot-architecture.md`, `docs/multi-capability-architecture.md`, `docs/prompt-log/`, `docs/tracing-plan.md`.
+- Docs: `README.md` (setup, known limits), `docs/chatbot-architecture.md`, `docs/multi-capability-architecture.md`, `docs/prompt-log/`, `docs/tracing-plan.md`, `docs/synthetic-data-spec.md`.
 - Active completion evidence: `docs/core-completion-plan.md`. Explicit currency/percentage checks and limited English attribution checks are not semantic proof. Do not count offline validation as live AI accuracy.
 - Shared synthetic privacy cases: `tests/fixtures/privacy-cases.json`, exercised by both frontend and backend. Keep ordinary password-reset questions and non-secret Unicode text unchanged.
 - Focused live evaluation: `python -m evaluation.run --live --suite focused` (three real source questions; excludes deferred complex checks). Offline evidence must include publisher/scope just like the answer pipeline. Raw live results require review; `docs/core-results-review.md` records the latest assessment and limitations.
