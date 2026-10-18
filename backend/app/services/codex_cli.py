@@ -81,7 +81,7 @@ async def _answer(prompt, schema, messages):
         directory=Path(folder)
         (directory/'schema.json').write_text(json.dumps(schema),encoding='utf-8')
         (directory/'instructions.md').write_text(prompt,encoding='utf-8')
-        payload=json.dumps({'conversation':[{'role':m.role,'content':m.content} for m in messages]},ensure_ascii=False)
+        payload=json.dumps({'conversation':[{'role':role,'content':content} for role,content in messages]},ensure_ascii=False)
         proc=await asyncio.create_subprocess_exec(*command(binary,directory,model),
             cwd=directory,env=cli_environment(),stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)

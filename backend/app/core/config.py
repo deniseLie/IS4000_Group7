@@ -14,8 +14,14 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     prompt_version: str = "v2"
+    prompt_versions: dict[str, str] = {}
     llm_price_in_per_m: float = 0
     llm_price_out_per_m: float = 0
+
+    # LLM Gateway limits (services/llm_gateway.py)
+    llm_timeout_s: float = 30
+    llm_max_retries: int = 1
+    llm_request_token_budget: int = 24000
 
 
 settings = Settings()

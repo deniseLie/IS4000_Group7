@@ -10,10 +10,10 @@ Goal: record one complete trace per `/chat` request in our own Supabase project,
 | **Session level** (slide 5): user query to final response | One row per request: `trace_id`, mode, language, authenticated, history length before/after trimming, final `source_check`, `needs_human`, `privacy_warning`, total ms, outcome (`ok`/`error`) | `ops.traces` |
 | **Agent level**: planning, tool selection, execution | `route` span. Which fixed or LLM branch fired (`secrets`, `lost_card`, `human_support`, `guest_balance`, `no_source`, `llm`) and the rule that triggered it | `ops.spans` (`kind='agent'`) |
 | **Tool level**: API calls, DB queries | `retrieve` span (article IDs, count, history-fallback used, non-English "all articles" used) and `customer_context` span (row count per table, ms) | `ops.spans` (`kind='tool'`) |
-| **LLM level**: prompts, tokens, responses | `llm` span: model, `prompt_version`, input/output/total tokens, cost, ms, error class. Prompt and response text are **not** stored by default (see §6) | `ops.spans` (`kind='llm'`) |
+| **LLM level**: prompts, tokens, responses | `llm` span (one per LLM Gateway call): `agent`, model, `transport`, `prompt_version`, input/output/total tokens, cost, ms, error class. Prompt and response text are **not** stored by default (see §6) | `ops.spans` (`kind='llm'`) |
 | Decision points and reasoning (slide 4) | `validate` span with a pass/fail per check and one named `reject_reason` (`bad_json`, `bad_answer`, `source_check`, `secret_leaked`, `url_in_answer`, `action_claim`, `unknown_source`) | `ops.spans` (`kind='decision'`) |
 | Time stamps and latency (slide 4) | `started_at` and `ms` on every span and trace | both tables |
-| Errors and retries (slide 4) | `status`, `error_type` on spans; `retries` on the llm span where observable | `ops.spans` |
+| Errors and retries (slide 4) | `status`, `error_type` on spans; `retries` on the llm span (gateway-side retries; the client's own retries are off) | `ops.spans` |
 | Common pitfall: traces too sparse, missing decision points (slide 12) | Every branch in `make_answer` emits a `route` and every rejection a named reason | code, §4 |
 | Eval metrics: operational, safety, user experience (slide 10) | Latency percentiles, cost per query, throughput; secrets/reject/needs-human rates; task completion proxy and optional thumbs rating | stats page, §5 |
 | Continuous improvement loop (slide 11) | A "review queue" of rejected or escalated traces to turn into new eval cases | §7 |

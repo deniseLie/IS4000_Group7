@@ -1,17 +1,35 @@
 import asyncio
+from pathlib import Path
 import pytest
 from app.core.config import settings
 from app.schemas.chat import ChatRequest
 from app.services import answers, prompts
 
 def test_load_known_and_unknown_versions():
-    pv=prompts.load('v1')
-    assert pv['id'].startswith('v1+') and len(pv['id'])==11
+    pv=prompts.load('answer','v1')
+    assert pv['id'].startswith('v1+') and len(pv['id'])==11 and pv['agent']=='answer'
     assert 'DemoBank' in pv['system'] and 'PUBLIC FAQ TEXT ONLY' in pv['public_only']
-    for bad in ('v999','../x','latest'):
-        with pytest.raises(ValueError):prompts.load(bad)
+    for agent,bad in (('answer','v999'),('answer','../x'),('answer','latest'),('../answer','v1'),('nobody','v1')):
+        with pytest.raises(ValueError):prompts.load(agent,bad)
 
 def test_v2_is_separate_and_fixed_guidance_has_no_prompt():
-    assert prompts.load('v2')['id']!=prompts.load('v1')['id']
+    assert prompts.load('answer','v2')['id']!=prompts.load('answer','v1')['id']
     fixed=asyncio.run(answers.make_answer(ChatRequest(messages=[{'role':'user','content':'I lost my card'}])))
     assert fixed['prompt_version'] is None and fixed['response_origin']=='safety'
+
+# Released prompts are immutable: a changed id means a released file was edited.
+RELEASED={('answer','v1'):'v1+855ee8ff',('answer','v2'):'v2+88f886d0'}
+
+def test_released_prompt_ids_never_change():
+    for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
+
+def test_every_prompt_version_has_a_prompt_log_entry():
+    log=Path(__file__).resolve().parents[2]/'docs'/'prompt-log'
+    assert set(RELEASED)<=set(prompts.released())
+    for agent,version in prompts.released():assert (log/agent/f'{version}.md').is_file(),(agent,version)
+
+def test_agent_versions_are_configured_not_guessed(monkeypatch):
+    monkeypatch.setattr(settings,'prompt_version','v1')
+    assert prompts.current()['id']==RELEASED[('answer','v1')]
+    monkeypatch.setattr(settings,'prompt_versions',{})
+    with pytest.raises(ValueError):prompts.current('planner')
