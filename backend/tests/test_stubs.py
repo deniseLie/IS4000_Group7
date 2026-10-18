@@ -15,7 +15,7 @@ SIGNATURES={  # the agreed names and parameters; change only together with the c
     actions.run_action:['command','ctx','confirmed'], policy.decide:['subject','action','resource','context'],
     policy.has_consent:['customer_id','purpose','recipient'],
 }
-def ctx(kind='customer',aal='aal1'):return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,customer_id=uuid4() if kind=='customer' else None,aal=aal))
+def ctx(kind='customer',aal='aal1'):return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,customer_id=1001 if kind=='customer' else None,aal=aal))
 def cmd(type_,**target):return ActionCommand(idempotency_key=f'case:{uuid4().hex}:{type_}',type=type_,target=target)
 
 @pytest.mark.parametrize('fn,params',SIGNATURES.items(),ids=lambda x:getattr(x,'__qualname__',''))

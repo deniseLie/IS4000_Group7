@@ -5,6 +5,12 @@ import { supabase } from './lib/supabase';
 import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const GUEST_SESSION = globalThis.crypto?.randomUUID?.();  // needs a secure context (https or localhost); correlation id for guest requests; signed-in sessions use the token's session_id
+const ERRORS = {
+  auth_invalid:'Session expired. Please sign in again.', auth_expired:'Session expired. Please sign in again.', auth_required:'Please sign in to use your account.',
+  profile_missing:'No demo customer profile is linked to this login. Use General help or ask the project owner to link a synthetic profile.',
+  rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
+};
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Personal records are synthetic. AI answers can contain errors.';
 
 export default function Chat({session,onSignIn}) {
@@ -35,6 +41,13 @@ export default function Chat({session,onSignIn}) {
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
   }
 
+  async function endSession() {  // records auth.session_ended; sign-out goes ahead even if this fails
+    try {
+      const {data}=await supabase.auth.getSession();
+      if(data.session)await fetch(`${API_URL}/auth/session-end`,{method:'POST',headers:{Authorization:`Bearer ${data.session.access_token}`}});
+    } catch {}
+  }
+
   async function send(e) {
     e.preventDefault();
     const question=input.trim();if(!question||loading)return;
@@ -48,14 +61,17 @@ export default function Chat({session,onSignIn}) {
     setMessages([...visible,{role:'assistant',content:''}]);setInput('');setLoading(true);
     const epoch=version.current;const controller=new AbortController();request.current=controller;
     try {
-      const headers={'Content-Type':'application/json'};
+      const headers={'Content-Type':'application/json',...(GUEST_SESSION&&{'X-Session-Id':GUEST_SESSION})};
       if(session) {
         const {data}=await supabase.auth.getSession();
         if(!data.session)throw new Error('Session expired. Please sign in again.');
         headers.Authorization=`Bearer ${data.session.access_token}`;
       }
       const response=await fetch(`${API_URL}/chat`,{method:'POST',headers,body:JSON.stringify({messages:history,mode,language}),signal:controller.signal});
-      if(!response.ok)throw new Error(response.status===401?'Session expired. Please sign in again.':response.status===403?'No demo customer profile is linked to this login. Use General help or ask the project owner to link a synthetic profile.':'The banking service is unavailable. Please retry.');
+      if(!response.ok) {
+        const code=await response.json().then(b=>b?.error?.code,()=>null);
+        throw new Error(ERRORS[code]||'The banking service is unavailable. Please retry.');
+      }
       if(!response.body)throw new Error('No response received.');
       await readEvents(response.body,(type,data)=>{
         if(epoch!==version.current)return;
@@ -92,7 +108,7 @@ export default function Chat({session,onSignIn}) {
     <header className="bank-chat-header">
       <div className="bank-chat-brand"><span className="brand-name">DemoBank<span className="brand-dot">.</span></span><div className="brand-caption"><strong>Banking assistant</strong><span>AI-powered · Student project</span></div></div>
       <div className="chat-actions"><button className="bank-chat-logout" onClick={reset}><Icon name="plus"/>New chat</button><button className="bank-chat-logout support-action" onClick={prepareSummary}><Icon name="support"/><span>Talk to a person</span></button>
-      {session?<button className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
+      {session?<button className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
     </header>
     <div className="bank-chat-layout">
       <aside className="bank-sidebar" aria-label="Banking topics">

@@ -15,7 +15,7 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Change answer validation (source IDs, figures) | `backend/app/services/source_checks.py` |
 | Change redaction | `backend/app/services/privacy.py` **and** `frontend/src/lib/chatTools.js` (keep in sync) |
 | Change lost-card detection | `backend/app/services/safety.py`; fixed urgent response stays in `answers.py` |
-| Auth, JWT, per-user DB client, customer records | `backend/app/core/auth.py` |
+| Auth, JWT, per-user DB client, customer records | `backend/app/core/gateway.py` (API Gateway Layer: size limit, JWT, rate limit, `RequestContext`, `auth.session_started`; routes use `Depends(get_ctx)` and `request.state.db`), `core/auth.py` (JWKS verify, user DB client, customer records), `core/ratelimit.py`, `core/errors.py` (stable error codes), `api/auth.py` (`POST /auth/session-end`); migration `0007` |
 | Database schemas, RLS, persona seed | `backend/supabase/migrations/` (`NNNN_name.sql`, next free number, never edit an applied one); `0002` banking baseline, `0003` business schemas (read-only customer policies via `banking.my_customer_id()`), `0004` seed for Alex/Michelle/David (ids 1001-1003, spec in `docs/synthetic-data-spec.md`). New schemas must also be added to the Data API's exposed schemas (`events` stays unexposed) |
 | Settings / env vars | `backend/app/core/config.py`, `.env.example` |
 | Audit log | `backend/supabase/migrations/0005_audit_log.sql` (table, `audit.record()`, hash chain, `verify_chain`), `0006_audit_row_triggers.sql` (row trigger + audited tables); `app/services/audit.py` (per-request batch, flushed before `answer`, failure fails the request); `scripts/verify_audit.py`; contract `AuditEvent` |
@@ -40,7 +40,7 @@ Legacy and unused: `frontend/src/api/chat.js`, `frontend/src/components/ChatWind
 
 ## Tests and docs
 
-- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_llm_gateway`, `test_prompts`, `test_health`; `test_rls_live` is opt-in via `TEST_PERSONA_FIXTURE_FILE` (persona logins in git-ignored `personas.json`); browser suites use the normal application and real provider).
+- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_llm_gateway`, `test_prompts`, `test_health`, `test_gateway` (JWT, rate limit, size limit, session events with locally minted tokens); `test_rls_live` is opt-in via `TEST_PERSONA_FIXTURE_FILE` (persona logins in git-ignored `personas.json`); browser suites use the normal application and real provider).
 - Frontend tests: `frontend/src/lib/chatTools.test.js` (unit), `frontend/tests/chat.spec.js` (Playwright, real backend safety paths), `frontend/tests/live.spec.js` (live services).
 - Docs: `README.md` (setup, known limits), `docs/chatbot-architecture.md`, `docs/multi-capability-architecture.md`, `docs/prompt-log/`, `docs/tracing-plan.md`, `docs/synthetic-data-spec.md`.
 - Active completion evidence: `docs/core-completion-plan.md`. Explicit currency/percentage checks and limited English attribution checks are not semantic proof. Do not count offline validation as live AI accuracy.

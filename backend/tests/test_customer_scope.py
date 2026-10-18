@@ -3,7 +3,7 @@ import json
 from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
-from app.core.auth import CustomerSession, get_customer_context
+from app.core.auth import get_customer_context
 class Query:
     def __init__(self,rows):self.rows=rows
     def select(self,*a):return self
@@ -19,14 +19,14 @@ class Database:
         for t in ['credit_card_products','loan_products']:self.rows[t]=[{'is_active':True,'marker':'active-product'},{'is_active':False,'marker':'inactive-product'}]
     def schema(self,name):assert name=='banking';return self
     def table(self,name):return Query(self.rows[name].copy())
-@pytest.mark.parametrize('user,own,other',[('A','A-only','B-only'),('B','B-only','A-only')])
-def test_explicit_customer_filters(user,own,other):
-    result=get_customer_context(CustomerSession(Database(),user))
+@pytest.mark.parametrize('customer,own,other',[(1,'A-only','B-only'),(2,'B-only','A-only')])
+def test_explicit_customer_filters(customer,own,other):
+    result=get_customer_context(Database(),customer)
     assert result.count(own)==4 and other not in result
     assert 'active-product' in result and 'inactive-product' not in result
 @pytest.mark.parametrize('duplicate',[False,True])
 def test_missing_or_ambiguous_profile_cannot_load_records(duplicate):
     db=Database()
     if duplicate:db.rows['customer_profiles'].append(db.rows['customer_profiles'][0])
-    with pytest.raises(HTTPException) as e:get_customer_context(CustomerSession(db,'A' if duplicate else 'missing'))
+    with pytest.raises(HTTPException) as e:get_customer_context(db,1 if duplicate else 99)
     assert e.value.status_code==403
