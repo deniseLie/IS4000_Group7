@@ -1,11 +1,8 @@
 import asyncio
 import json
-from types import SimpleNamespace
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from app.main import app
-from app.api import chat as api
 from app.schemas.chat import ChatRequest, Message
 from app.services import answers
 from app.services.privacy import redact
@@ -39,12 +36,12 @@ def test_public_balance_needs_sign_in():
     assert 'Sign in' in result(client.post('/chat',json=payload('What is my balance?')))['answer']
 
 def test_personal_requires_login():
-    assert client.post('/chat',json=payload('balance',mode='personal')).status_code==401
+    r=client.post('/chat',json=payload('balance',mode='personal'))
+    assert r.status_code==401 and r.json()['error']['code']=='auth_required'
 
-def test_invalid_token_not_silently_accepted(monkeypatch):
-    def reject(*a):raise HTTPException(401,'Invalid session')
-    monkeypatch.setattr(api,'get_user_db',reject)
-    assert client.post('/chat',json=payload('loans'),headers={'Authorization':'Bearer bad'}).status_code==401
+def test_invalid_token_not_silently_accepted():
+    r=client.post('/chat',json=payload('loans'),headers={'Authorization':'Bearer bad'})
+    assert r.status_code==401 and r.json()['error']['code']=='auth_invalid'
 
 
 

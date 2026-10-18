@@ -1,8 +1,8 @@
 """Customer Data Service (architecture §5.7.2): read-only queries over the hosted banking, compliance and rm schemas.
 Every query runs with the signed-in user's JWT so RLS applies, AND filters by customer_id in code so a policy
 regression cannot leak another customer's rows. customer_id comes from RequestContext, never from model arguments.
-Contract gap: Principal.customer_id is a UUID but the database key is bigint, so the bigint is resolved from
-Principal.user_id (auth user) through banking.customer_profiles, the same way core/auth.py does."""
+The profile row is looked up again from Principal.user_id (auth user) through banking.customer_profiles, so this
+service does not depend on the gateway's cached Principal.customer_id."""
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone

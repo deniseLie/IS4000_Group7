@@ -123,7 +123,7 @@ Pydantic models in `backend/app/schemas/`.
 **RequestContext** (created by the gateway, passed to every module)
 ```json
 { "request_id": "uuid", "session_id": "uuid", "case_id": "uuid|null",
-  "principal": { "kind": "guest|customer|system", "user_id": "uuid|null", "customer_id": "uuid|null",
+  "principal": { "kind": "guest|customer|system", "user_id": "uuid|null", "customer_id": "bigint|null",
                  "auth_session_id": "uuid|null", "aal": "aal1|aal2", "jwt": "<never logged>" },
   "locale": "en-SG", "received_at": "iso8601" }
 ```
@@ -195,7 +195,7 @@ Five fields per component: **Category**, **Responsibility & boundaries**, **Inpu
 - **Category:** Edge middleware inside the backend.
 - **Responsibility & boundaries:** Verifies JWT (cached JWKS), resolves `customer_id`, builds `RequestContext`, rate-limits (in-process token bucket), limits payload size, sets CORS, opens the SSE stream, maps errors to stable codes. Records `auth.session_started` the first time it sees a new `session_id`. No domain logic.
 - **Inputs / outputs:** In: HTTPS. Out: `RequestContext` + message to the Input Guardrail; SSE events.
-- **Infrastructure / pattern:** FastAPI routers + middleware (`api/chat.py`, `core/auth.py`).
+- **Infrastructure / pattern:** FastAPI routers + pure ASGI middleware (`core/gateway.py`, `core/auth.py`, `core/ratelimit.py`, `core/errors.py`, `api/auth.py`). Error body `{"error": {"code", "message", "request_id"}}`; codes `auth_invalid`, `auth_expired`, `auth_required`, `profile_missing`, `rate_limited` (with `Retry-After`), `payload_too_large`, `auth_unavailable`, `audit_unavailable`. Guests send an optional `X-Session-Id` correlation uuid; signed-in sessions use the JWT `session_id`.
 - **Dependencies:** ↑ Web Client. ↓ Identity Provider, Input Guardrail, Action Service (confirm), Audit Log Service.
 
 ### 5.4 Input Guardrail
@@ -439,7 +439,7 @@ A tamper-evident, append-only record of **who did what, to which resource, when,
 ```json
 { "event_id": 1042, "occurred_at": "iso8601",
   "actor": {"type": "customer|guest|agent|system|staff", "id": "uuid|agent-name"},
-  "customer_id": "uuid|null", "session_id": "uuid", "request_id": "uuid", "case_id": "uuid|null",
+  "customer_id": "bigint|null", "session_id": "uuid", "request_id": "uuid", "case_id": "uuid|null",
   "category": "auth|chat|agent|data|policy|action|consent|notification|handoff|admin",
   "action": "chat.message_received", "resource": {"type": "message", "id": "uuid"},
   "outcome": "success|denied|failed", "details": {"redaction_count": 1, "risk_flags": ["fraud_suspected"]},

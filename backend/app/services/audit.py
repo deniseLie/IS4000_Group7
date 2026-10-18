@@ -52,15 +52,17 @@ def _write(db,payload):
 
 class AuditBatch:
     """One request's events. db is the customer's JWT client (events land on their trail); None writes as a guest with the anon key."""
-    def __init__(self,db=None):
+    def __init__(self,db=None,session_id=None):
         self.db=db
         self.request_id=_uuid(request_id.get())
+        self.session_id=session_id
         self.events=[]
 
     def add(self,category,action,outcome='success',details=None,**fields):
         details=details or {}
         if not isinstance(details,dict) or not is_safe(details):raise ValueError(f'audit details for {action} must hold ids, enums and counts only')
         if len(self.events)>=MAX_EVENTS:raise ValueError('too many audit events in one request')
+        fields.setdefault('session_id',self.session_id)
         self.events.append(AuditEvent(category=category,action=action,outcome=outcome,details=details,request_id=self.request_id,**fields))
 
     async def flush(self):
@@ -77,8 +79,8 @@ class AuditBatch:
             log_event('audit_write_failed',logging.WARNING,events=len(payload),error=type(e).__name__)
             raise AuditWriteError(type(e).__name__) from e
 
-def start_batch(db=None):
-    batch=AuditBatch(db)
+def start_batch(db=None,session_id=None):
+    batch=AuditBatch(db,session_id)
     current_batch.set(batch)
     return batch
 

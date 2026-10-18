@@ -1,12 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat
+from starlette.exceptions import HTTPException
+
+from app.api import auth, chat
 from app.core.config import settings
+from app.core.errors import http_error
+from app.core.gateway import GatewayMiddleware
 from app.core.observability import RequestIdMiddleware, setup_logging
 
 setup_logging()
 app = FastAPI(title="Chatbot API")
+app.add_exception_handler(HTTPException, http_error)
+# Last added runs first: CORS (so error responses keep CORS headers), then request id, then the gateway.
+app.add_middleware(GatewayMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
 app.add_middleware(
@@ -17,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router)
+app.include_router(auth.router)
 
 
 @app.get("/health")

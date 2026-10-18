@@ -17,5 +17,14 @@ class Settings(BaseSettings):
     llm_price_in_per_m: float = 0
     llm_price_out_per_m: float = 0
 
+    # API Gateway Layer (core/gateway.py)
+    jwt_audience: str = "authenticated"
+    jwks_ttl_s: int = 600
+    max_body_bytes: int = 65536  # the client bounds history to 16000 characters
+    rate_capacity: int = 30  # burst per signed-in user
+    rate_refill_per_s: float = 1.0
+    guest_rate_capacity: int = 20  # burst per client address
+    guest_rate_refill_per_s: float = 0.5
+
 
 settings = Settings()

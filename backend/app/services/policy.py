@@ -1,7 +1,6 @@
 """STUB Authorisation & Consent Service (architecture §5.7.4): a few fixed rules so callers can code against decide().
 The real rules (agent tool allow-lists, step-up, consent registry) replace this file's bodies, not its signatures."""
 from typing import Any
-from uuid import UUID
 from app.schemas.contracts import Decision, Principal, RequestContext
 
 STUB = True
@@ -24,5 +23,5 @@ def decide(subject: Principal, action: str, resource: dict[str, Any] | None = No
     return Decision(allow=True, reasons=['stub_rule'], obligations=obligations)
 
 
-def has_consent(customer_id: UUID, purpose: str, recipient: str) -> dict:
+def has_consent(customer_id: int, purpose: str, recipient: str) -> dict:
     return {'granted': False, 'grant_id': None}

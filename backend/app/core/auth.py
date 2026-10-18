@@ -1,65 +1,78 @@
-
+"""Token checks for the API Gateway Layer (core/gateway.py) and the customer's own RLS-scoped database client."""
 import json
 import logging
 import os
-from typing import Optional
-from dataclasses import dataclass
 
-from dotenv import load_dotenv
-from fastapi import Header, HTTPException
+import jwt
+from fastapi import HTTPException
 from supabase import Client, create_client
 
-load_dotenv()
+from app.core.config import settings
+from app.core.errors import ApiError
+
 logger = logging.getLogger(__name__)
+ALGORITHMS = ["ES256", "RS256"]  # Supabase asymmetric signing keys; HS256 shared secrets are not accepted
+_jwks = None
 
 
-@dataclass
-class CustomerSession:
-    db: Client
-    user_id: str
+def jwks() -> jwt.PyJWKClient:
+    global _jwks
+    if _jwks is None:
+        url = os.environ["SUPABASE_URL"].rstrip("/") + "/auth/v1/.well-known/jwks.json"
+        _jwks = jwt.PyJWKClient(url, cache_jwk_set=True, lifespan=settings.jwks_ttl_s)
+    return _jwks
 
 
-def get_user_db(authorization: Optional[str] = Header(default=None)) -> CustomerSession:
-    """Verify login and create a customer-specific database client."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Please log in")
-
-    token = authorization.split(" ", 1)[1].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Invalid session")
-
+def verify_token(token: str) -> dict:
+    """Signature against the cached JWKS (refetched for an unknown kid), expiry, audience and required claims."""
     try:
-        sb = create_client(
-            os.environ["SUPABASE_URL"],
-            os.environ["SUPABASE_ANON_KEY"]
-        )
+        jwt.get_unverified_header(token)  # malformed tokens fail here, before any JWKS fetch
+        key = jwks().get_signing_key_from_jwt(token)
+    except (KeyError, jwt.PyJWKClientConnectionError):
+        logger.warning("JWKS unavailable")
+        raise ApiError(503, "auth_unavailable", "Sign-in cannot be checked right now. Please retry.")
+    except (jwt.PyJWKClientError, jwt.InvalidTokenError):
+        raise ApiError(401, "auth_invalid", "Invalid session. Please sign in again.")
+    try:
+        claims = jwt.decode(token, key.key, algorithms=ALGORITHMS, audience=settings.jwt_audience,
+                            options={"require": ["exp", "sub", "aud", "session_id"]})
+    except jwt.ExpiredSignatureError:
+        raise ApiError(401, "auth_expired", "Session expired. Please sign in again.")
+    except jwt.InvalidTokenError:
+        raise ApiError(401, "auth_invalid", "Invalid session. Please sign in again.")
+    if claims.get("role") != "authenticated":
+        raise ApiError(401, "auth_invalid", "Invalid session. Please sign in again.")
+    return claims
+
+
+def user_db(token: str) -> Client:
+    """Public anon key plus the customer's JWT, so every query runs under their RLS policies."""
+    try:
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
     except Exception:
         logger.warning("Supabase initialisation failed")
-        raise HTTPException(status_code=503, detail="Banking service unavailable")
-
-    try:
-        user = sb.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    if not user or not user.user:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
+        raise ApiError(503, "unavailable", "Banking service unavailable")
     sb.postgrest.auth(token)
-    return CustomerSession(sb, user.user.id)
+    return sb
 
 
-def get_customer_context(session: CustomerSession) -> str:
-    """Retrieve customer banking records and available product information."""
+def resolve_customer_id(db: Client, user_id: str) -> int | None:
+    """The customer linked to this auth user, or None when there is not exactly one."""
+    rows = db.schema("banking").table("customer_profiles").select("customer_id").eq("auth_user_id", user_id).limit(2).execute().data
+    return rows[0]["customer_id"] if len(rows) == 1 else None
+
+
+def get_customer_context(db: Client, customer_id: int) -> str:
+    """Retrieve customer banking records and available product information. customer_id comes from RequestContext."""
     try:
-        bank = session.db.schema("banking")
+        bank = db.schema("banking")
         profiles = bank.table("customer_profiles").select(
             "customer_id,income_range,employment_status"
-        ).eq("auth_user_id", session.user_id).limit(2).execute().data
+        ).eq("customer_id", customer_id).limit(2).execute().data
         if len(profiles) != 1:
-            raise HTTPException(403, "No unique demo customer profile is linked to this login.")
+            raise ApiError(403, "profile_missing", "No unique demo customer profile is linked to this login.")
         profile = dict(profiles[0])
-        customer_id = profile.pop("customer_id")
+        profile.pop("customer_id")
 
         data = {
             "profile": [profile],

@@ -27,7 +27,7 @@ class Contract(BaseModel):
 class Principal(Contract):
     kind: Literal['guest', 'customer', 'system']
     user_id: UUID | None = None
-    customer_id: UUID | None = None
+    customer_id: int | None = None  # banking.customer_profiles.customer_id (bigint), resolved by the gateway from the JWT sub
     auth_session_id: UUID | None = None
     aal: Literal['aal1', 'aal2'] = 'aal1'
     jwt: SecretStr | None = Field(default=None, exclude=True, repr=False)  # never logged or serialised

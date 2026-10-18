@@ -73,7 +73,9 @@ class RequestIdMiddleware:
     def __init__(self,app):self.app=app
     async def __call__(self,scope,receive,send):
         if scope['type']!='http':return await self.app(scope,receive,send)
-        rid=next((v.decode() for k,v in scope['headers'] if k==b'x-request-id' and len(v)<=64),None) or str(uuid.uuid4())
+        rid=next((v.decode('latin-1') for k,v in scope['headers'] if k==b'x-request-id'),'')
+        try:rid=str(uuid.UUID(rid))  # RequestContext.request_id is a uuid; anything else is replaced
+        except ValueError:rid=str(uuid.uuid4())
         token=request_id.set(rid)
         status=[0]
         async def send_with_id(message):

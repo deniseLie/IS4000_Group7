@@ -1,11 +1,14 @@
 import json
 import logging
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
-from app.core.auth import get_user_db, get_customer_context
+from app.core.auth import get_customer_context
+from app.core.errors import ApiError
+from app.core.gateway import get_ctx
 from app.core.observability import start_trace, span
 from app.schemas.chat import ChatRequest
+from app.schemas.contracts import RequestContext
 from app.services.answers import make_answer
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
@@ -36,15 +39,18 @@ def knowledge(article_id:str):
     return {**source(article),'content':article.content,'notice':article.notice}
 
 @router.post('/chat')
-async def chat(req:ChatRequest,authorization:str|None=Header(default=None)):
+async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ctx)):
+    """The gateway has already checked the token, rate limit and size; ctx is the only source of identity."""
+    p,db=ctx.principal,request.state.db
+    if req.mode=='personal' and p.kind!='customer':raise ApiError(401,'auth_required','Please sign in to use your account.')
+    if req.mode=='personal' and p.customer_id is None:raise ApiError(403,'profile_missing','No demo customer profile is linked to this login.')
     trace=start_trace()
-    sb=await run_in_threadpool(get_user_db,authorization) if authorization is not None or req.mode=='personal' else None
-    trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=sb is not None,history_len=len(req.messages))
-    batch=start_batch(sb.db if sb else None)
+    trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
+    batch=start_batch(db,session_id=ctx.session_id)
     batch.add('chat','chat.message_received',details={'mode':req.mode,'history_len':len(req.messages)})
     if req.mode=='personal':
         with span('customer_context','tool') as a:
-            context=await run_in_threadpool(get_customer_context,sb)
+            context=await run_in_threadpool(get_customer_context,db,p.customer_id)
             a['chars']=len(context)
         batch.add('data','data.read',resource_type='customer_context',details={'tool':'customer_context'})
     else:context=None
