@@ -43,7 +43,7 @@ v3 changes from v2: one deployable backend (modular monolith) instead of separat
 | Observability | **Tracing & Evaluation** | Distributed tracing, eval harness | Debugging and quality, not compliance |
 | — (new) | **Audit Log Service** | Append-only audit trail | Compliance record of everything that happens |
 | LLM provider | **LLM Gateway** | Model abstraction + prompt registry | |
-| Supabase Postgres | **Operational Database** | PostgreSQL + RLS + pgvector | |
+| Supabase Postgres | **Operational Database** | PostgreSQL + RLS | |
 | Supabase Storage | **Document Storage** | Private object storage | |
 
 ---
@@ -252,21 +252,21 @@ Stories without an agent are handled by platform components: 1 Login (Identity P
 ### 5.7 Shared Services
 
 #### 5.7.1 Knowledge Service
-- **Category:** Hybrid retrieval-augmented generation (RAG): keyword + vector search, plus an exact fact table.
+- **Category:** Retrieval-augmented generation (RAG) with keyword (full-text) search, plus an exact fact table.
 - **Responsibility & boundaries:** Returns ranked article sections with citations, and exact fees/limits/rates. Does not write answers. Full design in [knowledge-base-design.md](knowledge-base-design.md); content per story in [knowledge-requirements.md](knowledge-requirements.md).
 
 | Part | Responsibility | Infrastructure |
 |---|---|---|
-| Articles | One row per topic: `version`, `category`, `type`, `audience` (`public` / `customer`), source fields for external publishers | `kb.articles` |
-| Sections | Searchable parts of an article; cited as `article_id@vN#anchor` | `kb.sections` with a full-text column (GIN) and an embedding column (pgvector, HNSW) |
-| Hybrid search | Keyword and vector ranks merged with reciprocal rank fusion; distance cut-off so unrelated questions return nothing; keyword-only if the embedding call fails | `kb.search()` SQL function, called as an RPC with the user's JWT |
-| Audience | Guests see `public` only; signed-in customers see `public` + `customer` | RLS on `kb` tables |
-| Fact table | Typed fee/limit/rate rows used for figure validation; exact lookup, never by similarity | `kb.facts` |
-| Content and embeddings | Content only through migration files in git; an admin script fills missing section embeddings | `backend/supabase/migrations/`, `scripts/embed_knowledge` |
+| Articles | One row per topic: `version`, `category`, `type`, source fields for external publishers | `kb.articles` |
+| Sections | Searchable parts of an article; cited as `article_id@vN#anchor` | `kb.sections` with a full-text column (GIN) |
+| Keyword search | Full-text match ranked by `ts_rank_cd`; unrelated questions return nothing | `kb.search()` SQL function, called as an RPC |
+| Read-only access | All knowledge is general guidance; app roles can read but not write | RLS on `kb` tables |
+| Fact table | Typed fee/limit/rate rows used for figure validation; exact lookup | `kb.facts` |
+| Content | Content only through migration files in git | `backend/supabase/migrations/` |
 
 - **Inputs / outputs:** `search(query, categories, k) → [{cite, title, heading, body, score}]`; `get_fact(fact_id) → {value, unit, article_id}`; `GET /knowledge/{id}`.
-- **Infrastructure / pattern:** Python client (`knowledge.py`) + hosted Supabase Postgres with pgvector; no separate vector database. Today's code still uses the in-memory keyword library.
-- **Dependencies:** ↑ Agents, Response Validator. ↓ Operational Database, LLM Gateway (query embeddings).
+- **Infrastructure / pattern:** Python client (`knowledge.py`) + hosted Supabase Postgres full-text search; no embeddings or vector database. Today's code still uses the in-memory keyword library.
+- **Dependencies:** ↑ Agents, Response Validator. ↓ Operational Database.
 
 #### 5.7.2 Customer Data Service
 - **Category:** Entitlement-scoped data access layer (repository pattern).
@@ -411,7 +411,7 @@ Every tool: typed schema, policy decision, `customer_id` from `RequestContext`, 
 #### Operational Database
 - **Category:** PostgreSQL with Row-Level Security, one schema per area.
 - **Responsibility & boundaries:** System of record: `banking`, `compliance`, `rm`, `consent`, `conversation`, `actions`, `support`, `notify`, `events`, `kb`, `audit`, `observability`. RLS on every customer table plus `customer_id` filters in code.
-- **Infrastructure / pattern:** Supabase Postgres with `pg_cron` and `pgvector` (knowledge section embeddings).
+- **Infrastructure / pattern:** Supabase Postgres with `pg_cron` and full-text search (knowledge sections).
 - **Dependencies:** ↑ all services, Identity Provider, Background Worker.
 
 #### Document Storage
@@ -672,7 +672,6 @@ Estimates, not measurements; confirm with the existing trace tables. Assumes bac
 | Conversation load + save | 5–15 ms | 40–120 ms | 2–3 round trips |
 | Plan | 0 ms (rules) / 0.5–1.5 s (LLM) | same | LLM only for unclear or multi-intent messages |
 | Tool calls per agent (2–4 queries) | 10–40 ms | 80–300 ms | Agents run in parallel |
-| Query embedding for `kb.search` | 100–300 ms | same | One call per knowledge search; runs inside the agent's tool step |
 | Agent LLM answer | 1.5–4 s | same | Largest cost; parallel agents cost the slowest one, not the sum |
 | Compose + validate | < 20 ms | < 20 ms | |
 | Audit + trace batch write | 5–15 ms | 30–80 ms | One insert per request |
@@ -729,7 +728,7 @@ Running the worker inside the API process avoids needing a paid background-worke
 | Separate Appointment Service (v3) | Slot reads in Customer Data; `appointments.py` executor (v3.1) | Holds and confirms are writes; double booking is prevented by a database constraint |
 | Card Adapter, Human Handoff, records modules as separate services (v3.1 draft) | Executor files behind one `run_action()` | Same rules in fewer boxes; `run_action()` holds the safety steps, each file holds its own business rules |
 | Policy decision log, data-access audit, action ledger | Unified Audit Log Service | One trail, one schema |
-| Re-ranker, separate vector database, embedding worker, retrieval cache | Dropped; hybrid search with pgvector in the same Postgres, embeddings filled by an admin script | Small article library; keeps RLS and avoids syncing |
+| Embeddings, vector search, re-ranker, retrieval cache | Dropped; keyword (full-text) search in the same Postgres | Small article library; add vector search only if evaluation shows frequent keyword misses |
 | Email channel, calendar sync, throttling counters | Later options | Not needed for the demo |
 | OPA | Python rules | Same PDP interface, no extra runtime |
 
@@ -755,7 +754,7 @@ Running the worker inside the API process avoids needing a paid background-worke
 | Phase | Scope | Touchpoints |
 |---|---|---|
 | 0 (today) | Gateway, Guardrail, single-path answer, keyword knowledge, validator, traces | `api/chat.py`, `services/answers.py`, `knowledge.py`, `source_checks.py` |
-| 1 | Audit Log Service + `conversation.messages`; auth session events; knowledge base (`kb` tables, hybrid `kb.search()`, embed script) | migrations `audit`, `conversation`, `kb`; `knowledge.py`, `scripts/embed_knowledge.py` |
+| 1 | Audit Log Service + `conversation.messages`; auth session events; knowledge base (`kb` tables, keyword `kb.search()`) | migrations `audit`, `conversation`, `kb`; `knowledge.py` |
 | 2 | Orchestrator (plan → prioritise → dispatch → compose) + Retail agent; `sections` in SSE | `services/orchestrator.py`, `schemas/chat.py` |
 | 3 | Customer Data Service tools + policy function; Action Service (`run_action()`, `cards.py`, `handoffs.py`) + Fraud playbooks | `services/tools/`, `services/actions/`, migrations `actions`, `support` |
 | 4 | Background Worker + Notification inbox; Compliance, RM agents, `appointments.py` and `records.py` executors | `app/worker.py`, `pg_cron` |

@@ -1,45 +1,41 @@
-# DemoBank knowledge base design (hybrid RAG)
+# DemoBank knowledge base design (keyword RAG)
 
 Status: **proposal**. Detailed design of the Knowledge Service in [system-architecture.md §5.7.1](system-architecture.md#571-knowledge-service). The content to load is listed in [knowledge-requirements.md](knowledge-requirements.md). Today's code still uses the in-memory keyword library in `backend/app/services/knowledge.py`; this document describes what replaces it.
 
 ## 1. Summary
 
 - **Retrieval-augmented generation (RAG):** agents retrieve approved sections, and the LLM answers only from them, with citations.
-- **Hybrid retrieval:** keyword (Postgres full-text) and semantic (pgvector) search run together and are merged with reciprocal rank fusion. Keyword search catches exact banking terms ("OTP", "GIRO", product names); vector search catches informal wording ("my app won't let me in").
-- **No new infrastructure:** everything lives in the hosted Supabase Postgres that the app already uses. There is no separate vector database.
-- **Three tables, one search function.** Audience (guest vs signed-in) is enforced by RLS.
+- **Keyword retrieval:** Postgres full-text search over article sections. No embeddings or vector search; the library is small enough that keywords, plus today's fallback of sending the whole small library when nothing matches, cover it.
+- **No new infrastructure:** everything lives in the hosted Supabase Postgres that the app already uses.
+- **Three tables, one search function.** All content is public guidance; the app can only read it.
 - **No content workflow:** whatever is in the tables is live. Content changes arrive only through migrations.
 
 ```mermaid
 flowchart LR
   AG["Agents / Validator"] -->|search, get_fact| KS["Knowledge Service<br/>knowledge.py"]
-  KS -->|embed query| EMB["Embedding model<br/>via LLM Gateway"]
-  KS -->|RPC with user's JWT| FN["kb.search()<br/>keyword + vector + RRF"]
-  FN --> SEC[("kb.sections<br/>tsv + embedding")]
+  KS -->|RPC| FN["kb.search()<br/>full-text"]
+  FN --> SEC[("kb.sections<br/>text + tsv")]
   SEC --> ART[("kb.articles")]
   KS -->|exact lookup| FACT[("kb.facts")]
   SEED["Migration files<br/>in git"] --> ART & SEC & FACT
-  SCRIPT["embed_knowledge script<br/>(admin, not the app)"] -->|fills empty embeddings| SEC
 ```
 
 ## 2. Data model
 
 | Table | One row is | Key columns |
 |---|---|---|
-| `kb.articles` | One topic, e.g. "Pending transfers" | `article_id`, `version`, `category`, `type`, `audience`, `title`, `summary`, source fields |
-| `kb.sections` | One searchable part of an article, e.g. "What pending means" | `article_id`, `anchor`, `position`, `heading`, `body`, `tsv` (generated), `embedding`, `embedding_model` |
+| `kb.articles` | One topic, e.g. "Pending transfers" | `article_id`, `version`, `category`, `type`, `title`, `summary`, source fields |
+| `kb.sections` | One searchable part of an article, e.g. "What pending means" | `article_id`, `anchor`, `position`, `heading`, `body`, `tsv` (generated) |
 | `kb.facts` | One exact figure, e.g. a card's annual fee | `fact_id`, `value`, `unit`, `article_id` |
 
 ```sql
 create schema kb;
-create extension if not exists vector;
 
 create table kb.articles (
   article_id text primary key,
   version int not null default 1,
   category text not null,          -- accounts, cards, loans, payments, security, support, compliance, relationship
   type text not null,              -- faq, how_to, troubleshooting, product
-  audience text not null default 'public' check (audience in ('public', 'customer')),
   title text not null,
   summary text not null,
   publisher text not null default 'demobank',
@@ -53,11 +49,8 @@ create table kb.sections (
   heading text not null,
   body text not null,
   tsv tsvector generated always as (to_tsvector('english', heading || ' ' || body)) stored,
-  embedding vector(1536),          -- filled by the embed script; null until then
-  embedding_model text,
   primary key (article_id, anchor));
 create index on kb.sections using gin (tsv);
-create index on kb.sections using hnsw (embedding vector_cosine_ops);
 
 create table kb.facts (
   fact_id text primary key,        -- e.g. 'card.platinum.annual_fee'
@@ -66,7 +59,7 @@ create table kb.facts (
   article_id text not null references kb.articles);
 ```
 
-The allowed-domain rule for external publishers (`www.moneysense.gov.sg`, `www.abs.org.sg`) stays in the Python validator, where it already lives (`services/source_checks.py`).
+RLS is enabled on all three tables with a read-only policy for `anon` and `authenticated`; no app role can insert, update or delete. The allowed-domain rule for external publishers (`www.moneysense.gov.sg`, `www.abs.org.sg`) stays in the Python validator, where it already lives (`services/source_checks.py`).
 
 ## 3. Writing sections
 
@@ -75,12 +68,13 @@ A section is the unit the model sees and the unit a citation points to, so its s
 | Guideline | Why |
 |---|---|
 | One idea per section, roughly 50–300 words | Small enough to be precise, large enough to stand alone |
-| Heading says what the section answers ("Why a transfer stays pending") | The heading is in both the keyword and the vector text |
+| Heading says what the section answers ("Why a transfer stays pending") | The heading is part of the searchable text |
+| Use the words customers use ("stuck", "won't go through") as well as banking terms | Keyword search only matches words that appear |
 | Steps as a numbered list inside one section | The agent can quote the steps in order |
 | Figures only as a reference to a fact (`card.platinum.annual_fee`), not typed into the body | One place to change a fee; the Validator checks figures against `kb.facts` |
 | Never mention a specific customer | Customer details come from Customer Data, not from knowledge |
 
-Example: article `pending-transfers` (type `troubleshooting`, category `payments`, audience `public`):
+Example: article `pending-transfers` (type `troubleshooting`, category `payments`):
 
 | anchor | heading |
 |---|---|
@@ -92,58 +86,27 @@ Example: article `pending-transfers` (type `troubleshooting`, category `payments
 
 Citation format: `article_id@v<version>#anchor`, e.g. `pending-transfers@v2#avoid-duplicates`.
 
-## 4. Hybrid search
-
-### 4.1 Search function
-
-Both searches run over the same filtered rows; each returns its top candidates by its own rank; reciprocal rank fusion (RRF) adds `1 / (rrf_k + rank)` from each list, so a section ranked high by either search comes out near the top, and one found by both ranks highest.
+## 4. Search function
 
 ```sql
-create function kb.search(
-  q_text text, q_embedding vector(1536) default null, categories text[] default null,
-  k int default 5, rrf_k int default 50, max_distance float default 0.6)
+create function kb.search(q_text text, categories text[] default null, k int default 5)
 returns table (cite text, article_id text, title text, heading text, body text, score float)
 language sql stable security invoker as $$
-  with base as (
-    select s.* from kb.sections s join kb.articles a using (article_id)
-    where categories is null or a.category = any(categories)),
-  kw as (
-    select article_id, anchor,
-           row_number() over (order by ts_rank_cd(tsv, websearch_to_tsquery('english', q_text)) desc) as r
-    from base where tsv @@ websearch_to_tsquery('english', q_text)
-    order by r limit k * 4),
-  vec as (
-    select article_id, anchor, row_number() over (order by embedding <=> q_embedding) as r
-    from base
-    where q_embedding is not null and embedding is not null and embedding <=> q_embedding < max_distance
-    order by r limit k * 4),
-  fused as (
-    select article_id, anchor,
-           coalesce(1.0 / (rrf_k + kw.r), 0) + coalesce(1.0 / (rrf_k + vec.r), 0) as score
-    from kw full outer join vec using (article_id, anchor))
-  select f.article_id || '@v' || a.version || '#' || f.anchor, f.article_id, a.title, s.heading, s.body, f.score
-  from fused f join kb.sections s using (article_id, anchor) join kb.articles a using (article_id)
-  order by f.score desc limit k $$;
+  select s.article_id || '@v' || a.version || '#' || s.anchor, s.article_id, a.title, s.heading, s.body,
+         ts_rank_cd(s.tsv, websearch_to_tsquery('english', q_text)) as score
+  from kb.sections s join kb.articles a using (article_id)
+  where s.tsv @@ websearch_to_tsquery('english', q_text)
+    and (categories is null or a.category = any(categories))
+  order by score desc limit k $$;
 ```
 
 | Parameter | Meaning |
 |---|---|
-| `q_embedding = null` | Keyword-only search (used when the embedding call fails, and for evaluation) |
-| `max_distance` | Cosine distance cut-off so an unrelated question returns **nothing** instead of the "least bad" section; tuned with the evaluation set |
+| `q_text` | The user's question; `websearch_to_tsquery` handles stemming ("transfers" matches "transfer") and ignores stop words |
 | `categories` | Agent scope, e.g. the Compliance Review agent searches `compliance` and `support` |
-| `k`, `rrf_k` | Results returned; RRF smoothing constant (50–60 is the usual default) |
+| `k` | Results returned |
 
-### 4.2 Audience through RLS
-
-The function is `security invoker`, and the backend calls it as a Supabase RPC with the **user's JWT**, so RLS decides what each caller may see:
-
-| Role | Can read |
-|---|---|
-| `anon` (guest) | `kb.articles` and `kb.sections` where the article's `audience = 'public'`; all `kb.facts` linked to public articles |
-| `authenticated` (signed-in customer) | `public` and `customer` |
-| Any app role | No insert, update or delete |
-
-A guest cannot retrieve customer-only content even if the calling code is wrong. The `kb` schema must be added to the API's exposed schemas in Supabase, or the function wrapped as `public.kb_search`.
+An unrelated question matches nothing and returns an empty list instead of the "least bad" section. The `kb` schema must be added to the API's exposed schemas in Supabase, or the function wrapped as `public.kb_search`.
 
 ## 5. Knowledge Service (Python)
 
@@ -151,46 +114,25 @@ A guest cannot retrieve customer-only content even if the calling code is wrong.
 
 | Function | Does |
 |---|---|
-| `search(query, categories, k)` | Embeds the query, calls `kb.search`, returns `[{cite, title, heading, body, score}]`. Empty list means no approved content: the agent says so or hands off |
-| `get_fact(fact_id)` | Exact lookup in `kb.facts`; never by similarity. Used by agents and by the Response Validator |
+| `search(query, categories, k)` | Fixes common typos (as today), calls `kb.search`, returns `[{cite, title, heading, body, score}]`. Empty list means no approved content: the agent says so or hands off |
+| `get_fact(fact_id)` | Exact lookup in `kb.facts`. Used by agents and by the Response Validator |
 | `get_article(article_id)` | Article with its sections, for the sources panel (`GET /knowledge/{id}`) |
 
 Behaviour rules:
-- **Embedding failure:** search continues keyword-only (`q_embedding = null`); the trace records `kb.embedding_failed`. Answers are still generated only from retrieved sections, never from sample text.
-- **Non-English queries:** the `english` full-text setting will not match; the vector side still may. Keep today's behaviour of using the small default library when nothing is retrieved.
+- **No match or non-English query:** the `english` full-text setting will not match other languages. Keep today's behaviour of using the small default library when nothing is retrieved. Answers are still generated only from retrieved sections, never from sample text.
 - **Logging:** query text is never logged; traces record the number of results, the cites returned and the scores.
 
-## 6. Embeddings
-
-| Item | Choice |
-|---|---|
-| Model | A small embedding model, e.g. `text-embedding-3-small` (1536 dimensions). Check that the configured provider (OpenRouter) offers an embeddings endpoint; otherwise use a separate key for embeddings only |
-| Text embedded | `title + heading + body` of each section |
-| When sections are embedded | `python -m scripts.embed_knowledge` after each content migration: embeds every section whose `embedding` is null or whose `embedding_model` differs from the configured model |
-| Script access | An admin database connection string from `.env`, used only by this script, never by the app or the browser, never committed |
-| When queries are embedded | Once per `search()` call, through the LLM Gateway (adds roughly 100–300 ms) |
-| Cost | About 150 sections; embedding all of them costs a fraction of a cent |
-
-Changing the embedding model means updating the configured model name and re-running the script; the dimension in `vector(1536)` must match the model.
-
-## 7. Content workflow
+## 6. Content workflow
 
 1. Write or edit articles and sections as a new migration file in `backend/supabase/migrations/` (e.g. `0005_knowledge_seed.sql`, then `0006_knowledge_cards_update.sql`).
 2. Editing an existing article: bump its `version` (and `checked_on` / `review_due` for external sources).
 3. Apply the migration to the hosted Supabase project.
-4. Run `python -m scripts.embed_knowledge`.
 
 **Migrations are the only way content changes.** The Supabase dashboard is for viewing. This keeps git and the live database identical, and makes evaluation runs reproducible.
 
-## 8. Evaluation
+## 7. Evaluation
 
-The search function supports three modes, so retrieval can be measured separately from answer quality:
-
-| Mode | How |
-|---|---|
-| Keyword only | `q_embedding = null` |
-| Vector only | Empty `q_text` match (or a test flag) |
-| Hybrid | Both |
+Retrieval is measured separately from answer quality.
 
 | Metric | Meaning |
 |---|---|
@@ -198,21 +140,23 @@ The search function supports three modes, so retrieval can be measured separatel
 | MRR | How high the first correct section ranks (1 / rank, averaged) |
 | No-match accuracy | Out-of-scope questions return no sections |
 
-Add an `expected_article` (and where useful `expected_anchor`) to the cases in `backend/evaluation/`, including informal and misspelled rewrites of each question (story 7). The keyword vs vector vs hybrid comparison is the evidence for choosing hybrid retrieval.
+Add an `expected_article` (and where useful `expected_anchor`) to the cases in `backend/evaluation/`, including informal and misspelled rewrites of each question (story 7). Misses on informal wording are fixed first by adding customer wording to section text; if they remain common, that is the evidence for adding vector search later.
 
-## 9. Tests
+## 8. Tests
 
 | Level | What |
 |---|---|
-| Unit (offline) | Small fixture of articles and sections; checks citation format, empty-result handling, and the keyword-only fallback |
-| Database | Migration applies; RLS: `anon` cannot read `customer` articles; `authenticated` can |
-| Live evaluation | Retrieval metrics above against the hosted database and the real embedding model |
+| Unit (offline) | Small fixture of articles and sections; checks citation format, typo fixing and empty-result handling |
+| Database | Migration applies; app roles can read but not write `kb` tables |
+| Live evaluation | Retrieval metrics above against the hosted database |
 
-## 10. Not included (and why)
+## 9. Not included (and why)
 
 | Left out | Reason |
 |---|---|
-| Separate vector database (Pinecone, Qdrant, Weaviate) | pgvector in the existing Postgres handles this size; keeps RLS and avoids syncing |
+| Embeddings and vector search (pgvector, hybrid ranking) | Small library; keyword search plus the small-library fallback covers it. Revisit only if evaluation shows frequent misses on informal wording |
+| Customer-only articles and audience filtering | All knowledge is general guidance; personal details come from Customer Data |
+| Separate vector database (Pinecone, Qdrant, Weaviate) | No vector search |
 | Draft / review / publish workflow, version history | One author; migrations in git already give history |
 | Re-ranker model | Small library; add only if evaluation shows ranking problems |
 | Helpful votes, search-miss log | Can be added later without changing these tables |

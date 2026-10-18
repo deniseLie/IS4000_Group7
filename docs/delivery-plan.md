@@ -16,7 +16,7 @@ Relative points (1 = small); used only to balance the work, not as time estimate
 | Work item | Points | Difficulty |
 |---|---|---|
 | Orchestrator (LangGraph: plan, prioritise, dispatch, compose, pause/resume) | 8 | Hard |
-| Knowledge base (hybrid RAG, embed script, retrieval evaluation) | 5 | Medium–hard |
+| Knowledge base (keyword RAG, fact table, retrieval evaluation) | 3 | Medium |
 | Document Check agent (OCR, legibility, rules) | 5 | Medium–hard |
 | Everyday Banking + Fraud & Security agents | 5 | Medium |
 | Action Service (`run_action()`, `cards.py`, `handoffs.py`, confirm endpoint) | 5 | Medium |
@@ -38,10 +38,10 @@ Relative points (1 = small); used only to balance the work, not as time estimate
 | | **D1: Alex + conversation core** | **D2: Michelle + knowledge** | **D3: David + platform services** |
 |---|---|---|---|
 | **Persona scope** | Stories 2–7, X4: Everyday Banking + Fraud & Security agents (5) | CR1–CR6: Compliance Review agent (3), Document Check agent (5), compliance tables (2) | RC1–RC5, X6: Relationship agent (3), appointments + records executors (3) |
-| **Shared piece** | Orchestrator (8), Response Validator (3), Audit Log (2) | Knowledge base, hybrid RAG (5), CR6 reminder job (2) | Customer Data + Authorisation (5), Action Service (5), Worker + Notification (3) |
+| **Shared piece** | Orchestrator (8), Response Validator (3), Audit Log (2) | Knowledge base, keyword RAG (3), CR6 reminder job (2) | Customer Data + Authorisation (5), Action Service (5), Worker + Notification (3) |
 | **UI** | Chat UI: sections, sources, confirm dialog (3) | Upload + checklist (3) | Slots, consent, agenda (3) |
-| **Total** | **~21** | **~20** | **~22** |
-| **Folders owned** | `services/orchestrator/`, `services/agents/everyday*`, `services/agents/fraud*`, `source_checks.py`, `frontend/src/Chat.jsx` and chat components | `services/knowledge.py`, `scripts/embed_knowledge.py`, `services/agents/compliance*`, `services/agents/document*`, compliance UI components | `services/customer_data.py`, `services/authorisation.py`, `services/actions/`, `services/notifications.py`, `app/worker.py`, `backend/supabase/` conventions, relationship UI components |
+| **Total** | **~21** | **~18** | **~22** |
+| **Folders owned** | `services/orchestrator/`, `services/agents/everyday*`, `services/agents/fraud*`, `source_checks.py`, `frontend/src/Chat.jsx` and chat components | `services/knowledge.py`, `services/agents/compliance*`, `services/agents/document*`, compliance UI components | `services/customer_data.py`, `services/authorisation.py`, `services/actions/`, `services/notifications.py`, `app/worker.py`, `backend/supabase/` conventions, relationship UI components |
 
 | | **B1: content** | **B2: quality** |
 |---|---|---|
@@ -51,7 +51,7 @@ Relative points (1 = small); used only to balance the work, not as time estimate
 Why this split is balanced:
 - The hardest item (Orchestrator) sits with the persona that needs it most: Alex's multi-issue message. D1 has no knowledge-base or data-layer work to make up for it.
 - D3's platform pieces are medium difficulty but many; the Relationship agent is the simplest agent.
-- D2 carries two medium–hard items (knowledge base, Document Check) but no orchestration.
+- D2 carries the medium–hard Document Check agent and the knowledge base, but no orchestration.
 
 ## 4. Step by step
 
@@ -64,7 +64,6 @@ Why this split is balanced:
 | D3 | Migration number ranges per developer | Line in README |
 | D1 | Feature flag `PIPELINE=v1\|v2`; today's `make_answer` keeps working | Demo never breaks during the rebuild |
 | D1 | LangGraph spike: pause and resume from a checkpoint | Risk checked before Step 2 |
-| D2 | Check the embeddings endpoint (OpenRouter or a separate key) | Risk checked before Step 1 |
 | D2 + B1 | Content template (spreadsheet or Markdown) with columns matching `kb.articles`, `kb.sections`, `kb.facts` | B1 can write content without SQL |
 | B1 + B2 | Synthetic data spec for Alex, Michelle and David (accounts, cards, the $2,400 charge, pending transfer, compliance case, RM) | Seed spec for D3 |
 | B2 | Acceptance criteria per story in testable form | Checklist reused in every step |
@@ -76,7 +75,7 @@ Stubs exist only so developers can work in parallel. They never replace the real
 | Owner | Task |
 |---|---|
 | D1 | Orchestrator skeleton on stubs: plan → prioritise → dispatch → compose for one task |
-| D2 | `kb` migration (3 tables, RLS, `kb.search()`), `scripts/embed_knowledge.py`, `knowledge.py` client; load B1's Alex content as a migration |
+| D2 | `kb` migration (3 tables, read-only RLS, keyword `kb.search()`), `knowledge.py` client; load B1's Alex content as a migration |
 | D3 | Synthetic seed for the three personas; Customer Data Service (reads, masking, RLS); `decide()`; Audit table ready for D1 |
 | B1 | Alex's articles as sections (knowledge-requirements.md) + fact values |
 | B2 | Retrieval evaluation cases: 2–3 informal or misspelled rewrites per question + `expected_article` |
@@ -88,7 +87,7 @@ Stubs exist only so developers can work in parallel. They never replace the real
 | Owner | Task |
 |---|---|
 | D1 | Everyday Banking + Fraud & Security agents and prompts (new `vN` dirs + prompt-log); multi-task dispatch; pause/resume on confirmation; Response Validator for sections, receipts and facts; chat sections + confirm dialog |
-| D2 | Retrieval evaluation (keyword vs vector vs hybrid); tune `max_distance` and `k`; support D1 with the knowledge integration |
+| D2 | Retrieval evaluation (hit rate, MRR, no-match); fix misses by improving section wording; tune `k`; support D1 with the knowledge integration |
 | D3 | `run_action()` + `cards.py` + `handoffs.py`; `POST /commands/{id}/confirm`; RLS tests |
 | B1 | Fraud playbook wording, replacement-card article, disclaimer templates; start Michelle's content |
 | B2 | Multi-intent and priority eval cases; Alex UAT walkthrough |
@@ -160,7 +159,6 @@ flowchart LR
 
 | Risk | Checked in | Owner |
 |---|---|---|
-| Provider has no embeddings endpoint | Step 0 | D2 |
 | LangGraph pause/resume harder than expected | Step 0 spike | D1 |
 | Supabase free tier pauses when idle | Before every demo and eval run | D3 |
 | OCR quality too low for Document Check | Start of Step 4 | D2 |
