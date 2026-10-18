@@ -7,7 +7,7 @@ from app.schemas.contracts import ActionCommand, Decision, Fact, KbChunk, Princi
 from app.services import actions, customer_data, kb, policy
 from app.services.actions import cards, handoffs
 
-STUBS=[kb,customer_data,policy,actions,cards,handoffs]
+STUBS=[kb,policy,actions,cards,handoffs]  # customer_data is real now (tests/test_customer_data.py)
 SIGNATURES={  # the agreed names and parameters; change only together with the callers
     kb.search:['query','scope','k','ctx'], kb.get_fact:['fact_id'],
     customer_data.get_profile:['ctx'], customer_data.get_accounts:['ctx'], customer_data.get_transactions:['ctx','from_','to','filters'],
@@ -33,19 +33,6 @@ def test_kb_returns_sample_chunks_and_facts():
     chunks=asyncio.run(kb.search('app login failed',k=1))
     assert len(chunks)==1 and isinstance(chunks[0],KbChunk)
     assert isinstance(asyncio.run(kb.get_fact('fee.card_replacement')),Fact)
-
-@pytest.mark.parametrize('name',['get_profile','get_accounts','get_transactions','get_credit_cards','get_loans'])
-def test_customer_data_returns_masked_sample_records(name):
-    r=asyncio.run(getattr(customer_data,name)(ctx()))
-    assert isinstance(r,ToolResult) and r.data
-    for row in r.data if isinstance(r.data,list) else [r.data]:  # card and account numbers arrive masked
-        assert 'pan' not in row and 'card_number' not in row
-        assert row.get('number','****').startswith('****') and len(row.get('last4') or '0000')==4
-
-def test_transactions_filter_and_guest_is_denied():
-    r=asyncio.run(customer_data.get_transactions(ctx(),filters={'status':'pending'}))
-    assert [t['description'] for t in r.data]==['Transfer to landlord']
-    with pytest.raises(PermissionError):asyncio.run(customer_data.get_accounts(ctx('guest')))
 
 def test_decide_rules():
     p=ctx().principal
