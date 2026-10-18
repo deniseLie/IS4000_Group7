@@ -12,3 +12,6 @@ dist/
 frontend/test-results/
 frontend/playwright-report/
 backend/evaluation-results.json
+
+# Persona test logins for tests/test_rls_live.py (never commit)
+personas.json
