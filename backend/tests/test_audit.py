@@ -14,8 +14,8 @@ client=TestClient(app)
 
 @pytest.fixture
 def store(monkeypatch):
-    """Enable the store and capture each batch; set fail=True to make the write fail."""
-    monkeypatch.setenv('AUDIT_STORE','1'); monkeypatch.setenv('SUPABASE_URL','https://demo.invalid'); monkeypatch.setenv('SUPABASE_ANON_KEY','anon')
+    """Default (on) store with each batch captured; set fail=True to make the write fail."""
+    monkeypatch.delenv('AUDIT_STORE',raising=False)
     state={'batches':[],'fail':False}
     def write(db,payload):
         if state['fail']:raise ConnectionError('down')
@@ -43,12 +43,18 @@ def test_event_contract_checks_category_and_actor():
 def test_add_rejects_unsafe_details():
     with pytest.raises(ValueError):audit.AuditBatch().add('chat','chat.message_received',details={'question':'what is my balance'})
 
-def test_disabled_store_writes_nothing(monkeypatch):
-    monkeypatch.delenv('AUDIT_STORE',raising=False)
+def test_test_runner_switch_writes_nothing(monkeypatch):
+    monkeypatch.setenv('AUDIT_STORE','0')
     monkeypatch.setattr(audit,'_write',lambda *a:pytest.fail('must not write'))
     b=audit.AuditBatch(); b.add('chat','chat.message_received')
     asyncio.run(b.flush())
     assert b.events==[]
+
+def test_missing_supabase_config_fails(monkeypatch):
+    monkeypatch.delenv('AUDIT_STORE',raising=False)
+    monkeypatch.delenv('SUPABASE_URL',raising=False)
+    b=audit.AuditBatch(); b.add('chat','chat.message_received')
+    with pytest.raises(audit.AuditWriteError):asyncio.run(b.flush())
 
 def test_failed_write_raises(store):
     store['fail']=True

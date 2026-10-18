@@ -2,8 +2,10 @@
 in one public.audit_record_batch call before the answer is sent; if that write fails, the request fails (AuditWriteError)
 instead of continuing unaudited. State changes do not use this: they write their audit row in their own transaction
 (audit.record() and the row triggers in 0006).
-Opt-in (AUDIT_STORE=1) like the trace store, so tests and offline eval never write to a real project; when off, events are
-validated and dropped. Events hold ids, enums and counts only; add() rejects anything else, matching audit.is_safe()."""
+Always on: without SUPABASE_URL / SUPABASE_ANON_KEY the write fails, so the request fails. The only off switch is
+AUDIT_STORE=0, set by the unit and browser test runners so they never add rows to the append-only table; offline eval
+calls make_answer() directly and never opens a batch. Events hold ids, enums and counts only; add() rejects anything else,
+matching audit.is_safe()."""
 import asyncio
 import logging
 import os
@@ -26,7 +28,7 @@ class AuditWriteError(RuntimeError):
     """The batch could not be stored; the request must fail."""
 
 def enabled():
-    return os.getenv('AUDIT_STORE')=='1' and bool(os.getenv('SUPABASE_URL') and os.getenv('SUPABASE_ANON_KEY'))
+    return os.getenv('AUDIT_STORE')!='0'  # test runners only
 
 def is_safe(v,depth=0):
     """Numbers, booleans, null, short tokens (enums, ids, cite ids) and one level of lists/dicts of those. No spaces, no card-length digit runs."""
@@ -43,6 +45,7 @@ def _uuid(value):
 def _write(db,payload):
     global _anon
     if db is None:
+        if not (os.getenv('SUPABASE_URL') and os.getenv('SUPABASE_ANON_KEY')):raise RuntimeError('Supabase is not configured')
         if _anon is None:_anon=create_client(os.environ['SUPABASE_URL'],os.environ['SUPABASE_ANON_KEY'])
         db=_anon
     db.rpc('audit_record_batch',{'p_events':payload}).execute()
