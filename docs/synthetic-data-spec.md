@@ -13,9 +13,9 @@ Status: **proposal**. The fake records the three persona scenarios need (see [us
 | Login | Each persona logs in with a Supabase Auth user whose email equals `demo_email`. The seed links `auth_user_id` by email; create the users first, or re-run the link statement at the end of the seed |
 | Masking | Only `last4` / `****nnnn` numbers are stored; no full card or account numbers exist anywhere |
 
-The stub in `backend/app/services/customer_data.py` returns the same Alex values, so code built on the stub keeps working against the database.
+`backend/app/services/customer_data.py` reads these rows with the signed-in persona's JWT and keeps the former stub's field names, so code built on the stub keeps working (no `segment` or loan `rate_pct`: the database has no such columns).
 
-> Contract note: `Principal.customer_id` in `schemas/contracts.py` is typed `UUID`, but the database key is `bigint`. Raise this at the next contracts review (change the contract to `int`, or map it in the Customer Data Service).
+> Contract note: `Principal.customer_id` in `schemas/contracts.py` is typed `UUID`, but the database key is `bigint`. For now the Customer Data Service ignores it and resolves the bigint from `Principal.user_id` through `customer_profiles`. Raise this at the next contracts review (change the contract to `int`, or keep the mapping).
 
 ## 2. Alex Tan — everyday banking (stories 1–7, X4)
 

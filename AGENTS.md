@@ -20,7 +20,8 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Logging / tracing | `backend/app/core/observability.py` (JSON logs, ids/counts only); plan in `docs/tracing-plan.md`; tables in `backend/supabase/migrations/` |
 | Request/response schemas | `backend/app/schemas/chat.py` (request), `schemas/events.py` (SSE payloads) |
 | Shared pipeline contracts (architecture §4) | `backend/app/schemas/contracts.py`; change only by PR reviewed by all developers |
-| v2 service stubs (sample data only, never used by the live v1 path) | `services/kb.py` (`search`, `get_fact`), `services/customer_data.py` (`get_*`), `services/actions/` (`run_action`, `registry.py`, `cards.py`, `handoffs.py`), `services/policy.py` (`decide`, `has_consent`); signatures pinned in `tests/test_stubs.py` |
+| v2 Customer Data (real Supabase reads with the user's JWT + code-side `customer_id` filter; not used by the live v1 path) | `services/customer_data.py` (`get_*`, incl. `get_compliance_case`, `get_rm_assignment`); tests in `tests/test_customer_data.py` |
+| v2 service stubs (sample data only, never used by the live v1 path) | `services/kb.py` (`search`, `get_fact`), `services/actions/` (`run_action`, `registry.py`, `cards.py`, `handoffs.py`), `services/policy.py` (`decide`, `has_consent`); signatures pinned in `tests/test_stubs.py` |
 | Chat UI | `frontend/src/Chat.jsx`; session/guest/login in `App.jsx`, `Login.jsx`; `components/Panel.jsx` (accessible source/support dialogs), `components/Icon.jsx` (local SVG icons), `index.css` (responsive theme); helpers (redact, history bounding, SSE parser) in `lib/chatTools.js`; Supabase client in `lib/supabase.js` |
 | Evaluate quality | `backend/evaluation/` (`run.py`, `cases.json` live, `offline_cases.json`) |
 
