@@ -8,20 +8,20 @@ Companion to [system-architecture.md](system-architecture.md) (§5.7.1 Knowledge
 
 Status: **exists** = article in today's `knowledge.py`; **partial** = exists but misses part of the story; **new** = to write.
 
-### Alex: everyday banking (stories 2–6, X2, X4)
+### Alex: everyday banking (EB2–EB6, X2, X4)
 
 | Story | Article(s) needed | Status | Current id |
 |---|---|---|---|
-| 2 Account Enquiry | Account types and features, how interest works, account services | partial | `accounts`, `sg-accounts` |
-| 3 Loan Enquiry | Loan products, eligibility criteria, application steps, "only the bank decides" wording | partial | `loans` |
-| 4 Credit Card Enquiry | Minimum payment, interest, available credit, card fees, card not working | exists | `cards`, `sg-card-payments` |
-| 5 Transaction Issue | Failed vs pending vs unfamiliar, troubleshooting per type | exists | `transactions` |
-| 5 / X4 Fraud and lost card | Fraud playbook steps, lost/stolen card steps | partial | `lost-card` |
+| EB2 Account Enquiry | Account types and features, how interest works, account services | partial | `accounts`, `sg-accounts` |
+| EB3 Loan Enquiry | Loan products, eligibility criteria, application steps, "only the bank decides" wording | partial | `loans` |
+| EB4 Credit Card Enquiry | Minimum payment, interest, available credit, card fees, card not working | exists | `cards`, `sg-card-payments` |
+| EB5 Transaction Issue | Failed vs pending vs unfamiliar, troubleshooting per type | exists | `transactions` |
+| EB5 / X4 Fraud and lost card | Fraud playbook steps, lost/stolen card steps | partial | `lost-card` |
 | X4 Replacement card | How a replacement card is issued and when it arrives | new | |
-| 6 Transfers | How to make a local / overseas transfer, cut-off times | new | |
-| 6 Update personal details | How to change address, phone, email | new | |
-| 6 Statements | Where to find and download statements | exists | `statements` |
-| 6 Online / mobile banking access | App login failing, account locked, password reset in the official app | new | |
+| EB6 Transfers | How to make a local / overseas transfer, cut-off times | new | |
+| EB6 Update personal details | How to change address, phone, email | new | |
+| EB6 Statements | Where to find and download statements | exists | `statements` |
+| EB6 Online / mobile banking access | App login failing, account locked, password reset in the official app | new | |
 | X2 Privacy | Never share PIN, OTP, password, CVV | exists | `security` |
 | Human support | How to reach a person; what the bot cannot do | partial (update when handoffs exist) | `support` |
 
