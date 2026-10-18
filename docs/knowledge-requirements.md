@@ -8,16 +8,16 @@ Companion to [system-architecture.md](system-architecture.md) (§5.7.1 Knowledge
 
 Status: **exists** = article in today's `knowledge.py`; **partial** = exists but misses part of the story; **new** = to write.
 
-### Alex: everyday banking (EB2–EB6, F5)
+### Alex: everyday banking (EB2–EB6, EB8, F5)
 
 | Story | Article(s) needed | Status | Current id |
 |---|---|---|---|
-| EB2 Account Enquiry | Account types and features, how interest works, account services | partial | `accounts`, `sg-accounts` |
+| EB6 Account products | Account types and features, how interest works, account services | partial | `accounts`, `sg-accounts` |
 | EB3 Loan Enquiry | Loan products, eligibility criteria, application steps, "only the bank decides" wording | partial | `loans` |
 | EB4 Credit Card Enquiry | Minimum payment, interest, available credit, card fees, card not working | exists | `cards`, `sg-card-payments` |
-| EB5 Transaction Issue | Failed vs pending vs unfamiliar, troubleshooting per type | exists | `transactions` |
-| EB5 Fraud and lost card | Fraud playbook steps, lost/stolen card steps | partial | `lost-card` |
-| EB5 Replacement card | How a replacement card is issued and when it arrives | new | |
+| EB5 Failed or pending transaction | Failed vs pending, troubleshooting per type | exists | `transactions` |
+| EB8 Suspicious charge and lost card | Fraud playbook steps, lost/stolen card steps | partial | `lost-card` |
+| EB8 Replacement card | How a replacement card is issued and when it arrives | new | |
 | EB6 Transfers | How to make a local / overseas transfer, cut-off times | new | |
 | EB6 Update personal details | How to change address, phone, email | new | |
 | EB6 Statements | Where to find and download statements | exists | `statements` |
@@ -25,12 +25,12 @@ Status: **exists** = article in today's `knowledge.py`; **partial** = exists but
 | F5 Privacy | Never share PIN, OTP, password, CVV | exists | `security` |
 | Human support | How to reach a person; what the bot cannot do | partial (update when handoffs exist) | `support` |
 
-### Michelle: compliance review (CR1, CR2, CR4)
+### Michelle: compliance review (CR1, CR2, CR4, CR7)
 
 | Story | Article(s) needed | Status |
 |---|---|---|
 | CR1 Document checklist | Approved guidance per document type: what counts as proof of identity, address, income, source of wealth; accepted formats; how to submit | new |
-| CR2 Document upload | Allowed formats, size limits, tips for a legible scan | new |
+| CR7 Document upload | Allowed formats, size limits, tips for a legible scan | new |
 | CR4 Milestone tracker | What each review status means (`not submitted`, `submitted – awaiting review`, `under review`, `complete`) and what happens at each stage | new |
 | CR4 Information requests | How to respond to a clarification request and how to confirm it was received | new |
 | CR6 Reminders (questions about a reminder) | Why reminders are sent and how to change preferences | new |
@@ -65,7 +65,7 @@ Typed rows the Response Validator checks figures against (`kb.get_fact`). Every 
 |---|---|
 | Loan and fee disclaimers | Orchestrator *Compose* (F14) |
 | AI notice at chat start | Web Client (F14) |
-| Lost / stolen card urgent response | Input Guardrail (EB5) |
+| Lost / stolen card urgent response | Input Guardrail (EB8) |
 | Secret-detected warning | Input Guardrail (F5) |
 | Notification templates (review reminder, card blocked, RM changed, booking reminder) | Notification Service (`notify.templates`) |
 

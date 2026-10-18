@@ -17,15 +17,15 @@ Status: **proposal**. The fake records the three persona scenarios need (see [us
 
 > Contract note: `Principal.customer_id` in `schemas/contracts.py` is typed `UUID`, but the database key is `bigint`. For now the Customer Data Service ignores it and resolves the bigint from `Principal.user_id` through `customer_profiles`. Raise this at the next contracts review (change the contract to `int`, or keep the mapping).
 
-## 2. Alex Tan — everyday banking (EB1–EB7)
+## 2. Alex Tan — everyday banking (EB1–EB6, EB8)
 
 Profile `1001`, `demo.alex@example.com`, employed, `SGD 5,000 - 8,000 / month`, English.
 
 | Record | Values | Used by |
 |---|---|---|
-| Savings account `10011` | `****6012`, balance 5,230.45 | EB2 Account Enquiry |
-| Credit card `10011` | Rewards Card, Visa, last4 **4821**, limit 8,000, outstanding 2,464.20, minimum 50.00, due 2026-11-05, `active` | EB4, EB5 (block → `temporarily_blocked`) |
-| Transaction `100111` | 2026-10-17, `ONLINE MERCHANT 8831`, **−2,400.00**, card 4821, `posted`, overseas | EB5: the unrecognised charge (P0) |
+| Savings account `10011` | `****6012`, balance 5,230.45 | EB2 My Account Information |
+| Credit card `10011` | Rewards Card, Visa, last4 **4821**, limit 8,000, outstanding 2,464.20, minimum 50.00, due 2026-11-05, `active` | EB4, EB8 (block → `temporarily_blocked`) |
+| Transaction `100111` | 2026-10-17, `ONLINE MERCHANT 8831`, **−2,400.00**, card 4821, `posted`, overseas | EB8: the unrecognised charge (P0) |
 | Transaction `100112` | 2026-10-17, `Transfer to landlord`, **−1,800.00**, account 6012, `pending` | EB5: the pending transfer |
 | Transaction `100113` | 2026-10-15, `Demo Supermarket`, −64.20, card 4821, `posted` | Normal history around the charge |
 | Transaction `100114` | 2026-10-01, `Employer Pte Ltd (DEMO)` salary, +5,600.00, account 6012, `posted` | Account history |
@@ -34,7 +34,7 @@ Profile `1001`, `demo.alex@example.com`, employed, `SGD 5,000 - 8,000 / month`, 
 
 The failing app login has no data; it is answered from approved articles.
 
-## 3. Michelle Ng — compliance review (CR1, CR2, CR4, CR6)
+## 3. Michelle Ng — compliance review (CR1, CR2, CR4, CR6, CR7)
 
 Profile `1002`, `demo.michelle@example.com`, self-employed, `SGD 20,000 and above / month`, English.
 
