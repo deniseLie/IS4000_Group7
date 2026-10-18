@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
@@ -12,6 +12,7 @@ AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output
 CommandState = Literal['proposed', 'confirmed', 'succeeded', 'failed', 'expired']
 RiskFlag = Literal['fraud_suspected', 'lost_card', 'secret_shared', 'human_requested']
 RedactionType = Literal['card_number', 'password', 'otp', 'nric']
+AuditCategory = Literal['auth', 'chat', 'agent', 'data', 'policy', 'action', 'row', 'consent', 'notification', 'handoff', 'document', 'admin']
 
 
 def now() -> datetime:
@@ -133,6 +134,30 @@ class Receipt(Contract):
     outcome: Literal['succeeded', 'failed']
     audit_event_id: int | None = None
 
+
+
+# AuditEvent: one event as the API sends it to public.audit_record_batch (§6.3, migration 0005). event_id, occurred_at,
+# customer, hashes and (unless an agent is named) the actor are filled in by the database from the caller's JWT.
+class AuditEvent(Contract):
+    category: AuditCategory
+    action: str = Field(pattern=r'^[a-z_]+\.[a-z_]+$')  # <category>.<verb>, e.g. chat.reply_sent
+    outcome: Literal['success', 'denied', 'failed'] = 'success'
+    resource_type: str | None = Field(default=None, pattern=r'^[a-z_.]{1,64}$')
+    resource_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.:-]{1,128}$')
+    details: dict[str, Any] = {}  # ids, enums and counts only (services/audit.is_safe)
+    case_id: UUID | None = None
+    session_id: UUID | None = None
+    request_id: UUID | None = None
+    actor_type: Literal['agent'] | None = None
+    actor_id: str | None = Field(default=None, pattern=r'^[a-z0-9_.:-]{1,64}$')
+
+    @model_validator(mode='after')
+    def _consistent(self):
+        if self.action.split('.')[0] != self.category:
+            raise ValueError('action must start with its category')
+        if (self.actor_type is None) != (self.actor_id is None):
+            raise ValueError('actor_type and actor_id go together')
+        return self
 
 # Supporting service results used by the stubs (§5.7)
 class Decision(Contract):  # decide() in Authorisation & Consent

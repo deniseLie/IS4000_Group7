@@ -18,6 +18,7 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Auth, JWT, per-user DB client, customer records | `backend/app/core/auth.py` |
 | Database schemas, RLS, persona seed | `backend/supabase/migrations/` (`NNNN_name.sql`, next free number, never edit an applied one); `0002` banking baseline, `0003` business schemas (read-only customer policies via `banking.my_customer_id()`), `0004` seed for Alex/Michelle/David (ids 1001-1003, spec in `docs/synthetic-data-spec.md`). New schemas must also be added to the Data API's exposed schemas (`events` stays unexposed) |
 | Settings / env vars | `backend/app/core/config.py`, `.env.example` |
+| Audit log | `backend/supabase/migrations/0005_audit_log.sql` (table, `audit.record()`, hash chain, `verify_chain`), `0006_audit_row_triggers.sql` (row trigger + audited tables); `app/services/audit.py` (per-request batch, flushed before `answer`, failure fails the request); `scripts/verify_audit.py`; contract `AuditEvent` |
 | Logging / tracing | `backend/app/core/observability.py` (JSON logs, ids/counts only); plan in `docs/tracing-plan.md`; tables in `backend/supabase/migrations/` |
 | Request/response schemas | `backend/app/schemas/chat.py` (request), `schemas/events.py` (SSE payloads) |
 | Shared pipeline contracts (architecture §4) | `backend/app/schemas/contracts.py`; change only by PR reviewed by all developers |
@@ -65,7 +66,7 @@ Frontend (Node 22, run from `frontend/`): `npm ci`, `npm run dev`, `npm test`, `
 - Only `VITE_`-prefixed env vars reach the browser.
 - Safety-critical cases (lost card, secrets, human support) stay as fixed responses that never call the model.
 - External-publisher knowledge articles need `reference_url`, `checked_on`, `review_due`, and an allowed domain (`www.moneysense.gov.sg`, `www.abs.org.sg`). Bump version/dates when editing a summary.
-- Logs record ids, counts and outcomes only, never user text or customer records.
+- Logs and audit events record ids, counts and outcomes only, never user text or customer records. `audit.events` is append-only: never grant update/delete on it or edit a released audit migration.
 - Never commit `.env` or credentials. Only commit or push when asked. Never commit `CLAUDE.md` to `main`.
 - Code style is compact; match the surrounding code.
 

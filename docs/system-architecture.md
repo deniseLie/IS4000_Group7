@@ -467,7 +467,7 @@ A tamper-evident, append-only record of **who did what, to which resource, when,
 
 ### 6.5 Write rules
 - **State changes:** the audit row is written **in the same transaction** as the change, so a change cannot exist without its audit event.
-- **Everything else:** events are collected during the request and written in one batched insert before the `done` SSE event.
+- **Everything else:** events are collected during the request and written in one batched insert before the `answer` SSE event, so an answer is never sent unaudited.
 - **Audit write failure:** the request fails with an error rather than continuing unaudited.
 - **Retention:** keep all rows for the demo; production follows the bank's record-retention policy.
 
