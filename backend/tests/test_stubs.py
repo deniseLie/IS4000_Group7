@@ -1,0 +1,67 @@
+import asyncio
+import inspect
+import pathlib
+import pytest
+from uuid import uuid4
+from app.schemas.contracts import ActionCommand, Decision, Fact, KbChunk, Principal, ProposedCommand, Receipt, RequestContext, ToolResult
+from app.services import actions, customer_data, kb, policy
+from app.services.actions import cards, handoffs
+
+STUBS=[kb,customer_data,policy,actions,cards,handoffs]
+SIGNATURES={  # the agreed names and parameters; change only together with the callers
+    kb.search:['query','scope','k','ctx'], kb.get_fact:['fact_id'],
+    customer_data.get_profile:['ctx'], customer_data.get_accounts:['ctx'], customer_data.get_transactions:['ctx','from_','to','filters'],
+    customer_data.get_credit_cards:['ctx'], customer_data.get_loans:['ctx'],
+    actions.run_action:['command','ctx','confirmed'], policy.decide:['subject','action','resource','context'],
+    policy.has_consent:['customer_id','purpose','recipient'],
+}
+def ctx(kind='customer',aal='aal1'):return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,customer_id=uuid4() if kind=='customer' else None,aal=aal))
+def cmd(type_,**target):return ActionCommand(idempotency_key=f'case:{uuid4().hex}:{type_}',type=type_,target=target)
+
+@pytest.mark.parametrize('fn,params',SIGNATURES.items(),ids=lambda x:getattr(x,'__qualname__',''))
+def test_stub_signatures(fn,params):assert list(inspect.signature(fn).parameters)==params
+
+def test_every_stub_is_marked():assert all(m.STUB for m in STUBS)
+
+def test_live_pipeline_never_imports_stubs():
+    app=pathlib.Path(__file__).parents[1]/'app'
+    for live in ['services/answers.py','api/chat.py','main.py']:
+        text=(app/live).read_text(encoding='utf-8')
+        assert not any(f'services.{m}' in text or f'services import {m}' in text for m in ['kb','customer_data','policy','actions'])
+
+def test_kb_returns_sample_chunks_and_facts():
+    chunks=asyncio.run(kb.search('app login failed',k=1))
+    assert len(chunks)==1 and isinstance(chunks[0],KbChunk)
+    assert isinstance(asyncio.run(kb.get_fact('fee.card_replacement')),Fact)
+
+@pytest.mark.parametrize('name',['get_profile','get_accounts','get_transactions','get_credit_cards','get_loans'])
+def test_customer_data_returns_masked_sample_records(name):
+    r=asyncio.run(getattr(customer_data,name)(ctx()))
+    assert isinstance(r,ToolResult) and r.data
+    for row in r.data if isinstance(r.data,list) else [r.data]:  # card and account numbers arrive masked
+        assert 'pan' not in row and 'card_number' not in row
+        assert row.get('number','****').startswith('****') and len(row.get('last4') or '0000')==4
+
+def test_transactions_filter_and_guest_is_denied():
+    r=asyncio.run(customer_data.get_transactions(ctx(),filters={'status':'pending'}))
+    assert [t['description'] for t in r.data]==['Transfer to landlord']
+    with pytest.raises(PermissionError):asyncio.run(customer_data.get_accounts(ctx('guest')))
+
+def test_decide_rules():
+    p=ctx().principal
+    assert isinstance(policy.decide(p,'kb.search'),Decision)
+    assert 'require:confirmation' in policy.decide(p,'card.temporary_block').obligations
+    assert policy.decide(p,'handoff.create').obligations==[]
+    assert not policy.decide(p,'card.unblock').allow and policy.decide(ctx(aal='aal2').principal,'card.unblock').allow
+
+def test_run_action_proposes_then_confirms_once():
+    c,command=ctx(),cmd('card.temporary_block',card_id='card_1')
+    proposed=asyncio.run(actions.run_action(command,c))
+    assert isinstance(proposed,ProposedCommand) and proposed.command_id==command.command_id
+    receipt=asyncio.run(actions.run_action(command,c,confirmed=True))
+    assert isinstance(receipt,Receipt) and receipt.outcome=='succeeded'
+    assert asyncio.run(actions.run_action(command,c,confirmed=True))==receipt  # duplicate confirm returns the same receipt
+
+def test_run_action_auto_type_and_guest():
+    assert isinstance(asyncio.run(actions.run_action(cmd('handoff.create',priority='P0'),ctx())),Receipt)
+    with pytest.raises(PermissionError):asyncio.run(actions.run_action(cmd('card.temporary_block'),ctx('guest')))
