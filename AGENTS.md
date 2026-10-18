@@ -18,7 +18,8 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Auth, JWT, per-user DB client, customer records | `backend/app/core/auth.py` |
 | Settings / env vars | `backend/app/core/config.py`, `.env.example` |
 | Logging / tracing | `backend/app/core/observability.py` (JSON logs, ids/counts only); plan in `docs/tracing-plan.md`; tables in `backend/supabase/migrations/` |
-| Request/response schemas | `backend/app/schemas/chat.py` |
+| Request/response schemas | `backend/app/schemas/chat.py` (request), `schemas/events.py` (SSE payloads) |
+| Shared pipeline contracts (architecture §4) | `backend/app/schemas/contracts.py`; change only by PR reviewed by all developers |
 | Chat UI | `frontend/src/Chat.jsx`; session/guest/login in `App.jsx`, `Login.jsx`; `components/Panel.jsx` (accessible source/support dialogs), `components/Icon.jsx` (local SVG icons), `index.css` (responsive theme); helpers (redact, history bounding, SSE parser) in `lib/chatTools.js`; Supabase client in `lib/supabase.js` |
 | Evaluate quality | `backend/evaluation/` (`run.py`, `cases.json` live, `offline_cases.json`) |
 
