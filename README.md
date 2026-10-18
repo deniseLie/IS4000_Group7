@@ -115,6 +115,10 @@ Each `/chat` request is recorded as one trace: a session row plus timed spans (`
 
 Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_KEY`). The backend writes through the `public.log_trace` function from `backend/supabase/migrations/0001_trace_tables.sql`; the `ops.traces` and `ops.spans` tables themselves are closed to the public key by RLS. A failed or slow write is logged and never affects the chat. Unit and browser tests force `TRACE_STORE=0`. Known limits: the anon key is public, so anyone could add junk rows through `log_trace` (bounded by validation and a 10,000-per-day cap); model retries inside the provider client are not visible; cost is only as accurate as `LLM_PRICE_*_PER_M`. See `docs/tracing-plan.md`.
 
+## Database migrations
+
+Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order; the hosted project records its own timestamp per migration. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/synthetic-data-spec.md`). Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set.
+
 ## Local setup
 
 Use Python 3.12 and Node.js 22. Copy `.env.example` to a private root `.env` and fill in the values. Existing environment variables take priority; a backend `.env` takes priority over the root file. Only the public Supabase URL/anonymous key and API URL use the `VITE_` prefix. The application does not need a service-role key.
