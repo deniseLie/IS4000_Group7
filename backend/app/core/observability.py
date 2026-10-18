@@ -42,6 +42,7 @@ class Trace:
         self.attrs={}
         self.spans=[]
         self.n=0
+        self.tokens=0  # LLM tokens used so far; the gateway enforces the per-request budget
         self.start=time.perf_counter()
 
 def start_trace():

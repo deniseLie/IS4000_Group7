@@ -73,7 +73,7 @@ async def evaluate(live=False, suite='standard'):
     knowledge = json.dumps([vars(a) for a in ARTICLES], sort_keys=True)
     services = Path(answers.__file__).parent
     implementation = b''.join((services / name).read_bytes() for name in
-        ('answers.py','knowledge.py','source_checks.py','llm.py','codex_cli.py','privacy.py','safety.py','prompts.py') if (services / name).exists())
+        ('answers.py','knowledge.py','source_checks.py','llm.py','llm_gateway.py','codex_cli.py','privacy.py','safety.py','prompts.py') if (services / name).exists())
     return {
         'mode':'live_manual_review' if live else 'offline_validator_checks',
         'suite':suite,'model_config':model_details(live),

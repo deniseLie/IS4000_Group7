@@ -1,21 +1,7 @@
+"""Answer agent: builds the answer prompt and schema, then calls the model through the LLM Gateway."""
 import json
-import os
-from urllib.parse import urlsplit
-from langchain.chat_models import init_chat_model
-from langchain_core.callbacks import get_usage_metadata_callback
-from app.core.observability import span
-from app.core.config import settings
-from app.services import prompts
-
-def build_model():
-    """LLM_PROVIDER picks the LangChain provider (default 'openai', which also covers OpenRouter via LLM_BASE_URL)."""
-    provider = os.getenv('LLM_PROVIDER') or 'openai'
-    kwargs = {'timeout':30,'max_retries':1,'max_tokens':settings.max_tokens}
-    if provider == 'openai':
-        kwargs.update(api_key=os.environ['LLM_API_KEY'],base_url=os.environ['LLM_BASE_URL'])
-        if urlsplit(kwargs['base_url']).hostname == 'openrouter.ai':
-            kwargs['extra_body'] = {'provider':{'require_parameters':True}}
-    return init_chat_model(os.environ['LLM_MODEL'],model_provider=provider,**kwargs)
+from app.services import llm_gateway, prompts
+from app.services.llm_gateway import build_model  # re-exported for the contract tests
 
 def answer_request(evidence, language, repair=None):
     pv = prompts.current()
@@ -49,27 +35,12 @@ def answer_request(evidence, language, repair=None):
 class LLMClient:
     """Initialize on demand so health and public help work without a key."""
     async def answer(self, messages, evidence, language, repair=None):
-        if os.getenv('CHAT_TRANSPORT','api')=='codex':
-            from app.services import codex_cli
-            pv,prompt,schema=answer_request(evidence,language,repair)
-            with span('llm','llm',model=os.getenv('CODEX_MODEL','gpt-5.6-luna'),prompt_version=pv['id'],transport='codex') as a:
-                result,usage=await codex_cli.answer(prompt,schema,messages)
-                # Subscription usage is not a per-token API bill. Leave cost unknown.
-                a.update(usage)
-            return json.dumps(result,ensure_ascii=False)
-        if os.getenv('CHAT_TRANSPORT','api')!='api':
-            raise RuntimeError('Unknown CHAT_TRANSPORT; choose api or codex')
-        needed = ('LLM_MODEL',) + (('LLM_API_KEY','LLM_BASE_URL') if (os.getenv('LLM_PROVIDER') or 'openai') == 'openai' else ())
-        if not all(os.getenv(k) for k in needed):
-            raise RuntimeError('Model is not configured')
+        llm_gateway.transport()
         pv,prompt,schema = answer_request(evidence,language,repair)
-        model = build_model().with_structured_output(schema,method='json_schema',strict=True)
-        with span('llm','llm',model=os.environ['LLM_MODEL'],prompt_version=pv['id']) as a, get_usage_metadata_callback() as usage:
-            result = await model.ainvoke([('system',prompt)]+[(m.role,m.content) for m in messages])
-            used = list(usage.usage_metadata.values())
-            if used:
-                tin = sum(u.get('input_tokens',0) for u in used); tout = sum(u.get('output_tokens',0) for u in used)
-                a.update(input_tokens=tin,output_tokens=tout,cost_usd=round(tin*settings.llm_price_in_per_m/1e6+tout*settings.llm_price_out_per_m/1e6,6))
-        return json.dumps(result,ensure_ascii=False) if isinstance(result,dict) else (result or '')
+        try:
+            result = await llm_gateway.call(pv,prompt,[(m.role,m.content) for m in messages],schema)
+        except llm_gateway.LLMBadOutput:
+            return ''  # withheld by validate() as bad_json; never a substitute answer
+        return json.dumps(result.data,ensure_ascii=False)
 
 llm=LLMClient()

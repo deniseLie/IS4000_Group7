@@ -8,9 +8,9 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 |---|---|
 | Change the request/response flow or SSE events | `backend/app/api/chat.py` (`POST /chat`: `status` -> `answer` -> `done`/`error`; `GET /knowledge/{id}`) |
 | Change how an answer is produced | `backend/app/services/answers.py` (`make_answer`) |
-| Edit the LLM call / structured output | `backend/app/services/llm.py` (strict JSON: `answer`, `source_ids`, `answer_kind`) |
+| Edit the LLM call / structured output | `backend/app/services/llm_gateway.py` (`call`: the one client for planner and agents; strict JSON check, timeout, retries on transient errors, per-request token budget, `llm` span + `llm_call` log; raises `LLMError`). Answer prompt/schema in `services/llm.py` (`answer`, `source_ids`, `answer_kind`) |
 | Switch API / local Codex subscription | `CHAT_TRANSPORT=api\|codex`; `services/codex_cli.py`; `docs/codex-local-provider.md`; `handoff.md` for another Mac. Preserve OpenRouter settings. Never pass app keys to CLI or enable its coding tools. |
-| Edit the system prompt | `backend/app/prompts/<version>/{system,format,public_only}.md`, loaded by `services/prompts.py`. **Never edit a released version**; add a new `vN` dir and a `docs/prompt-log/vN.md` (copy `TEMPLATE.md`) |
+| Edit the system prompt | `backend/app/prompts/<agent>/<version>/*.md` (answer agent: `system,format,public_only`), loaded by `services/prompts.py` (`load(agent, version)`; `PROMPT_VERSION` for answer, `PROMPT_VERSIONS` for others). **Never edit a released version** (ids pinned in `tests/test_prompts.py`); add a new `vN` dir and a `docs/prompt-log/<agent>/vN.md` (copy `TEMPLATE.md`) |
 | Add or edit knowledge articles / retrieval | `backend/app/services/knowledge.py` (in-memory, keyword search, no embeddings) |
 | Change answer validation (source IDs, figures) | `backend/app/services/source_checks.py` |
 | Change redaction | `backend/app/services/privacy.py` **and** `frontend/src/lib/chatTools.js` (keep in sync) |
@@ -39,7 +39,7 @@ Legacy and unused: `frontend/src/api/chat.js`, `frontend/src/components/ChatWind
 
 ## Tests and docs
 
-- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_prompts`, `test_health`; `test_rls_live` is opt-in via `TEST_PERSONA_FIXTURE_FILE` (persona logins in git-ignored `personas.json`); browser suites use the normal application and real provider).
+- Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_llm_gateway`, `test_prompts`, `test_health`; `test_rls_live` is opt-in via `TEST_PERSONA_FIXTURE_FILE` (persona logins in git-ignored `personas.json`); browser suites use the normal application and real provider).
 - Frontend tests: `frontend/src/lib/chatTools.test.js` (unit), `frontend/tests/chat.spec.js` (Playwright, real backend safety paths), `frontend/tests/live.spec.js` (live services).
 - Docs: `README.md` (setup, known limits), `docs/chatbot-architecture.md`, `docs/multi-capability-architecture.md`, `docs/prompt-log/`, `docs/tracing-plan.md`, `docs/synthetic-data-spec.md`.
 - Active completion evidence: `docs/core-completion-plan.md`. Explicit currency/percentage checks and limited English attribution checks are not semantic proof. Do not count offline validation as live AI accuracy.
