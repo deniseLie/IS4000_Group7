@@ -7,11 +7,27 @@ from app.core.auth import get_user_db, get_customer_context
 from app.core.observability import start_trace, span
 from app.schemas.chat import ChatRequest
 from app.services.answers import make_answer
+from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.trace_store import save_trace
 
 logger=logging.getLogger(__name__)
 router=APIRouter()
+FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance'}
+
+def audit_reply(batch,trace,result=None,error=None):
+    """Model calls and the reply outcome from the trace: ids, enums and counts only."""
+    for s in trace.spans:
+        if s['name']=='llm':
+            batch.add('agent','agent.llm_call','success' if s['status']=='ok' else 'failed',details={**{k:s['attrs'].get(k) for k in ('model','prompt_version','transport','input_tokens','output_tokens')},'ms':s.get('ms')})
+    route=trace.attrs.get('route')
+    if error:
+        batch.add('chat','chat.reply_sent','failed',details={'route':route,'error_type':type(error).__name__[:64]})
+        return
+    batch.add('chat','chat.fixed_response' if route in FIXED_ROUTES else 'chat.reply_sent',details={
+        'route':route,'origin':result['response_origin'],'source_check':result['source_check'],'needs_human':result['needs_human'],
+        'privacy_warning':result['privacy_warning'],'history_trimmed':result['history_trimmed'],'prompt_version':result['prompt_version'],
+        'reject_reason':trace.attrs.get('reject_reason'),'source_ids':[x['id'] for x in result['sources']]})
 
 @router.get('/knowledge/{article_id}')
 def knowledge(article_id:str):
@@ -24,21 +40,31 @@ async def chat(req:ChatRequest,authorization:str|None=Header(default=None)):
     trace=start_trace()
     sb=await run_in_threadpool(get_user_db,authorization) if authorization is not None or req.mode=='personal' else None
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=sb is not None,history_len=len(req.messages))
+    batch=start_batch(sb.db if sb else None)
+    batch.add('chat','chat.message_received',details={'mode':req.mode,'history_len':len(req.messages)})
     if req.mode=='personal':
         with span('customer_context','tool') as a:
             context=await run_in_threadpool(get_customer_context,sb)
             a['chars']=len(context)
+        batch.add('data','data.read',resource_type='customer_context',details={'tool':'customer_context'})
     else:context=None
     async def events():
         yield {'event':'status','data':'Checking the available information…'}
         try:
             result=await make_answer(req,context)
+            audit_reply(batch,trace,result)
+            await batch.flush()  # before the answer: an unaudited answer is never sent
             trace.attrs['outcome']='ok'
             yield {'event':'answer','data':json.dumps(result,ensure_ascii=False)}
             yield {'event':'done','data':''}
         except Exception as e:
             logger.warning('Answer generation failed')
             trace.attrs.update(outcome='error',error_type=type(e).__name__[:64],route=trace.attrs.get('route') or 'error')
+            if not isinstance(e,AuditWriteError):
+                try:
+                    audit_reply(batch,trace,error=e)
+                    await batch.flush()
+                except Exception:pass  # already failing; flush() logs a failed write
             yield {'event':'error','data':'The assistant is temporarily unavailable. Please retry or use your bank’s official support channel.'}
         finally:
             trace.attrs.setdefault('outcome','error')
