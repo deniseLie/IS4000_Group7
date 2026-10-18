@@ -37,7 +37,7 @@ Relative points (1 = small); used only to balance the work, not as time estimate
 
 | | **D1: Alex + conversation core** | **D2: Michelle + knowledge** | **D3: David + platform services** |
 |---|---|---|---|
-| **Persona scope** | EB2–EB7, X4: Everyday Banking + Fraud & Security agents (5) | CR1–CR6: Compliance Review agent (3), Document Check agent (5), compliance tables (2) | RC1–RC5, X6: Relationship agent (3), appointments + records executors (3) |
+| **Persona scope** | EB2–EB7: Everyday Banking + Fraud & Security agents (5) | CR1, CR2, CR4, CR6: Compliance Review agent (3), Document Check agent (5), compliance tables (2) | RC1–RC4: Relationship agent (3), appointments + records executors (3) |
 | **Shared piece** | Orchestrator (8), Response Validator (3), Audit Log (2) | Knowledge base, keyword RAG (3), CR6 reminder job (2) | Customer Data + Authorisation (5), Action Service (5), Worker + Notification (3) |
 | **UI** | Chat UI: sections, sources, confirm dialog (3) | Upload + checklist (3) | Slots, consent, agenda (3) |
 | **Total** | **~21** | **~18** | **~22** |
@@ -98,11 +98,11 @@ Stubs exist only so developers can work in parallel. They never replace the real
 
 | Owner | Task |
 |---|---|
-| D1 | Alex edge cases: EB7 rewrites, X1 follow-ups; Audit Log wiring across modules |
+| D1 | Alex edge cases: EB7 rewrites, F7 follow-ups; Audit Log wiring across modules |
 | D2 | Compliance Review agent; compliance tables + seed; upload + checklist UI |
 | D3 | Relationship agent; `appointments.py`, `records.py`; slots, consent and agenda UI |
 | B1 | Michelle's compliance articles and Document Check rules; David's RM wording, meeting formats, request types |
-| B2 | CR1–CR5, RC1–RC5 and X6 eval cases; Michelle and David UAT walkthroughs |
+| B2 | CR1, CR2, CR4 and RC1–RC4 eval cases; Michelle and David UAT walkthroughs |
 
 **Done when:** Michelle's checklist/status questions and David's consent → share → book flow work live.
 

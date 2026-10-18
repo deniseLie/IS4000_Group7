@@ -238,12 +238,12 @@ Detailed per-story behaviour lives in [user-story-mapping.md](user-story-mapping
 | Agent | Purpose | Can do | Must not do | Tools | Stories |
 |---|---|---|---|---|---|
 | **Everyday Banking** | Everyday account, card, loan, transaction and service questions | Explain products, fees, procedures from approved content; read the customer's own accounts, cards, loans, transactions; ask clarifying questions; hand off | Change anything; give investment, legal or tax advice; promise loan approval; investigate or reverse transactions; handle suspected fraud (re-plans it to Fraud & Security) | `kb.*`, `customer.get_*` (accounts, transactions, credit cards, loans, profile), `handoff.create` | EB2–EB6 |
-| **Fraud & Security** | Urgent security issues, P0 | Follow a fixed playbook; identify the suspicious transaction; **propose** a temporary card block; create a P0 handoff | Execute the block without confirmation; claim a block without a receipt; investigate, reverse or permanently cancel (human only); replace the Guardrail's fixed lost-card response | `customer.get_transactions`, `customer.get_credit_cards`, `actions.propose(card.temporary_block)`, `handoff.create` | EB5 (unfamiliar), X4 |
-| **Compliance Review** | Explain and track the client's compliance review | Read the client-visible compliance case; explain requests and statuses from the authorised record and approved guidance; update the client's own checklist marks | Invent requirements, statuses, deadlines or estimates; mark documents accepted; reveal internal-only fields (e.g. risk scoring); speculate on reasons | `compliance.get_case`, `compliance.update_checklist_item`, `kb.search` (approved compliance scope), `handoff.create` | CR1, CR3–CR5 |
+| **Fraud & Security** | Urgent security issues, P0 | Follow a fixed playbook; identify the suspicious transaction; **propose** a temporary card block; create a P0 handoff | Execute the block without confirmation; claim a block without a receipt; investigate, reverse or permanently cancel (human only); replace the Guardrail's fixed lost-card response | `customer.get_transactions`, `customer.get_credit_cards`, `actions.propose(card.temporary_block)`, `handoff.create` | EB5 (unfamiliar transaction, lost card) |
+| **Compliance Review** | Explain and track the client's compliance review | Read the client-visible compliance case; explain requests and statuses from the authorised record and approved guidance; update the client's own checklist marks | Invent requirements, statuses, deadlines or estimates; mark documents accepted; reveal internal-only fields (e.g. risk scoring); speculate on reasons | `compliance.get_case`, `compliance.update_checklist_item`, `kb.search` (approved compliance scope), `handoff.create` | CR1, CR4 |
 | **Document Check** | Preliminary checks on uploaded documents | Run predefined checks (opens, legible, pages, required fields); explain issues and fixes; record results | Present results as approval; give a verdict when the document cannot be assessed reliably | `docs.precheck` | CR2 |
-| **Relationship** | Continuity with the relationship manager | Introduce the assigned RM; draft and edit a summary or agenda with the client; request consent; find and hold slots; propose booking, sharing and request intake; report request status | Share data without consent; confirm a booking before the scheduling system does; invent transition reasons; imply a request is transferred or done unless recorded | `rm.*`, `requests.*`, `consent.*`, `appointments.*`, `agenda.save`, `actions.propose`, `handoff.create` | RC1–RC5, X6 |
+| **Relationship** | Continuity with the relationship manager | Introduce the assigned RM; draft and edit a summary or agenda with the client; request consent; find and hold slots; propose booking, sharing and request intake; report request status | Share data without consent; confirm a booking before the scheduling system does; invent transition reasons; imply a request is transferred or done unless recorded | `rm.*`, `requests.*`, `consent.*`, `appointments.*`, `agenda.save`, `actions.propose`, `handoff.create` | RC1–RC4 |
 
-Stories without an agent are handled by platform components: EB1 Login (Identity Provider, Gateway), EB7 and X1 (Orchestrator, Conversation Store), X2 (Input Guardrail, masking, Validator), X3 (Web Client, Compose step), X5 (Validator, sources panel), CR6 (Background Worker, Notification Service).
+Stories without an agent are handled by platform components: EB1 Login (Identity Provider, Gateway), EB7 (Orchestrator), CR6 (Background Worker, Notification Service).
 
 - **Inputs / outputs:** In: `{RequestContext, task, case_snapshot}`. Out: `AgentResult`.
 - **Infrastructure / pattern:** Tool-calling agents with strict JSON output and a cap on tool calls; prompts in `backend/app/prompts/<agent>/vN`.
@@ -500,7 +500,7 @@ S = synchronous (caller waits), A = asynchronous.
 | 3 | Gateway → Web | S stream | `status: checking` |
 | 4 | Gateway → Input Guardrail | S | No secrets found; fraud wording ("don't recognise") → `RiskAssessment {risk_flags:[fraud_suspected], priority:P0, fixed_response:null}`. Not a lost-card message, so no fixed response. Redacted message saved to `conversation.messages`; audit `chat.message_received` |
 | 5 | Guardrail → Orchestrator | S | `RequestContext` + `RiskAssessment` |
-| 6 | Orchestrator → Conversation Store | S | Load session history (X1); create `case_id`; checkpoint |
+| 6 | Orchestrator → Conversation Store | S | Load session history (F7); create `case_id`; checkpoint |
 | 7 | *Plan* → LLM Gateway | S | Three intents, so rules are not enough → one planner call → `[card_txn_unrecognised, app_login_failed, transfer_pending]` with entities (`amount: 2400`, `payee: landlord`, `date: yesterday`); audit `agent.plan_created` |
 | 8 | *Prioritise* | S in-process | t1 P0 (also forced by the Guardrail flag), t2 P1, t3 P3; checkpoint; `status: planning` |
 | 9 | *Dispatch* → Fraud & Security (t1), Everyday Banking (t2), Everyday Banking (t3) | S, parallel | `{RequestContext, task, case_snapshot}` per task |
@@ -508,7 +508,7 @@ S = synchronous (caller waits), A = asynchronous.
 | 9b | Fraud → `actions.propose(card.temporary_block, card 4821)` | S | `run_action()`: policy obligation `require:confirmation` → command `proposed`, expires in 5 min; nothing executed yet; audit `action.proposed` |
 | 9c | Fraud → LLM Gateway | S | Fills the playbook template: describes the matched transaction, "contact the bank immediately through official channels", offers the temporary block. Steps and wording are fixed; the model only fills the transaction description |
 | 9d | Everyday Banking (t2) → `kb.search("app login failed")` | S | Approved article: check app version, reset password in the official app, account lock after repeated attempts → official support line. Because t1 is open in the same case, adds "if you did not make the charge, change your password through the official app" from the fraud article |
-| 9e | Everyday Banking (t2) → LLM Gateway | S | Short step list with citations. Does **not** ask for the password (X2) |
+| 9e | Everyday Banking (t2) → LLM Gateway | S | Short step list with citations. Does **not** ask for the password (F5) |
 | 9f | Everyday Banking (t3) → `customer.get_transactions(payee landlord, yesterday)` + `kb.search("pending transfer")` | S | Transfer found, status `pending`; article gives typical processing times and when to contact the bank |
 | 9g | Everyday Banking (t3) → LLM Gateway | S | Personal explanation: status is pending, not failed; what pending means; when to contact the bank. Never claims to cancel or speed it up |
 | 10 | *Dispatch* | S | t1 `awaiting_confirmation` → graph paused (`interrupt`); t2, t3 `done`; checkpoint |
@@ -517,14 +517,14 @@ S = synchronous (caller waits), A = asynchronous.
 | 13 | Gateway → Web | S stream | `action_required {command_id, card.temporary_block, "Temporarily block card ending 4821"}`, `answer {sections[3]}`; audit batch written; `done` |
 | 14 | Web → Gateway `POST /commands/{id}/confirm` | S (new request) | Alex taps **Block card** within 5 minutes |
 | 15 | API Gateway Layer → Action Service | S | `run_action()`: not expired, idempotency key unused, policy re-check → calls `cards.temporary_block` inside its transaction; the executor checks `active → temporarily_blocked` is allowed and updates the card. Card update + command state + outbox row (`card.blocked`) + audit `action.executed` + trigger `row.update (cards.status)` commit in **one transaction** → receipt `rcpt_B` |
-| 16 | Fraud playbook → Action Service | S | X4: verification and permanent cancellation go to a person → `handoff.create` (auto, no confirmation) → `handoffs.create` writes `support.handoffs {case_id, reason: card_verification, priority: P0, summary (redacted)}`; audit `handoff.created` |
+| 16 | Fraud playbook → Action Service | S | EB5: verification and permanent cancellation go to a person → `handoff.create` (auto, no confirmation) → `handoffs.create` writes `support.handoffs {case_id, reason: card_verification, priority: P0, summary (redacted)}`; audit `handoff.created` |
 | 17 | Gateway → Orchestrator resume | S | Graph resumes from checkpoint with `rcpt_B`; Fraud playbook next step: block confirmed, a specialist will verify, how to get a replacement card |
 | 18 | Validator → Gateway → Web | S stream | "Card ending 4821 is temporarily blocked" is allowed because `rcpt_B` exists; `answer`, `done` |
 | 19 | Background Worker → Notification Service | A | `card.blocked` outbox event → service notification in the inbox (cannot be switched off) |
-| 20 | Alex: "what about the other one, the landlord one — should I redo it?" | S, new turn | X1: the Orchestrator loads the case, resolves "the other one" to t3, and the Everyday Banking agent answers from the same transaction record: do not resend while pending, to avoid paying twice |
+| 20 | Alex: "what about the other one, the landlord one — should I redo it?" | S, new turn | F7: the Orchestrator loads the case, resolves "the other one" to t3, and the Everyday Banking agent answers from the same transaction record: do not resend while pending, to avoid paying twice |
 
 **Failure branches**
-- *Alex had written "I lost my card"* → step 4 returns the X4 fixed response (urgent steps + block offer) with **no model call**; steps 5–12 are skipped, and steps 14–18 still apply.
+- *Alex had written "I lost my card"* → step 4 returns the EB5 lost-card fixed response (urgent steps + block offer) with **no model call**; steps 5–12 are skipped, and steps 14–18 still apply.
 - *The planner LLM times out* → the Guardrail's fraud flag still creates t1, which runs; t2/t3 get a "please resend these questions" section.
 - *An agent LLM fails* → that section is withheld with `needs_human`; the other sections are released.
 - *The validator finds an unsupported figure in t3* → section ③ is withheld, origin `validation`, handoff created; sections ① and ② are still released.
@@ -613,8 +613,8 @@ sequenceDiagram
   SVC-)WEB: Realtime inbox item
 ```
 
-### 7.4 Sequence diagram — asynchronous follow-up: human verification (X4)
-After the block, a person verifies the charge and decides on permanent cancellation (X4: "verification and permanent cancellation are sent to a human agent, who handles them when available"). The chat does not wait for this; the result reaches Alex through the inbox. Compliance reminders (CR6) and RM-change introductions (RC1) use the same Background Worker path.
+### 7.4 Sequence diagram — asynchronous follow-up: human verification (EB5)
+After the block, a person verifies the charge and decides on permanent cancellation (EB5: "verification and permanent cancellation are sent to a human agent, who handles them when available"). The chat does not wait for this; the result reaches Alex through the inbox. Compliance reminders (CR6) and RM-change introductions (RC1) use the same Background Worker path.
 
 ```mermaid
 sequenceDiagram
@@ -765,6 +765,6 @@ Running the worker inside the API process avoids needing a paid background-worke
 | # | Question | Status | Decision |
 |---|---|---|---|
 | 1 | Worker database access | Closed | Restricted Postgres role + narrow `SECURITY DEFINER` functions (§5.10); never the service-role key |
-| 2 | Which actions execute without confirmation | Closed | Only the *auto* types in §5.7.3: `handoff.create/claim/close`, `appointment.hold`, `compliance.update_checklist_item`, `agenda.save`, `consent.request`. Everything else needs customer confirmation; for `requests.create` the structured-form submit is the confirmation (X6) |
+| 2 | Which actions execute without confirmation | Closed | Only the *auto* types in §5.7.3: `handoff.create/claim/close`, `appointment.hold`, `compliance.update_checklist_item`, `agenda.save`, `consent.request`. Everything else needs customer confirmation; for `requests.create` the structured-form submit is the confirmation (RC4) |
 | 3 | Customers viewing their own audit trail in the UI | Deferred | Not for now; RLS on `audit.events` already allows it later |
 | 4 | Hosted Supabase or local Supabase CLI | Closed | Hosted Supabase (already in use) for development and the demo |
