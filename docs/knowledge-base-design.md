@@ -140,7 +140,7 @@ Retrieval is measured separately from answer quality.
 | MRR | How high the first correct section ranks (1 / rank, averaged) |
 | No-match accuracy | Out-of-scope questions return no sections |
 
-Add an `expected_article` (and where useful `expected_anchor`) to the cases in `backend/evaluation/`, including informal and misspelled rewrites of each question (EB7). Misses on informal wording are fixed first by adding customer wording to section text; if they remain common, that is the evidence for adding vector search later.
+Add an `expected_article` (and where useful `expected_anchor`) to the cases in `backend/evaluation/`, including informal and misspelled rewrites of each question (F18 evaluation set). Misses on informal wording are fixed first by adding customer wording to section text; if they remain common, that is the evidence for adding vector search later.
 
 ## 8. Tests
 
