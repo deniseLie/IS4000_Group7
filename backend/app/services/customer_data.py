@@ -14,6 +14,7 @@ from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,Cus
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
 from app.schemas.appointments import AppointmentRecord
 from app.schemas.consent_actions import ConsentRegistry
+from app.schemas.agendas import AgendaRegistry
 from app.services.authorization import require_permission
 
 STUB=False
@@ -29,6 +30,7 @@ REQUESTS=TypeAdapter(CustomerEnvelope[Annotated[list[RelationshipRequest],Field(
 SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_length=20)]])
 APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
 CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
+AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -103,6 +105,11 @@ async def get_appointments(ctx: RequestContext) -> ToolResult:
 
 async def get_consent_records(ctx: RequestContext) -> ToolResult:
     return _result(await _read('consent.records','customer_read_consent_records',{},CONSENTS,ctx))
+
+
+async def get_agendas(ctx: RequestContext) -> ToolResult:
+    """Current action-created drafts; legacy rows have no reviewed content snapshot and are excluded."""
+    return _result(await _read('agenda.list','customer_read_agendas',{},AGENDAS,ctx))
 
 
 async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:

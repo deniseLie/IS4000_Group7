@@ -1,6 +1,8 @@
-"""Typed record-action inputs; consent state changes run atomically in migration 0037."""
+"""Typed record-action inputs; private SQL executors commit changes and receipts atomically."""
+from app.schemas.agendas import AgendaSaveTarget
 from app.schemas.consent_actions import ConsentGrantTarget,ConsentRequestTarget,ConsentRevokeTarget
 from app.schemas.contracts import ActionCommand
+from app.services.privacy import redact
 
 
 def request_consent(command: ActionCommand) -> ConsentRequestTarget:
@@ -13,3 +15,8 @@ def grant_consent(command: ActionCommand) -> ConsentGrantTarget:
 
 def revoke_consent(command: ActionCommand) -> ConsentRevokeTarget:
     return ConsentRevokeTarget.model_validate(command.target)
+
+
+def save_agenda(command: ActionCommand) -> AgendaSaveTarget:
+    target=AgendaSaveTarget.model_validate(command.target)
+    return AgendaSaveTarget.model_validate({**target.model_dump(),'topics':[redact(topic)[0] for topic in target.topics]})

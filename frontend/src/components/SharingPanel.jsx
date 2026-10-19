@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Panel from './Panel';
 import RelationshipDetails from './RelationshipDetails';
 import ConsentControls from './ConsentControls';
+import AgendaDrafts from './AgendaDrafts';
 import {supabase} from '../lib/supabase';
 import {loadConsentRecords,loadSharingStatus} from '../lib/consent';
 
@@ -11,6 +12,7 @@ export default function SharingPanel({onClose,onReviewActions}) {
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [relationship,setRelationship]=useState(false);
+  const [agendas,setAgendas]=useState(false);
   const active=useRef(null);
   useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);
   async function refresh() {
@@ -35,6 +37,8 @@ export default function SharingPanel({onClose,onReviewActions}) {
     </div>}
     {status&&!status.recipient&&<p role="status" data-testid="sharing-no-manager">No relationship manager is currently assigned to your demo profile.</p>}
     <ConsentControls registry={registry} recipient={status?.recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/>
+    <button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>
+    {agendas&&<AgendaDrafts recipient={status?.recipient} onReviewActions={onReviewActions}/>}
     <button className="bank-chat-logout" data-testid="open-relationship-details" aria-expanded={relationship} onClick={()=>setRelationship(!relationship)}>View requests and appointment times</button>
     {relationship&&<RelationshipDetails onReviewActions={onReviewActions}/>}
   </Panel>;

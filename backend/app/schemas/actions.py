@@ -6,11 +6,12 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictBool,StrictI
 from app.schemas.contracts import Priority
 from app.schemas.events import WorkflowStatus
 from app.schemas.appointments import AppointmentResult,AppointmentTarget,SlotTarget,StoredAppointmentTarget
+from app.schemas.agendas import AgendaSaveResult,AgendaSaveTarget,StoredAgendaSaveTarget
 from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentRequestResult,ConsentRequestTarget,
     ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
-    'consent.request','consent.grant','consent.revoke']
+    'consent.request','consent.grant','consent.revoke','agenda.save']
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
 ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -82,9 +83,9 @@ class ActionFailure(BaseModel):
 
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
-    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget)
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
-    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget)
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget)
 
 
 class ActionRecord(BaseModel):
@@ -113,6 +114,7 @@ class ActionRecord(BaseModel):
         if action_type=='consent.request':return StoredConsentRequestTarget.model_validate(value)
         if action_type=='consent.grant':return StoredConsentGrantTarget.model_validate(value)
         if action_type=='consent.revoke':return StoredConsentRevokeTarget.model_validate(value)
+        if action_type=='agenda.save':return StoredAgendaSaveTarget.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -135,7 +137,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult
+    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -180,6 +182,9 @@ class ActionOutcome(BaseModel):
                     if not isinstance(receipt.result,expected):raise ValueError('Consent receipt disagrees with its operation')
                     if any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
                         raise ValueError('Consent receipt disagrees with the reviewed scope')
+                if command.type=='agenda.save':
+                    if not isinstance(receipt.result,AgendaSaveResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
+                        raise ValueError('Agenda receipt disagrees with the saved draft')
         return self
 
 
@@ -201,6 +206,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='consent.request':return ConsentRequestTarget.model_validate(value)
         if info.data.get('type')=='consent.grant':return ConsentGrantTarget.model_validate(value)
         if info.data.get('type')=='consent.revoke':return ConsentRevokeTarget.model_validate(value)
+        if info.data.get('type')=='agenda.save':return AgendaSaveTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

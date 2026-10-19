@@ -57,6 +57,11 @@ async def appointments(request: Request,ctx: RequestContext=Depends(get_ctx)) ->
     return await read_result(lambda:customer_data.get_appointments(ctx),request,ctx,'appointments.list')
 
 
+@router.get('/relationship/agendas',response_model=ToolResult)
+async def agendas(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_agendas(ctx),request,ctx,'agenda.list')
+
+
 @router.post('/relationship/holds',response_model=ActionOutcome)
 async def hold(query: HoldAppointment,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
     async def operation() -> ActionOutcome:

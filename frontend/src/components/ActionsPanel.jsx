@@ -19,6 +19,7 @@ function commandTitle(command) {
   if(command.type==='consent.request')return 'Record a data-sharing consent request';
   if(command.type==='consent.grant')return 'Grant reviewed data-sharing consent';
   if(command.type==='consent.revoke')return 'Revoke a recorded data-sharing grant';
+  if(command.type==='agenda.save')return 'Save a private synthetic agenda draft';
   throw new Error('This action type has no review title. Reload its recorded status.');
 }
 
@@ -36,6 +37,7 @@ function receiptText(item) {
   if(item.command.type==='consent.request')return 'This command recorded a consent request. It did not grant consent or share data.';
   if(item.command.type==='consent.grant')return 'This command granted the reviewed consent scope. Check Data sharing for its current status. Granting consent does not itself share data.';
   if(item.command.type==='consent.revoke')return 'This command revoked the reviewed grant. Other active grants remain until separately revoked or expired. Previously shared records are not erased.';
+  if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
   throw new Error('This action type has no verified receipt description.');
 }
 
@@ -100,6 +102,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
       return <li key={command.command_id} data-command-id={command.command_id}>
         <h3>{commandTitle(command)}</h3>
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
+        {command.type==='agenda.save'&&<div data-testid="command-agenda"><p>Draft recipient: {command.target.recipient_name}. Intended draft revision: {command.target.expected_revision+1}.</p><pre className="agenda-content">{command.target.content}</pre></div>}
         {command.type.startsWith('appointment.')&&<p data-testid="command-appointment">{appointmentTime(command.target.starts_at)} – {appointmentTime(command.target.ends_at)} (Singapore time). Format: {command.target.format.replaceAll('_',' ')}.</p>}
         {command.type.startsWith('consent.')&&<div data-testid="command-consent-scope"><p>Recipient: {command.target.recipient_name||command.target.recipient}</p><p>Purpose: {command.target.purpose}. Data categories: {consentCategoryText(command.target.categories)}.</p><p>{command.type==='consent.request'?`Requested duration: ${command.target.duration_days} days.`:command.target.expires_at?`Grant expires: ${new Date(command.target.expires_at).toLocaleString()}.`:'This recorded grant has no expiry.'}</p></div>}
         <p>Recorded status: <strong data-testid="command-state">{command.state}</strong></p>

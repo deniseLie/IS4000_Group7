@@ -143,7 +143,13 @@ grants intact and does not erase previously shared records. Registry snapshots
 use JWT/RLS plus explicit customer filters, show active grants first and disclose
 the 200-row bounds and totals. Writes, receipts, audit and outbox are atomic;
 grant/revocation notifications are service records. A grant does not itself share
-data. Actual summary/agenda sharing and other record executors remain pending.
+data. Migrations `0041`–`0042` add private agenda drafts through `agenda.save`:
+customers edit 1–12 topics, explicitly select basic profile fields and review the
+redacted, server-derived preview. Optimistic revisions prevent lost edits; each
+save has an atomic receipt, audit and notification. The data-sharing panel shows
+up to 200 current action-created drafts and their total; Actions retains historical
+save receipts. Saving never grants consent or shares data. Actual summary/agenda
+sharing, AI drafting and other record executors remain pending.
 
 The data-sharing panel also opens relationship requests and suggested
 appointment times. Migration `0012` calculates thirty-minute suggestions from the

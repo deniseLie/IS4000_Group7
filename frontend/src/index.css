@@ -251,3 +251,6 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .customer-records h4{margin:0 0 8px;font-size:.95rem}
 .customer-records article p{margin:6px 0}
 .customer-records .sharing-details dd{overflow-wrap:anywhere}
+.agenda-content {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;}
+.relationship-details textarea {display:block;width:100%;resize:vertical;min-height:7rem;padding:.75rem;}
+.relationship-details fieldset label {display:flex;align-items:flex-start;gap:.4rem;line-height:1.5;margin:.35rem 0;}

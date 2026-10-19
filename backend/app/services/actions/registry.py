@@ -13,4 +13,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'consent.request': records.request_consent,
     'consent.grant': records.grant_consent,
     'consent.revoke': records.revoke_consent,
+    'agenda.save': records.save_agenda,
 }
