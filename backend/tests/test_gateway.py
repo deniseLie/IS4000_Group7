@@ -121,6 +121,18 @@ def test_login_without_profile_cannot_use_personal_mode():
     r=client.post('/chat',json=chat(mode='personal'),headers=bearer(sub=str(uuid4())))
     assert r.status_code==403 and code(r)=='profile_missing'
 
+def test_unlinked_login_reaches_public_agent_but_cannot_use_personal_mode(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings,'pipeline','v2')
+    monkeypatch.delenv('LLM_MODEL',raising=False)
+    headers=bearer(sub=str(uuid4()))
+    response=client.post('/chat',json=chat('Hello',mode='public'),headers=headers)
+    # No fake model: missing configuration withholds the agent section after knowledge access is authorised.
+    assert response.status_code==200 and 'event: answer' in response.text and 'event: error' not in response.text
+    assert '"response_origin": "validation"' in response.text and '"sections"' in response.text
+    personal=client.post('/chat',json=chat(mode='personal'),headers=headers)
+    assert personal.status_code==403 and code(personal)=='profile_missing'
+
 def test_rate_limit_returns_429_with_retry_after(monkeypatch):
     now=[0.0]
     monkeypatch.setattr(gateway,'customer_bucket',TokenBucket(2,0.5,clock=lambda:now[0]))

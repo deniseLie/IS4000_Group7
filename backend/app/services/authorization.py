@@ -45,7 +45,9 @@ def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | 
         if action not in PUBLIC_TOOLS:return Decision(allow=False,reasons=['guest_no_personal_data'])
         if scope.customer_id is not None:return Decision(allow=False,reasons=['customer_scope_mismatch'])
     else:
-        if not subject.user_id or subject.customer_id is None or subject.customer_id <= 0 or not subject.jwt or not subject.jwt.get_secret_value().strip():
+        if not subject.user_id or not subject.jwt or not subject.jwt.get_secret_value().strip():
+            return Decision(allow=False,reasons=['customer_session_required'])
+        if action not in PUBLIC_TOOLS and (subject.customer_id is None or subject.customer_id <= 0):
             return Decision(allow=False,reasons=['customer_session_required'])
         if scope.customer_id is not None and scope.customer_id != subject.customer_id:
             return Decision(allow=False,reasons=['customer_scope_mismatch'])
