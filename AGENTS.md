@@ -44,6 +44,7 @@ Legacy and unused: `frontend/src/api/chat.js`, `frontend/src/components/ChatWind
 ## Tests and docs
 
 - Backend tests: `backend/tests/` (`test_chat`, `test_customer_scope`, `test_knowledge_checks`, `test_source_units`, `test_llm_contract`, `test_llm_gateway`, `test_prompts`, `test_health`, `test_gateway` (JWT, rate limit, size limit, session events with locally minted tokens); `test_rls_live` is opt-in via `TEST_PERSONA_FIXTURE_FILE` (persona logins in git-ignored `personas.json`); browser suites use the normal application and real provider).
+- Native database checks: `backend/tests/test_database_local.py` (setup/run instructions in its module docstring; optional `dbtest` dependencies). Applies unchanged migrations to temporary PostgreSQL after test-only platform/legacy prerequisites; tests SQL RLS and audit transactions. It does not run hosted Auth, the Data API or Realtime.
 - Frontend tests: `frontend/src/lib/chatTools.test.js` (unit), `frontend/tests/chat.spec.js` (Playwright, real backend safety paths), `frontend/tests/live.spec.js` (live services).
 - Docs: `README.md` (setup, known limits), `docs/chatbot-architecture.md`, `docs/multi-capability-architecture.md`, `docs/prompt-log/`, `docs/tracing-plan.md`, `docs/synthetic-data-spec.md`.
 - Active completion evidence: `docs/core-completion-plan.md`. Explicit currency/percentage checks and limited English attribution checks are not semantic proof. Do not count offline validation as live AI accuracy.

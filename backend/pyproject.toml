@@ -24,6 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+dbtest = ["pgserver==0.1.4", "psycopg[binary]>=3.2,<4"]
 
 [tool.setuptools.packages.find]
 include = ["app*", "evaluation*", "scripts*"]
