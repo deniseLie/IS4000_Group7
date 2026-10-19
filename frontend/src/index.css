@@ -222,6 +222,12 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 }
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
 .sharing-details {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0.5rem 1rem;}
+.command-list {list-style:none;padding:0;display:grid;gap:20px;}
+.command-list>li {border-top:1px solid var(--line);padding-top:16px;overflow-wrap:anywhere;}
+.command-list h3 {font-size:17px;line-height:1.4;}
+.command-review {border-left:3px solid #b5261c;padding-left:14px;}
+.command-review label {display:flex;align-items:flex-start;gap:9px;line-height:1.5;}
+.command-review input {flex-shrink:0;margin-top:5px;}
 .sharing-details dt {font-weight:600;}
 .sharing-details dd {margin:0;overflow-wrap:anywhere;}
 .relationship-details {border-top:1px solid #e7e7e7;margin-top:1rem;padding-top:1rem;}

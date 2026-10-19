@@ -92,10 +92,10 @@ def test_native_row_change_and_audit_commit_together(database: 'Connection[SqlRo
 
 
 def test_audit_events_are_immutable_even_for_table_owner(database: 'Connection[SqlRow]') -> None:
-    from psycopg.errors import RaiseException
+    from psycopg.errors import FeatureNotSupported,RaiseException
     database.execute("select audit.record('chat','chat.message_received')")
     for query in ['update audit.events set outcome=\'failed\'','delete from audit.events','truncate audit.events']:
-        with pytest.raises(RaiseException):
+        with pytest.raises((RaiseException,FeatureNotSupported)):
             with database.transaction():database.execute(query)
 
 

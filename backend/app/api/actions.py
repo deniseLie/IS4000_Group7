@@ -1,0 +1,82 @@
+"""Customer command review. Confirmation accepts only the command id; targets come from owned storage."""
+from collections.abc import Awaitable,Callable
+from typing import TypeVar
+from uuid import UUID
+import httpx
+from fastapi import APIRouter,Depends,Request
+from postgrest.exceptions import APIError
+from pydantic import ValidationError
+from app.api.audited import flush
+from app.core import data_api
+from app.core.errors import ApiError
+from app.core.gateway import get_ctx
+from app.core.observability import log_event
+from app.schemas.actions import ActionOutcome,CreateAction
+from app.schemas.contracts import ActionCommand,RequestContext
+from app.services import actions,audit
+from app.services.actions import store
+from app.services.authorization import PolicyDenied
+
+router=APIRouter()
+T=TypeVar('T')
+
+
+async def response_for(operation: Callable[[],Awaitable[T]],ctx: RequestContext,request: Request) -> T:
+    if ctx.principal.kind!='customer':raise ApiError(401,'auth_required','Please sign in to review actions.')
+    if ctx.principal.customer_id is None:raise ApiError(403,'profile_missing','A linked demo customer profile is required for actions.')
+    batch=audit.start_batch(request.state.db,session_id=ctx.session_id)
+    try:result=await operation()
+    except (PolicyDenied,store.ActionNotFound,actions.ActionStateError,store.ActionIntegrityError,ValidationError,APIError,httpx.TransportError) as error:
+        code=data_api.database_code(error) if isinstance(error,APIError) else None
+        log_event('action_request_failed',db_code=code,error_type=type(error).__name__)
+        await flush(batch)
+        if isinstance(error,store.ActionNotFound) or code=='P0002':raise ApiError(404,'action_not_found','This command was not found in your demo profile.') from error
+        if isinstance(error,PolicyDenied) or code=='42501':raise ApiError(403,'action_forbidden','This session cannot perform that action. Reopen your current demo profile.') from error
+        if isinstance(error,actions.ActionStateError):raise ApiError(409,'action_'+str(error),'This proposal is '+str(error)+'. No new action was executed.') from error
+        if code=='23505':raise ApiError(409,'action_conflict','This command id or idempotency key already names another action. Reload the command.') from error
+        if code=='22023':raise ApiError(422,'action_invalid','The action parameters are invalid for this demo service.') from error
+        raise ApiError(503,'action_unavailable','The action result cannot be verified. Reload its recorded status before retrying.') from error
+    await flush(batch)
+    return result
+
+
+@router.get('/commands',response_model=list[ActionOutcome])
+async def recent(request: Request,ctx: RequestContext=Depends(get_ctx)) -> list[ActionOutcome]:
+    async def operation() -> list[ActionOutcome]:
+        with data_api.connect(ctx) as db:return await store.recent(ctx,db)
+    return await response_for(operation,ctx,request)
+
+
+@router.get('/commands/{command_id}',response_model=ActionOutcome)
+async def load(command_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
+    async def operation() -> ActionOutcome:
+        with data_api.connect(ctx) as db:return await store.load(command_id,ctx,db)
+    return await response_for(operation,ctx,request)
+
+
+@router.post('/commands',response_model=ActionOutcome)
+async def propose(query: CreateAction,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
+    async def operation() -> ActionOutcome:
+        command=ActionCommand(command_id=query.command_id,type=query.type,target=query.target.model_dump(mode='json'),
+            idempotency_key=f'{query.case_id}:{query.task_id}:{query.type}')
+        result=await actions.run_action(command,ctx.model_copy(update={'case_id':query.case_id}),False)
+        with data_api.connect(ctx) as db:return await store.load(result.command_id,ctx,db)
+    return await response_for(operation,ctx,request)
+
+
+@router.post('/commands/{command_id}/confirm',response_model=ActionOutcome)
+async def confirm(command_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
+    async def operation() -> ActionOutcome:
+        with data_api.connect(ctx) as db:current=await store.load(command_id,ctx,db)
+        item=current.command
+        command=ActionCommand(command_id=item.command_id,type=item.type,idempotency_key=item.idempotency_key,target=item.target.model_dump(mode='json'))
+        result=await actions.run_action(command,ctx.model_copy(update={'case_id':item.case_id}),True)
+        with data_api.connect(ctx) as db:return await store.load(result.command_id,ctx,db)
+    return await response_for(operation,ctx,request)
+
+
+@router.post('/commands/{command_id}/reject',response_model=ActionOutcome)
+async def reject(command_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
+    async def operation() -> ActionOutcome:
+        with data_api.connect(ctx) as db:return await actions.reject_action(command_id,ctx,db)
+    return await response_for(operation,ctx,request)

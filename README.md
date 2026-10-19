@@ -112,8 +112,8 @@ public LangGraph flow: plan, prioritise, dispatch and compose. `KNOWLEDGE_STORE=
 uses the approved in-memory library; `KNOWLEDGE_STORE=database` uses the read-only
 knowledge RPCs after migrations `0008`, `0009` and `0011` are applied. Five real-provider domain agents return
 validated sections with their own sources and prompt versions. Fixed safety
-responses still bypass the model. Personal data, uploaded documents, persisted
-checkpoints and confirmed actions are not yet connected to v2; unavailable
+responses still bypass the model. Personal tools, uploaded documents and agent-proposed
+actions are not yet connected to v2; unavailable
 operations are reported explicitly. Supabase migration and live persona work
 remain pending.
 
@@ -134,8 +134,7 @@ coverage, revocation and wall-clock expiry. Signed-in users can open the read-on
 data-sharing view to check basic-profile consent for their currently assigned
 manager. This requires migration `0010` on the target database; hosted application
 is still pending. Registry failures remain errors, and status is released only
-after audit succeeds. Grant/revoke, sharing and transactional action enforcement
-remain pending; the unused action stubs must not be connected to live workflows.
+after audit succeeds. Consent grant/revoke and sharing writes remain pending.
 
 The data-sharing panel also opens read-only relationship requests and suggested
 appointment times. Migration `0012` calculates thirty-minute suggestions from the
@@ -165,8 +164,24 @@ the owned turn; its module docstring describes signing and key rotation. Runtime
 authentication stays outside graph state. Native tests cover pause/restart/resume,
 pending writes, tampering, customer/guest isolation, cancellation and atomic audit
 failure. The normal UI also preserves explicit unavailable sections across refresh.
-This establishes checkpoint persistence; customer-facing action confirmation and
-automatic recovery of interrupted requests still require the Action Service.
+Automatic recovery of interrupted requests and action-driven graph resume remain pending.
+
+The Action Service (`services/actions/`, migrations `0017`–`0019`) now persists proposals,
+customer confirmation/rejection and receipts for temporary synthetic-card blocks and
+demo support handoffs. `POST /commands` requires an owned conversation case;
+`POST /commands/{id}/confirm` loads the stored target and rechecks policy. Customers
+review their latest 50 commands in **Actions**; expired/rejected commands execute
+nothing, and failed commands have an explicit failed receipt. Card blocks require
+confirmation; support handoffs follow the policy's automatic-action rule. Reusing an
+open handoff keeps its identity and emits a reuse event instead of another creation.
+SQL executors
+keep business changes, ledger, outbox and audit atomic over the public-key/user-JWT
+Data API. Python executor modules validate their typed contracts. Native API/browser
+checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
+The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
+session, not hosted password login. Hosted migration application, agent proposal/SSE
+integration, remaining executors and outbox delivery remain pending. No real bank
+card or staffed support service is connected.
 
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m

@@ -4,6 +4,7 @@ import Panel from './components/Panel';
 import Answer from './components/Answer';
 import SharingPanel from './components/SharingPanel';
 import SavedChats from './components/SavedChats';
+import ActionsPanel from './components/ActionsPanel';
 import { supabase } from './lib/supabase';
 import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
@@ -41,6 +42,7 @@ export default function Chat({session,onSignIn}) {
   const [conversation,setConversation]=useState(null);
   const [pending,setPending]=useState(null);
   const [savedChats,setSavedChats]=useState(false);
+  const [actionsOpen,setActionsOpen]=useState(false);
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -82,7 +84,7 @@ export default function Chat({session,onSignIn}) {
     writeActive(session?.user.id||null,access);
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setMessages(history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);
+    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);
     setNotice(history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
@@ -114,7 +116,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
-    setConversation(null);setPending(null);setSavedChats(false);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setSavedChats(false);setActionsOpen(false);if(store!==null)setBootError('');
     return true;
   }
 
@@ -197,6 +199,7 @@ export default function Chat({session,onSignIn}) {
       <div className="chat-actions"><button className="bank-chat-logout" data-testid="new-chat" disabled={booting} onClick={reset}><Icon name="plus"/>New chat</button><button className="bank-chat-logout support-action" onClick={prepareSummary}><Icon name="support"/><span>Talk to a person</span></button>
       {session&&store==='database'&&<button className="bank-chat-logout support-action" aria-label="Open saved conversations" data-testid="open-saved-chats" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(true);}}><Icon name="history"/><span>Saved chats</span></button>}
       {session&&<button className="bank-chat-logout support-action" aria-label="Review data-sharing consent" title="Data-sharing consent" data-testid="open-data-sharing" onClick={()=>{setSummary(null);setArticle(null);setSharing(true);}}><Icon name="shield"/><span>Data sharing</span></button>}
+      {session&&<button className="bank-chat-logout support-action" aria-label="Review proposed actions" data-testid="open-actions" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(true);}}><Icon name="card"/><span>Actions</span></button>}
       {session?<button className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
     </header>
     <div className="bank-chat-layout">
@@ -243,5 +246,6 @@ export default function Chat({session,onSignIn}) {
       <small>Version {article.version}</small></Panel>}
     {sharing&&<SharingPanel onClose={()=>setSharing(false)}/>}
     {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}
+    {actionsOpen&&<ActionsPanel onClose={()=>setActionsOpen(false)}/>}
   </div>;
 }
