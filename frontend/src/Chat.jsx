@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon';
 import Panel from './components/Panel';
+import Answer from './components/Answer';
 import { supabase } from './lib/supabase';
 import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
 
@@ -9,6 +10,7 @@ const GUEST_SESSION = globalThis.crypto?.randomUUID?.();  // needs a secure cont
 const ERRORS = {
   auth_invalid:'Session expired. Please sign in again.', auth_expired:'Session expired. Please sign in again.', auth_required:'Please sign in to use your account.',
   profile_missing:'No demo customer profile is linked to this login. Use General help or ask the project owner to link a synthetic profile.',
+  personal_unavailable:'Personal demo records are unavailable. Select General help to continue.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Personal records are synthetic. AI answers can contain errors.';
@@ -129,15 +131,14 @@ export default function Chat({session,onSignIn}) {
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}</div>}
-                <span className="answer-text">{m.content||(loading?'Checking the available information…':'')}</span>
-                {!!m.sources?.length&&<details className="answer-sources"><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{m.sources.map(s=><div key={s.id}>{s.url?<button className="source-link" data-source-id={s.id} onClick={()=>showSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>}
+                <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
                 {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
               </div>
             </div>)}
           </div>
           <div className="composer-area"><form className="bank-chat-composer" onSubmit={send}>
             <input ref={composer} id="chat-composer" aria-label="Your message" value={input} onChange={e=>setInput(e.target.value)} disabled={loading} maxLength={4000} placeholder="Ask a banking question…"/>
-            <div className="composer-tools"><span><Icon name="shield"/>Never share your PIN, password or OTP</span><button disabled={loading||!input.trim()}>{loading?'Please wait':'Send'}<Icon name="send"/></button></div>
+            <div className="composer-tools"><span><Icon name="shield"/>Never share your PIN, password or OTP</span><button data-testid="send-message" disabled={loading||!input.trim()}>{loading?'Please wait':'Send'}<Icon name="send"/></button></div>
           </form><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
           <details className="session-note"><summary>About this conversation</summary><p>Chat history is temporary. Refreshing or starting a new chat clears it. Older messages may be omitted from long chats. General guidance works without login. Sign in for synthetic account records.</p></details></div>
         </section>

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
 from app.core.auth import get_customer_context
+from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import start_trace, span
@@ -14,6 +15,7 @@ from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.trace_store import save_trace
+from app.services.orchestrator import answer_public
 
 logger=logging.getLogger(__name__)
 router=APIRouter()
@@ -45,11 +47,14 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     p,db=ctx.principal,request.state.db
     if req.mode=='personal' and p.kind!='customer':raise ApiError(401,'auth_required','Please sign in to use your account.')
     if req.mode=='personal' and p.customer_id is None:raise ApiError(403,'profile_missing','No demo customer profile is linked to this login.')
+    risk=assess_request(req)
+    if settings.pipeline=='v2' and req.mode=='personal' and risk.fixed_response is None:
+        raise ApiError(503,'personal_unavailable','Personal demo records are unavailable. Select General help to continue.')
     trace=start_trace()
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
     batch=start_batch(db,session_id=ctx.session_id)
     batch.add('chat','chat.message_received',details={'mode':req.mode,'history_len':len(req.messages)})
-    if req.mode=='personal' and assess_request(req).fixed_response is None:
+    if req.mode=='personal' and risk.fixed_response is None:
         with span('customer_context','tool') as a:
             context=await run_in_threadpool(get_customer_context,db,p.customer_id)
             a['chars']=len(context)
@@ -58,7 +63,11 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     async def events():
         yield {'event':'status','data':'Checking the available information…'}
         try:
-            result=await make_answer(req,context)
+            if settings.pipeline=='v2' and risk.fixed_response is None:
+                result=(await answer_public(req,risk)).model_dump(mode='json')
+                trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
+                    privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
+            else:result=await make_answer(req,context)
             audit_reply(batch,trace,result)
             await batch.flush()  # before the answer: an unaudited answer is never sent
             trace.attrs['outcome']='ok'

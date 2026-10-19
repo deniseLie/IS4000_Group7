@@ -105,6 +105,23 @@ Expected answer: ask whether the problem happened at an ATM, online or in a shop
 
 After: the customer reviews and edits a draft, then copies it. The page explicitly says that copying does not send a ticket or contact staff.
 
+## Foundation pipeline
+
+`PIPELINE=v1` keeps the existing answer flow. `PIPELINE=v2` enables the initial
+public LangGraph flow: plan, prioritise, dispatch and compose, using the existing
+approved in-memory knowledge library. Five real-provider domain agents return
+validated sections with their own sources and prompt versions. Fixed safety
+responses still bypass the model. Personal data, uploaded documents, persisted
+checkpoints and confirmed actions are not yet connected to v2; unavailable
+operations are reported explicitly. Supabase migration and live persona work
+remain pending.
+
+Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
+call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
+pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each
+domain agent against that provider. These checks consume provider quota and
+fail on invalid or unavailable answers. The normal backend suite skips them.
+
 ## Prompt versioning
 
 Prompts live in `backend/app/prompts/<agent>/<version>/`, not in Python. The answer agent uses `prompts/answer/<version>/` (`system.md`, `format.md`, `public_only.md`) and `PROMPT_VERSION` (default `v2`) selects the directory; other agents are selected with `PROMPT_VERSIONS` (JSON, e.g. `{"planner":"v1"}`). Every model call goes through the LLM Gateway (`backend/app/services/llm_gateway.py`): strict JSON check, `LLM_TIMEOUT_S` per attempt, `LLM_MAX_RETRIES` on timeouts/429/5xx only, and a per-request `LLM_REQUEST_TOKEN_BUDGET`. Gateway failures are reported as errors, never replaced with a sample answer. To change wording, copy the latest directory to a new `vN`, edit it and set `PROMPT_VERSION=vN`; do not edit a released version. Each model-generated answer carries `prompt_version` (e.g. `v1+1a2b3c4d`, the version plus a content hash). Fixed no-model responses carry `null`. Evaluation reports record it too, so `--compare` can show before/after for two prompt versions.

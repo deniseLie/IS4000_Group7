@@ -6,6 +6,13 @@ One file per released prompt version, under `<agent>/`. Prompt files live in `ba
 
 | Version | Date | Change | Offline | Live (manual) | Decision |
 |---|---|---|---|---|---|
+| [planner v1](planner/v1.md) | 2026-10-19 | Initial public v2 issue planning | Schema/routing checks pass | v2 browser checks pass | Initial foundation |
+| [domain common v1](domain_common/v1.md) | 2026-10-19 | Shared output contract and bounded source revision | Validator checks pass | Five real agents checked | Initial foundation |
+| [retail v1](retail/v1.md) | 2026-10-19 | Everyday Banking role | Validator checks pass | Real provider + browser | Public evidence only |
+| [fraud v1](fraud/v1.md) | 2026-10-19 | Fraud and Security role | Validator checks pass | Real provider + browser | Guidance; no actions |
+| [compliance v1](compliance/v1.md) | 2026-10-19 | Compliance Review role | Validator checks pass | Real provider checked | No case tools yet |
+| [document v1](document/v1.md) | 2026-10-19 | Document Check role | Validator checks pass | Real provider checked | No uploads yet |
+| [relationship v1](relationship/v1.md) | 2026-10-19 | Relationship role | Validator checks pass | Real provider checked | No personal tools yet |
 | [answer v2](answer/v2.md) | 2026-10-13 | Real AI conversation and source separation | 17 direct validator checks | See real AI review | Integrated; last live recheck pending |
 | [answer v1](answer/v1.md) | 2026-10-12 | Baseline | 17/17 pass | 8 pass, 1 partial, 1 fail, 1 error (of 11) | Adopted as baseline |
 

@@ -107,10 +107,19 @@ class AgentResult(Contract):
     status: AgentStatus
     answer_kind: AnswerKind = 'banking'
     text: str = ''
+    question: str | None = None
     citations: list[Citation] = []
     tool_calls: list[ToolCallRef] = []
     pending_action: PendingAction | None = None
     receipts: list[ReceiptRef] = []
+
+    @model_validator(mode='after')
+    def _clarification(self):
+        if self.status == 'needs_clarification' and not (self.question and self.question.strip()):
+            raise ValueError('needs_clarification requires a question')
+        if self.status != 'needs_clarification' and self.question is not None:
+            raise ValueError('question is only valid for needs_clarification')
+        return self
 
 
 # ActionCommand / Receipt: Action Service; the executor comes from `type` in the registry, never from the model

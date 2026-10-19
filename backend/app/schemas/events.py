@@ -15,7 +15,7 @@ class StatusEvent(BaseModel):  # v2 pipeline; v1 still sends a plain status stri
 class Source(BaseModel):  # same fields as services/knowledge.source()
     id: str
     title: str
-    url: str
+    url: str | None
     version: str
     publisher: str | None = None
     reference_url: str | None = None
@@ -34,6 +34,7 @@ class AnswerSection(BaseModel):  # one per task, priority order
     sources: list[Source] = []
     needs_human: bool = False
     response_origin: Origin
+    prompt_version: str | None = None
 
 
 class AnswerEvent(BaseModel):  # today's answer object + optional sections
