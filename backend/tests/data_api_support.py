@@ -130,7 +130,7 @@ def native_api_client(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(auth,'_jwks',jwt.PyJWKClient(local_data_api.url+'/rpc/native_test_jwks'))
     monkeypatch.setattr(auth,'user_db',native_user_db)
     def native_data_api(ctx: RequestContext) -> SyncPostgrestClient:
-        db=SyncPostgrestClient(local_data_api.url)
+        db=SyncPostgrestClient(local_data_api.url,headers={'X-Request-ID':str(ctx.request_id)})
         if ctx.principal.jwt is not None:db.auth(ctx.principal.jwt.get_secret_value())
         return db
     monkeypatch.setattr(data_api,'connect',native_data_api)

@@ -53,7 +53,7 @@ class StoredMessage(BaseModel):
     model_config=ConfigDict(extra='ignore')
     message_id: UUID
     role: Literal['user','assistant']
-    redacted_text: Annotated[str,StringConstraints(strict=True,min_length=1,max_length=20000)]
+    redacted_text: Annotated[str,StringConstraints(strict=True,min_length=1,max_length=20008)]
     created_at: AwareDatetime
     sequence: Annotated[StrictInt,Field(gt=0)]
     payload: AnswerEvent | StoredFailure | None

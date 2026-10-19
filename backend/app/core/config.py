@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     max_tokens: int = 4096
     pipeline: Literal['v1', 'v2'] = 'v1'
     knowledge_store: Literal['memory','database'] = 'memory'
+    conversation_store: Literal['off','database'] = 'off'
     cors_origins: list[str] = ["http://localhost:5173"]
 
     prompt_version: str = "v2"

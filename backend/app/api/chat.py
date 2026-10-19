@@ -1,23 +1,30 @@
 import json
-import logging
+import httpx
+from postgrest.exceptions import APIError
+from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
+from app.api import chat_store
+from app.api.conversations import response_for
 from app.core.auth import get_customer_context
+from app.core.data_api import database_code
 from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
-from app.core.observability import start_trace, span
+from app.core.observability import log_event, start_trace, span
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import RequestContext
+from app.schemas.conversations import StoredFailure
+from app.schemas.events import AnswerEvent
 from app.services.answers import make_answer
+from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.trace_store import save_trace
 from app.services.orchestrator import answer_public
 
-logger=logging.getLogger(__name__)
 router=APIRouter()
 FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance'}
 
@@ -42,47 +49,82 @@ def knowledge(article_id:str):
     if not article:raise HTTPException(404,'Source not found')
     return {**source(article),'content':article.content,'notice':article.notice}
 
+@router.get('/capabilities')
+def capabilities() -> dict[str,str]:
+    return {'conversation_store':settings.conversation_store}
+
+
 @router.post('/chat')
 async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ctx)):
-    """The gateway has already checked the token, rate limit and size; ctx is the only source of identity."""
+    """The gateway owns identity; saved chats load server history and persist the guarded question first."""
     p,db=ctx.principal,request.state.db
     if req.mode=='personal' and p.kind!='customer':raise ApiError(401,'auth_required','Please sign in to use your account.')
     if req.mode=='personal' and p.customer_id is None:raise ApiError(403,'profile_missing','No demo customer profile is linked to this login.')
-    risk=assess_request(req)
+    prepared=None
+    if settings.conversation_store=='database':
+        prepared=await response_for(lambda:chat_store.prepare(req,request,ctx),ctx,request,'conversation.start')
+        req,risk=prepared.request,prepared.risk
+        ctx=ctx.model_copy(update={'case_id':prepared.turn.turn.case_id})
+    else:
+        if req.conversation_id is not None:raise ApiError(503,'conversation_unavailable','Saved conversations are not enabled on this server.')
+        risk=assess_request(req)
     if settings.pipeline=='v2' and req.mode=='personal' and risk.fixed_response is None:
         raise ApiError(503,'personal_unavailable','Personal demo records are unavailable. Select General help to continue.')
     trace=start_trace()
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
     batch=start_batch(db,session_id=ctx.session_id)
     batch.add('chat','chat.message_received',details={'mode':req.mode,'history_len':len(req.messages)})
-    if req.mode=='personal' and risk.fixed_response is None:
-        with span('customer_context','tool') as a:
-            context=await run_in_threadpool(get_customer_context,db,p.customer_id)
-            a['chars']=len(context)
+    async def personal_context() -> str:
+        with span('customer_context','tool') as attrs:
+            result=await run_in_threadpool(get_customer_context,db,p.customer_id)
+            attrs['chars']=len(result)
         batch.add('data','data.read',resource_type='customer_context',details={'tool':'customer_context'})
-    else:context=None
+        return result
+    context=await personal_context() if prepared is None and req.mode=='personal' and risk.fixed_response is None else None
     async def events():
+        turn=prepared.turn if prepared is not None else None
+        if prepared is not None:yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}
         yield {'event':'status','data':'Checking the available information…'}
         try:
-            if settings.pipeline=='v2' and risk.fixed_response is None:
-                result=(await answer_public(req,risk,ctx)).model_dump(mode='json')
-                trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
-                    privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
-            else:result=await make_answer(req,context)
+            if turn is not None and turn.response is not None:
+                if isinstance(turn.response,StoredFailure):raise chat_store.SavedReplyFailed(turn.response.error.message)
+                result=turn.response.model_dump(mode='json')
+                trace.attrs.update(route='conversation_replay',source_check=result['source_check'],needs_human=result['needs_human'])
+            else:
+                current_context=await personal_context() if prepared is not None and req.mode=='personal' and risk.fixed_response is None else context
+                if settings.pipeline=='v2' and risk.fixed_response is None:
+                    result=(await answer_public(req,risk,ctx)).model_dump(mode='json')
+                    trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
+                        privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
+                else:result=await make_answer(req,current_context)
+                if prepared is not None:
+                    turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)
+                    yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}
+                    if isinstance(turn.response,StoredFailure):raise chat_store.SavedReplyFailed(turn.response.error.message)
+                    result=turn.response.model_dump(mode='json')
+            if prepared is not None:result['history_trimmed']=result['history_trimmed'] or prepared.history_trimmed
             audit_reply(batch,trace,result)
-            await batch.flush()  # before the answer: an unaudited answer is never sent
+            await batch.flush()
             trace.attrs['outcome']='ok'
             yield {'event':'answer','data':json.dumps(result,ensure_ascii=False)}
             yield {'event':'done','data':''}
-        except Exception as e:
-            logger.warning('Answer generation failed')
-            trace.attrs.update(outcome='error',error_type=type(e).__name__[:64],route=trace.attrs.get('route') or 'error')
-            if not isinstance(e,AuditWriteError):
+        except Exception as error:
+            code=database_code(error) if isinstance(error,APIError) else None
+            log_event('chat_failed',error_type=type(error).__name__,db_code=code)
+            trace.attrs.update(outcome='error',error_type=type(error).__name__[:64],route=trace.attrs.get('route') or 'error')
+            message=str(error) if isinstance(error,chat_store.SavedReplyFailed) else chat_store.unavailable().error.message
+            if prepared is not None and turn.turn.state=='processing':
                 try:
-                    audit_reply(batch,trace,error=e)
-                    await batch.flush()
-                except Exception:pass  # already failing; flush() logs a failed write
-            yield {'event':'error','data':'The assistant is temporarily unavailable. Please retry or use your bank’s official support channel.'}
+                    turn=await chat_store.finish(prepared,turn,chat_store.unavailable(),ctx)
+                    yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}
+                except (APIError,httpx.TransportError,ValidationError,ConversationIntegrityError) as storage_error:
+                    log_event('conversation_save_failed',error_type=type(storage_error).__name__)
+                    message='The reply failed and could not be saved. Reopen this chat to check it or cancel the pending reply.'
+            if not isinstance(error,AuditWriteError):
+                audit_reply(batch,trace,error=error)
+                try:await batch.flush()
+                except AuditWriteError as audit_error:log_event('chat_failure_audit_unavailable',error_type=type(audit_error).__name__)
+            yield {'event':'error','data':message}
         finally:
             trace.attrs.setdefault('outcome','error')
             trace.attrs.setdefault('route','error')

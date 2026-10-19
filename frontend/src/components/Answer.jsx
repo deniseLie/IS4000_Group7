@@ -2,7 +2,7 @@ const DOMAIN_LABELS={retail:'Everyday banking',fraud:'Fraud & security',complian
 
 function Sources({sources,onSource}) {
   if(!sources?.length)return null;
-  return <details className="answer-sources"><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{sources.map(s=><div key={s.id}>{s.url?<button className="source-link" data-source-id={s.id} onClick={()=>onSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>;
+  return <details className="answer-sources" data-testid="answer-sources"><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{sources.map(s=><div key={s.id}>{s.url?<button className="source-link" data-source-id={s.id} onClick={()=>onSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>;
 }
 
 export default function Answer({message,pendingText,onSource}) {

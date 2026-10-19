@@ -145,14 +145,18 @@ details are exposed. Native browser checks cover empty and populated records,
 invalid dates and registry failures at desktop/mobile sizes. Hosted application
 is pending. Suggestions do not hold or book an appointment.
 
-Conversation storage APIs and migration `0013` provide owned session creation,
+Conversation storage APIs and migrations `0013`/`0014` provide owned session creation,
 recent-chat listing, bounded chronological history and cancellation of interrupted
 turns. Customers retain RLS protection; guests use a separate hashed access token
 with a 24-hour expiry. Starting a turn stores its redacted question; finishing
 stores a validated reply or explicit failure. Each transition and audit event
 commit together, with revision conflicts and idempotency checks. Native tests
-cover these boundaries. Chat/UI/checkpoint integration and hosted application
-remain pending; the current chat flow does not yet persist through this service.
+cover these boundaries. `CONVERSATION_STORE=database` connects `/chat` and the
+saved-chat UI after these migrations are applied; the default `off` preserves
+temporary browser history. Saved chats load server-owned history, reject stale
+revisions, preserve sources and expose explicit cancellation of pending replies.
+Guest browser access expires after 24 hours. Checkpoint integration, hosted
+application and real-provider checks of saved follow-ups remain pending.
 
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
@@ -261,7 +265,7 @@ Review `evaluation-results.json` against each case's acceptance check. Every suc
 
 ## Scope still outside this round
 
-Compliance document uploads, OCR, compliance tracking, advisor transfers, meeting booking, saved cross-session conversations and real staffed support are not implemented. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
+Compliance document uploads, OCR, compliance tracking, advisor transfers, meeting booking and real staffed support are not implemented. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
 
 ## Knowledge maintenance and limits
 
