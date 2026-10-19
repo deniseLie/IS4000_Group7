@@ -33,7 +33,8 @@ def audit_reply(batch,trace,result=None,error=None):
     batch.add('chat','chat.fixed_response' if route in FIXED_ROUTES else 'chat.reply_sent',details={
         'route':route,'origin':result['response_origin'],'source_check':result['source_check'],'needs_human':result['needs_human'],
         'privacy_warning':result['privacy_warning'],'history_trimmed':result['history_trimmed'],'prompt_version':result['prompt_version'],
-        'reject_reason':trace.attrs.get('reject_reason'),'source_ids':[x['id'] for x in result['sources']]})
+        # Audit's released citation format is article@vN#anchor (without the knowledge namespace).
+        'reject_reason':trace.attrs.get('reject_reason'),'source_ids':[x['id'].removeprefix('kb:') for x in result['sources']]})
 
 @router.get('/knowledge/{article_id}')
 def knowledge(article_id:str):

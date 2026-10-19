@@ -7,9 +7,9 @@ from app.schemas.contracts import ActionCommand, Decision, Fact, KbChunk, Princi
 from app.services import actions, customer_data, kb, policy
 from app.services.actions import cards, handoffs
 
-STUBS=[kb,actions,cards,handoffs]  # customer_data and policy/consent are real services
+STUBS=[actions,cards,handoffs]  # customer_data, knowledge and policy/consent are real services
 SIGNATURES={  # the agreed names and parameters; change only together with the callers
-    kb.search:['query','scope','k','ctx'], kb.get_fact:['fact_id'],
+    kb.search:['query','ctx','db'], kb.get_fact:['fact_id','ctx','db'],
     customer_data.get_profile:['ctx'], customer_data.get_accounts:['ctx'], customer_data.get_transactions:['ctx','from_','to','filters'],
     customer_data.get_credit_cards:['ctx'], customer_data.get_loans:['ctx'],
     actions.run_action:['command','ctx','confirmed'], policy.decide:['subject','action','resource','context'],
@@ -28,11 +28,6 @@ def test_live_pipeline_never_imports_stubs():
     for live in ['services/answers.py','api/chat.py','main.py']:
         text=(app/live).read_text(encoding='utf-8')
         assert not any(f'services.{m}' in text or f'services import {m}' in text for m in ['kb','customer_data','policy','actions'])
-
-def test_kb_returns_sample_chunks_and_facts():
-    chunks=asyncio.run(kb.search('app login failed',k=1))
-    assert len(chunks)==1 and isinstance(chunks[0],KbChunk)
-    assert isinstance(asyncio.run(kb.get_fact('fee.card_replacement')),Fact)
 
 def test_decide_rules():
     c=ctx()

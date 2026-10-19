@@ -1,6 +1,6 @@
 """Initial v2 LangGraph: plan, prioritise, dispatch and compose public information per turn.
 
-Uses the current approved in-memory knowledge library. Durable conversations, hosted knowledge,
+Uses the explicitly configured knowledge store. Durable conversations,
 personal tools and confirmed actions require the subsequent service stages; none are simulated.
 """
 import asyncio
@@ -10,12 +10,14 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 from app.core.config import settings
+from app.core import knowledge_db
 from app.core.observability import span
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
 from app.schemas.contracts import AgentResult, Domain, RequestContext, RiskAssessment, Task, TaskPlan
 from app.schemas.events import AnswerEvent, AnswerSection, Source
-from app.services import llm_gateway, prompts
+from app.schemas.knowledge import KnowledgeQuery
+from app.services import kb, llm_gateway, prompts
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -115,6 +117,14 @@ def task_evidence(task: Task, history: list[Message], language: str) -> list[Evi
     return [Evidence(id=a.id, text=a.content, publisher=a.publisher, scope=a.notice, source=Source.model_validate(source(a))) for a in articles]
 
 
+async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
+    """Retrieve only the latest planned question; never replace a no-match with unrelated articles."""
+    query=KnowledgeQuery(query=task.entities['question'],scope='public',k=4)
+    agent_ctx=ctx.model_copy(update={'agent':AGENT_FOR[task.domain]})
+    with knowledge_db.connect(agent_ctx) as db:sections=await kb.search(query,agent_ctx,db)
+    return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
+
+
 async def run_task(task: Task, state: Turn, evidence: list[Evidence]) -> AgentResult:
     question = task.entities['question']
     if not isinstance(question, str):raise ValueError('Planned task question must be text')
@@ -130,7 +140,9 @@ async def dispatch(state: Turn) -> DispatchUpdate:
     ctx = state['context']
     require_permission(ctx.principal,'kb.search',None,ctx)
     tasks = state['plan'].by_priority()
-    evidence = [task_evidence(task, state['history'], state['request'].language) for task in tasks]
+    if settings.knowledge_store=='database':
+        evidence=[await database_evidence(task,ctx) for task in tasks]
+    else:evidence = [task_evidence(task, state['history'], state['request'].language) for task in tasks]
     results = await asyncio.gather(*(run_task(task,state,items) for task,items in zip(tasks,evidence,strict=True)))
     return {'results':list(results),'evidence':evidence}
 

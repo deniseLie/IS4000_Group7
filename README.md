@@ -108,13 +108,22 @@ After: the customer reviews and edits a draft, then copies it. The page explicit
 ## Foundation pipeline
 
 `PIPELINE=v1` keeps the existing answer flow. `PIPELINE=v2` enables the initial
-public LangGraph flow: plan, prioritise, dispatch and compose, using the existing
-approved in-memory knowledge library. Five real-provider domain agents return
+public LangGraph flow: plan, prioritise, dispatch and compose. `KNOWLEDGE_STORE=memory`
+uses the approved in-memory library; `KNOWLEDGE_STORE=database` uses the read-only
+knowledge RPCs after migrations `0008`, `0009` and `0011` are applied. Five real-provider domain agents return
 validated sections with their own sources and prompt versions. Fixed safety
 responses still bypass the model. Personal data, uploaded documents, persisted
 checkpoints and confirmed actions are not yet connected to v2; unavailable
 operations are reported explicitly. Supabase migration and live persona work
 remain pending.
+
+The database knowledge adapter validates citation keys, publisher URLs, review
+dates and ranked results. Empty searches and missing facts remain empty; no
+sample fee or unrelated article is substituted. Exact version/section URLs open
+in the existing source dialog, including retired versions marked as no longer
+current. Source details require successful audit storage. Native database/API
+checks cover retrieval, facts, source details and v2 evidence; hosted deployment
+and live AI/browser verification of database-backed answers remain pending.
 
 Tool authorisation uses explicit rules in `services/authorization.py`. Customer
 readers and v2 knowledge retrieval audit their decisions before access. Rules

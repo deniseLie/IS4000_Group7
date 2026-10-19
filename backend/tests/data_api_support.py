@@ -116,7 +116,9 @@ def native_api_client(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatch)
     """Normal FastAPI routes and real SDK calls, configured for the temporary native API/JWKS."""
     from fastapi.testclient import TestClient
     from supabase import Client,create_client
-    from app.core import auth,gateway
+    from app.core import auth,gateway,knowledge_db
+    from app.schemas.contracts import RequestContext
+    from postgrest import SyncPostgrestClient
     from app.main import app
     from app.services import audit
     def native_user_db(token: str) -> Client:
@@ -127,6 +129,13 @@ def native_api_client(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatch)
         return db
     monkeypatch.setattr(auth,'_jwks',jwt.PyJWKClient(local_data_api.url+'/rpc/native_test_jwks'))
     monkeypatch.setattr(auth,'user_db',native_user_db)
+    def native_knowledge_db(ctx: RequestContext) -> SyncPostgrestClient:
+        db=SyncPostgrestClient(local_data_api.url)
+        if ctx.principal.jwt is not None:db.auth(ctx.principal.jwt.get_secret_value())
+        return db
+    monkeypatch.setattr(knowledge_db,'connect',native_knowledge_db)
     monkeypatch.setattr(audit,'enabled',lambda:True)
     gateway._customers.clear()
-    with TestClient(app) as client:yield client
+    with SyncPostgrestClient(local_data_api.url) as public_db:
+        monkeypatch.setattr(audit,'_anon',public_db)
+        with TestClient(app) as client:yield client
