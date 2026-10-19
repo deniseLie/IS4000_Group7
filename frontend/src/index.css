@@ -221,3 +221,6 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
   .panel-heading h2 { font-size: 23px; }
 }
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+.sharing-details {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0.5rem 1rem;}
+.sharing-details dt {font-weight:600;}
+.sharing-details dd {margin:0;overflow-wrap:anywhere;}

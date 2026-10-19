@@ -1,7 +1,7 @@
 import {useEffect,useRef} from 'react';
 import Icon from './Icon';
 
-export default function Panel({label,title,onClose,children}) {
+export default function Panel({label,title,closeLabel,onClose,children}) {
   const dialog=useRef(null);
   useEffect(()=>{
     const node=dialog.current;const trigger=document.activeElement;
@@ -17,7 +17,7 @@ export default function Panel({label,title,onClose,children}) {
   }
   return <dialog ref={dialog} className="panel-dialog" aria-label={label} onKeyDown={containFocus} onCancel={e=>{e.preventDefault();onClose();}}>
     <section className="support-panel" aria-label={label}>
-      <div className="panel-heading"><div><span className="eyebrow">DemoBank assistant</span><h2>{title}</h2></div><button className="icon-button" aria-label={`Close ${label==='Source details'?'source':'summary'}`} onClick={onClose}><Icon name="close"/></button></div>
+      <div className="panel-heading"><div><span className="eyebrow">DemoBank assistant</span><h2>{title}</h2></div><button className="icon-button" aria-label={closeLabel} onClick={onClose}><Icon name="close"/></button></div>
       {children}
     </section>
   </dialog>;

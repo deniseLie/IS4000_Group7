@@ -7,13 +7,13 @@ from app.schemas.contracts import ActionCommand, Decision, Fact, KbChunk, Princi
 from app.services import actions, customer_data, kb, policy
 from app.services.actions import cards, handoffs
 
-STUBS=[kb,policy,actions,cards,handoffs]  # customer_data is real now (tests/test_customer_data.py)
+STUBS=[kb,actions,cards,handoffs]  # customer_data and policy/consent are real services
 SIGNATURES={  # the agreed names and parameters; change only together with the callers
     kb.search:['query','scope','k','ctx'], kb.get_fact:['fact_id'],
     customer_data.get_profile:['ctx'], customer_data.get_accounts:['ctx'], customer_data.get_transactions:['ctx','from_','to','filters'],
     customer_data.get_credit_cards:['ctx'], customer_data.get_loans:['ctx'],
     actions.run_action:['command','ctx','confirmed'], policy.decide:['subject','action','resource','context'],
-    policy.has_consent:['customer_id','purpose','recipient'],
+    policy.has_consent:['query','ctx','db'],
 }
 def ctx(kind='customer',aal='aal1'):return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,user_id=uuid4() if kind=='customer' else None,customer_id=1001 if kind=='customer' else None,jwt='synthetic-test-token' if kind=='customer' else None,aal=aal))
 def cmd(type_,**target):return ActionCommand(idempotency_key=f'case:{uuid4().hex}:{type_}',type=type_,target=target)

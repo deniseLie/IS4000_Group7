@@ -1,9 +1,5 @@
-"""Policy facade. Authorisation rules are real; has_consent remains an unused legacy stub.
-No sharing workflow may use that stub; a JWT-scoped consent reader is still required.
-"""
+"""Authorisation and consent facade; grants and revocations belong to confirmed actions."""
 from app.services.authorization import AUTO_TYPES, decide
+from app.services.consent import has_consent
 
-STUB = True
-
-def has_consent(customer_id: int, purpose: str, recipient: str) -> dict:
-    return {'granted': False, 'grant_id': None}
+STUB = False

@@ -120,8 +120,13 @@ Tool authorisation uses explicit rules in `services/authorization.py`. Customer
 readers and v2 knowledge retrieval audit their decisions before access. Rules
 check the trusted principal, customer scope and backend-assigned agent, and return
 masking, confirmation and consent obligations. Staff/system access is unconfigured
-and denied. Consent lookup and transactional action enforcement remain pending;
-the unused action and consent stubs must not be connected to live workflows.
+and denied. Consent lookup uses JWT/RLS scope, exact purpose/recipient/category
+coverage, revocation and wall-clock expiry. Signed-in users can open the read-only
+data-sharing view to check basic-profile consent for their currently assigned
+manager. This requires migration `0010` on the target database; hosted application
+is still pending. Registry failures remain errors, and status is released only
+after audit succeeds. Grant/revoke, sharing and transactional action enforcement
+remain pending; the unused action stubs must not be connected to live workflows.
 
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m

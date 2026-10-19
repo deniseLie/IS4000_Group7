@@ -4,9 +4,11 @@ regression cannot leak another customer's rows. customer_id comes from RequestCo
 The profile row is looked up again from Principal.user_id (auth user) through banking.customer_profiles, so this
 service does not depend on the gateway's cached Principal.customer_id."""
 import logging
-import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from app.core import auth
+from app.core.data_reads import read
+from app.core.observability import log_event
 from app.schemas.contracts import RequestContext, ToolResult
 from app.services.authorization import require_permission
 
@@ -16,11 +18,12 @@ SGT = timezone(timedelta(hours=8))  # dates are reported in the bank's local day
 TXN_LIMIT = 200
 
 
+class CustomerDataIntegrityError(ValueError):
+    """Returned customer records cannot establish a unique, complete relationship assignment."""
+
+
 def _client(jwt: str):
-    from supabase import create_client
-    sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_ANON_KEY'])  # public anon key only
-    sb.postgrest.auth(jwt)
-    return sb
+    return auth.user_db(jwt)
 
 
 def _session(ctx: RequestContext, tool: str):
@@ -121,18 +124,27 @@ async def get_compliance_case(ctx: RequestContext) -> ToolResult:
 
 async def get_rm_assignment(ctx: RequestContext) -> ToolResult:
     """rm.get_assignment: current RM (and the previous one, for transition questions). Advisors are visible only via RLS on assignment."""
+    return await read(lambda:_rm_assignment(ctx),'rm.get_assignment')
+
+
+def _rm_assignment(ctx: RequestContext) -> ToolResult:
     db, p = _session(ctx, 'rm.get_assignment')
     rows = _rows(db, 'rm', 'assignments', 'customer_id,advisor_id,started_on,ended_on,transition_reason_code', p['customer_id'], order='started_on')
     if not rows:
         return ToolResult(data=None)
+    active = [row for row in rows if row['ended_on'] is None]
+    if len(active)>1:
+        log_event('customer_data_integrity',logging.WARNING,tool='rm.get_assignment',active_count=len(active))
+        raise CustomerDataIntegrityError(f'Expected at most one current relationship-manager assignment, received {len(active)}')
     ids = [r['advisor_id'] for r in rows]
     advisors = {a['advisor_id']: a for a in db.schema('rm').table('advisors').select('advisor_id,full_name,role,team_name,email,phone,timezone').in_('advisor_id', ids).execute().data if a['advisor_id'] in ids}
 
     def rm(r):
-        a = advisors.get(r['advisor_id'], {})
+        a = advisors.get(r['advisor_id'])
+        if a is None:raise CustomerDataIntegrityError('An assigned relationship-manager record was not returned under the customer scope')
         return {'rm_id': r['advisor_id'], 'name': a.get('full_name'), 'role': a.get('role'), 'team': a.get('team_name'),
                 'contact': {'email': a.get('email'), 'phone': a.get('phone')}, 'timezone': a.get('timezone'),
                 'started_on': r['started_on'], 'ended_on': r['ended_on'], 'transition_reason_code': r['transition_reason_code']}
-    current = next((r for r in rows if not r['ended_on']), None)
+    current = active[0] if active else None
     previous = next((r for r in rows if r['ended_on']), None)
     return ToolResult(data={'current': rm(current) if current else None, 'previous': rm(previous) if previous else None})

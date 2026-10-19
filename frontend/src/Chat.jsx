@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon';
 import Panel from './components/Panel';
 import Answer from './components/Answer';
+import SharingPanel from './components/SharingPanel';
 import { supabase } from './lib/supabase';
 import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
 
@@ -27,6 +28,7 @@ export default function Chat({session,onSignIn}) {
   const [copied,setCopied]=useState(false);
   const [copyError,setCopyError]=useState('');
   const [article,setArticle]=useState(null);
+  const [sharing,setSharing]=useState(false);
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -40,7 +42,7 @@ export default function Chat({session,onSignIn}) {
   function reset() {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
-    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
+    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
   }
 
   async function endSession() {  // records auth.session_ended; sign-out goes ahead even if this fails
@@ -110,6 +112,7 @@ export default function Chat({session,onSignIn}) {
     <header className="bank-chat-header">
       <div className="bank-chat-brand"><span className="brand-name">DemoBank<span className="brand-dot">.</span></span><div className="brand-caption"><strong>Banking assistant</strong><span>AI-powered · Student project</span></div></div>
       <div className="chat-actions"><button className="bank-chat-logout" onClick={reset}><Icon name="plus"/>New chat</button><button className="bank-chat-logout support-action" onClick={prepareSummary}><Icon name="support"/><span>Talk to a person</span></button>
+      {session&&<button className="bank-chat-logout support-action" aria-label="Review data-sharing consent" title="Data-sharing consent" data-testid="open-data-sharing" onClick={()=>{setSummary(null);setArticle(null);setSharing(true);}}><Icon name="shield"/><span>Data sharing</span></button>}
       {session?<button className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
     </header>
     <div className="bank-chat-layout">
@@ -145,11 +148,12 @@ export default function Chat({session,onSignIn}) {
         <footer className="bank-chat-footer"><span>{session?'Signed in for synthetic demo records':'Guest access — general information only'}</span><span>IS4000 · Coursework demo</span></footer>
       </main>
     </div>
-    {summary!==null&&<Panel label="Human support" title="Prepare a support summary" onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
-    {article&&<Panel label="Source details" title={article.title} onClose={()=>setArticle(null)}><p className="source-notice">{article.notice}</p><p>{article.content}</p><p className="source-publisher">Publisher: {article.publisher}</p>
+    {summary!==null&&<Panel label="Human support" closeLabel="Close summary" title="Prepare a support summary" onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
+    {article&&<Panel label="Source details" closeLabel="Close source" title={article.title} onClose={()=>setArticle(null)}><p className="source-notice">{article.notice}</p><p>{article.content}</p><p className="source-publisher">Publisher: {article.publisher}</p>
       {article.reference_url&&<p><a href={article.reference_url} target="_blank" rel="noopener noreferrer">Read the original source <span aria-hidden="true">↗</span></a></p>}
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
+    {sharing&&<SharingPanel onClose={()=>setSharing(false)}/>}
   </div>;
 }

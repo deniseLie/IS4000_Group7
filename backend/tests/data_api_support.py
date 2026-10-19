@@ -13,7 +13,7 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING,NamedTuple
 from urllib.parse import urlsplit,urlunsplit
 from uuid import UUID,uuid4
 import httpx
@@ -23,6 +23,9 @@ from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from pydantic import JsonValue,TypeAdapter
 from scripts.install_postgrest import binary_path
 from tests.database_support import persona_id
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 logger=logging.getLogger(__name__)
 
@@ -106,3 +109,24 @@ def local_data_api(local_postgres: str,tmp_path: Path) -> Iterator[NativeAPI]:
     finally:
         with psycopg.connect(local_postgres,autocommit=True) as admin:
             admin.execute(sql.SQL('drop database {}').format(sql.Identifier(name)))
+
+
+@pytest.fixture
+def native_api_client(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatch) -> Iterator['TestClient']:
+    """Normal FastAPI routes and real SDK calls, configured for the temporary native API/JWKS."""
+    from fastapi.testclient import TestClient
+    from supabase import Client,create_client
+    from app.core import auth,gateway
+    from app.main import app
+    from app.services import audit
+    def native_user_db(token: str) -> Client:
+        db=create_client(local_data_api.url,'native-public-test-key')
+        # Supabase adds /rest/v1; native PostgREST serves the same API at /.
+        db.rest_url=db.supabase_url
+        db.postgrest.auth(token)
+        return db
+    monkeypatch.setattr(auth,'_jwks',jwt.PyJWKClient(local_data_api.url+'/rpc/native_test_jwks'))
+    monkeypatch.setattr(auth,'user_db',native_user_db)
+    monkeypatch.setattr(audit,'enabled',lambda:True)
+    gateway._customers.clear()
+    with TestClient(app) as client:yield client

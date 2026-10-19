@@ -9,10 +9,6 @@ from fastapi.testclient import TestClient
 from postgrest import SyncPostgrestClient
 from postgrest.exceptions import APIError
 from pydantic import BaseModel,ConfigDict,Field,TypeAdapter
-from supabase import Client,create_client
-from app.core import auth,gateway
-from app.main import app
-from app.services import audit
 from tests.data_api_support import NativeAPI,mint_token
 
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgREST with TEST_DATA_API_LOCAL=1')
@@ -76,20 +72,10 @@ def test_internal_schemas_are_not_exposed(local_data_api: NativeAPI) -> None:
     assert response.status_code==406
 
 
-def test_real_api_gateway_and_audit_use_native_jwks_and_customer_jwt(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatch) -> None:
-    def native_user_db(token: str) -> Client:
-        db=create_client(local_data_api.url,'native-public-test-key')
-        # The SDK normally adds Supabase's /rest/v1 prefix. Native PostgREST serves that same API at /.
-        db.rest_url=db.supabase_url
-        db.postgrest.auth(token)
-        return db
-    monkeypatch.setattr(auth,'_jwks',jwt.PyJWKClient(local_data_api.url+'/rpc/native_test_jwks'))
-    monkeypatch.setattr(auth,'user_db',native_user_db)
-    monkeypatch.setattr(audit,'enabled',lambda:True)
-    gateway._customers.clear()
+def test_real_api_gateway_and_audit_use_native_jwks_and_customer_jwt(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     token=mint_token(local_data_api,1001,'aal1',uuid4())
     headers={'Authorization':'Bearer '+token}
-    response=TestClient(app).post('/chat',headers=headers,json={'mode':'personal','messages':[{'role':'user','content':'I lost my card'}]})
+    response=native_api_client.post('/chat',headers=headers,json={'mode':'personal','messages':[{'role':'user','content':'I lost my card'}]})
     assert response.status_code==200 and 'event: answer' in response.text and 'event: error' not in response.text
     assert '"response_origin": "safety"' in response.text
     with SyncPostgrestClient(local_data_api.url) as db:
@@ -97,6 +83,6 @@ def test_real_api_gateway_and_audit_use_native_jwks_and_customer_jwt(local_data_
         chains=TypeAdapter(list[AuditChain]).validate_python(db.rpc('audit_verify_chain',{'p_at':None}).execute().data)
         assert len(chains)==1 and chains[0].checked>=3 and chains[0].first_bad_event_id is None
     unlinked=mint_token(local_data_api,9999,'aal1',uuid4())
-    denied=TestClient(app).post('/chat',headers={'Authorization':'Bearer '+unlinked},
+    denied=native_api_client.post('/chat',headers={'Authorization':'Bearer '+unlinked},
         json={'mode':'personal','messages':[{'role':'user','content':'What is my balance?'}]})
     assert denied.status_code==403 and denied.json()['error']['code']=='profile_missing'
