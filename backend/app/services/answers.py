@@ -4,7 +4,7 @@ from app.core.observability import log_event, timer, span, add_span, current_tra
 from app.schemas.chat import Message
 from app.services.knowledge import search, source, INDEX, ARTICLES, is_current
 from app.services.privacy import redact
-from app.services.safety import is_lost_card
+from app.services.guardrail import assess_request
 from app.services.source_checks import check_sources, numbers
 from app.services.llm import llm
 from app.services import prompts
@@ -21,7 +21,7 @@ def clean_history(messages):
 
 def decide(info,route):
     info['route']=route
-    add_span('route','agent',route=route)
+    add_span('route','agent',route=route,risk_flags=info['risk_flags'],priority=info['priority'])
 
 def retrieve(question,history,language):
     with span('retrieve','tool') as a:
@@ -78,9 +78,11 @@ async def make_answer(req, context=None, *, allow_model=True):
 async def _answer(req, context, info, allow_model=True):
     history=clean_history(req.messages)
     question=history[-1].content
-    warning=any(redact(m.content)[1] for m in req.messages)
+    risk=assess_request(req)
+    warning=bool(risk.redactions)
+    info.update(risk_flags=risk.risk_flags,priority=risk.priority)
     result={'answer':'','sources':[],'privacy_warning':warning,'history_trimmed':len(history)<len(req.messages),'disclaimer':NOTICE,'needs_human':False,'source_check':'fixed_guidance','prompt_version':None,'response_origin':'safety'}
-    lost_card=is_lost_card(question)
+    lost_card='lost_card' in risk.risk_flags
     if warning:
         decide(info,'secrets')
         result.update(answer='Private details were removed. Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. If a real secret was shared, use your bank’s official security or recovery service.',sources=[source(INDEX['security'])],needs_human=True)
@@ -92,11 +94,11 @@ async def _answer(req, context, info, allow_model=True):
         decide(info,'lost_card')
         result.update(answer=INDEX['lost-card'].content,sources=[source(INDEX['lost-card'])],needs_human=True)
         return result
-    if re.search(r'\b(talk|speak|connect)\b.*\b(person|human|staff|agent)\b',question,re.I):
+    if risk.fixed_response and risk.fixed_response.code=='human_support':
         decide(info,'human_support')
         result.update(answer=INDEX['support'].content,sources=[source(INDEX['support'])],needs_human=True)
         return result
-    if req.mode=='public' and re.search(r'\b(my|mine)\b.*\b(balance|transactions|due|limit|account number)\b',question,re.I):
+    if risk.fixed_response and risk.fixed_response.code=='guest_balance':
         decide(info,'guest_balance')
         result.update(answer='Sign in and select Personal demo records to ask about your synthetic balances, transactions or payment details. General banking help is available without login.',sources=[source(INDEX['accounts'])])
         return result

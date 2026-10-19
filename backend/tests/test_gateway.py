@@ -110,6 +110,13 @@ def test_customer_id_never_comes_from_the_body(monkeypatch):
     r=client.post('/chat',json=chat(mode='personal',customer_id=1002,user_id=str(uuid4()),principal={'kind':'customer','customer_id':1003}),headers=bearer())
     assert r.status_code==200 and seen['customer_id']==1001
 
+@pytest.mark.parametrize('question',['I lost my card','PIN: 1234','Please connect me to a human'])
+def test_personal_safety_reply_does_not_load_customer_records(monkeypatch,question):
+    monkeypatch.setattr(chat_api,'get_customer_context',lambda *args:pytest.fail('safety requests must not load banking records'))
+    response=client.post('/chat',json=chat(question,mode='personal'),headers=bearer())
+    assert response.status_code==200 and 'event: answer' in response.text
+    assert 'event: error' not in response.text and '"response_origin": "safety"' in response.text
+
 def test_login_without_profile_cannot_use_personal_mode():
     r=client.post('/chat',json=chat(mode='personal'),headers=bearer(sub=str(uuid4())))
     assert r.status_code==403 and code(r)=='profile_missing'

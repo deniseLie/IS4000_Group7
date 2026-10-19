@@ -11,7 +11,7 @@ AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py
 CommandState = Literal['proposed', 'confirmed', 'succeeded', 'failed', 'expired']
 RiskFlag = Literal['fraud_suspected', 'lost_card', 'secret_shared', 'human_requested']
-RedactionType = Literal['card_number', 'password', 'otp', 'nric']
+RedactionType = Literal['card_number', 'password', 'pin', 'otp', 'cvv', 'nric', 'email']
 AuditCategory = Literal['auth', 'chat', 'agent', 'data', 'policy', 'action', 'row', 'consent', 'notification', 'handoff', 'document', 'admin']
 
 

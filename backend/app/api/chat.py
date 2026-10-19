@@ -10,6 +10,7 @@ from app.core.observability import start_trace, span
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import RequestContext
 from app.services.answers import make_answer
+from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.trace_store import save_trace
@@ -48,7 +49,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
     batch=start_batch(db,session_id=ctx.session_id)
     batch.add('chat','chat.message_received',details={'mode':req.mode,'history_len':len(req.messages)})
-    if req.mode=='personal':
+    if req.mode=='personal' and assess_request(req).fixed_response is None:
         with span('customer_context','tool') as a:
             context=await run_in_threadpool(get_customer_context,db,p.customer_id)
             a['chars']=len(context)
