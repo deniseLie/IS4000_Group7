@@ -3,6 +3,7 @@ import Panel from './Panel';
 import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
 import {resumeWorkflow} from '../lib/workflows';
+import {appointmentTime} from '../lib/appointmentData';
 
 function commandTitle(command) {
   if(command.type==='card.temporary_block')return `Temporarily block synthetic card ending ${command.target.last4}`;
@@ -11,6 +12,9 @@ function commandTitle(command) {
   if(command.type==='handoff.claim')return 'Staff claimed a demo support handoff';
   if(command.type==='handoff.close')return 'Staff closed a demo support handoff';
   if(command.type==='handoff.create')return 'Record a demo support handoff';
+  if(command.type==='appointment.hold')return 'Hold a synthetic appointment';
+  if(command.type==='appointment.confirm')return 'Confirm a synthetic appointment';
+  if(command.type==='appointment.cancel')return 'Cancel a synthetic appointment';
   throw new Error('This action type has no review title. Reload its recorded status.');
 }
 
@@ -22,6 +26,9 @@ function receiptText(item) {
   if(item.command.type==='handoff.claim')return 'A verified demo support session claimed this synthetic support case.';
   if(item.command.type==='handoff.close')return 'A verified demo support session closed this synthetic support case. This does not change a card or reverse a transaction.';
   if(item.command.type==='handoff.create')return 'A support handoff is recorded in the demo. There is no staffed support queue.';
+  if(item.command.type==='appointment.hold')return 'This command recorded a ten-minute synthetic appointment hold. Check current appointments before confirming.';
+  if(item.command.type==='appointment.confirm')return 'This command confirmed the synthetic appointment. Check current appointments for its latest status. No real meeting or joining link is connected.';
+  if(item.command.type==='appointment.cancel')return 'This command cancelled the synthetic appointment.';
   throw new Error('This action type has no verified receipt description.');
 }
 
@@ -86,6 +93,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
       return <li key={command.command_id} data-command-id={command.command_id}>
         <h3>{commandTitle(command)}</h3>
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
+        {command.type.startsWith('appointment.')&&<p data-testid="command-appointment">{appointmentTime(command.target.starts_at)} – {appointmentTime(command.target.ends_at)} (Singapore time). Format: {command.target.format.replaceAll('_',' ')}.</p>}
         <p>Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
         {item.workflow&&<div data-testid="command-workflow">
           <p>Saved reply: {item.workflow.state.replaceAll('_',' ')}. {item.workflow.state==='completed'?'Close Actions to read the saved reply.':item.workflow.state==='failed'?'The action decision is recorded, but the reply could not resume. Retry the saved reply.':!item.workflow.ready?'The review is still being saved. Reload its recorded status before deciding.':''}</p>
@@ -95,13 +103,13 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
           <p>Proposal expires: <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
           {!chosen&&<button className="bank-chat-logout" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}>Review proposal</button>}
           {chosen&&<div className="command-review" data-testid="command-review">
-            <p>Confirming temporarily blocks this synthetic card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.</p>
-            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this synthetic card and the proposed change.</label>
-            <div className="panel-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}>Confirm temporary block</button>
+            <p>{command.type==='appointment.confirm'?'Confirming books this synthetic time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this synthetic appointment and releases its time.':'Confirming temporarily blocks this synthetic card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>
+            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type.startsWith('appointment.')?'synthetic appointment':'synthetic card'} and the proposed change.</label>
+            <div className="panel-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}>{command.type==='appointment.confirm'?'Confirm booking':command.type==='appointment.cancel'?'Confirm cancellation':'Confirm temporary block'}</button>
             <button className="bank-chat-logout" data-testid="reject-command" disabled={busy||!!error} onClick={()=>submit(rejectAction,command.command_id)}>Reject proposal</button></div>
           </div>}
         </>}
-        {command.state==='rejected'&&<p>This proposal was rejected. It did not change the synthetic card.</p>}
+        {command.state==='rejected'&&<p>This proposal was rejected. No proposed change was executed.</p>}
         {command.state==='expired'&&<p>This proposal expired without execution. A new proposal is required.</p>}
         {receipt&&<div data-testid="command-receipt">
           <p>{receiptText(item)}</p>

@@ -12,6 +12,7 @@ from app.schemas.contracts import RequestContext,ToolResult
 from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,CustomerEnvelope,CustomerLoan,
     CustomerProfile,CustomerTransaction,RelationshipAssignment,TransactionQuery)
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
+from app.schemas.appointments import AppointmentRecord
 from app.services.authorization import require_permission
 
 STUB=False
@@ -25,6 +26,7 @@ CASE=TypeAdapter(CustomerEnvelope[ComplianceCase | None])
 ASSIGNMENT=TypeAdapter(CustomerEnvelope[RelationshipAssignment | None])
 REQUESTS=TypeAdapter(CustomerEnvelope[Annotated[list[RelationshipRequest],Field(max_length=200)]])
 SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_length=20)]])
+APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -91,6 +93,10 @@ async def get_requests(ctx: RequestContext) -> ToolResult:
         raise CustomerDataIntegrityError('Relationship requests contain records outside the authenticated customer scope')
     return ToolResult(data=[row.model_dump(mode='json',exclude={'customer_id'}) for row in envelope.data],
         call_id=envelope.call_id,as_of=envelope.as_of)
+
+
+async def get_appointments(ctx: RequestContext) -> ToolResult:
+    return _result(await _read('appointments.list','customer_read_appointments',{},APPOINTMENTS,ctx))
 
 
 async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:

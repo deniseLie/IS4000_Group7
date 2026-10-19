@@ -136,13 +136,26 @@ manager. This requires migration `0010` on the target database; hosted applicati
 is still pending. Registry failures remain errors, and status is released only
 after audit succeeds. Consent grant/revoke and sharing writes remain pending.
 
-The data-sharing panel also opens read-only relationship requests and suggested
+The data-sharing panel also opens relationship requests and suggested
 appointment times. Migration `0012` calculates thirty-minute suggestions from the
 current advisor's hours, blocks, confirmed bookings and unexpired holds. The API
 checks the customer's scope and audits each read; no other customer's booking
 details are exposed. Native browser checks cover empty and populated records,
 invalid dates and registry failures at desktop/mobile sizes. Hosted application
-is pending. Suggestions do not hold or book an appointment.
+is pending. Suggestions do not hold or book an appointment. The explicit **Hold for
+ten minutes** control uses migrations `0034`–`0036` to reserve a synthetic slot.
+Booking and cancellation require reviewing and confirming a proposal in **Actions**.
+SQL rechecks the active assignment, working-hours grid and calendar blocks; a native
+GiST exclusion constraint rejects overlapping reservations. Expired holds cannot
+confirm and stop blocking new holds. The current-appointments view checks wall-clock
+expiry, while receipts describe immutable command outcomes. Business changes,
+receipts, audit and outbox commit together; the worker delivers verified booking
+notifications. The direct form creates an owned action case without inventing a chat
+message or model reply. Reservations are thirty minutes, within 366 days. Native
+API/browser checks cover retries, competing customers, changed calendars, expiry,
+rejection, rollback and desktop/mobile review. No real calendar, meeting or joining
+link is connected; hosted migration application remains pending. Consent and agenda
+sharing are separate and remain unimplemented.
 
 Conversation storage APIs and migrations `0013`/`0014` provide owned session creation,
 recent-chat listing, bounded chronological history and cancellation of interrupted
@@ -179,7 +192,7 @@ keep business changes, ledger, outbox and audit atomic over the public-key/user-
 Data API. Python executor modules validate their typed contracts. Native API/browser
 checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
 The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
-session, not hosted password login. Hosted migration application, remaining executors and outbox delivery remain pending. No real bank
+session, not hosted password login. Hosted migration application and remaining consent/records executors remain pending. No real bank
 card or staffed support service is connected.
 
 Staff handoff and card operations (`scripts/staff_support.py`, migrations `0030`–`0033`)
@@ -347,7 +360,7 @@ Review `evaluation-results.json` against each case's acceptance check. Every suc
 
 ## Scope still outside this round
 
-Compliance document uploads, OCR, compliance tracking, advisor transfers, meeting booking and real staffed support are not implemented. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
+Compliance document uploads, OCR, compliance tracking, advisor transfers, real meeting booking and real staffed support are not implemented. Synthetic appointments have a local hold/review/confirmation flow. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
 
 ## Knowledge maintenance and limits
 

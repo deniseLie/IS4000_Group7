@@ -5,8 +5,9 @@ from uuid import UUID
 from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictBool,StrictInt,StringConstraints,ValidationInfo,field_validator,model_validator
 from app.schemas.contracts import Priority
 from app.schemas.events import WorkflowStatus
+from app.schemas.appointments import AppointmentResult,AppointmentTarget,SlotTarget,StoredAppointmentTarget
 
-CustomerActionType=Literal['card.temporary_block','handoff.create']
+CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel']
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
 ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -83,7 +84,7 @@ class ActionRecord(BaseModel):
     customer_id: StrictInt
     case_id: UUID
     type: ActionType
-    target: StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget
+    target: StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
     idempotency_key: str
     state: ActionState
     proposed_at: AwareDatetime
@@ -92,12 +93,14 @@ class ActionRecord(BaseModel):
 
     @field_validator('target',mode='before')
     @classmethod
-    def target_for_type(cls,value: object,info: ValidationInfo) -> StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget:
+    def target_for_type(cls,value: object,info: ValidationInfo) -> StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget:
         action_type=info.data.get('type')
         if action_type=='card.temporary_block':return StoredCardTarget.model_validate(value)
         if action_type=='handoff.create':return HandoffTarget.model_validate(value)
         if action_type in ('card.unblock','card.cancel_permanently'):return StaffCardTarget.model_validate(value)
         if action_type in ('handoff.claim','handoff.close'):return StaffHandoffTarget.model_validate(value)
+        if action_type=='appointment.hold':return SlotTarget.model_validate(value)
+        if action_type in ('appointment.confirm','appointment.cancel'):return StoredAppointmentTarget.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -105,6 +108,8 @@ class ActionRecord(BaseModel):
         if self.expires_at<=self.proposed_at:raise ValueError('Action expiry must follow its proposal time')
         if self.state=='succeeded' and self.type=='card.temporary_block' and self.confirmed_at is None:
             raise ValueError('A synthetic card block requires recorded confirmation')
+        if self.state=='succeeded' and self.type in ('appointment.confirm','appointment.cancel') and self.confirmed_at is None:
+            raise ValueError('Appointment confirmation/cancellation requires recorded customer confirmation')
         if self.type in ('card.unblock','card.cancel_permanently','handoff.claim','handoff.close') and (self.state not in ('succeeded','failed') or self.confirmed_at is None):
             raise ValueError('Staff operations require an immediately recorded terminal result')
         return self
@@ -116,7 +121,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure
+    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -149,6 +154,13 @@ class ActionOutcome(BaseModel):
                     status='claimed' if command.type=='handoff.claim' else 'closed'
                     if not isinstance(receipt.result,StaffHandoffResult) or receipt.result.handoff_id!=command.target.handoff_id or receipt.result.status!=status:
                         raise ValueError('Staff handoff receipt disagrees with its recorded target or operation')
+                if command.type.startswith('appointment.'):
+                    expected={'appointment.hold':'held','appointment.confirm':'confirmed','appointment.cancel':'cancelled'}[command.type]
+                    if not isinstance(receipt.result,AppointmentResult) or receipt.result.status!=expected:
+                        raise ValueError('Appointment receipt disagrees with its operation')
+                    target=command.target.model_dump()
+                    if any(receipt.result.model_dump()[key]!=value for key,value in target.items()):
+                        raise ValueError('Appointment receipt disagrees with its recorded target')
         return self
 
 
@@ -158,13 +170,15 @@ class CreateAction(BaseModel):
     case_id: UUID
     task_id: TaskId
     type: CustomerActionType
-    target: CardBlockTarget | HandoffTarget
+    target: CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
 
     @field_validator('target',mode='before')
     @classmethod
-    def target_for_type(cls,value: object,info: ValidationInfo) -> CardBlockTarget | HandoffTarget:
+    def target_for_type(cls,value: object,info: ValidationInfo) -> CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget:
         if info.data.get('type')=='card.temporary_block':return CardBlockTarget.model_validate(value)
         if info.data.get('type')=='handoff.create':return HandoffTarget.model_validate(value)
+        if info.data.get('type')=='appointment.hold':return SlotTarget.model_validate(value)
+        if info.data.get('type') in ('appointment.confirm','appointment.cancel'):return AppointmentTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

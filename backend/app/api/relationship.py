@@ -1,4 +1,4 @@
-"""Audited read-only requests and appointment suggestions; no hold, booking or sharing is performed."""
+"""Audited relationship reads and owned appointment holds; booking decisions use the Action Service."""
 from collections.abc import Awaitable,Callable
 import httpx
 from fastapi import APIRouter,Depends,Request
@@ -11,8 +11,13 @@ from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.contracts import RequestContext,ToolResult
 from app.schemas.relationship import SlotsQuery
+from app.schemas.actions import ActionOutcome
+from app.schemas.appointments import HoldAppointment
+from app.core import data_api
+from app.api.actions import response_for
+from app.services.actions.store import ActionIntegrityError,checked
 from app.services import audit,customer_data
-from app.services.authorization import PolicyDenied
+from app.services.authorization import PolicyDenied,require_permission
 
 router=APIRouter()
 
@@ -45,3 +50,23 @@ async def requests(request: Request,ctx: RequestContext=Depends(get_ctx)) -> Too
 @router.post('/relationship/slots',response_model=ToolResult)
 async def slots(query: SlotsQuery,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     return await read_result(lambda:customer_data.get_free_slots(query,ctx),request,ctx,'appointments.find_slots')
+
+
+@router.get('/relationship/appointments',response_model=ToolResult)
+async def appointments(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_appointments(ctx),request,ctx,'appointments.list')
+
+
+@router.post('/relationship/holds',response_model=ActionOutcome)
+async def hold(query: HoldAppointment,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
+    async def operation() -> ActionOutcome:
+        require_permission(ctx.principal,'appointment.hold',{'customer_id':ctx.principal.customer_id},ctx)
+        with data_api.connect(ctx) as db:
+            response=await data_api.execute(lambda:db.rpc('appointment_hold',{'p_command_id':str(query.command_id),
+                'p_session_id':str(query.session_id),'p_case_id':str(query.case_id),'p_target':query.target.model_dump(mode='json')}).execute(),'appointment.hold')
+        result=checked(response.data,ctx)
+        if result.command.case_id!=query.case_id or result.command.type!='appointment.hold' or result.command.idempotency_key!=f'{query.case_id}:hold:appointment.hold':
+            raise ActionIntegrityError('The returned hold does not match its requested case and operation')
+        if result.command.target!=query.target:raise ActionIntegrityError('The held slot differs from the requested slot')
+        return result
+    return await response_for(operation,ctx,request)

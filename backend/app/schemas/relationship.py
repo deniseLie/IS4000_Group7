@@ -1,4 +1,4 @@
-"""Read-only relationship requests and available thirty-minute appointment suggestions."""
+"""Relationship request reads and available thirty-minute appointment suggestions."""
 from datetime import date,timedelta
 from typing import Annotated,Literal,Self
 from uuid import UUID

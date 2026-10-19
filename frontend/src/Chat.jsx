@@ -258,7 +258,7 @@ export default function Chat({session,onSignIn}) {
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
-    {sharing&&<SharingPanel onClose={()=>setSharing(false)}/>}
+    {sharing&&<SharingPanel onClose={()=>setSharing(false)} onReviewActions={()=>{setSharing(false);setActionsOpen(true);}}/>}
     {inboxOpen&&<NotificationsPanel onClose={()=>setInboxOpen(false)}/>}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
     {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}

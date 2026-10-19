@@ -1,3 +1,5 @@
+import {parseAction} from './actions.js';
+import {parseAppointments} from './appointmentData.js';
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -49,4 +51,15 @@ export async function loadRequests(token,signal) {
 export async function loadSlots(token,query,signal) {
   return parseSlots(await body(await fetch(`${API_URL}/relationship/slots`,{method:'POST',
     headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(query),signal})));
+}
+
+export async function loadAppointments(token,signal) {
+  return parseAppointments(await body(await fetch(`${API_URL}/relationship/appointments`,{headers:{Authorization:`Bearer ${token}`},signal})));
+}
+
+export async function holdAppointment(query,token,signal) {
+  const result=parseAction(await body(await fetch(`${API_URL}/relationship/holds`,{method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(query),signal})));
+  if(result.command.case_id!==query.case_id||result.command.type!=='appointment.hold')throw invalid();
+  return result;
 }

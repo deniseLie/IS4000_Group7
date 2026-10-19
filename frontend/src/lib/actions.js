@@ -1,10 +1,12 @@
 import {parseWorkflow} from './workflows.js';
+import {parseAppointmentResult,parseAppointmentTarget,parseSlotTarget} from './appointmentData.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CARD=/^card_[1-9][0-9]{0,14}$/;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const STATES=['proposed','confirmed','succeeded','failed','expired','rejected'];
 const PRIORITIES=['P0','P1','P2','P3'];
 const STAFF=['card.unblock','card.cancel_permanently','handoff.claim','handoff.close'];
+const APPOINTMENTS=['appointment.hold','appointment.confirm','appointment.cancel'];
 
 function invalid() {return new Error('The recorded action could not be verified. Reload its status before retrying.');}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
@@ -15,7 +17,7 @@ function timestamp(value) {
 
 export function parseAction(value) {
   const command=value?.command,receipt=value?.receipt;
-  if(!command||!['card.temporary_block','handoff.create',...STAFF].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
+  if(!command||!['card.temporary_block','handoff.create',...STAFF,...APPOINTMENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
   const command_id=id(command.command_id),case_id=id(command.case_id);
   if(typeof command.idempotency_key!=='string'||!command.idempotency_key.startsWith(`${case_id}:`)||!command.idempotency_key.endsWith(`:${command.type}`)||!/^[A-Za-z0-9_-]{1,40}$/.test(command.idempotency_key.split(':')[1])||command.idempotency_key.split(':').length!==3)throw invalid();
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
@@ -31,7 +33,9 @@ export function parseAction(value) {
   } else if(command.type==='handoff.create') {
     if(!target||!['card_verification','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
     canonical={reason:target.reason,priority:target.priority,summary:target.summary};
-  } else canonical={handoff_id:id(target?.handoff_id)};
+  } else if(command.type==='appointment.hold')canonical=parseSlotTarget(target);
+  else if(APPOINTMENTS.includes(command.type))canonical=parseAppointmentTarget(target);
+  else canonical={handoff_id:id(target?.handoff_id)};
   if(['succeeded','failed'].includes(command.state)!==(receipt!==null&&receipt!==undefined))throw invalid();
   let saved=null;
   if(receipt!==null) {
@@ -50,6 +54,11 @@ export function parseAction(value) {
       const status=command.type==='card.unblock'?'active':'cancelled';
       if(receipt.result?.card_id!==canonical.card_id||receipt.result?.status!==status)throw invalid();
       result={card_id:canonical.card_id,status};
+    } else if(APPOINTMENTS.includes(command.type)) {
+      result=parseAppointmentResult(receipt.result);
+      const status={'appointment.hold':'held','appointment.confirm':'confirmed','appointment.cancel':'cancelled'}[command.type];
+      if(result.status!==status||command.type!=='appointment.hold'&&confirmed_at===null||Object.entries(canonical).some(([key,value])=>
+        ['starts_at','ends_at','hold_expires_at'].includes(key)&&value!==null?Date.parse(result[key])!==Date.parse(value):result[key]!==value))throw invalid();
     } else {
       const status=command.type==='handoff.claim'?'claimed':'closed';
       if(receipt.result?.handoff_id!==canonical.handoff_id||receipt.result?.status!==status)throw invalid();
@@ -92,4 +101,10 @@ export async function rejectAction(commandId,token,signal) {
   const saved=parseAction(await responseBody(response));
   if(saved.command.command_id!==commandId)throw invalid();
   return saved;
+}
+export async function proposeAction(query,token,signal) {
+  const result=parseAction(await responseBody(await fetch(`${API_URL}/commands`,{method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(query),signal})));
+  if(result.command.case_id!==query.case_id||result.command.type!==query.type)throw invalid();
+  return result;
 }
