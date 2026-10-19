@@ -214,6 +214,19 @@ been verified; it requires applying the publication migration in Supabase. Engli
 templates are provided; other locales require approved versions. Email delivery,
 hosted activation, pg_cron installation and worker-started AI turns remain pending.
 
+Customer Data reads (`services/customer_data.py`, migrations `0028`/`0029`) check
+permission before opening the caller's JWT Data API client. Invoker RPCs retain RLS
+and explicit customer predicates; each snapshot commits its read audit before returning
+server call-id/as-of metadata. Required payload fields, masks and customer scope are
+validated before release. **Records** in the normal signed-in UI shows accounts,
+cards, loans, Singapore-date transaction filters, the latest client-visible compliance
+case and assigned advisor. Card/loan currency is currently unrecorded and shown as such.
+`/customer/*` is read-only; internal compliance records are never included.
+Native checks exercise all three synthetic personas, permissive-policy regressions,
+corrupt records, audit rollback, unavailable RPCs and desktop/mobile UI. These checks
+use local signed sessions, not hosted password login. Hosted migration application
+remains deferred; this stage does not add personal AI answers for the remaining agents.
+
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
 pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each

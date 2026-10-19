@@ -15,7 +15,7 @@ Status: **proposal**. The fake records the three persona scenarios need (see [us
 
 `backend/app/services/customer_data.py` reads these rows with the signed-in persona's JWT and keeps the former stub's field names, so code built on the stub keeps working (no `segment` or loan `rate_pct`: the database has no such columns).
 
-> Contract note: `Principal.customer_id` in `schemas/contracts.py` is typed `UUID`, but the database key is `bigint`. For now the Customer Data Service ignores it and resolves the bigint from `Principal.user_id` through `customer_profiles`. Raise this at the next contracts review (change the contract to `int`, or keep the mapping).
+> `Principal.customer_id` is a positive integer matching the database `bigint` key. Customer Data RPCs re-resolve the signed-in JWT's linked profile and reject any mismatch with that request scope.
 
 ## 2. Alex Tan — everyday banking (EB1–EB6, EB8)
 

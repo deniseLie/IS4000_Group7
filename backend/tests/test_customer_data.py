@@ -1,99 +1,127 @@
-"""Customer Data filtering must hold even if database row policies regress: the fake DB applies no RLS at all."""
+"""Real JWT/Data API customer reads, atomic audit and explicit predicates independent of RLS."""
 import asyncio
-from datetime import date, datetime
-from types import SimpleNamespace
+import os
+from datetime import date
 from uuid import uuid4
 import pytest
-from app.schemas.contracts import Principal, RequestContext, ToolResult
+from fastapi.testclient import TestClient
+from postgrest import SyncPostgrestClient
+from postgrest.exceptions import APIError
+from pydantic import ValidationError
+from app.core.observability import start_trace
+from app.schemas.contracts import Principal,RequestContext
 from app.services import customer_data as cd
-A,B=uuid4(),uuid4()
-ts=datetime.fromisoformat
-class Query:
-    def __init__(self,rows,leaky):self.rows,self.leaky=rows,leaky
-    def select(self,*a):return self
-    def eq(self,k,v):
-        if not(self.leaky and k=='customer_id'):self.rows=[r for r in self.rows if r.get(k)==v]
-        return self
-    def gte(self,k,v):self.rows=[r for r in self.rows if ts(r[k])>=ts(v)];return self
-    def lt(self,k,v):self.rows=[r for r in self.rows if ts(r[k])<ts(v)];return self
-    def in_(self,k,v):return self
-    def limit(self,n):self.rows=self.rows[:n];return self
-    def order(self,*a,**k):return self
-    def execute(self):return SimpleNamespace(data=self.rows)
-def rows(cid,tag):
-    n=str(cid)
-    return {
-        'banking.bank_accounts':[{'customer_id':cid,'account_id':int(n+'1'),'account_type':'savings','masked_account_number':'******'+n,'balance':'5230.45','currency':'SGD','status':'active'}],
-        'banking.credit_cards':[{'customer_id':cid,'card_id':int(n+'1'),'card_name':tag,'network':'visa','last4':n,'status':'active','credit_limit':'8000.00','outstanding_balance':'2464.20','minimum_payment_due':'50.00','payment_due_date':'2026-11-05'}],
-        'banking.transactions':[
-            {'customer_id':cid,'transaction_id':int(n+'11'),'card_id':int(n+'1'),'txn_date':'2026-10-17T13:42:00+00:00','merchant':tag,'amount':'-2400.00','currency':'SGD','status':'posted','failure_reason':None,'is_overseas':True},
-            {'customer_id':cid,'transaction_id':int(n+'12'),'card_id':None,'txn_date':'2026-10-16T16:30:00+00:00','merchant':tag+' transfer','amount':'-1800.00','currency':'SGD','status':'pending','failure_reason':None,'is_overseas':False}],
-        'banking.loans':[{'customer_id':cid,'loan_id':int(n+'1'),'loan_type':'personal','original_amount':'10000','outstanding_amount':'6200','monthly_repayment':'320','next_due_date':'2026-11-01','status':'active'}],
-        'compliance.cases':[{'customer_id':cid,'case_id':f'case-{n}','case_type':'periodic_review','title':tag,'notice_text':'n','notice_date':'2026-10-01','due_date':'2026-11-15','status':'awaiting_client_documents','status_updated_at':'x'}],
-        'compliance.requested_items':[{'customer_id':cid,'case_id':f'case-{n}','item_id':f'i{k}','label':f'{tag} item {k}','instructions':None,'submission_status':'unknown','client_mark':'not_prepared','client_marked_at':None,'sort_order':k,'updated_at':'x'} for k in (2,1)],
-        'compliance.status_history':[{'customer_id':cid,'case_id':f'case-{n}','status':'review_opened','note':tag,'changed_at':'x'}],
-        'compliance.info_requests':[{'customer_id':cid,'case_id':f'case-{n}','request_id':'r','question':tag,'instructions':None,'due_date':'2026-10-31','status':'open','responded_at':None,'created_at':'x'}],
-        'rm.assignments':[{'customer_id':cid,'advisor_id':f'new-{n}','started_on':'2026-10-15','ended_on':None,'transition_reason_code':'team_restructure'},
-                          {'customer_id':cid,'advisor_id':f'old-{n}','started_on':'2024-03-01','ended_on':'2026-10-14','transition_reason_code':None}],
-        'rm.advisors':[{'advisor_id':f'{w}-{n}','full_name':f'{tag} {w}','role':'RM','team_name':'T','email':None,'phone':None,'timezone':'Asia/Singapore'} for w in ('new','old')],
-    }
-class Database:
-    def __init__(self,leaky=False):
-        self.leaky,self.jwts=leaky,[]
-        self.rows={'banking.customer_profiles':[{'customer_id':1001,'auth_user_id':str(A),'full_name':'Alex Tan (DEMO)','preferred_language':'en','employment_status':'employed'},
-                                                {'customer_id':1003,'auth_user_id':str(B),'full_name':'David Lee (DEMO)','preferred_language':'en','employment_status':'employed'}]}
-        for cid,tag in [(1001,'A-only'),(1003,'B-only')]:
-            for k,v in rows(cid,tag).items():self.rows.setdefault(k,[]).extend(v)
-        self.rows['compliance.case_internal']=[{'case_id':'case-1001','risk_rating':'medium','reviewer_note':'INTERNAL'}]
-    def schema(self,name):return SimpleNamespace(table=lambda t:Query(list(self.rows.get(f'{name}.{t}',[])),self.leaky))
-@pytest.fixture
-def db(monkeypatch):
-    d=Database()
-    monkeypatch.setattr(cd,'_client',lambda jwt:(d.jwts.append(jwt),d)[1])
-    return d
-def ctx(user=A,kind='customer',jwt='jwt-A'):
-    return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,user_id=user,customer_id=1003 if user==B else 1001,jwt=jwt))
-def run(fn,c,**k):
-    params={'from_':None,'to':None,'filters':None,**k} if fn=='get_transactions' else k
-    return asyncio.run(getattr(cd,fn)(c,**params))
-READERS=['get_profile','get_accounts','get_transactions','get_credit_cards','get_loans','get_compliance_case','get_rm_assignment']
+from app.services.authorization import PolicyDenied
+from tests.data_api_support import NativeAPI,mint_token
+from tests.database_support import persona_id
 
+pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgreSQL/PostgREST tests')
+READERS=[cd.get_profile,cd.get_accounts,cd.get_credit_cards,cd.get_loans,cd.get_compliance_case,cd.get_rm_assignment]
+
+
+def context(api: NativeAPI,cid: int) -> RequestContext:
+    session=uuid4()
+    return RequestContext(session_id=session,principal=Principal(kind='customer',user_id=persona_id(cid),customer_id=cid,
+        jwt=mint_token(api,cid,'aal1',session)))
+
+
+@pytest.mark.parametrize('cid',[1001,1002,1003])
 @pytest.mark.parametrize('leaky',[False,True])
-@pytest.mark.parametrize('fn',READERS)
-@pytest.mark.parametrize('user,own,other',[(A,'A-only','B-only'),(B,'B-only','A-only')])
-def test_only_own_rows_even_without_rls(db,fn,user,own,other,leaky):
-    db.leaky=leaky  # leaky: the customer_id filter in the query is lost too, only the code-side check remains
-    r=run(fn,ctx(user,jwt=f'jwt-{own}'))
-    assert isinstance(r,ToolResult) and other not in str(r.data) and 'INTERNAL' not in str(r.data)
-    assert db.jwts==[f'jwt-{own}']  # every read uses the caller's own JWT
-    if fn not in ('get_profile','get_accounts','get_loans'):assert own in str(r.data)
-    if fn=='get_loans':assert [l['loan_id'] for l in r.data]==[f"loan_{1001 if user==A else 1003}1"]
+def test_snapshots_match_owned_database_records_and_atomic_audit(local_data_api: NativeAPI,native_api_client: TestClient,cid: int,leaky: bool) -> None:
+    import psycopg
+    from psycopg import sql
+    if leaky:
+        # Actual deliberately permissive RLS: SQL customer predicates must independently isolate each read.
+        with psycopg.connect(local_data_api.database_uri) as db:
+            for schema,table in [('banking','bank_accounts'),('banking','credit_cards'),('banking','loans'),('banking','transactions'),
+                ('compliance','cases'),('compliance','requested_items'),('compliance','status_history'),('compliance','info_requests'),
+                ('rm','assignments'),('rm','advisors')]:
+                db.execute(sql.SQL('create policy native_leaky on {}.{} for select to authenticated using(true)').format(sql.Identifier(schema),sql.Identifier(table)))
+    ctx=context(local_data_api,cid)
+    trace=start_trace()
+    results=[asyncio.run(reader(ctx)) for reader in READERS]
+    results.append(asyncio.run(cd.get_transactions(ctx,None,None,None)))
+    profile,accounts,cards,loans,case,assignment,transactions=results
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert profile.data['name']==db.execute('select full_name from banking.customer_profiles where customer_id=%s',(cid,)).fetchone()[0]
+        for rows,table,prefix,column in [(accounts.data,'bank_accounts','acc_','account_id'),(cards.data,'credit_cards','card_','card_id'),
+            (loans.data,'loans','loan_','loan_id'),(transactions.data,'transactions','txn_','transaction_id')]:
+            expected={prefix+str(row[0]) for row in db.execute(sql.SQL('select {} from banking.{} where customer_id=%s').format(sql.Identifier(column),sql.Identifier(table)),(cid,))}
+            key='txn_id' if table=='transactions' else column
+            assert {row[key] for row in rows}==expected
+        expected_case=db.execute('select case_id from compliance.cases where customer_id=%s order by notice_date desc,case_id limit 1',(cid,)).fetchone()
+        assert (case.data['case_id'] if case.data else None)==(str(expected_case[0]) if expected_case else None)
+        if case.data:
+            assert 'risk_rating' not in str(case.data) and 'reviewer_note' not in str(case.data)
+            assert [item['sort_order'] for item in case.data['requested_items']]==sorted(item['sort_order'] for item in case.data['requested_items'])
+        expected_rm=db.execute('select advisor_id from rm.assignments where customer_id=%s and ended_on is null',(cid,)).fetchone()
+        assert (assignment.data['current']['rm_id'] if assignment.data and assignment.data['current'] else None)==(str(expected_rm[0]) if expected_rm else None)
+        reads=db.execute("select resource_id,details->>'tool' from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()
+        assert len(reads)==7 and {row[0] for row in reads}=={str(result.call_id) for result in results}
+        assert {record['name'] for record in trace.spans}=={row[1] for row in reads}
+        assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+    for row in accounts.data:assert row['number'].startswith('****') and len(row['number'])==8
+    for row in cards.data:assert len(row['last4'])==4 and not {'pan','card_number','customer_id'}&row.keys()
+    assert all(result.as_of.tzinfo is not None for result in results)
+    assert len({result.call_id for result in results})==7
 
-def test_masking_and_shapes(db):
-    acc=run('get_accounts',ctx()).data[0];card=run('get_credit_cards',ctx()).data[0]
-    assert acc['number']=='****1001' and acc['balance']==5230.45 and card['last4']=='1001'
-    for row in [acc,card]:assert not {'pan','card_number','masked_account_number'}&set(row)
-    assert run('get_loans',ctx()).data[0]['outstanding']==6200.0
 
-def test_transactions_local_dates_and_filters(db):
-    t=run('get_transactions',ctx()).data
-    assert [x['date'] for x in t]==['2026-10-17','2026-10-17'] and t[0]['card_last4']=='1001' and t[1]['card_last4'] is None
-    assert [x['description'] for x in run('get_transactions',ctx(),filters={'status':'pending'}).data]==['A-only transfer']
-    assert run('get_transactions',ctx(),from_=date(2026,10,18)).data==[]
-    assert len(run('get_transactions',ctx(),from_=date(2026,10,17),to=date(2026,10,17)).data)==2
+def test_transaction_dates_filters_and_bounds(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    import psycopg
+    ctx=context(local_data_api,1001)
+    with psycopg.connect(local_data_api.database_uri) as db:
+        account=db.execute('select account_id from banking.bank_accounts where customer_id=1001 order by account_id limit 1').fetchone()[0]
+        db.execute("""insert into banking.transactions(customer_id,account_id,txn_date,merchant,amount,status,is_overseas)
+            select 1001,%s,t,'Boundary DEMO',-12.34,'pending',true from unnest(array[
+            '2030-01-01T15:59:59Z'::timestamptz,'2030-01-01T16:00:00Z'::timestamptz,
+            '2030-01-02T15:59:59Z'::timestamptz,'2030-01-02T16:00:00Z'::timestamptz])t""",(account,))
+    rows=asyncio.run(cd.get_transactions(ctx,date(2030,1,2),date(2030,1,2),{'status':'pending','is_overseas':True,'currency':'SGD'})).data
+    assert len(rows)==2 and all(row['date']=='2030-01-02' and row['amount']==-12.34 and row['card_last4'] is None for row in rows)
+    assert len(asyncio.run(cd.get_transactions(ctx,None,None,{'txn_id':rows[0]['txn_id']})).data)==1
+    assert asyncio.run(cd.get_transactions(ctx,None,None,{'card_id':'card_999999'})).data==[]
+    for from_,to,filters in [(date(2030,1,3),date(2030,1,2),None),(None,None,{'status':'invented'}),(None,None,{'is_overseas':'true'})]:
+        with pytest.raises(ValidationError):asyncio.run(cd.get_transactions(ctx,from_,to,filters))
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute("""insert into banking.transactions(customer_id,account_id,txn_date,merchant,amount,status)
+            select 1001,%s,'2031-01-01'::timestamptz+n*interval '1 second','Bounded DEMO',1,'posted' from generate_series(1,205)n""",(account,))
+    bounded=asyncio.run(cd.get_transactions(ctx,None,None,None)).data
+    assert len(bounded)==200 and all(row['description']=='Bounded DEMO' for row in bounded)
+    assert int(bounded[0]['txn_id'][4:])>int(bounded[-1]['txn_id'][4:])
 
-def test_compliance_case_and_rm(db):
-    case=run('get_compliance_case',ctx()).data
-    assert [i['label'] for i in case['requested_items']]==['A-only item 1','A-only item 2'] and 'risk_rating' not in str(case)
-    rm=run('get_rm_assignment',ctx(B)).data
-    assert rm['current']['name']=='B-only new' and rm['previous']['name']=='B-only old' and rm['previous']['ended_on']=='2026-10-14'
-    db.rows['rm.assignments']=[]
-    assert run('get_rm_assignment',ctx(B)).data is None
 
-@pytest.mark.parametrize('c',[ctx(kind='guest'),ctx(jwt=None),ctx(user=None),ctx(user=uuid4())])
-def test_guest_missing_login_or_unlinked_profile_is_denied(db,c):
-    with pytest.raises(PermissionError):run('get_accounts',c)
+def test_scope_denial_empty_records_and_audit_failure(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    import psycopg
+    ctx=context(local_data_api,1001)
+    with SyncPostgrestClient(local_data_api.url) as db:
+        for rpc in ['customer_read_profile','customer_read_accounts','customer_read_compliance','customer_read_assignment']:
+            with pytest.raises(APIError):db.rpc(rpc,{'p_customer_id':1001}).execute()
+        db.auth(ctx.principal.jwt.get_secret_value())
+        with pytest.raises(APIError) as mismatch:db.rpc('customer_read_accounts',{'p_customer_id':1003}).execute()
+        assert mismatch.value.code=='42501'
+    for principal in [Principal(kind='guest'),Principal(kind='customer',user_id=persona_id(1001),customer_id=1001)]:
+        with pytest.raises(PolicyDenied):asyncio.run(cd.get_accounts(ctx.model_copy(update={'principal':principal})))
+    with pytest.raises(APIError) as unlinked:asyncio.run(cd.get_accounts(context(local_data_api,9999)))
+    assert unlinked.value.code=='42501'
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute('delete from banking.loans where customer_id=1001')
+        db.execute('delete from compliance.cases where customer_id=1001')
+        db.execute('delete from rm.assignments where customer_id=1001')
+    assert asyncio.run(cd.get_loans(ctx)).data==[]
+    assert asyncio.run(cd.get_compliance_case(ctx)).data is None
+    assert asyncio.run(cd.get_rm_assignment(ctx)).data is None
+    with psycopg.connect(local_data_api.database_uri) as db:
+        before=db.execute("select count(*) from audit.events where action='data.read'").fetchone()[0]
+        db.execute("create function public.native_reject_read() returns trigger language plpgsql as $$ begin if new.action='data.read' then raise exception 'native audit failure'; end if; return new; end $$")
+        db.execute('create trigger native_reject_read before insert on audit.events for each row execute function public.native_reject_read()')
+    with pytest.raises(APIError):asyncio.run(cd.get_accounts(ctx))
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert db.execute("select count(*) from audit.events where action='data.read'").fetchone()[0]==before
 
-def test_duplicate_profile_is_denied(db):
-    db.rows['banking.customer_profiles'].append(dict(db.rows['banking.customer_profiles'][0]))
-    with pytest.raises(PermissionError):run('get_accounts',ctx())
+
+def test_cross_customer_card_link_is_an_integrity_error(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    import psycopg
+    with psycopg.connect(local_data_api.database_uri) as db:
+        card=db.execute("insert into banking.credit_cards(customer_id,card_name,network,last4,credit_limit) values(1003,'Foreign DEMO','visa','3456',100) returning card_id").fetchone()[0]
+        db.execute("insert into banking.transactions(customer_id,card_id,txn_date,merchant,amount,status) values(1001,%s,clock_timestamp(),'Invalid DEMO',1,'posted')",(card,))
+    with pytest.raises(APIError) as invalid:asyncio.run(cd.get_transactions(context(local_data_api,1001),None,None,None))
+    assert invalid.value.code=='23514'

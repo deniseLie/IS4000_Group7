@@ -1,6 +1,7 @@
 """Read only the masked card/security records allowed for the Fraud agent and bound candidate actions."""
 import re
 from datetime import datetime,timedelta,timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from pydantic import TypeAdapter
 from app.schemas.fraud import FraudProposal,SecurityCard,SecurityRecords,SecurityTransaction
@@ -10,7 +11,7 @@ from app.services.source_checks import unit_values
 
 
 async def load(ctx: RequestContext) -> SecurityRecords:
-    today=ctx.received_at.astimezone(customer_data.SGT).date()
+    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
     cards=await customer_data.get_credit_cards(ctx)
     transactions=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,None)
     return SecurityRecords(cards=TypeAdapter(list[SecurityCard]).validate_python(cards.data),

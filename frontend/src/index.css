@@ -242,3 +242,12 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .saved-chat-button {display:flex;flex-direction:column;gap:.35rem;width:100%;padding:1rem;text-align:left;background:#fff;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere;}
 .saved-chats-list li {margin:.75rem 0;}
 .saved-chat-button span {font-size:12px;color:var(--muted);}
+
+.records-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:20px 0}
+.records-filters label{display:grid;gap:6px;font-size:.85rem;min-width:0;flex:1 1 130px}
+.records-filters input,.records-filters select{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:white;color:inherit;font:inherit}
+.customer-records section{margin-top:24px;overflow-wrap:anywhere}
+.customer-records article{padding:12px 0;border-bottom:1px solid var(--line)}
+.customer-records h4{margin:0 0 8px;font-size:.95rem}
+.customer-records article p{margin:6px 0}
+.customer-records .sharing-details dd{overflow-wrap:anywhere}
