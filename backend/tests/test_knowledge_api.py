@@ -139,6 +139,20 @@ def test_orchestrator_evidence_uses_real_db_without_model(local_data_api: Native
     assert asyncio.run(database_evidence(missing,guest()))==[]
 
 
+@pytest.mark.parametrize('domain',['retail','fraud','compliance','document','relationship'])
+def test_supervisor_retrieves_shared_evidence_without_expanding_agent_tools(local_data_api: NativeAPI,
+    native_api_client: TestClient,domain: str) -> None:
+    from app.services.agents.registry import AGENT_FOR
+    from app.services.authorization import PolicyDenied
+    task=Task(task_id='t1',domain=domain,intent='answer_question',entities={'question':'fixed deposit'})
+    assert asyncio.run(database_evidence(task,guest()))
+    if domain in {'fraud','document'}:
+        agent_ctx=guest().model_copy(update={'agent':AGENT_FOR[domain]})
+        with SyncPostgrestClient(local_data_api.url) as db:
+            with pytest.raises(PolicyDenied):
+                asyncio.run(kb.search(KnowledgeQuery(query='fixed deposit',scope='public',k=4),agent_ctx,db))
+
+
 @pytest.mark.parametrize('payload',[{'query':'x','scope':'private','k':1},{'query':'x','scope':'public','k':0},
     {'query':'x','scope':'public','k':True},{'query':'x'*4001,'scope':'public','k':4}])
 def test_invalid_query_contracts(payload: dict[str,str | int]) -> None:

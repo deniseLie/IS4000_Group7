@@ -120,8 +120,8 @@ def task_evidence(task: Task, history: list[Message], language: str) -> list[Evi
 async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     """Retrieve only the latest planned question; never replace a no-match with unrelated articles."""
     query=KnowledgeQuery(query=task.entities['question'],scope='public',k=4)
-    agent_ctx=ctx.model_copy(update={'agent':AGENT_FOR[task.domain]})
-    with knowledge_db.connect(agent_ctx) as db:sections=await kb.search(query,agent_ctx,db)
+    # The supervisor retrieves shared evidence; this is not an agent-initiated tool call.
+    with knowledge_db.connect(ctx) as db:sections=await kb.search(query,ctx,db)
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 
