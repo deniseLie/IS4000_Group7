@@ -39,7 +39,8 @@ async def prepare(req: ChatRequest,request: Request,ctx: RequestContext) -> Prep
         canonical=req.model_copy(update={'messages':[*previous,req.messages[-1]]})
         risk=assess_request(canonical)
         if settings.pipeline=='v2' and req.mode=='personal' and risk.fixed_response is None:
-            raise ApiError(503,'personal_unavailable','Personal demo records are unavailable. Select General help to continue.')
+            from app.services.checkpoints import signing_key
+            signing_key()
         turn=await conversations.start_turn(TurnInput(turn_id=req.turn_id,revision=req.revision,
             user_text=req.messages[-1].content,priority=risk.priority),access,ctx,db)
         if turn.response is not None and turn.turn.revision!=history.session.revision:

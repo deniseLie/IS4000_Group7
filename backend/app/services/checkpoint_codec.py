@@ -15,10 +15,13 @@ from app.schemas.agents import Evidence,PlannedIssue
 from app.schemas.chat import ChatRequest,Message
 from app.schemas.contracts import AgentResult,RiskAssessment,Task,TaskPlan
 from app.schemas.events import AnswerEvent,AnswerSection,Source
+from app.schemas.fraud import FraudProposal
+from app.schemas.workflows import PendingReview,ResponseMeta
 from app.services.privacy import redact
 
 MODELS: dict[str,type[BaseModel]]={model.__name__:model for model in (
-    ChatRequest,Message,RiskAssessment,Task,TaskPlan,AgentResult,Evidence,PlannedIssue,AnswerEvent,AnswerSection,Source)}
+    ChatRequest,Message,RiskAssessment,Task,TaskPlan,AgentResult,Evidence,PlannedIssue,AnswerEvent,AnswerSection,Source,
+    FraudProposal,PendingReview,ResponseMeta)}
 PRIVATE_KEYS={'jwt','authorization','api_key','guest_token','service_role_key','checkpoint_signing_key'}
 TOKEN=re.compile(r'\b(?:eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]+|sk-or-v1-[A-Za-z0-9_-]+)\b')
 UUID_TEXT=re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')

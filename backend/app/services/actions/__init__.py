@@ -10,6 +10,7 @@ from postgrest import SyncPostgrestClient
 from app.core import data_api
 from app.schemas.actions import ActionOutcome,ActionType
 from app.schemas.contracts import ActionCommand,ProposedCommand,Receipt,RequestContext
+from app.schemas.workflows import OwnedWorkflow
 from app.services.actions.store import ActionIntegrityError,checked,load
 from app.services.authorization import PolicyDenied,require_permission
 
@@ -66,4 +67,21 @@ async def reject_action(command_id: UUID,ctx: RequestContext,db: SyncPostgrestCl
     response=await data_api.execute(lambda:db.rpc('action_reject',{'p_command_id':str(command_id)}).execute(),'actions.reject')
     result=checked(response.data,ctx)
     if result.command.command_id!=command_id:raise ActionIntegrityError('Rejection returned another command')
+    return result
+
+
+async def propose_for_workflow(command: ActionCommand,task_id: str,owned: OwnedWorkflow,ctx: RequestContext) -> ActionOutcome:
+    require_permission(ctx.principal,command.type,{'customer_id':ctx.principal.customer_id},ctx)
+    if ctx.case_id!=owned.turn.case_id or owned.turn.customer_id!=ctx.principal.customer_id:
+        raise ActionIntegrityError('Workflow proposal requires the current owned customer turn')
+    with data_api.connect(ctx) as db:
+        response=await data_api.execute(lambda:db.rpc('workflow_propose_action',{'p_session_id':str(owned.access.session_id),
+            'p_turn_id':str(owned.turn.turn_id),'p_run_id':str(owned.turn.run_id),'p_task_id':task_id,
+            'p_command_id':str(command.command_id),'p_type':command.type,'p_target':canonical_target(command),
+            'p_idempotency_key':command.idempotency_key}).execute(),'workflow.propose')
+    result=checked(response.data,ctx)
+    if result.command.case_id!=ctx.case_id or result.command.idempotency_key!=command.idempotency_key or result.command.type!=command.type:
+        raise ActionIntegrityError('Workflow returned a different proposed action')
+    if result.workflow is None or result.workflow.turn_id!=owned.turn.turn_id:
+        raise ActionIntegrityError('The proposed action is not bound to the owned turn')
     return result

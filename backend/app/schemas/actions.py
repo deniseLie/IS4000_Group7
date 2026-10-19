@@ -4,6 +4,7 @@ from typing import Annotated,Literal,Self
 from uuid import UUID
 from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictBool,StrictInt,StringConstraints,ValidationInfo,field_validator,model_validator
 from app.schemas.contracts import Priority
+from app.schemas.events import WorkflowStatus
 
 ActionType=Literal['card.temporary_block','handoff.create']
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -90,10 +91,13 @@ class ActionOutcome(BaseModel):
     model_config=ConfigDict(extra='ignore')
     command: ActionRecord
     receipt: ActionReceipt | None
+    workflow: WorkflowStatus | None=None
 
     @model_validator(mode='after')
     def consistent_receipt(self) -> Self:
         command,receipt=self.command,self.receipt
+        if self.workflow is not None and (self.workflow.case_id!=command.case_id or self.workflow.customer_id!=command.customer_id):
+            raise ValueError('Action and workflow belong to different scopes')
         if (command.state in ('succeeded','failed'))!=(receipt is not None):raise ValueError('Terminal execution requires a persisted receipt')
         if receipt is not None:
             if receipt.command_id!=command.command_id or receipt.customer_id!=command.customer_id or receipt.outcome!=command.state:

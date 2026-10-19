@@ -8,6 +8,7 @@ import ActionsPanel from './components/ActionsPanel';
 import { supabase } from './lib/supabase';
 import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
+import {parsePausedWorkflow} from './lib/workflows';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const GUEST_SESSION = globalThis.crypto?.randomUUID?.();  // needs a secure context (https or localhost); correlation id for guest requests; signed-in sessions use the token's session_id
@@ -41,6 +42,7 @@ export default function Chat({session,onSignIn}) {
   const [bootError,setBootError]=useState('');
   const [conversation,setConversation]=useState(null);
   const [pending,setPending]=useState(null);
+  const [workflow,setWorkflow]=useState(null);
   const [savedChats,setSavedChats]=useState(false);
   const [actionsOpen,setActionsOpen]=useState(false);
   const messageList=useRef(null);
@@ -83,9 +85,10 @@ export default function Chat({session,onSignIn}) {
   function restore(history,access) {
     writeActive(session?.user.id||null,access);
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
+    setWorkflow(history.workflow);
     setMessages(history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
     setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);
-    setNotice(history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
+    setNotice(history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
   async function reopen(item) {
@@ -116,7 +119,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
-    setConversation(null);setPending(null);setSavedChats(false);setActionsOpen(false);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);if(store!==null)setBootError('');
     return true;
   }
 
@@ -168,6 +171,11 @@ export default function Chat({session,onSignIn}) {
           const result=JSON.parse(data);
           setMessages([...visible,{role:'assistant',content:result.answer,...result}]);
         }
+        if(type==='workflow_paused') {
+          const paused=parsePausedWorkflow(JSON.parse(data),thread.session_id);
+          if(paused.turn_id!==stored.turn_id)throw new Error('The proposed actions do not match this reply. Reload the saved chat.');
+          setWorkflow(paused);setMessages(visible);setNotice('Review the proposed action in Actions to continue this saved reply.');setActionsOpen(true);
+        }
       });
     } catch(err) {
       if(err.name!=='AbortError'&&epoch===version.current)setMessages([...visible,{role:'assistant',content:err.message,error:true}]);
@@ -213,7 +221,7 @@ export default function Chat({session,onSignIn}) {
         <div className="chat-settings"><label>Information <select aria-label="Information" disabled={booting} value={mode} onChange={e=>{if(reset())setMode(e.target.value);}}><option value="public">General help</option>{session&&<option value="personal">Personal demo records</option>}</select></label>
           <label>Answer language <select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select></label></div>
         <p className="language-note">The language choice applies to AI answers. Menus, safety guidance and notices remain in English. Translation quality is still being tested.</p>
-        {store==='database'&&conversation&&<div className="saved-chat-controls"><button className="bank-chat-logout" data-testid="reload-saved-chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Reload saved chat</button>{pending&&<><span role="status">A reply is pending.</span><button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel pending reply</button></>}</div>}
+        {store==='database'&&conversation&&<div className="saved-chat-controls"><button className="bank-chat-logout" data-testid="reload-saved-chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Reload saved chat</button>{pending&&<><span role="status">{workflow?'Review the action workflow to continue.':'A reply is pending.'}</span>{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}<button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel pending reply</button></>}</div>}
         <section className="bank-chat-window" aria-label="Banking conversation">
           {booting&&<p className="chat-notice" role="status">Opening chat…</p>}
           {bootError&&<p className="chat-notice" role="alert">{bootError}</p>}
@@ -246,6 +254,9 @@ export default function Chat({session,onSignIn}) {
       <small>Version {article.version}</small></Panel>}
     {sharing&&<SharingPanel onClose={()=>setSharing(false)}/>}
     {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}
-    {actionsOpen&&<ActionsPanel onClose={()=>setActionsOpen(false)}/>}
+    {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
+      setActionsOpen(false);
+      if(workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
+    }}/>}
   </div>;
 }

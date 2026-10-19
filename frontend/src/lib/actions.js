@@ -1,3 +1,4 @@
+import {parseWorkflow} from './workflows.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CARD=/^card_[1-9][0-9]{0,14}$/;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
@@ -45,7 +46,9 @@ export function parseAction(value) {
     }
     saved={receipt_id:receipt.receipt_id,command_id,outcome:receipt.outcome,result,audit_event_id:receipt.audit_event_id,created_at:timestamp(receipt.created_at)};
   }
-  return {command:{command_id,case_id,type:command.type,target:canonical,state:command.state,proposed_at,expires_at,confirmed_at},receipt:saved};
+  const workflow=value.workflow===null||value.workflow===undefined?null:parseWorkflow(value.workflow);
+  if(workflow&&(workflow.case_id!==case_id||workflow.customer_id!==command.customer_id))throw invalid();
+  return {command:{command_id,case_id,type:command.type,target:canonical,state:command.state,proposed_at,expires_at,confirmed_at},receipt:saved,workflow};
 }
 
 export function parseActions(value) {

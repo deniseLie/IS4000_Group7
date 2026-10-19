@@ -1,3 +1,4 @@
+import {parseWorkflow} from './workflows.js';
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MODES=['public','personal'],LANGUAGES=['English','Chinese','Malay','Tamil'];
@@ -63,7 +64,9 @@ export function parseHistory(value) {
   });
   const active=value.active_turn;
   if(active===null?session.active_turn_id!==null:!active||active.turn_id!==session.active_turn_id||active.session_id!==session.session_id||active.state!=='processing')throw invalid();
-  return {session,messages,history_trimmed:value.history_trimmed,active_turn_id:session.active_turn_id};
+  const workflow=value.workflow===null||value.workflow===undefined?null:parseWorkflow(value.workflow);
+  if(workflow&&(workflow.session_id!==session.session_id||workflow.turn_id!==session.active_turn_id))throw invalid();
+  return {session,messages,history_trimmed:value.history_trimmed,active_turn_id:session.active_turn_id,workflow};
 }
 
 function activeKey(userId) {return `demobank.active.${userId||'guest'}`;}

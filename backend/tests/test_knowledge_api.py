@@ -124,8 +124,11 @@ def test_orchestrator_evidence_uses_real_db_without_model(local_data_api: Native
     result=validate_draft(task,json.dumps({'answer':'Early withdrawal may reduce interest.',
         'source_ids':['kb:sg-accounts@v1#main'],'answer_kind':'banking','status':'ok','clarification_question':''}),evidence)
     request=ChatRequest(messages=[{'role':'user','content':'fixed deposit'}])
+    from app.schemas.workflows import ResponseMeta
+    from app.services.agents.answer import response_prompt_id
     answer=compose({'request':request,'history':request.messages,'history_count':len(request.messages),'plan':TaskPlan(tasks=[task]),
-        'results':[result],'evidence':[evidence]})['answer']
+        'results':[result],'evidence':[evidence],'metadata':[ResponseMeta(origin='ai',prompt_id=response_prompt_id('retail'))],
+        'decision_sections':[]})['answer']
     assert answer.sources[0].id=='kb:sg-accounts@v1#main' and not answer.needs_human
     batch=audit.start_batch(None,session_id=uuid4())
     trace=start_trace()

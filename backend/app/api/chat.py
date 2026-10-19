@@ -17,24 +17,30 @@ from app.core.observability import log_event, start_trace, span
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import RequestContext
 from app.schemas.conversations import StoredFailure
-from app.schemas.events import AnswerEvent
+from app.schemas.events import AnswerEvent,WorkflowPausedEvent
+from app.schemas.workflows import OwnedWorkflow
 from app.services.answers import make_answer
 from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.trace_store import save_trace
-from app.services.orchestrator import answer_public
+from app.services.orchestrator import answer_personal,answer_public
 from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
 
 router=APIRouter()
 FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance'}
 
-def audit_reply(batch,trace,result=None,error=None):
-    """Model calls and the reply outcome from the trace: ids, enums and counts only."""
+def audit_model_calls(batch,trace):
+    """Record real model-call metadata before either a reply or a review pause is released."""
     for s in trace.spans:
         if s['name']=='llm':
             batch.add('agent','agent.llm_call','success' if s['status']=='ok' else 'failed',details={**{k:s['attrs'].get(k) for k in ('model','prompt_version','transport','input_tokens','output_tokens')},'ms':s.get('ms')})
+
+
+def audit_reply(batch,trace,result=None,error=None):
+    """Model calls and the reply outcome from the trace: ids, enums and counts only."""
+    audit_model_calls(batch,trace)
     route=trace.attrs.get('route')
     if error:
         batch.add('chat','chat.reply_sent','failed',details={'route':route,'error_type':type(error).__name__[:64]})
@@ -70,8 +76,8 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     else:
         if req.conversation_id is not None:raise ApiError(503,'conversation_unavailable','Saved conversations are not enabled on this server.')
         risk=assess_request(req)
-    if settings.pipeline=='v2' and req.mode=='personal' and risk.fixed_response is None:
-        raise ApiError(503,'personal_unavailable','Personal demo records are unavailable. Select General help to continue.')
+    if settings.pipeline=='v2' and req.mode=='personal' and risk.fixed_response is None and prepared is None:
+        raise ApiError(503,'personal_unavailable','Personal workflows require saved conversations to be enabled.')
     trace=start_trace()
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
     batch=start_batch(db,session_id=ctx.session_id)
@@ -93,12 +99,23 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                 result=turn.response.model_dump(mode='json')
                 trace.attrs.update(route='conversation_replay',source_check=result['source_check'],needs_human=result['needs_human'])
             else:
-                current_context=await personal_context() if prepared is not None and req.mode=='personal' and risk.fixed_response is None else context
+                current_context=await personal_context() if settings.pipeline!='v2' and prepared is not None and req.mode=='personal' and risk.fixed_response is None else context
                 if settings.pipeline=='v2' and risk.fixed_response is None:
                     if prepared is not None:
                         with data_api.connect(ctx) as workflow_db:
                             saver=PostgrestCheckpointSaver(workflow_db,prepared.access,ctx,turn.turn,signing_key())
-                            result=(await answer_public(req,risk,ctx,saver)).model_dump(mode='json')
+                            if req.mode=='personal':
+                                reply=await answer_personal(req,risk,ctx,OwnedWorkflow(access=prepared.access,turn=turn.turn),saver)
+                                if isinstance(reply,WorkflowPausedEvent):
+                                    audit_model_calls(batch,trace)
+                                    batch.add('chat','chat.workflow_review_ready',details={'action_count':len(reply.actions)})
+                                    await batch.flush()
+                                    trace.attrs.update(outcome='paused',route='workflow_review')
+                                    yield {'event':'workflow_paused','data':reply.model_dump_json()}
+                                    yield {'event':'done','data':''}
+                                    return
+                                result=reply.model_dump(mode='json')
+                            else:result=(await answer_public(req,risk,ctx,saver)).model_dump(mode='json')
                     else:result=(await answer_public(req,risk,ctx,None)).model_dump(mode='json')
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])

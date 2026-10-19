@@ -52,8 +52,10 @@ def db(monkeypatch):
     monkeypatch.setattr(cd,'_client',lambda jwt:(d.jwts.append(jwt),d)[1])
     return d
 def ctx(user=A,kind='customer',jwt='jwt-A'):
-    return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,user_id=user,customer_id=1001,jwt=jwt))
-run=lambda fn,c,**k:asyncio.run(getattr(cd,fn)(c,**k))
+    return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,user_id=user,customer_id=1003 if user==B else 1001,jwt=jwt))
+def run(fn,c,**k):
+    params={'from_':None,'to':None,'filters':None,**k} if fn=='get_transactions' else k
+    return asyncio.run(getattr(cd,fn)(c,**params))
 READERS=['get_profile','get_accounts','get_transactions','get_credit_cards','get_loans','get_compliance_case','get_rm_assignment']
 
 @pytest.mark.parametrize('leaky',[False,True])

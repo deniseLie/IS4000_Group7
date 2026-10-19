@@ -2,8 +2,9 @@ import {useEffect,useRef,useState} from 'react';
 import Panel from './Panel';
 import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
+import {resumeWorkflow} from '../lib/workflows';
 
-export default function ActionsPanel({onClose}) {
+export default function ActionsPanel({onClose,onWorkflowChange}) {
   const [items,setItems]=useState(null);
   const [selected,setSelected]=useState(null);
   const [acknowledged,setAcknowledged]=useState(false);
@@ -35,7 +36,21 @@ export default function ActionsPanel({onClose}) {
     setBusy(true);setError('');
     try {
       const result=await operation(commandId,await token(),controller.signal);
-      if(!controller.signal.aborted){setItems(previous=>previous.map(item=>item.command.command_id===commandId?result:item));setSelected(null);setAcknowledged(false);}
+      if(!controller.signal.aborted){
+        setItems(previous=>previous.map(item=>item.command.command_id===commandId?result:item));setSelected(null);setAcknowledged(false);
+        if(result.workflow)onWorkflowChange(result.workflow);
+        const recorded=await loadActions(await token(),controller.signal);
+        if(!controller.signal.aborted)setItems(recorded);
+      }
+    } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
+    finally {if(!controller.signal.aborted)setBusy(false);}
+  }
+  async function retry(turnId) {
+    const controller=new AbortController();active.current=controller;setBusy(true);setError('');
+    try {
+      const workflow=await resumeWorkflow(turnId,await token(),controller.signal);
+      const recorded=await loadActions(await token(),controller.signal);
+      if(!controller.signal.aborted){onWorkflowChange(workflow);setItems(recorded);}
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
@@ -51,9 +66,13 @@ export default function ActionsPanel({onClose}) {
         <h3>{command.type==='card.temporary_block'?`Temporarily block synthetic card ending ${command.target.last4}`:'Record a demo support handoff'}</h3>
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
         <p>Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
+        {item.workflow&&<div data-testid="command-workflow">
+          <p>Saved reply: {item.workflow.state.replaceAll('_',' ')}. {item.workflow.state==='completed'?'Close Actions to read the saved reply.':item.workflow.state==='failed'?'The action decision is recorded, but the reply could not resume. Retry the saved reply.':!item.workflow.ready?'The review is still being saved. Reload its recorded status before deciding.':''}</p>
+          {item.workflow.can_resume&&<button className="bank-chat-logout" data-testid="resume-workflow" disabled={busy||!!error} onClick={()=>retry(item.workflow.turn_id)}>Resume saved reply</button>}
+        </div>}
         {command.state==='proposed'&&<>
           <p>Proposal expires: <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
-          {!chosen&&<button className="bank-chat-logout" data-testid="review-command" disabled={busy||!!error} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}>Review proposal</button>}
+          {!chosen&&<button className="bank-chat-logout" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}>Review proposal</button>}
           {chosen&&<div className="command-review" data-testid="command-review">
             <p>Confirming temporarily blocks this synthetic card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.</p>
             <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this synthetic card and the proposed change.</label>

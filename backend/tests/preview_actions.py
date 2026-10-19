@@ -5,11 +5,13 @@ Start a separate Vite process with its backend port and native Data API URL. Ope
 http://127.0.0.1:<vite-port>/api/__native_preview__/session and click Start synthetic preview.
 That test-only page installs a native JWT session, then opens the normal frontend. This tests
 real JWT verification, RLS and action transactions; it does not test hosted password login.
-The start button creates real proposals with a fresh five-minute expiry. No model is simulated.
+The start button creates a real paused graph with a fresh five-minute proposal. The fixture
+starts after dispatch with safety-origin text; it tests workflow mechanics, not AI accuracy.
 Metadata contains URLs only. Remove its file to stop and delete the temporary database.
 """
 import json
 import os
+import secrets
 import threading
 import time
 from datetime import datetime,timezone
@@ -22,13 +24,17 @@ from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 from pydantic import StrictInt,TypeAdapter
 from tests.data_api_support import NativeAPI,available_port
-from tests.test_actions_api import card_command,context,owned_case,propose
+from app.core.config import settings
+from tests.test_actions_api import context
+from tests.test_workflows import paused
 
 
-def test_action_preview(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+def test_action_preview(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
     destination=os.environ.get('NATIVE_PREVIEW_FILE')
     if not destination:raise ValueError('Set NATIVE_PREVIEW_FILE to a new temporary metadata file')
     metadata=Path(destination)
+    monkeypatch.setattr(settings,'conversation_store','database')
+    monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     ctx=context(local_data_api,1001)
     token=ctx.principal.jwt.get_secret_value()
     claims=jwt.decode(token,local_data_api.signing_key.public_key(),algorithms=['ES256'],audience='authenticated')
@@ -48,15 +54,16 @@ document.getElementById('start-preview-session').addEventListener('click',async(
   try {
     const response=await fetch('/api/__native_preview__/start',{method:'POST'});
     if(!response.ok)throw new Error('Native proposal setup failed: HTTP '+response.status);
+    const access=await response.json();
+    localStorage.setItem('demobank.active.'+fixture.session.user.id,JSON.stringify({session_id:access.session_id,guest_token:null}));
     localStorage.setItem(fixture.key,JSON.stringify(fixture.session));location.assign('/');
   } catch(error) {status.textContent=error.message;button.disabled=false;}
 });</script></html>'''
 
     @preview.post('/__native_preview__/start')
-    def start() -> dict[str,bool]:
-        scoped=owned_case(local_data_api,ctx)
-        for task in ['manual-reject','manual-confirm']:propose(native_api_client,scoped,card_command(scoped,task))
-        return {'ready':True}
+    def start() -> dict[str,str]:
+        owned,_=paused(local_data_api,ctx)
+        return {'session_id':str(owned.access.session_id)}
 
     preview.mount('/',native_api_client.app)
     port=available_port()

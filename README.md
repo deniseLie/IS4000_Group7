@@ -164,7 +164,7 @@ the owned turn; its module docstring describes signing and key rotation. Runtime
 authentication stays outside graph state. Native tests cover pause/restart/resume,
 pending writes, tampering, customer/guest isolation, cancellation and atomic audit
 failure. The normal UI also preserves explicit unavailable sections across refresh.
-Automatic recovery of interrupted requests and action-driven graph resume remain pending.
+Automatic recovery of interrupted model requests remains pending.
 
 The Action Service (`services/actions/`, migrations `0017`–`0019`) now persists proposals,
 customer confirmation/rejection and receipts for temporary synthetic-card blocks and
@@ -179,9 +179,22 @@ keep business changes, ledger, outbox and audit atomic over the public-key/user-
 Data API. Python executor modules validate their typed contracts. Native API/browser
 checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
 The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
-session, not hosted password login. Hosted migration application, agent proposal/SSE
-integration, remaining executors and outbox delivery remain pending. No real bank
+session, not hosted password login. Hosted migration application, remaining executors and outbox delivery remain pending. No real bank
 card or staffed support service is connected.
+
+Migrations `0020`–`0022` connect the first personal fraud workflow to these services.
+With `PIPELINE=v2` and saved conversations enabled, the fraud agent reads masked card
+and transaction evidence and may propose one eligible synthetic card block. The graph
+pauses at a signed checkpoint before the UI enables review. Confirm/reject resumes only
+post-review nodes, reads canonical outcomes, records a synthetic support handoff and
+saves a separate receipt-based section. Cancelling rejects undecided proposals; it does
+not reverse previously executed commands. Resume leases exclude competing workers.
+Failed continuation preserves its receipts and exposes **Resume saved reply** in Actions.
+The local native API/browser tests exercise these mechanics without replacing a model:
+their fixtures start after dispatch and use safety-origin text. Real-provider fraud
+proposal accuracy remains unverified (the configured provider returned HTTP 429).
+Other personal agents remain explicit unavailable sections; public agents and v1 keep
+their existing behaviour. Hosted migration application is still deferred.
 
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m

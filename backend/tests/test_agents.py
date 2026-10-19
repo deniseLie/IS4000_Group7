@@ -75,6 +75,9 @@ def test_one_withheld_section_does_not_discard_other_sections():
     valid=validate_draft(task(),draft('Early withdrawal may reduce interest.',['sg-accounts'],'banking','ok',''),evidence())
     invalid=AgentResult(task_id='t2',agent='document',status='error',text='This part could not be verified.')
     state={'request':req,'history':req.messages,'history_count':len(req.messages),'plan':TaskPlan(tasks=tasks),'results':[valid,invalid],'evidence':[evidence(),[]]}
+    from app.schemas.workflows import ResponseMeta
+    from app.services.agents.answer import response_prompt_id
+    state={**state,'metadata':[ResponseMeta(origin='ai',prompt_id=response_prompt_id('retail')),ResponseMeta(origin='validation',prompt_id=response_prompt_id('document'))],'decision_sections':[]}
     answer=compose(state)['answer']
     assert answer.sections[0].response_origin=='ai' and answer.sections[0].sources[0].id=='sg-accounts'
     assert answer.sections[1].response_origin=='validation' and answer.needs_human
@@ -96,7 +99,9 @@ def test_provider_configuration_failure_withholds_a_social_section(monkeypatch):
     planned=Task(task_id='t1',domain='smalltalk',intent='answer_question',entities={'question':'Hello'})
     result=asyncio.run(run_task(planned,{'history':req.messages,'request':req},[]))
     assert result.status=='error' and result.agent=='retail'
-    answer=compose({'request':req,'history':req.messages,'history_count':len(req.messages),'plan':TaskPlan(tasks=[planned]),'results':[result],'evidence':[[]]})['answer']
+    from app.schemas.workflows import ResponseMeta
+    answer=compose({'request':req,'history':req.messages,'history_count':len(req.messages),'plan':TaskPlan(tasks=[planned]),'results':[result],'evidence':[[]],
+        'metadata':[ResponseMeta(origin='validation',prompt_id=None)],'decision_sections':[]})['answer']
     assert answer.response_origin=='validation' and answer.sections[0].response_origin=='validation'
 
 

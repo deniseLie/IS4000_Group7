@@ -5,8 +5,7 @@ The profile row is looked up again from Principal.user_id (auth user) through ba
 service does not depend on the gateway's cached Principal.customer_id."""
 import logging
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
-from pydantic import StrictInt,TypeAdapter
+from pydantic import JsonValue,StrictInt,TypeAdapter
 from app.core import auth
 from app.core.data_api import execute
 from app.core.observability import log_event
@@ -41,6 +40,8 @@ def _session(ctx: RequestContext, tool: str):
     if len(rows) != 1:
         logger.warning('customer_profile_unresolved', extra={'tool': tool, 'count': len(rows)})
         raise PermissionError(tool)
+    if TypeAdapter(StrictInt).validate_python(rows[0]['customer_id'])!=p.customer_id:
+        raise CustomerDataIntegrityError('The current customer profile does not match the authenticated request scope')
     return db, rows[0]
 
 
@@ -77,7 +78,13 @@ async def get_accounts(ctx: RequestContext) -> ToolResult:
                              'currency': r['currency'], 'balance': _num(r['balance']), 'status': r['status']} for r in rows])
 
 
-async def get_transactions(ctx: RequestContext, from_: date | None = None, to: date | None = None, filters: dict[str, Any] | None = None) -> ToolResult:
+async def get_transactions(ctx: RequestContext, from_: date | None, to: date | None, filters: dict[str, JsonValue] | None) -> ToolResult:
+    result=await execute(lambda:_transactions(ctx,from_,to,filters),'customer.get_transactions')
+    audit.add('data','data.read',resource_type='banking.transactions',details={'tool':'customer.get_transactions','result_count':len(result.data)})
+    return result
+
+
+def _transactions(ctx: RequestContext,from_: date | None,to: date | None,filters: dict[str,JsonValue] | None) -> ToolResult:
     db, p = _session(ctx, 'customer.get_transactions')
     cid = p['customer_id']
     last4 = {c['card_id']: c['last4'] for c in _rows(db, 'banking', 'credit_cards', 'customer_id,card_id,last4', cid)}
@@ -88,12 +95,19 @@ async def get_transactions(ctx: RequestContext, from_: date | None = None, to: d
         q = q.lt('txn_date', f'{(to + timedelta(days=1)).isoformat()}T00:00:00+08:00')
     rows = [{'txn_id': f"txn_{r['transaction_id']}", 'date': _day(r['txn_date']), 'description': r['merchant'], 'amount': _num(r['amount']),
              'currency': r['currency'], 'status': r['status'], 'card_last4': last4.get(r['card_id']), 'is_overseas': r['is_overseas'],
+             'card_id':f"card_{r['card_id']}" if r['card_id'] is not None else None,
              'failure_reason': r['failure_reason']} for r in _own(q.order('txn_date', desc=True).limit(TXN_LIMIT).execute().data, cid)]
     rows = [t for t in rows if (not from_ or t['date'] >= from_.isoformat()) and (not to or t['date'] <= to.isoformat())]
     return ToolResult(data=[t for t in rows if all(t.get(k) == v for k, v in (filters or {}).items())])
 
 
 async def get_credit_cards(ctx: RequestContext) -> ToolResult:
+    result=await execute(lambda:_credit_cards(ctx),'customer.get_credit_cards')
+    audit.add('data','data.read',resource_type='banking.credit_cards',details={'tool':'customer.get_credit_cards','result_count':len(result.data)})
+    return result
+
+
+def _credit_cards(ctx: RequestContext) -> ToolResult:
     db, p = _session(ctx, 'customer.get_credit_cards')
     rows = _rows(db, 'banking', 'credit_cards', 'customer_id,card_id,card_name,network,last4,status,credit_limit,outstanding_balance,minimum_payment_due,payment_due_date', p['customer_id'])
     return ToolResult(data=[{'card_id': f"card_{r['card_id']}", 'name': r['card_name'], 'network': r['network'], 'last4': str(r['last4'])[-4:],

@@ -3,7 +3,7 @@ from typing import Annotated,Literal,Self
 from uuid import UUID
 from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,SecretStr,StrictBool,StrictInt,StringConstraints,model_validator
 from app.schemas.contracts import Priority
-from app.schemas.events import AnswerEvent
+from app.schemas.events import AnswerEvent,WorkflowStatus
 
 Mode=Literal['public','personal']
 Language=Literal['English','Chinese','Malay','Tamil']
@@ -74,6 +74,14 @@ class ConversationHistory(BaseModel):
     messages: list[StoredMessage]
     history_trimmed: StrictBool
     active_turn: 'TurnRecord | None'
+    workflow: WorkflowStatus | None=None
+
+    @model_validator(mode='after')
+    def workflow_scope(self) -> Self:
+        if self.workflow is not None and (self.active_turn is None or self.workflow.turn_id!=self.active_turn.turn_id
+            or self.workflow.session_id!=self.session.session_id or self.workflow.customer_id!=self.session.customer_id):
+            raise ValueError('Workflow metadata does not match the active conversation turn')
+        return self
 
 
 class TurnRecord(BaseModel):
