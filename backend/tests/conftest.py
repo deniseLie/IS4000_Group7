@@ -1,6 +1,6 @@
 import os
 
-pytest_plugins=['tests.database_support']
+pytest_plugins=['tests.database_support','tests.data_api_support']
 
 os.environ['TRACE_STORE']='0'  # tests must never write traces to a real Supabase project
 os.environ['AUDIT_STORE']='0'  # nor audit events (append-only, cannot be cleaned up)

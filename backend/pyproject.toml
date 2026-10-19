@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-dbtest = ["pgserver==0.1.4", "psycopg[binary]>=3.2,<4"]
+dbtest = ["pgserver==0.1.4", "psycopg[binary]==3.3.6"]
 
 [tool.setuptools.packages.find]
 include = ["app*", "evaluation*", "scripts*"]
@@ -35,3 +35,23 @@ evaluation = ["*cases.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Official native binary used only by the opt-in local Data API integration suite.
+[tool.demobank.postgrest]
+version = "14.18"
+
+[tool.demobank.postgrest.artifacts.Darwin-arm64]
+file = "postgrest-v14.18-macos-aarch64.tar.xz"
+sha256 = "e38374c68b927c565b62eebfd32f7b3ce4fe8801cac41c21565a1ce7dbac85b6"
+
+[tool.demobank.postgrest.artifacts.Darwin-x86_64]
+file = "postgrest-v14.18-macos-x86-64.tar.xz"
+sha256 = "2209bae7c7d4b4e5b931c24febccbdf9dcfa685112bff1a2a21bbb2cb4e5be13"
+
+[tool.demobank.postgrest.artifacts.Linux-x86_64]
+file = "postgrest-v14.18-linux-static-x86-64.tar.xz"
+sha256 = "98de1c0be7787aea5f5e11a25f303ea0077634d6fc1000b687bfa825fd27d299"
+
+[tool.demobank.postgrest.artifacts.Linux-aarch64]
+file = "postgrest-v14.18-ubuntu-aarch64.tar.xz"
+sha256 = "960676de3fb8102393adfff7f74d40aa131b52abe0ba63b6a5594c44c3a67569"
