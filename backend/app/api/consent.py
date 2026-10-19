@@ -5,7 +5,7 @@ from fastapi import APIRouter,Depends,Request
 from postgrest.exceptions import APIError
 from pydantic import TypeAdapter,ValidationError
 from app.core.errors import ApiError
-from app.core.data_reads import database_code
+from app.core.data_api import database_code
 from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.consent import ConsentQuery,ConsentResult,RelationshipConsent,RmAssignment

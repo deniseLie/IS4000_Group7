@@ -145,6 +145,15 @@ details are exposed. Native browser checks cover empty and populated records,
 invalid dates and registry failures at desktop/mobile sizes. Hosted application
 is pending. Suggestions do not hold or book an appointment.
 
+Conversation storage APIs and migration `0013` provide owned session creation,
+recent-chat listing, bounded chronological history and cancellation of interrupted
+turns. Customers retain RLS protection; guests use a separate hashed access token
+with a 24-hour expiry. Starting a turn stores its redacted question; finishing
+stores a validated reply or explicit failure. Each transition and audit event
+commit together, with revision conflicts and idempotency checks. Native tests
+cover these boundaries. Chat/UI/checkpoint integration and hosted application
+remain pending; the current chat flow does not yet persist through this service.
+
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
 pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each

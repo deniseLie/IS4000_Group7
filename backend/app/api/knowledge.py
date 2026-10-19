@@ -5,7 +5,7 @@ from fastapi import APIRouter,Depends,Path,Request
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 from app.api.audited import flush as flush_audit
-from app.core import knowledge_db
+from app.core import data_api
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event
@@ -23,7 +23,7 @@ async def section(article_id: ArticleId,version: Annotated[int,Path(gt=0,le=2147
     key=SectionKey(article_id=article_id,version=version,anchor=anchor)
     batch=audit.start_batch(request.state.db,session_id=ctx.session_id)
     try:
-        with knowledge_db.connect(ctx) as db:record=await kb.get_section(key,ctx,db)
+        with data_api.connect(ctx) as db:record=await kb.get_section(key,ctx,db)
     except PolicyDenied as error:
         await flush_audit(batch)
         raise ApiError(403,'knowledge_forbidden','This session cannot read the requested source.') from error

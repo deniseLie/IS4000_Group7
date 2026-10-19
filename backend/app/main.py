@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from starlette.exceptions import HTTPException
 
-from app.api import auth, chat, consent, knowledge, relationship
+from app.api import auth, chat, consent, conversations, knowledge, relationship
 from app.core.config import settings
 from app.core.errors import http_error
 from app.core.gateway import GatewayMiddleware
@@ -28,6 +28,7 @@ app.include_router(auth.router)
 app.include_router(consent.router)
 app.include_router(knowledge.router)
 app.include_router(relationship.router)
+app.include_router(conversations.router)
 
 
 @app.get("/health")

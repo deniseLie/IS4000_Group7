@@ -10,7 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 from app.core.config import settings
-from app.core import knowledge_db
+from app.core import data_api
 from app.core.observability import span
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
@@ -121,7 +121,7 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     """Retrieve only the latest planned question; never replace a no-match with unrelated articles."""
     query=KnowledgeQuery(query=task.entities['question'],scope='public',k=4)
     # The supervisor retrieves shared evidence; this is not an agent-initiated tool call.
-    with knowledge_db.connect(ctx) as db:sections=await kb.search(query,ctx,db)
+    with data_api.connect(ctx) as db:sections=await kb.search(query,ctx,db)
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 

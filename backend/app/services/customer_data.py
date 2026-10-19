@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from pydantic import StrictInt,TypeAdapter
 from app.core import auth
-from app.core.data_reads import read
+from app.core.data_api import execute
 from app.core.observability import log_event
 from app.schemas.contracts import RequestContext, ToolResult
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
@@ -127,7 +127,7 @@ async def get_compliance_case(ctx: RequestContext) -> ToolResult:
 
 async def get_rm_assignment(ctx: RequestContext) -> ToolResult:
     """rm.get_assignment: current RM (and the previous one, for transition questions). Advisors are visible only via RLS on assignment."""
-    return await read(lambda:_rm_assignment(ctx),'rm.get_assignment')
+    return await execute(lambda:_rm_assignment(ctx),'rm.get_assignment')
 
 
 def _rm_assignment(ctx: RequestContext) -> ToolResult:
@@ -155,7 +155,7 @@ def _rm_assignment(ctx: RequestContext) -> ToolResult:
 
 async def get_requests(ctx: RequestContext) -> ToolResult:
     """requests.list: recent requests belonging to the caller, without internal staff records."""
-    return await read(lambda:_requests(ctx),'requests.list')
+    return await execute(lambda:_requests(ctx),'requests.list')
 
 
 def _requests(ctx: RequestContext) -> ToolResult:
@@ -172,7 +172,7 @@ def _requests(ctx: RequestContext) -> ToolResult:
 
 async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
     """appointments.find_slots: suggestions only; a confirmed booking must recheck availability atomically."""
-    return await read(lambda:_free_slots(query,ctx),'appointments.find_slots')
+    return await execute(lambda:_free_slots(query,ctx),'appointments.find_slots')
 
 
 def _free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:

@@ -5,7 +5,7 @@ the actual selected records. Model-supplied labels cannot establish what a summa
 """
 from postgrest import SyncPostgrestClient
 from pydantic import JsonValue,TypeAdapter
-from app.core.data_reads import read
+from app.core.data_api import execute
 from app.core.observability import span
 from app.schemas.consent import ConsentQuery,ConsentResult
 from app.schemas.contracts import RequestContext
@@ -21,7 +21,7 @@ async def has_consent(query: ConsentQuery,ctx: RequestContext,db: SyncPostgrestC
     params: dict[str,JsonValue]={'p_customer_id':ctx.principal.customer_id,'p_purpose':query.purpose,
         'p_recipient':str(query.recipient),'p_categories':list(query.categories)}
     with span('customer_context','tool',tool='consent.check',category_count=len(query.categories)):
-        response=await read(lambda:db.rpc('consent_check',params).execute(),'consent.check')
+        response=await execute(lambda:db.rpc('consent_check',params).execute(),'consent.check')
         results=TypeAdapter(list[ConsentResult]).validate_python(response.data)
         if len(results)!=1:raise ConsentResponseError(f'consent_check returned {len(results)} rows; expected one scoped result')
     result=results[0]
