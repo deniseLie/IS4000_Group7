@@ -6,7 +6,9 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictBool,StrictI
 from app.schemas.contracts import Priority
 from app.schemas.events import WorkflowStatus
 
-ActionType=Literal['card.temporary_block','handoff.create']
+CustomerActionType=Literal['card.temporary_block','handoff.create']
+StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
+ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
 CardId=Annotated[str,StringConstraints(strict=True,pattern=r'^card_[1-9][0-9]{0,14}$')]
 TaskId=Annotated[str,StringConstraints(strict=True,pattern=r'^[A-Za-z0-9_-]{1,40}$')]
@@ -19,6 +21,15 @@ class CardBlockTarget(BaseModel):
 
 class StoredCardTarget(CardBlockTarget):
     last4: Annotated[str,StringConstraints(strict=True,pattern=r'^[0-9]{4}$')]
+
+
+class StaffHandoffTarget(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    handoff_id: UUID
+
+
+class StaffCardTarget(StoredCardTarget):
+    handoff_id: UUID
 
 
 class HandoffTarget(BaseModel):
@@ -41,6 +52,18 @@ class CardBlockResult(BaseModel):
     status: Literal['temporarily_blocked']
 
 
+class StaffCardResult(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    card_id: CardId
+    status: Literal['active','cancelled']
+
+
+class StaffHandoffResult(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    handoff_id: UUID
+    status: Literal['claimed','closed']
+
+
 class HandoffResult(BaseModel):
     model_config=ConfigDict(extra='ignore')
     handoff_id: UUID
@@ -60,19 +83,30 @@ class ActionRecord(BaseModel):
     customer_id: StrictInt
     case_id: UUID
     type: ActionType
-    target: StoredCardTarget | HandoffTarget
+    target: StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget
     idempotency_key: str
     state: ActionState
     proposed_at: AwareDatetime
     expires_at: AwareDatetime
     confirmed_at: AwareDatetime | None
 
+    @field_validator('target',mode='before')
+    @classmethod
+    def target_for_type(cls,value: object,info: ValidationInfo) -> StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget:
+        action_type=info.data.get('type')
+        if action_type=='card.temporary_block':return StoredCardTarget.model_validate(value)
+        if action_type=='handoff.create':return HandoffTarget.model_validate(value)
+        if action_type in ('card.unblock','card.cancel_permanently'):return StaffCardTarget.model_validate(value)
+        if action_type in ('handoff.claim','handoff.close'):return StaffHandoffTarget.model_validate(value)
+        raise ValueError('A registered operation must identify its stored target')
+
     @model_validator(mode='after')
     def consistent_target(self) -> Self:
-        if (self.type=='card.temporary_block')!=isinstance(self.target,StoredCardTarget):raise ValueError('Action type and target disagree')
         if self.expires_at<=self.proposed_at:raise ValueError('Action expiry must follow its proposal time')
         if self.state=='succeeded' and self.type=='card.temporary_block' and self.confirmed_at is None:
             raise ValueError('A synthetic card block requires recorded confirmation')
+        if self.type in ('card.unblock','card.cancel_permanently','handoff.claim','handoff.close') and (self.state not in ('succeeded','failed') or self.confirmed_at is None):
+            raise ValueError('Staff operations require an immediately recorded terminal result')
         return self
 
 
@@ -82,7 +116,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | ActionFailure
+    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -107,6 +141,14 @@ class ActionOutcome(BaseModel):
                 if command.type=='card.temporary_block' and (not isinstance(receipt.result,CardBlockResult) or receipt.result.card_id!=command.target.card_id):
                     raise ValueError('Card receipt does not match its proposed target')
                 if command.type=='handoff.create' and not isinstance(receipt.result,HandoffResult):raise ValueError('Handoff receipt requires a stored handoff')
+                if command.type in ('card.unblock','card.cancel_permanently'):
+                    status='active' if command.type=='card.unblock' else 'cancelled'
+                    if not isinstance(receipt.result,StaffCardResult) or receipt.result.card_id!=command.target.card_id or receipt.result.status!=status:
+                        raise ValueError('Staff card receipt disagrees with its recorded target or operation')
+                if command.type in ('handoff.claim','handoff.close'):
+                    status='claimed' if command.type=='handoff.claim' else 'closed'
+                    if not isinstance(receipt.result,StaffHandoffResult) or receipt.result.handoff_id!=command.target.handoff_id or receipt.result.status!=status:
+                        raise ValueError('Staff handoff receipt disagrees with its recorded target or operation')
         return self
 
 
@@ -115,7 +157,7 @@ class CreateAction(BaseModel):
     command_id: UUID
     case_id: UUID
     task_id: TaskId
-    type: ActionType
+    type: CustomerActionType
     target: CardBlockTarget | HandoffTarget
 
     @field_validator('target',mode='before')

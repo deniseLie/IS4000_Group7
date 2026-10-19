@@ -4,6 +4,7 @@ const CARD=/^card_[1-9][0-9]{0,14}$/;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const STATES=['proposed','confirmed','succeeded','failed','expired','rejected'];
 const PRIORITIES=['P0','P1','P2','P3'];
+const STAFF=['card.unblock','card.cancel_permanently','handoff.claim','handoff.close'];
 
 function invalid() {return new Error('The recorded action could not be verified. Reload its status before retrying.');}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
@@ -14,21 +15,23 @@ function timestamp(value) {
 
 export function parseAction(value) {
   const command=value?.command,receipt=value?.receipt;
-  if(!command||!['card.temporary_block','handoff.create'].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
+  if(!command||!['card.temporary_block','handoff.create',...STAFF].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
   const command_id=id(command.command_id),case_id=id(command.case_id);
   if(typeof command.idempotency_key!=='string'||!command.idempotency_key.startsWith(`${case_id}:`)||!command.idempotency_key.endsWith(`:${command.type}`)||!/^[A-Za-z0-9_-]{1,40}$/.test(command.idempotency_key.split(':')[1])||command.idempotency_key.split(':').length!==3)throw invalid();
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
   const confirmed_at=command.confirmed_at===null?null:timestamp(command.confirmed_at);
   if(Date.parse(expires_at)<=Date.parse(proposed_at))throw invalid();
+  if(STAFF.includes(command.type)&&(!['succeeded','failed'].includes(command.state)||confirmed_at===null))throw invalid();
   const target=command.target;
   let canonical;
-  if(command.type==='card.temporary_block') {
+  if(['card.temporary_block','card.unblock','card.cancel_permanently'].includes(command.type)) {
     if(!target||typeof target.card_id!=='string'||!CARD.test(target.card_id)||typeof target.last4!=='string'||!/^\d{4}$/.test(target.last4))throw invalid();
     canonical={card_id:target.card_id,last4:target.last4};
-  } else {
+    if(STAFF.includes(command.type))canonical={...canonical,handoff_id:id(target.handoff_id)};
+  } else if(command.type==='handoff.create') {
     if(!target||!['card_verification','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
     canonical={reason:target.reason,priority:target.priority,summary:target.summary};
-  }
+  } else canonical={handoff_id:id(target?.handoff_id)};
   if(['succeeded','failed'].includes(command.state)!==(receipt!==null&&receipt!==undefined))throw invalid();
   let saved=null;
   if(receipt!==null) {
@@ -40,9 +43,17 @@ export function parseAction(value) {
     } else if(command.type==='card.temporary_block') {
       if(confirmed_at===null||receipt.result?.card_id!==canonical.card_id||receipt.result?.status!=='temporarily_blocked')throw invalid();
       result={card_id:canonical.card_id,status:'temporarily_blocked'};
-    } else {
+    } else if(command.type==='handoff.create') {
       if(!receipt.result||!PRIORITIES.includes(receipt.result.priority)||!['open','claimed'].includes(receipt.result.status)||typeof receipt.result.created!=='boolean')throw invalid();
       result={handoff_id:id(receipt.result.handoff_id),priority:receipt.result.priority,status:receipt.result.status,created:receipt.result.created};
+    } else if(['card.unblock','card.cancel_permanently'].includes(command.type)) {
+      const status=command.type==='card.unblock'?'active':'cancelled';
+      if(receipt.result?.card_id!==canonical.card_id||receipt.result?.status!==status)throw invalid();
+      result={card_id:canonical.card_id,status};
+    } else {
+      const status=command.type==='handoff.claim'?'claimed':'closed';
+      if(receipt.result?.handoff_id!==canonical.handoff_id||receipt.result?.status!==status)throw invalid();
+      result={handoff_id:canonical.handoff_id,status};
     }
     saved={receipt_id:receipt.receipt_id,command_id,outcome:receipt.outcome,result,audit_event_id:receipt.audit_event_id,created_at:timestamp(receipt.created_at)};
   }

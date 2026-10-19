@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import JsonValue,TypeAdapter
 from postgrest import SyncPostgrestClient
 from app.core import data_api
-from app.schemas.actions import ActionOutcome,ActionType
+from app.schemas.actions import ActionOutcome,CustomerActionType
 from app.schemas.contracts import ActionCommand,ProposedCommand,Receipt,RequestContext
 from app.schemas.workflows import OwnedWorkflow
 from app.services.actions.store import ActionIntegrityError,checked,load
@@ -23,7 +23,7 @@ class ActionStateError(ValueError):
 
 def canonical_target(command: ActionCommand) -> dict[str,JsonValue]:
     from app.services.actions.registry import EXECUTORS
-    action_type=TypeAdapter(ActionType).validate_python(command.type)
+    action_type=TypeAdapter(CustomerActionType).validate_python(command.type)
     return TypeAdapter(dict[str,JsonValue]).validate_python(EXECUTORS[action_type](command).model_dump(mode='json'))
 
 

@@ -182,6 +182,19 @@ The manual native preview in `tests/preview_actions.py` uses a pre-issued local 
 session, not hosted password login. Hosted migration application, remaining executors and outbox delivery remain pending. No real bank
 card or staffed support service is connected.
 
+Staff handoff and card operations (`scripts/staff_support.py`, migrations `0030`–`0033`)
+use the public Data API key and a staff member's verified Auth JWT. SQL requires an
+administrator-assigned support role in `app_metadata`, `aal2`, and ownership of the
+claimed handoff before closing it or changing a card. Only a temporarily blocked
+synthetic card can be reactivated or permanently cancelled. Customer and agent
+proposal paths cannot execute staff operations. The queue orders priority then age;
+stable command UUIDs retrieve the original receipt after a retry. Staff effects use
+the same transactional ledger, audit and outbox, and appear in customer Actions,
+Records and Inbox. The CLI module docstring contains setup and invocation details.
+Native CLI/SQL/browser checks use locally signed test tokens; hosted staff account
+provisioning, MFA and login have not been performed. No real support service or bank
+card is connected.
+
 Migrations `0020`–`0022` connect the first personal fraud workflow to these services.
 With `PIPELINE=v2` and saved conversations enabled, the fraud agent reads masked card
 and transaction evidence and may propose one eligible synthetic card block. The graph

@@ -4,6 +4,27 @@ import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
 import {resumeWorkflow} from '../lib/workflows';
 
+function commandTitle(command) {
+  if(command.type==='card.temporary_block')return `Temporarily block synthetic card ending ${command.target.last4}`;
+  if(command.type==='card.unblock')return `Staff reactivation of synthetic card ending ${command.target.last4}`;
+  if(command.type==='card.cancel_permanently')return `Staff cancellation of synthetic card ending ${command.target.last4}`;
+  if(command.type==='handoff.claim')return 'Staff claimed a demo support handoff';
+  if(command.type==='handoff.close')return 'Staff closed a demo support handoff';
+  if(command.type==='handoff.create')return 'Record a demo support handoff';
+  throw new Error('This action type has no review title. Reload its recorded status.');
+}
+
+function receiptText(item) {
+  if(item.receipt.outcome==='failed')return 'This command did not change the target. Its state changed before execution.';
+  if(item.command.type==='card.temporary_block')return 'This command temporarily blocked the synthetic card.';
+  if(item.command.type==='card.unblock')return 'A verified demo support session reactivated this synthetic card.';
+  if(item.command.type==='card.cancel_permanently')return 'A verified demo support session permanently cancelled this synthetic card.';
+  if(item.command.type==='handoff.claim')return 'A verified demo support session claimed this synthetic support case.';
+  if(item.command.type==='handoff.close')return 'A verified demo support session closed this synthetic support case. This does not change a card or reverse a transaction.';
+  if(item.command.type==='handoff.create')return 'A support handoff is recorded in the demo. There is no staffed support queue.';
+  throw new Error('This action type has no verified receipt description.');
+}
+
 export default function ActionsPanel({onClose,onWorkflowChange}) {
   const [items,setItems]=useState(null);
   const [selected,setSelected]=useState(null);
@@ -63,7 +84,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
     <ul className="command-list" data-testid="commands-list">{items?.map(item=>{
       const command=item.command,receipt=item.receipt,chosen=selected===command.command_id;
       return <li key={command.command_id} data-command-id={command.command_id}>
-        <h3>{command.type==='card.temporary_block'?`Temporarily block synthetic card ending ${command.target.last4}`:'Record a demo support handoff'}</h3>
+        <h3>{commandTitle(command)}</h3>
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
         <p>Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
         {item.workflow&&<div data-testid="command-workflow">
@@ -83,7 +104,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         {command.state==='rejected'&&<p>This proposal was rejected. It did not change the synthetic card.</p>}
         {command.state==='expired'&&<p>This proposal expired without execution. A new proposal is required.</p>}
         {receipt&&<div data-testid="command-receipt">
-          <p>{receipt.outcome==='failed'?'This command did not change the target. Its state changed before execution.':command.type==='card.temporary_block'?'This command temporarily blocked the synthetic card.':'A support handoff is recorded in the demo. There is no staffed support queue.'}</p>
+          <p>{receiptText(item)}</p>
           <p>Receipt: <code>{receipt.receipt_id}</code></p>
         </div>}
       </li>;
