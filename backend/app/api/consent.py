@@ -1,5 +1,6 @@
 """Read the signed-in customer's consent status; never grant or share through this endpoint."""
 import httpx
+from app.api.audited import flush as flush_audit
 from fastapi import APIRouter,Depends,Request
 from postgrest.exceptions import APIError
 from pydantic import TypeAdapter,ValidationError
@@ -15,12 +16,6 @@ from app.services.consent import ConsentResponseError,has_consent
 from app.services.customer_data import CustomerDataIntegrityError,get_rm_assignment
 
 router=APIRouter()
-
-
-async def flush_audit(batch: audit.AuditBatch) -> None:
-    try:await batch.flush()
-    except audit.AuditWriteError as error:
-        raise ApiError(503,'audit_unavailable','Consent status could not be recorded. Please retry.') from error
 
 
 @router.post('/consent/check',response_model=ConsentResult)

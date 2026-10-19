@@ -1,18 +1,7 @@
 import {test,expect} from '@playwright/test';
-import fs from 'node:fs';
+import {fixture,seedSession} from './nativeSession';
 
-const fixture=JSON.parse(fs.readFileSync(process.env.NATIVE_BROWSER_FIXTURE,'utf8'));
-const claims=JSON.parse(Buffer.from(fixture.access_token.split('.')[1],'base64url').toString('utf8'));
-const key=`sb-${new URL(fixture.data_api_url).hostname.split('.')[0]}-auth-token`;
-const session={access_token:fixture.access_token,refresh_token:'native-refresh-token-not-used',token_type:'bearer',
-  expires_in:3600,expires_at:claims.exp,user:{id:fixture.user_id,aud:'authenticated',role:'authenticated',
-    email:'native.user@example.invalid',app_metadata:{provider:'email'},user_metadata:{},created_at:new Date().toISOString()}};
-
-test.beforeEach(async({page})=>{
-  // A locally issued, unexpired session; the real API and PostgREST verify its signature and enforce RLS.
-  // Password login and the hosted Auth server remain outside this local integration suite.
-  await page.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{key,session});
-});
+test.beforeEach(async({page})=>seedSession(page));
 
 test('consent status uses real assigned manager and registry at desktop and mobile sizes',async({page})=>{
   const chatCalls=[];
@@ -20,7 +9,9 @@ test('consent status uses real assigned manager and registry at desktop and mobi
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
     await page.goto('/');
+    const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/rm'));
     await page.getByTestId('open-data-sharing').click();
+    expect((await loaded).status()).toBe(200);
     const dialog=page.locator('dialog[aria-label="Data sharing"]');
     await expect(dialog).toBeVisible();
     await expect(page.getByTestId('sharing-recipient')).toHaveText(fixture.manager);
@@ -38,7 +29,9 @@ test('consent status uses real assigned manager and registry at desktop and mobi
 
 test('unavailable registry is an explicit UI error without a consent status',async({page})=>{
   await page.goto('/');
+  const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/rm'));
   await page.getByTestId('open-data-sharing').click();
+  expect((await loaded).status()).toBe(503);
   await expect(page.getByTestId('sharing-error')).toBeVisible();
   await expect(page.getByTestId('sharing-status')).toHaveCount(0);
   await expect(page.getByTestId('sharing-no-manager')).toHaveCount(0);

@@ -6,10 +6,13 @@ service does not depend on the gateway's cached Principal.customer_id."""
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from pydantic import StrictInt,TypeAdapter
 from app.core import auth
 from app.core.data_reads import read
 from app.core.observability import log_event
 from app.schemas.contracts import RequestContext, ToolResult
+from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
+from app.services import audit
 from app.services.authorization import require_permission
 
 STUB = False
@@ -148,3 +151,38 @@ def _rm_assignment(ctx: RequestContext) -> ToolResult:
     current = active[0] if active else None
     previous = next((r for r in rows if r['ended_on']), None)
     return ToolResult(data={'current': rm(current) if current else None, 'previous': rm(previous) if previous else None})
+
+
+async def get_requests(ctx: RequestContext) -> ToolResult:
+    """requests.list: recent requests belonging to the caller, without internal staff records."""
+    return await read(lambda:_requests(ctx),'requests.list')
+
+
+def _requests(ctx: RequestContext) -> ToolResult:
+    db,profile=_session(ctx,'requests.list')
+    cid=TypeAdapter(StrictInt).validate_python(profile['customer_id'])
+    if cid!=ctx.principal.customer_id:raise CustomerDataIntegrityError('Resolved profile does not match the request customer scope')
+    rows=db.schema('rm').table('requests').select('customer_id,request_id,advisor_id,who,what,urgency,deadline,country,currency,status,created_at,updated_at') \
+        .eq('customer_id',cid).order('created_at',desc=True).limit(TXN_LIMIT).execute().data
+    requests=TypeAdapter(list[RelationshipRequest]).validate_python(rows)
+    if any(item.customer_id!=cid for item in requests):raise CustomerDataIntegrityError('Requests returned records outside the customer scope')
+    audit.add('data','data.read',resource_type='rm.requests',details={'tool':'requests.list','result_count':len(requests)})
+    return ToolResult(data=[item.model_dump(mode='json',exclude={'customer_id'}) for item in requests])
+
+
+async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
+    """appointments.find_slots: suggestions only; a confirmed booking must recheck availability atomically."""
+    return await read(lambda:_free_slots(query,ctx),'appointments.find_slots')
+
+
+def _free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
+    db,profile=_session(ctx,'appointments.find_slots')
+    cid=TypeAdapter(StrictInt).validate_python(profile['customer_id'])
+    if cid!=ctx.principal.customer_id:raise CustomerDataIntegrityError('Resolved profile does not match the request customer scope')
+    response=db.rpc('appointments_find_slots',{'p_customer_id':cid,'p_from':query.from_date.isoformat(),
+        'p_to':query.to_date.isoformat(),'p_limit':query.limit}).execute()
+    slots=TypeAdapter(list[AvailableSlot]).validate_python(response.data)
+    if len(slots)>query.limit or any(item.customer_id!=cid for item in slots):
+        raise CustomerDataIntegrityError('Appointment suggestions exceed the limit or customer scope')
+    audit.add('data','data.read',resource_type='rm.appointments',details={'tool':'appointments.find_slots','result_count':len(slots)})
+    return ToolResult(data=[item.model_dump(mode='json',exclude={'customer_id'}) for item in slots])

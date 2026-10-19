@@ -224,3 +224,10 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .sharing-details {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0.5rem 1rem;}
 .sharing-details dt {font-weight:600;}
 .sharing-details dd {margin:0;overflow-wrap:anywhere;}
+.relationship-details {border-top:1px solid #e7e7e7;margin-top:1rem;padding-top:1rem;}
+.relationship-range {display:flex;flex-wrap:wrap;gap:.75rem;align-items:end;}
+.relationship-range label {display:flex;flex-direction:column;gap:.35rem;min-width:0;}
+.relationship-range input {max-width:100%;padding:.5rem;border:1px solid #d8d8d8;border-radius:6px;font:inherit;}
+.relationship-list {list-style:none;padding:0;}
+.relationship-list li {padding:.75rem 0;border-bottom:1px solid #e7e7e7;overflow-wrap:anywhere;}
+.relationship-list p {margin:.35rem 0;}

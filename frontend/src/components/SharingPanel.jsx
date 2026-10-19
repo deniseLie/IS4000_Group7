@@ -1,11 +1,13 @@
 import {useEffect,useState} from 'react';
 import Panel from './Panel';
+import RelationshipDetails from './RelationshipDetails';
 import {supabase} from '../lib/supabase';
 import {loadSharingStatus} from '../lib/consent';
 
 export default function SharingPanel({onClose}) {
   const [status,setStatus]=useState(null);
   const [error,setError]=useState('');
+  const [relationship,setRelationship]=useState(false);
   useEffect(()=>{
     const controller=new AbortController();
     async function load() {
@@ -31,5 +33,7 @@ export default function SharingPanel({onClose}) {
     </div>}
     {status&&!status.recipient&&<p role="status" data-testid="sharing-no-manager">No relationship manager is currently assigned to your demo profile.</p>}
     <p className="source-notice">This is a read-only view. No data has been shared.</p>
+    <button className="bank-chat-logout" data-testid="open-relationship-details" aria-expanded={relationship} onClick={()=>setRelationship(!relationship)}>View requests and appointment times</button>
+    {relationship&&<RelationshipDetails/>}
   </Panel>;
 }

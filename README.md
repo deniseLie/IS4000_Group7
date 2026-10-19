@@ -137,6 +137,14 @@ is still pending. Registry failures remain errors, and status is released only
 after audit succeeds. Grant/revoke, sharing and transactional action enforcement
 remain pending; the unused action stubs must not be connected to live workflows.
 
+The data-sharing panel also opens read-only relationship requests and suggested
+appointment times. Migration `0012` calculates thirty-minute suggestions from the
+current advisor's hours, blocks, confirmed bookings and unexpired holds. The API
+checks the customer's scope and audits each read; no other customer's booking
+details are exposed. Native browser checks cover empty and populated records,
+invalid dates and registry failures at desktop/mobile sizes. Hosted application
+is pending. Suggestions do not hold or book an appointment.
+
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
 pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each

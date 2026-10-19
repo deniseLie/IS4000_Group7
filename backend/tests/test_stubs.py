@@ -12,6 +12,7 @@ SIGNATURES={  # the agreed names and parameters; change only together with the c
     kb.search:['query','ctx','db'], kb.get_fact:['fact_id','ctx','db'],
     customer_data.get_profile:['ctx'], customer_data.get_accounts:['ctx'], customer_data.get_transactions:['ctx','from_','to','filters'],
     customer_data.get_credit_cards:['ctx'], customer_data.get_loans:['ctx'],
+    customer_data.get_requests:['ctx'], customer_data.get_free_slots:['query','ctx'],
     actions.run_action:['command','ctx','confirmed'], policy.decide:['subject','action','resource','context'],
     policy.has_consent:['query','ctx','db'],
 }

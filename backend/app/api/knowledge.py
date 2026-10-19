@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter,Depends,Path,Request
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
+from app.api.audited import flush as flush_audit
 from app.core import knowledge_db
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
@@ -14,12 +15,6 @@ from app.services import audit,kb
 from app.services.authorization import PolicyDenied
 
 router=APIRouter()
-
-
-async def flush_audit(batch: audit.AuditBatch) -> None:
-    try:await batch.flush()
-    except audit.AuditWriteError as error:
-        raise ApiError(503,'audit_unavailable','The source read could not be recorded. Please retry.') from error
 
 
 @router.get('/knowledge/sections/{article_id}/{version}/{anchor}',response_model=KnowledgeDetails)
