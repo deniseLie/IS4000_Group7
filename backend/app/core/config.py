@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Literal
+from pydantic import Field,SecretStr
 
 load_dotenv(Path(__file__).resolve().parents[2] / '.env')
 load_dotenv(Path(__file__).resolve().parents[3] / '.env')
@@ -15,6 +16,9 @@ class Settings(BaseSettings):
     pipeline: Literal['v1', 'v2'] = 'v1'
     knowledge_store: Literal['memory','database'] = 'memory'
     conversation_store: Literal['off','database'] = 'off'
+    worker_poll_seconds: float = Field(default=2,gt=0,le=60)
+    run_worker_in_api: bool = False
+    worker_database_url: SecretStr | None = Field(default=None,repr=False)
     cors_origins: list[str] = ["http://localhost:5173"]
 
     prompt_version: str = "v2"

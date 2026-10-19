@@ -196,6 +196,24 @@ proposal accuracy remains unverified (the configured provider returned HTTP 429)
 Other personal agents remain explicit unavailable sections; public agents and v1 keep
 their existing behaviour. Hosted migration application is still deferred.
 
+The notification foundation (`app/worker.py`, migrations `0023`–`0027`) consumes real
+outbox records under a restricted database login. Template delivery, inbox dedupe,
+event completion and audit commit together. Expected failures retry five times before
+dead-lettering; an unknown database failure stops the worker. Service messages ignore
+opt-outs and quiet hours; optional messages honour them. The worker schedules recorded
+compliance deadline reminders; the exact window and login setup are in its module docstring.
+Run it separately with `python -m app.worker`, or explicitly set `RUN_WORKER_IN_API=true`.
+`WORKER_DATABASE_URL` is private and must use the restricted role, never the database
+owner or a service-role key. A stopped API-owned worker degrades `/health` to HTTP 503.
+
+Signed-in customers can open **Inbox**, reload their own latest 50 messages and mark
+them read. The UI also subscribes to owned Supabase Realtime inbox changes; connection
+failures are visible. Native checks cover actual worker/API/UI delivery and explicit
+reload, including crash rollback and read persistence. Hosted Realtime push has not
+been verified; it requires applying the publication migration in Supabase. English
+templates are provided; other locales require approved versions. Email delivery,
+hosted activation, pg_cron installation and worker-started AI turns remain pending.
+
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
 pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each

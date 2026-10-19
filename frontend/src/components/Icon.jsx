@@ -1,6 +1,7 @@
 const paths = {
   chat: <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z"/>,
   plus: <path d="M12 5v14M5 12h14"/>,
+  bell: <><path d="M5 16h14l-2-3V8a5 5 0 0 0-10 0v5l-2 3Z"/><path d="M10 20h4"/></>,
   history: <><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7"/><path d="M12 7v5l3 2"/></>,
   arrow: <path d="m7 17 10-10M7 7h10v10"/>,
   send: <path d="M12 19V5m-6 6 6-6 6 6"/>,

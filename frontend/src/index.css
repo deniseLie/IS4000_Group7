@@ -33,7 +33,7 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .brand-caption { padding-left: 24px; border-left: 1px solid var(--line); display: grid; gap: 5px; }
 .brand-caption strong { font-size: 14px; font-weight: 500; }
 .brand-caption span { font-size: 11px; color: var(--muted); }
-.chat-actions { display: flex; gap: 10px; align-items: center; }
+.chat-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .bank-chat-logout { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 12px; }
 .bank-chat-logout svg { width: 16px; height: 16px; }
 .bank-chat-logout:hover { background: var(--canvas); border-color: #aaa9a2; }

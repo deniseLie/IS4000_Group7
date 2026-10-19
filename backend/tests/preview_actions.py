@@ -7,6 +7,7 @@ That test-only page installs a native JWT session, then opens the normal fronten
 real JWT verification, RLS and action transactions; it does not test hosted password login.
 The start button creates a real paused graph with a fresh five-minute proposal. The fixture
 starts after dispatch with safety-origin text; it tests workflow mechanics, not AI accuracy.
+The normal restricted worker runs too, allowing manual inbox/read checks after a decision.
 Metadata contains URLs only. Remove its file to stop and delete the temporary database.
 """
 import json
@@ -22,19 +23,23 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
-from pydantic import StrictInt,TypeAdapter
+from pydantic import SecretStr,StrictInt,TypeAdapter
 from tests.data_api_support import NativeAPI,available_port
 from app.core.config import settings
+from app.core.lifecycle import lifespan
 from tests.test_actions_api import context
+from tests.test_notifications import worker_uri
 from tests.test_workflows import paused
 
 
-def test_action_preview(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+def test_action_preview(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch,worker_uri: SecretStr) -> None:
     destination=os.environ.get('NATIVE_PREVIEW_FILE')
     if not destination:raise ValueError('Set NATIVE_PREVIEW_FILE to a new temporary metadata file')
     metadata=Path(destination)
     monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
+    monkeypatch.setattr(settings,'run_worker_in_api',True)
+    monkeypatch.setattr(settings,'worker_database_url',worker_uri)
     ctx=context(local_data_api,1001)
     token=ctx.principal.jwt.get_secret_value()
     claims=jwt.decode(token,local_data_api.signing_key.public_key(),algorithms=['ES256'],audience='authenticated')
@@ -43,7 +48,7 @@ def test_action_preview(local_data_api: NativeAPI,native_api_client: TestClient,
         'user':{'id':str(ctx.principal.user_id),'aud':'authenticated','role':'authenticated','email':'native.user@example.invalid',
             'app_metadata':{'provider':'email'},'user_metadata':{},'created_at':datetime.now(timezone.utc).isoformat()}}
     bootstrap=json.dumps({'key':'sb-127-auth-token','session':session}).replace('<','\\u003c')
-    preview=FastAPI()
+    preview=FastAPI(lifespan=lifespan)
 
     @preview.get('/__native_preview__/session',response_class=HTMLResponse)
     def entry() -> str:

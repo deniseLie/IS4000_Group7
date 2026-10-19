@@ -5,6 +5,7 @@ import Answer from './components/Answer';
 import SharingPanel from './components/SharingPanel';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
+import NotificationsPanel from './components/NotificationsPanel';
 import { supabase } from './lib/supabase';
 import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
@@ -45,6 +46,7 @@ export default function Chat({session,onSignIn}) {
   const [workflow,setWorkflow]=useState(null);
   const [savedChats,setSavedChats]=useState(false);
   const [actionsOpen,setActionsOpen]=useState(false);
+  const [inboxOpen,setInboxOpen]=useState(false);
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -87,7 +89,7 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);
+    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);
     setNotice(history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
@@ -119,7 +121,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);if(store!==null)setBootError('');
     return true;
   }
 
@@ -174,7 +176,7 @@ export default function Chat({session,onSignIn}) {
         if(type==='workflow_paused') {
           const paused=parsePausedWorkflow(JSON.parse(data),thread.session_id);
           if(paused.turn_id!==stored.turn_id)throw new Error('The proposed actions do not match this reply. Reload the saved chat.');
-          setWorkflow(paused);setMessages(visible);setNotice('Review the proposed action in Actions to continue this saved reply.');setActionsOpen(true);
+          setWorkflow(paused);setMessages(visible);setNotice('Review the proposed action in Actions to continue this saved reply.');setInboxOpen(false);setActionsOpen(true);
         }
       });
     } catch(err) {
@@ -208,6 +210,7 @@ export default function Chat({session,onSignIn}) {
       {session&&store==='database'&&<button className="bank-chat-logout support-action" aria-label="Open saved conversations" data-testid="open-saved-chats" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(true);}}><Icon name="history"/><span>Saved chats</span></button>}
       {session&&<button className="bank-chat-logout support-action" aria-label="Review data-sharing consent" title="Data-sharing consent" data-testid="open-data-sharing" onClick={()=>{setSummary(null);setArticle(null);setSharing(true);}}><Icon name="shield"/><span>Data sharing</span></button>}
       {session&&<button className="bank-chat-logout support-action" aria-label="Review proposed actions" data-testid="open-actions" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(true);}}><Icon name="card"/><span>Actions</span></button>}
+      {session&&<button className="bank-chat-logout support-action" aria-label="Open notifications" data-testid="open-notifications" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(true);}}><Icon name="bell"/><span>Inbox</span></button>}
       {session?<button className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
     </header>
     <div className="bank-chat-layout">
@@ -253,6 +256,7 @@ export default function Chat({session,onSignIn}) {
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
     {sharing&&<SharingPanel onClose={()=>setSharing(false)}/>}
+    {inboxOpen&&<NotificationsPanel onClose={()=>setInboxOpen(false)}/>}
     {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}
     {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
       setActionsOpen(false);
