@@ -2,6 +2,8 @@
 import json
 import os
 from collections.abc import Iterator
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -10,7 +12,7 @@ import pytest
 if TYPE_CHECKING:
     from psycopg import Connection
 
-SqlRow: TypeAlias = tuple[str | int | bool | UUID | None, ...]
+SqlRow: TypeAlias = tuple[str | int | float | bool | UUID | date | datetime | Decimal | None, ...]
 
 
 def persona_id(customer_id: int) -> UUID:

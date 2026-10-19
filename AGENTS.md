@@ -13,6 +13,7 @@ Navigation guide for coding agents. DemoBank customer-support chatbot (IS4000 co
 | Switch API / local Codex subscription | `CHAT_TRANSPORT=api\|codex`; `services/codex_cli.py`; `docs/codex-local-provider.md`; `handoff.md` for another Mac. Preserve OpenRouter settings. Never pass app keys to CLI or enable its coding tools. |
 | Edit the system prompt | `backend/app/prompts/<agent>/<version>/*.md` (answer agent: `system,format,public_only`), loaded by `services/prompts.py` (`load(agent, version)`; `PROMPT_VERSION` for answer, `PROMPT_VERSIONS` for others). **Never edit a released version** (ids pinned in `tests/test_prompts.py`); add a new `vN` dir and a `docs/prompt-log/<agent>/vN.md` (copy `TEMPLATE.md`) |
 | Add or edit knowledge articles / retrieval | `backend/app/services/knowledge.py` (in-memory, keyword search, no embeddings) |
+| Prepared hosted knowledge layer | Migrations `0008` (versioned articles/sections/facts, RLS, ranked keyword RPCs) and `0009` (approved library seed); native SQL checks in `tests/test_knowledge_database.py`. Hosted apply, Data API verification and the app adapter are pending; active retrieval still uses the in-memory library. |
 | Change answer validation (source IDs, figures) | `backend/app/services/source_checks.py` |
 | Change redaction | `backend/app/services/privacy.py` **and** `frontend/src/lib/chatTools.js` (keep in sync) |
 | Change lost-card detection | `backend/app/services/safety.py`; fixed urgent response stays in `answers.py` |
