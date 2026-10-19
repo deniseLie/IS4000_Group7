@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
+AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py
@@ -38,6 +39,7 @@ class RequestContext(Contract):
     session_id: UUID
     case_id: UUID | None = None
     principal: Principal
+    agent: AgentName | None = None  # set only by backend dispatch; never read from tool arguments
     locale: str = 'en-SG'
     received_at: datetime = Field(default_factory=now)
 

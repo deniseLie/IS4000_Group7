@@ -116,6 +116,13 @@ checkpoints and confirmed actions are not yet connected to v2; unavailable
 operations are reported explicitly. Supabase migration and live persona work
 remain pending.
 
+Tool authorisation uses explicit rules in `services/authorization.py`. Customer
+readers and v2 knowledge retrieval audit their decisions before access. Rules
+check the trusted principal, customer scope and backend-assigned agent, and return
+masking, confirmation and consent obligations. Staff/system access is unconfigured
+and denied. Consent lookup and transactional action enforcement remain pending;
+the unused action and consent stubs must not be connected to live workflows.
+
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
 pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each

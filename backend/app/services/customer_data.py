@@ -8,7 +8,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from app.schemas.contracts import RequestContext, ToolResult
-from app.services.policy import decide
+from app.services.authorization import require_permission
 
 STUB = False
 logger = logging.getLogger(__name__)
@@ -26,8 +26,7 @@ def _client(jwt: str):
 def _session(ctx: RequestContext, tool: str):
     """Policy check, then the user's own DB client and their bigint customer_id."""
     p = ctx.principal
-    if not decide(p, tool, {'customer_id': p.customer_id}, ctx).allow:
-        raise PermissionError(tool)
+    require_permission(p, tool, {'customer_id': p.customer_id}, ctx)
     if p.kind != 'customer' or not p.user_id or not p.jwt:
         raise PermissionError(tool)
     db = _client(p.jwt.get_secret_value())

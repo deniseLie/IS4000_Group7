@@ -64,7 +64,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
         yield {'event':'status','data':'Checking the available information…'}
         try:
             if settings.pipeline=='v2' and risk.fixed_response is None:
-                result=(await answer_public(req,risk)).model_dump(mode='json')
+                result=(await answer_public(req,risk,ctx)).model_dump(mode='json')
                 trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                     privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
             else:result=await make_answer(req,context)

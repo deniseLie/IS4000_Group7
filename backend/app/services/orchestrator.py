@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.observability import span
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
-from app.schemas.contracts import AgentResult, Domain, RiskAssessment, Task, TaskPlan
+from app.schemas.contracts import AgentResult, Domain, RequestContext, RiskAssessment, Task, TaskPlan
 from app.schemas.events import AnswerEvent, AnswerSection, Source
 from app.services import llm_gateway, prompts
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
@@ -21,6 +21,7 @@ from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
 from app.services.knowledge import source
 from app.services.guardrail import FRAUD
+from app.services.authorization import require_permission
 
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]',re.I)
 TOPICS: dict[Domain, re.Pattern[str]] = {
@@ -33,6 +34,7 @@ TOPICS: dict[Domain, re.Pattern[str]] = {
 
 class Turn(TypedDict):
     request: ChatRequest
+    context: RequestContext
     risk: RiskAssessment
     history: list[Message]
     issues: list[PlannedIssue]
@@ -125,6 +127,8 @@ async def run_task(task: Task, state: Turn, evidence: list[Evidence]) -> AgentRe
 
 
 async def dispatch(state: Turn) -> DispatchUpdate:
+    ctx = state['context']
+    require_permission(ctx.principal,'kb.search',None,ctx)
     tasks = state['plan'].by_priority()
     evidence = [task_evidence(task, state['history'], state['request'].language) for task in tasks]
     results = await asyncio.gather(*(run_task(task,state,items) for task,items in zip(tasks,evidence,strict=True)))
@@ -166,9 +170,9 @@ def build_graph() -> CompiledStateGraph[Turn, None, Turn, Turn]:
     return graph.compile()
 
 
-async def answer_public(req: ChatRequest, risk: RiskAssessment) -> AnswerEvent:
+async def answer_public(req: ChatRequest, risk: RiskAssessment, ctx: RequestContext) -> AnswerEvent:
     if req.mode != 'public':raise ValueError('Initial v2 pipeline supports public mode only')
     if risk.fixed_response is not None:raise ValueError('Fixed safety responses must use the no-model pipeline')
     with span('route','agent',route='llm',pipeline='v2'):
-        result = await build_graph().ainvoke({'request':req,'risk':risk,'history':clean_history(req.messages)})
+        result = await build_graph().ainvoke({'request':req,'risk':risk,'history':clean_history(req.messages),'context':ctx})
     return result['answer']

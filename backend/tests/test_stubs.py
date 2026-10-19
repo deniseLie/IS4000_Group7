@@ -15,7 +15,7 @@ SIGNATURES={  # the agreed names and parameters; change only together with the c
     actions.run_action:['command','ctx','confirmed'], policy.decide:['subject','action','resource','context'],
     policy.has_consent:['customer_id','purpose','recipient'],
 }
-def ctx(kind='customer',aal='aal1'):return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,customer_id=1001 if kind=='customer' else None,aal=aal))
+def ctx(kind='customer',aal='aal1'):return RequestContext(session_id=uuid4(),principal=Principal(kind=kind,user_id=uuid4() if kind=='customer' else None,customer_id=1001 if kind=='customer' else None,jwt='synthetic-test-token' if kind=='customer' else None,aal=aal))
 def cmd(type_,**target):return ActionCommand(idempotency_key=f'case:{uuid4().hex}:{type_}',type=type_,target=target)
 
 @pytest.mark.parametrize('fn,params',SIGNATURES.items(),ids=lambda x:getattr(x,'__qualname__',''))
@@ -35,11 +35,13 @@ def test_kb_returns_sample_chunks_and_facts():
     assert isinstance(asyncio.run(kb.get_fact('fee.card_replacement')),Fact)
 
 def test_decide_rules():
-    p=ctx().principal
-    assert isinstance(policy.decide(p,'kb.search'),Decision)
-    assert 'require:confirmation' in policy.decide(p,'card.temporary_block').obligations
-    assert policy.decide(p,'handoff.create').obligations==[]
-    assert not policy.decide(p,'card.unblock').allow and policy.decide(ctx(aal='aal2').principal,'card.unblock').allow
+    c=ctx()
+    assert isinstance(policy.decide(c.principal,'kb.search',None,c),Decision)
+    assert 'require:confirmation' in policy.decide(c.principal,'card.temporary_block',None,c).obligations
+    assert policy.decide(c.principal,'handoff.create',None,c).obligations==[]
+    for level in ['aal1','aal2']:
+        customer=ctx(aal=level)
+        assert not policy.decide(customer.principal,'card.unblock',None,customer).allow
 
 def test_run_action_proposes_then_confirms_once():
     c,command=ctx(),cmd('card.temporary_block',card_id='card_1')

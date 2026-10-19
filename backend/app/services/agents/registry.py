@@ -1,8 +1,6 @@
 """Domain registry and the tool boundaries to enforce as each shared service is integrated."""
-from typing import Literal
-from app.schemas.contracts import Domain
+from app.schemas.contracts import AgentName, Domain
 
-AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
 AGENT_FOR: dict[Domain, AgentName] = {'retail':'retail','smalltalk':'retail','fraud':'fraud',
     'compliance':'compliance','document':'document','relationship':'relationship'}
 TOOLS: dict[AgentName, tuple[str, ...]] = {
