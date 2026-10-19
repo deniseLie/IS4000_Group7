@@ -13,6 +13,7 @@ from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,Cus
     CustomerProfile,CustomerTransaction,RelationshipAssignment,TransactionQuery)
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
 from app.schemas.appointments import AppointmentRecord
+from app.schemas.consent_actions import ConsentRegistry
 from app.services.authorization import require_permission
 
 STUB=False
@@ -27,6 +28,7 @@ ASSIGNMENT=TypeAdapter(CustomerEnvelope[RelationshipAssignment | None])
 REQUESTS=TypeAdapter(CustomerEnvelope[Annotated[list[RelationshipRequest],Field(max_length=200)]])
 SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_length=20)]])
 APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
+CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -97,6 +99,10 @@ async def get_requests(ctx: RequestContext) -> ToolResult:
 
 async def get_appointments(ctx: RequestContext) -> ToolResult:
     return _result(await _read('appointments.list','customer_read_appointments',{},APPOINTMENTS,ctx))
+
+
+async def get_consent_records(ctx: RequestContext) -> ToolResult:
+    return _result(await _read('consent.records','customer_read_consent_records',{},CONSENTS,ctx))
 
 
 async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:

@@ -10,5 +10,5 @@ TOOLS: dict[AgentName, tuple[str, ...]] = {
     'compliance': ('compliance.get_case','compliance.update_checklist_item','kb.search','handoff.create'),
     'document': ('docs.precheck',),
     'relationship': ('kb.search','customer.get_profile','rm.get_assignment','requests.list',
-        'appointments.find_slots','appointments.list','consent.check','actions.propose','agenda.save','consent.request','handoff.create'),
+        'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create'),
 }

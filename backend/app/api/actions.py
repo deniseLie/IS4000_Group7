@@ -11,14 +11,14 @@ from app.core import data_api
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event
-from app.schemas.actions import ActionOutcome,CreateAction
+from app.schemas.actions import ActionCase,ActionOutcome,CreateAction,CreateActionCase
 from app.schemas.contracts import ActionCommand,RequestContext
 from app.schemas.events import WorkflowStatus
 from app.services import actions,audit,workflows
 from app.services.checkpoint_codec import CheckpointIntegrityError
 from app.services.conversations import ConversationIntegrityError
 from app.services.actions import store
-from app.services.authorization import PolicyDenied
+from app.services.authorization import PolicyDenied,require_permission
 
 router=APIRouter()
 T=TypeVar('T')
@@ -47,6 +47,19 @@ async def response_for(operation: Callable[[],Awaitable[T]],ctx: RequestContext,
 async def recent(request: Request,ctx: RequestContext=Depends(get_ctx)) -> list[ActionOutcome]:
     async def operation() -> list[ActionOutcome]:
         with data_api.connect(ctx) as db:return await store.recent(ctx,db)
+    return await response_for(operation,ctx,request)
+
+
+@router.post('/actions/cases',response_model=ActionCase)
+async def create_case(query: CreateActionCase,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionCase:
+    async def operation() -> ActionCase:
+        require_permission(ctx.principal,'actions.create_case',{'customer_id':ctx.principal.customer_id},ctx)
+        with data_api.connect(ctx) as db:
+            response=await data_api.execute(lambda:db.rpc('action_create_case',{'p_session_id':str(query.session_id),'p_case_id':str(query.case_id)}).execute(),'actions.create_case')
+        result=ActionCase.model_validate(response.data)
+        if result.case_id!=query.case_id or result.session_id!=query.session_id or result.customer_id!=ctx.principal.customer_id:
+            raise store.ActionIntegrityError('The returned action case does not match the customer, case or session')
+        return result
     return await response_for(operation,ctx,request)
 
 

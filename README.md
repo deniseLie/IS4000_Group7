@@ -130,11 +130,20 @@ readers and v2 knowledge retrieval audit their decisions before access. Rules
 check the trusted principal, customer scope and backend-assigned agent, and return
 masking, confirmation and consent obligations. Staff/system access is unconfigured
 and denied. Consent lookup uses JWT/RLS scope, exact purpose/recipient/category
-coverage, revocation and wall-clock expiry. Signed-in users can open the read-only
+coverage, revocation and wall-clock expiry. Signed-in users can open the
 data-sharing view to check basic-profile consent for their currently assigned
 manager. This requires migration `0010` on the target database; hosted application
 is still pending. Registry failures remain errors, and status is released only
-after audit succeeds. Consent grant/revoke and sharing writes remain pending.
+after audit succeeds. Migrations `0037`–`0040` add scoped consent requests and
+reviewed grant/revocation through the Action Service. **Data sharing** names the
+recipient, purpose, categories and fixed expiry; **Actions** requires explicit
+customer confirmation before changing a grant. Requests can cover 1–365 days,
+and confirmation does not extend that expiry. Revoking one grant leaves other
+grants intact and does not erase previously shared records. Registry snapshots
+use JWT/RLS plus explicit customer filters, show active grants first and disclose
+the 200-row bounds and totals. Writes, receipts, audit and outbox are atomic;
+grant/revocation notifications are service records. A grant does not itself share
+data. Actual summary/agenda sharing and other record executors remain pending.
 
 The data-sharing panel also opens relationship requests and suggested
 appointment times. Migration `0012` calculates thirty-minute suggestions from the
@@ -154,8 +163,8 @@ notifications. The direct form creates an owned action case without inventing a 
 message or model reply. Reservations are thirty minutes, within 366 days. Native
 API/browser checks cover retries, competing customers, changed calendars, expiry,
 rejection, rollback and desktop/mobile review. No real calendar, meeting or joining
-link is connected; hosted migration application remains pending. Consent and agenda
-sharing are separate and remain unimplemented.
+link is connected; hosted migration application remains pending. Consent management
+is separate from booking; actual agenda/summary sharing remains pending.
 
 Conversation storage APIs and migrations `0013`/`0014` provide owned session creation,
 recent-chat listing, bounded chronological history and cancellation of interrupted
@@ -192,7 +201,7 @@ keep business changes, ledger, outbox and audit atomic over the public-key/user-
 Data API. Python executor modules validate their typed contracts. Native API/browser
 checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
 The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
-session, not hosted password login. Hosted migration application and remaining consent/records executors remain pending. No real bank
+session, not hosted password login. Hosted migration application and remaining record/sharing executors remain pending. No real bank
 card or staffed support service is connected.
 
 Staff handoff and card operations (`scripts/staff_support.py`, migrations `0030`–`0033`)

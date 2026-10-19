@@ -1,30 +1,32 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import Panel from './Panel';
 import RelationshipDetails from './RelationshipDetails';
+import ConsentControls from './ConsentControls';
 import {supabase} from '../lib/supabase';
-import {loadSharingStatus} from '../lib/consent';
+import {loadConsentRecords,loadSharingStatus} from '../lib/consent';
 
 export default function SharingPanel({onClose,onReviewActions}) {
   const [status,setStatus]=useState(null);
+  const [registry,setRegistry]=useState(null);
+  const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [relationship,setRelationship]=useState(false);
-  useEffect(()=>{
-    const controller=new AbortController();
-    async function load() {
-      try {
-        const {data,error:sessionError}=await supabase.auth.getSession();
-        if(sessionError)throw sessionError;
-        if(!data.session)throw new Error('Please sign in again to review data sharing.');
-        const result=await loadSharingStatus(data.session.access_token,controller.signal);
-        if(!controller.signal.aborted)setStatus(result);
-      } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
-    }
-    load();
-    return ()=>controller.abort();
-  },[]);
+  const active=useRef(null);
+  useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);
+  async function refresh() {
+    const controller=new AbortController();active.current=controller;setBusy(true);setError('');setStatus(null);setRegistry(null);
+    try {
+      const {data,error:sessionError}=await supabase.auth.getSession();
+      if(sessionError)throw sessionError;
+      if(!data.session)throw new Error('Please sign in again to review data sharing.');
+      const [result,records]=await Promise.all([loadSharingStatus(data.session.access_token,controller.signal),loadConsentRecords(data.session.access_token,controller.signal)]);
+      if(!controller.signal.aborted){setStatus(result);setRegistry(records);}
+    } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted){setError(failure.message);setStatus(null);setRegistry(null);}}
+    finally {if(!controller.signal.aborted)setBusy(false);}
+  }
   return <Panel label="Data sharing" title="Review data-sharing consent" closeLabel="Close data sharing" onClose={onClose}>
     <p>Review whether your basic synthetic profile may be shared with your assigned relationship manager. Checking this status does not share data or change your consent.</p>
-    {!status&&!error&&<p role="status">Checking data-sharing consent…</p>}
+    {busy&&<p role="status">Checking data-sharing consent…</p>}
     {error&&<p role="alert" data-testid="sharing-error">{error}</p>}
     {status?.recipient&&<div data-testid="sharing-details">
       <dl className="sharing-details"><dt>Relationship manager</dt><dd data-testid="sharing-recipient">{status.recipient.name}</dd><dt>Data covered</dt><dd>Basic profile</dd></dl>
@@ -32,7 +34,7 @@ export default function SharingPanel({onClose,onReviewActions}) {
       {status.consent.expires_at&&<p>Consent expires: <time dateTime={status.consent.expires_at}>{new Date(status.consent.expires_at).toLocaleString()}</time></p>}
     </div>}
     {status&&!status.recipient&&<p role="status" data-testid="sharing-no-manager">No relationship manager is currently assigned to your demo profile.</p>}
-    <p className="source-notice">This is a read-only view. No data has been shared.</p>
+    <ConsentControls registry={registry} recipient={status?.recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/>
     <button className="bank-chat-logout" data-testid="open-relationship-details" aria-expanded={relationship} onClick={()=>setRelationship(!relationship)}>View requests and appointment times</button>
     {relationship&&<RelationshipDetails onReviewActions={onReviewActions}/>}
   </Panel>;

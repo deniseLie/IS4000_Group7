@@ -9,13 +9,19 @@ from app.core.data_api import database_code
 from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.consent import ConsentQuery,ConsentResult,RelationshipConsent,RmAssignment
-from app.schemas.contracts import RequestContext
-from app.services import audit
+from app.schemas.contracts import RequestContext,ToolResult
+from app.services import audit,customer_data
 from app.services.authorization import PolicyDenied
 from app.services.consent import ConsentResponseError,has_consent
 from app.services.customer_data import CustomerDataIntegrityError,get_rm_assignment
+from app.api.customer import read_result
 
 router=APIRouter()
+
+
+@router.get('/consent/records',response_model=ToolResult)
+async def records(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_consent_records(ctx),request,ctx,'consent.records')
 
 
 @router.post('/consent/check',response_model=ConsentResult)

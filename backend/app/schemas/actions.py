@@ -1,13 +1,16 @@
 """Validated ledger records; only durable successful receipts establish an executed action."""
 import re
-from typing import Annotated,Literal,Self
+from typing import Annotated,Literal,Self,TypeAlias
 from uuid import UUID
 from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictBool,StrictInt,StringConstraints,ValidationInfo,field_validator,model_validator
 from app.schemas.contracts import Priority
 from app.schemas.events import WorkflowStatus
 from app.schemas.appointments import AppointmentResult,AppointmentTarget,SlotTarget,StoredAppointmentTarget
+from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentRequestResult,ConsentRequestTarget,
+    ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
 
-CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel']
+CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
+    'consent.request','consent.grant','consent.revoke']
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
 ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -78,13 +81,19 @@ class ActionFailure(BaseModel):
     error_code: Literal['target_changed']
 
 
+StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget)
+InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget)
+
+
 class ActionRecord(BaseModel):
     model_config=ConfigDict(extra='ignore')
     command_id: UUID
     customer_id: StrictInt
     case_id: UUID
     type: ActionType
-    target: StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
+    target: StoredTarget
     idempotency_key: str
     state: ActionState
     proposed_at: AwareDatetime
@@ -93,7 +102,7 @@ class ActionRecord(BaseModel):
 
     @field_validator('target',mode='before')
     @classmethod
-    def target_for_type(cls,value: object,info: ValidationInfo) -> StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget:
+    def target_for_type(cls,value: object,info: ValidationInfo) -> StoredTarget:
         action_type=info.data.get('type')
         if action_type=='card.temporary_block':return StoredCardTarget.model_validate(value)
         if action_type=='handoff.create':return HandoffTarget.model_validate(value)
@@ -101,6 +110,9 @@ class ActionRecord(BaseModel):
         if action_type in ('handoff.claim','handoff.close'):return StaffHandoffTarget.model_validate(value)
         if action_type=='appointment.hold':return SlotTarget.model_validate(value)
         if action_type in ('appointment.confirm','appointment.cancel'):return StoredAppointmentTarget.model_validate(value)
+        if action_type=='consent.request':return StoredConsentRequestTarget.model_validate(value)
+        if action_type=='consent.grant':return StoredConsentGrantTarget.model_validate(value)
+        if action_type=='consent.revoke':return StoredConsentRevokeTarget.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -110,6 +122,8 @@ class ActionRecord(BaseModel):
             raise ValueError('A synthetic card block requires recorded confirmation')
         if self.state=='succeeded' and self.type in ('appointment.confirm','appointment.cancel') and self.confirmed_at is None:
             raise ValueError('Appointment confirmation/cancellation requires recorded customer confirmation')
+        if self.state=='succeeded' and self.type in ('consent.grant','consent.revoke') and self.confirmed_at is None:
+            raise ValueError('Consent changes require recorded customer confirmation')
         if self.type in ('card.unblock','card.cancel_permanently','handoff.claim','handoff.close') and (self.state not in ('succeeded','failed') or self.confirmed_at is None):
             raise ValueError('Staff operations require an immediately recorded terminal result')
         return self
@@ -121,7 +135,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult
+    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -161,6 +175,11 @@ class ActionOutcome(BaseModel):
                     target=command.target.model_dump()
                     if any(receipt.result.model_dump()[key]!=value for key,value in target.items()):
                         raise ValueError('Appointment receipt disagrees with its recorded target')
+                if command.type.startswith('consent.'):
+                    expected={'consent.request':ConsentRequestResult,'consent.grant':ConsentGrantResult,'consent.revoke':ConsentRevokeResult}[command.type]
+                    if not isinstance(receipt.result,expected):raise ValueError('Consent receipt disagrees with its operation')
+                    if any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
+                        raise ValueError('Consent receipt disagrees with the reviewed scope')
         return self
 
 
@@ -170,18 +189,31 @@ class CreateAction(BaseModel):
     case_id: UUID
     task_id: TaskId
     type: CustomerActionType
-    target: CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
+    target: InputTarget
 
     @field_validator('target',mode='before')
     @classmethod
-    def target_for_type(cls,value: object,info: ValidationInfo) -> CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget:
+    def target_for_type(cls,value: object,info: ValidationInfo) -> InputTarget:
         if info.data.get('type')=='card.temporary_block':return CardBlockTarget.model_validate(value)
         if info.data.get('type')=='handoff.create':return HandoffTarget.model_validate(value)
         if info.data.get('type')=='appointment.hold':return SlotTarget.model_validate(value)
         if info.data.get('type') in ('appointment.confirm','appointment.cancel'):return AppointmentTarget.model_validate(value)
+        if info.data.get('type')=='consent.request':return ConsentRequestTarget.model_validate(value)
+        if info.data.get('type')=='consent.grant':return ConsentGrantTarget.model_validate(value)
+        if info.data.get('type')=='consent.revoke':return ConsentRevokeTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')
     def consistent_target(self) -> Self:
         if (self.type=='card.temporary_block')!=isinstance(self.target,CardBlockTarget):raise ValueError('Action type and target disagree')
         return self
+
+
+class CreateActionCase(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    session_id: UUID
+    case_id: UUID
+
+
+class ActionCase(CreateActionCase):
+    customer_id: StrictInt

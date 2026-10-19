@@ -1,3 +1,4 @@
+import {parseConsentRecords} from './consentData.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 
@@ -29,4 +30,13 @@ export async function loadSharingStatus(token,signal) {
   }
   if(!response.ok)throw new Error(typeof body?.error?.message==='string'&&body.error.message.trim()?body.error.message:'Data-sharing status could not be loaded. Please retry.');
   return parseSharingStatus(body);
+}
+
+export async function loadConsentRecords(token,signal) {
+  const response=await fetch(`${API_URL}/consent/records`,{headers:{Authorization:`Bearer ${token}`},signal});
+  let body;
+  try {body=await response.json();}
+  catch(error) {if(error instanceof SyntaxError)throw new Error('The consent registry response could not be verified.',{cause:error});throw error;}
+  if(!response.ok)throw new Error(typeof body?.error?.message==='string'&&body.error.message.trim()?body.error.message:'Consent records could not be loaded. Refresh to retry.');
+  return parseConsentRecords(body);
 }
