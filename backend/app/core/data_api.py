@@ -39,7 +39,9 @@ async def execute(operation: Callable[[],T],tool: str) -> T:
         try:return await run_in_threadpool(operation)
         except (APIError,*NETWORK_ERRORS) as error:
             code=database_code(error) if isinstance(error,APIError) else None
-            if attempt==2 or isinstance(error,APIError) and code not in TRANSIENT_CODES:raise
+            if attempt==2 or isinstance(error,APIError) and code not in TRANSIENT_CODES:
+                log_event('data_api_failed',logging.WARNING,tool=tool,attempt=attempt+1,error_type=type(error).__name__,db_code=code)
+                raise
             attempt+=1
             log_event('data_api_retry',logging.WARNING,tool=tool,attempt=attempt,error_type=type(error).__name__,db_code=code)
             await asyncio.sleep(0.5*2**(attempt-1))

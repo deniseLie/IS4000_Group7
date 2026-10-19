@@ -1,13 +1,15 @@
 """Initial v2 LangGraph: plan, prioritise, dispatch and compose public information per turn.
 
-Uses the explicitly configured knowledge store. Durable conversations,
-personal tools and confirmed actions require the subsequent service stages; none are simulated.
+Uses the explicitly configured knowledge store and an optional owned durable checkpoint saver.
+Personal tools and confirmed actions require the subsequent service stages; none are simulated.
 """
 import asyncio
 import re
 from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.runtime import Runtime
 from pydantic import ValidationError
 from app.core.config import settings
 from app.core import data_api
@@ -36,7 +38,7 @@ TOPICS: dict[Domain, re.Pattern[str]] = {
 
 class Turn(TypedDict):
     request: ChatRequest
-    context: RequestContext
+    history_count: int
     risk: RiskAssessment
     history: list[Message]
     issues: list[PlannedIssue]
@@ -136,8 +138,8 @@ async def run_task(task: Task, state: Turn, evidence: list[Evidence]) -> AgentRe
         return AgentResult(task_id=task.task_id, agent=AGENT_FOR[task.domain], status='error', text=WITHHELD)
 
 
-async def dispatch(state: Turn) -> DispatchUpdate:
-    ctx = state['context']
+async def dispatch(state: Turn, runtime: Runtime[RequestContext]) -> DispatchUpdate:
+    ctx = runtime.context
     require_permission(ctx.principal,'kb.search',None,ctx)
     tasks = state['plan'].by_priority()
     if settings.knowledge_store=='database':
@@ -159,7 +161,7 @@ def compose(state: Turn) -> ComposeUpdate:
             prompt_version=response_prompt_id(AGENT_FOR[task.domain])))
     unique = {s.id:s for section in sections for s in section.sources}
     answer = AnswerEvent(answer='\n\n'.join(section.answer for section in sections), sources=list(unique.values()),
-        privacy_warning=False, history_trimmed=len(state['history'])<len(state['request'].messages),
+        privacy_warning=False, history_trimmed=len(state['history'])<state['history_count'],
         disclaimer=NOTICE if any(section.answer_kind=='banking' for section in sections) else '',
         needs_human=any(section.needs_human for section in sections),
         source_check='rejected' if any(section.response_origin=='validation' for section in sections) else 'basic_checks_passed',
@@ -168,8 +170,8 @@ def compose(state: Turn) -> ComposeUpdate:
     return {'answer':answer}
 
 
-def build_graph() -> CompiledStateGraph[Turn, None, Turn, Turn]:
-    graph = StateGraph(Turn)
+def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateGraph[Turn, RequestContext, Turn, Turn]:
+    graph = StateGraph(Turn,context_schema=RequestContext)
     graph.add_node('plan',plan)
     graph.add_node('prioritise',prioritise)
     graph.add_node('dispatch',dispatch)
@@ -179,12 +181,17 @@ def build_graph() -> CompiledStateGraph[Turn, None, Turn, Turn]:
     graph.add_edge('prioritise','dispatch')
     graph.add_edge('dispatch','compose')
     graph.add_edge('compose',END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
-async def answer_public(req: ChatRequest, risk: RiskAssessment, ctx: RequestContext) -> AnswerEvent:
+async def answer_public(req: ChatRequest, risk: RiskAssessment, ctx: RequestContext, checkpointer: BaseCheckpointSaver[int] | None) -> AnswerEvent:
     if req.mode != 'public':raise ValueError('Initial v2 pipeline supports public mode only')
     if risk.fixed_response is not None:raise ValueError('Fixed safety responses must use the no-model pipeline')
+    history=clean_history(req.messages)
+    safe_request=req.model_copy(update={'messages':history})
+    if checkpointer is not None and ctx.case_id is None:raise ValueError('Durable workflows require an owned conversation case')
+    config={'configurable':{'thread_id':str(ctx.case_id)}} if checkpointer is not None else None
     with span('route','agent',route='llm',pipeline='v2'):
-        result = await build_graph().ainvoke({'request':req,'risk':risk,'history':clean_history(req.messages),'context':ctx})
+        result = await build_graph(checkpointer).ainvoke({'request':safe_request,'risk':risk,'history':history,
+            'history_count':len(req.messages)},config,context=ctx,durability='sync' if checkpointer is not None else None)
     return result['answer']

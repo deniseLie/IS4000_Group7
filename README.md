@@ -155,8 +155,18 @@ cover these boundaries. `CONVERSATION_STORE=database` connects `/chat` and the
 saved-chat UI after these migrations are applied; the default `off` preserves
 temporary browser history. Saved chats load server-owned history, reject stale
 revisions, preserve sources and expose explicit cancellation of pending replies.
-Guest browser access expires after 24 hours. Checkpoint integration, hosted
-application and real-provider checks of saved follow-ups remain pending.
+Guest browser access expires after 24 hours. Hosted application and real-provider
+checks of saved follow-ups remain pending.
+
+Saved v2 turns also use durable LangGraph snapshots after migrations `0015`/`0016` and
+configuration of a private, stable `CHECKPOINT_SIGNING_KEY` (generation command in
+`.env.example`). `services/checkpoints.py` scopes the public-key/JWT connector to
+the owned turn; its module docstring describes signing and key rotation. Runtime
+authentication stays outside graph state. Native tests cover pause/restart/resume,
+pending writes, tampering, customer/guest isolation, cancellation and atomic audit
+failure. The normal UI also preserves explicit unavailable sections across refresh.
+This establishes checkpoint persistence; customer-facing action confirmation and
+automatic recovery of interrupted requests still require the Action Service.
 
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m

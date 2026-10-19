@@ -9,6 +9,7 @@ from app.api import chat_store
 from app.api.conversations import response_for
 from app.core.auth import get_customer_context
 from app.core.data_api import database_code
+from app.core import data_api
 from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
@@ -24,6 +25,7 @@ from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.trace_store import save_trace
 from app.services.orchestrator import answer_public
+from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
 
 router=APIRouter()
 FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance'}
@@ -93,7 +95,11 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
             else:
                 current_context=await personal_context() if prepared is not None and req.mode=='personal' and risk.fixed_response is None else context
                 if settings.pipeline=='v2' and risk.fixed_response is None:
-                    result=(await answer_public(req,risk,ctx)).model_dump(mode='json')
+                    if prepared is not None:
+                        with data_api.connect(ctx) as workflow_db:
+                            saver=PostgrestCheckpointSaver(workflow_db,prepared.access,ctx,turn.turn,signing_key())
+                            result=(await answer_public(req,risk,ctx,saver)).model_dump(mode='json')
+                    else:result=(await answer_public(req,risk,ctx,None)).model_dump(mode='json')
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
                 else:result=await make_answer(req,current_context)

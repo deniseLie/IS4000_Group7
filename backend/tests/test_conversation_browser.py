@@ -65,3 +65,18 @@ def test_real_expired_guest_ui(local_data_api: NativeAPI,native_api_client: Test
     case=ExpiredFixture(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,1001,'aal1',uuid4()),
         user_id=persona_id(1001),expired_session_id=sid,guest_token=guest_token)
     run_browser(native_api_client,case,'expired guest chat requires',tmp_path)
+
+
+@pytest.mark.parametrize('kind',['customer','guest'])
+def test_saved_v2_checkpoint_ui(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch,tmp_path: Path,kind: str) -> None:
+    import psycopg
+    monkeypatch.setattr(settings,'conversation_store','database')
+    monkeypatch.setattr(settings,'pipeline','v2')
+    monkeypatch.setattr(settings,'knowledge_store','memory')
+    monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
+    monkeypatch.delenv('LLM_MODEL',raising=False)
+    case=NativeBrowserSession(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,1001,'aal1',uuid4()),user_id=persona_id(1001))
+    run_browser(native_api_client,case,f'saved {kind} v2 unavailable section',tmp_path)
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert db.execute('select count(*) from conversation.checkpoints').fetchone()[0]>=5
+        assert db.execute("select count(*) from conversation.turns where state='processing'").fetchone()[0]==0

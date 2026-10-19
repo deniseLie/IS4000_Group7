@@ -83,3 +83,29 @@ test('expired guest chat requires an explicit new chat before sending',async({pa
   await expect(page.getByLabel('Your message',{exact:true})).toBeEnabled();
   await askSafety(page,'I lost my card');
 });
+
+async function unavailableChat(page) {
+  await page.setViewportSize({width:390,height:900});
+  await page.goto('/');
+  await page.getByLabel('Information',{exact:true}).selectOption('public');
+  await page.getByLabel('Your message',{exact:true}).fill('Hello!');
+  await page.getByTestId('send-message').click();
+  await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');
+  await expect(page.getByTestId('answer-sections').locator('[data-domain="smalltalk"]')).toHaveAttribute('data-response-origin','validation');
+  await expect(page.getByLabel('Your message',{exact:true})).toBeEnabled();
+  await page.reload();
+  await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');
+  await expect(page.getByTestId('answer-sections')).toHaveCount(1);
+  await askSafety(page,'I lost my card');
+  await expect(page.getByTestId('chat-message-assistant')).toHaveCount(2);
+  await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/saved-v2-withheld-mobile.png`,fullPage:true});
+}
+
+test('saved customer v2 unavailable section stays withheld after refresh and the next safety turn works',async({page})=>{
+  await seedSession(page);
+  await unavailableChat(page);
+});
+
+test('saved guest v2 unavailable section stays withheld after refresh and the next safety turn works',async({page})=>{
+  await unavailableChat(page);
+});

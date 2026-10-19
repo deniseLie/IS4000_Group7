@@ -5,10 +5,12 @@ From backend/: TEST_DATABASE_LOCAL=1 TEST_DATA_API_LOCAL=1 NATIVE_PREVIEW_FILE=/
 The metadata file contains only local URLs. Remove it to stop and clean up the temporary database.
 Use a separate Vite instance with VITE_API_URL=/api, BACKEND_PORT from the file and its native Data API URL.
 No Auth/password service or model response is simulated. Model configuration is intentionally absent;
-manual checks use fixed safety paths. The preview ends with an error after fifteen minutes.
+manual checks use fixed safety paths and v2's explicit unavailable sections, with real checkpoints.
+The preview ends with an error after fifteen minutes.
 """
 import json
 import os
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -24,7 +26,8 @@ def test_native_preview(local_data_api: NativeAPI,native_api_client: TestClient,
     if not destination:raise ValueError('Set NATIVE_PREVIEW_FILE to a new temporary metadata file before starting the manual preview')
     metadata=Path(destination)
     monkeypatch.setattr(settings,'conversation_store','database')
-    monkeypatch.setattr(settings,'pipeline','v1')
+    monkeypatch.setattr(settings,'pipeline','v2')
+    monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     monkeypatch.delenv('LLM_MODEL',raising=False)
     port=available_port()
     server=uvicorn.Server(uvicorn.Config(native_api_client.app,host='127.0.0.1',port=port,log_level='warning',access_log=False))
