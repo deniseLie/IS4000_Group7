@@ -115,8 +115,8 @@ The v1 adapter preserves authenticated account context and fixed safety response
 empty database searches stay empty and database failures never substitute local articles.
 Five real-provider domain agents return
 validated sections with their own sources and prompt versions. Fixed safety
-responses still bypass the model. Personal retail reads and the reviewed fraud
-proposal workflow are connected; the remaining personal agents and uploaded-document
+responses still bypass the model. Personal retail reads, compliance case explanations
+and the reviewed fraud proposal workflow are connected; the remaining personal agents and uploaded-document
 processing report explicit limitations.
 
 The existing hosted project has migrations `0008`–`0049` applied, with source
@@ -277,8 +277,21 @@ Native checks cover all three personas, failed reads, wrong currencies/citations
 action claims. Real OpenRouter account checks pass for all three personas; a real
 native browser check verifies saved answers at four viewport widths. Computer Use
 also verified David's hosted account answer and saved-chat reload. These focused
-checks do not establish broad semantic accuracy. Compliance, relationship and document
-personal agents remain unavailable; public agents and v1 keep their existing behaviour.
+checks do not establish broad semantic accuracy. Relationship and document personal
+agents remain unavailable; public agents and v1 keep their existing behaviour.
+
+The personal compliance agent uses one audited latest-case snapshot and the separate
+case, checklist, history and information-request citations. It excludes internal
+assessments and unneeded record IDs from model/checkpoint evidence. Preparation marks
+remain distinct from bank submission/review status; the agent cannot edit either.
+Customers can save their own preparation marks through Records. Native checks cover
+all three personas, missing cases, permission/read failures, unsupported figures and
+strict checkpoint round trips. Real OpenRouter checks cover preparation versus bank
+acceptance and the normal saved-chat UI at four widths; Computer Use verifies Michelle's
+hosted status, source and reload. Run the direct live test and browser suite in separate
+processes, as explained in `tests/test_compliance_agent.py`. The public compliance
+prompt remains v1; the personal prompt is v2. These samples do not prove general
+semantic accuracy or multilingual quality.
 
 The notification foundation (`app/worker.py`, migrations `0023`–`0027`) consumes real
 outbox records under a restricted database login. Template delivery, inbox dedupe,

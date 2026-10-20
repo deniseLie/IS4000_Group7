@@ -1,4 +1,4 @@
-"""V2 LangGraph: public information, owned retail reads and authenticated fraud review.
+"""V2 LangGraph: public information, owned retail/compliance reads and authenticated fraud review.
 
 Uses the explicitly configured knowledge store and an optional owned durable checkpoint saver.
 Fraud proposals pause at a durable checkpoint; the remaining personal agents report explicit limitations.
@@ -25,7 +25,7 @@ from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,Re
 from app.schemas.knowledge import KnowledgeQuery
 from app.services import actions,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
-from app.services.agents import fraud,retail
+from app.services.agents import compliance,fraud,retail
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -187,15 +187,17 @@ async def dispatch(state: Turn, runtime: Runtime[PipelineContext]) -> DispatchUp
                 results.append(AgentResult(task_id=task.task_id,agent='fraud',status='error',text=WITHHELD))
                 proposals.append(None)
                 metadata.append(ResponseMeta(origin='validation',prompt_id=prompts.load('fraud','v2')['id']))
-        elif task.domain=='retail':
+        elif task.domain in {'retail','compliance'}:
+            responder=retail.respond if task.domain=='retail' else compliance.respond
+            agent=AGENT_FOR[task.domain]
             try:
-                result,items,prompt_id=await retail.respond(task,state['history'],state['request'].language,
-                    ctx.model_copy(update={'agent':'retail'}),evidence[index])
+                result,items,prompt_id=await responder(task,state['history'],state['request'].language,
+                    ctx.model_copy(update={'agent':agent}),evidence[index])
                 evidence[index]=items;results.append(result);proposals.append(None)
                 metadata.append(ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id))
             except (llm_gateway.LLMError,ValidationError,TimeoutError):
-                results.append(AgentResult(task_id=task.task_id,agent='retail',status='error',text=WITHHELD))
-                proposals.append(None);metadata.append(ResponseMeta(origin='validation',prompt_id=prompts.load('retail','v2')['id']))
+                results.append(AgentResult(task_id=task.task_id,agent=agent,status='error',text=WITHHELD))
+                proposals.append(None);metadata.append(ResponseMeta(origin='validation',prompt_id=prompts.load(agent,'v2')['id']))
         elif task.domain=='smalltalk':
             result=await run_task(task,state,evidence[index])
             results.append(result);proposals.append(None)
