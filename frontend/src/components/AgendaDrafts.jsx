@@ -60,7 +60,7 @@ export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onRe
   const valid=lines.length<=12&&lines.every(line=>line.trim()&&Array.from(line).length<=300);
   return <section className="relationship-details" aria-label="Agenda drafts">
     <h3>Prepare a meeting agenda</h3>
-    <p>Save topics for your synthetic relationship manager. Choose any basic profile fields to include. Saving creates a private draft and does not share data.</p>
+    <p>Save topics for your relationship manager. Choose any basic profile fields to include. Saving creates a private draft and does not share data.</p>
     <button className="bank-chat-logout" data-testid="reload-agendas" disabled={busy} onClick={refresh}>Reload saved drafts</button>
     {busy&&<p role="status">Checking the saved agenda… Closing this panel does not cancel a submitted save. Reopen it or Actions to verify the result.</p>}
     {error&&<p role="alert" data-testid="agenda-error">{error} Reload saved drafts before editing again.</p>}
@@ -72,7 +72,7 @@ export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onRe
         <p>Recipient for this draft: {editor.recipient_name}. Editing revision {editor.revision}.</p>
         <label htmlFor="agenda-topics">Topics, one per line (1–12 topics, 300 characters each)</label>
         <textarea id="agenda-topics" data-testid="agenda-topics" rows="5" value={topics} disabled={busy||!!error} onChange={event=>setTopics(event.target.value)}/>
-        <p>Use synthetic details only. Do not enter passwords, PINs, OTPs or credentials. Recognised private details are redacted before storage; review the saved preview.</p>
+        <p>Use fictional details only. Do not enter passwords, PINs, OTPs or credentials. Recognised private details are redacted before storage; review the saved preview.</p>
         <fieldset disabled={busy||!!error}><legend>Include these recorded profile fields</legend>{Object.entries(AGENDA_PROFILE_FIELDS).map(([field,label])=>
           <label key={field}><input type="checkbox" data-testid={`agenda-field-${field}`} checked={fields.includes(field)} onChange={event=>setFields(current=>event.target.checked?[...current,field]:current.filter(value=>value!==field))}/>{label}</label>)}</fieldset>
         <button className="primary-button" data-testid="save-agenda" type="submit" disabled={busy||!!error||!valid}>Save private draft</button>

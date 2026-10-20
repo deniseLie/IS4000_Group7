@@ -65,13 +65,13 @@ export default function NotificationsPanel({onClose}) {
     } catch(failure) {if(failure.name!=='AbortError'&&mounted.current)setError(failure.message);}
     finally {if(!controller.signal.aborted&&mounted.current){acknowledgement.current=null;setMarking(false);}}
   }
-  return <Panel label="Notifications" title="Your demo inbox" closeLabel="Close notifications" onClose={onClose}>
-    <p>Recorded updates for your synthetic demo profile. These messages do not change a real bank account.</p>
+  return <Panel label="Notifications" title="Your inbox" closeLabel="Close notifications" onClose={onClose}>
+    <p>Updates for your account in this demo. These messages do not change a real bank account.</p>
     <p data-testid="inbox-live-status" role="status">{live}</p>
     <button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}>Reload notifications</button>
     {busy&&<p role="status">Checking recorded notifications…</p>}
     {error&&<p role="alert" data-testid="inbox-error">{error}</p>}
-    {inbox?.items.length===0&&<p data-testid="inbox-empty">No notifications are recorded for your demo profile.</p>}
+    {inbox?.items.length===0&&<p data-testid="inbox-empty">No notifications are recorded for your account.</p>}
     <ul className="command-list" data-testid="inbox-list">{inbox?.items.map(item=><li key={item.notification_id} data-notification-id={item.notification_id} data-template-key={item.template_key}>
       <h3>{item.title}</h3><p>{item.body}</p>
       <p>{item.is_service?'Service update':'Optional update'} · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></p>

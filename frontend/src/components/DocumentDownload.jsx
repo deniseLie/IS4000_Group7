@@ -11,7 +11,7 @@ export default function DocumentDownload({documentId}) {
     try {
       const {data,error:failure}=await supabase.auth.getSession();
       if(failure)throw failure;
-      if(!data.session)throw new Error('Sign in again to download a private synthetic file.');
+      if(!data.session)throw new Error('Sign in again to download a private file.');
       const url=await documentDownload(documentId,data.session.access_token,controller.signal);
       controller.signal.throwIfAborted();window.location.assign(url);
     } catch(failure) {if(!controller.signal.aborted)setError(failure.message);}

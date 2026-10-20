@@ -37,7 +37,7 @@ test('owned document metadata stays scoped and reloads at mobile widths',async({
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
     await page.getByTestId('records-documents').scrollIntoViewIfNeeded();
-    const dialog=page.locator('dialog[aria-label="Synthetic customer records"]');
+    const dialog=page.getByTestId('records-content').locator('xpath=ancestor::dialog');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/documents-${width}.png`,fullPage:true});

@@ -12,7 +12,7 @@ export default function DocumentUpload({review}) {
   async function session() {
     const {data,error:failure}=await supabase.auth.getSession();
     if(failure)throw failure;
-    if(!data.session)throw new Error('Sign in again to upload a private synthetic file.');
+    if(!data.session)throw new Error('Sign in again to upload a private file.');
     return data.session;
   }
   async function register(preparation,token) {
@@ -42,19 +42,19 @@ export default function DocumentUpload({review}) {
     setBusy(true);setError('');
     try {
       const auth=await session();
-      if(auth.user.id!==pending.user_id)throw new Error('This upload belongs to the earlier sign-in. Sign in to that demo account to record it.');
+      if(auth.user.id!==pending.user_id)throw new Error('This upload belongs to the earlier sign-in. Sign in to that account to record it.');
       await register(pending,auth.access_token);
     } catch(failure) {if(mounted.current)setError(failure.message);}
     finally {if(mounted.current)setBusy(false);}
   }
   if(!review||['completed','closed'].includes(review.status))return <p data-testid="document-upload-unavailable">Uploading requires an open review case.</p>;
   return <div className="relationship-details" data-testid="document-upload">
-    <h4>Upload a private synthetic file</h4>
-    <p>PDF, DOCX, JPEG or PNG, up to 10 MiB. Uploading records a file; bank acceptance, preliminary checks and checklist submission status are separate.</p>
+    <h4>Upload a document</h4>
+    <p>Use demo files only; do not upload real personal documents. PDF, DOCX, JPEG or PNG, up to 10 MiB. Uploading records a file; bank acceptance, preliminary checks and checklist submission status are separate.</p>
     <form className="records-filters" onSubmit={submit}>
       <label>Requested item <select data-testid="document-upload-item" value={item} disabled={busy||!!pending||!!outcome} onChange={event=>setItem(event.target.value)}>
         <option value="">General evidence for this review</option>{review.requested_items.map(row=><option key={row.item_id} value={row.item_id}>{row.label}</option>)}</select></label>
-      <label>Synthetic file <input data-testid="document-upload-file" type="file" accept={Object.keys(DOCUMENT_TYPES).join(',')} disabled={busy||!!pending||!!outcome} onChange={event=>{setFile(event.target.files[0]||null);setError('');}}/></label>
+      <label>Document <input data-testid="document-upload-file" type="file" accept={Object.keys(DOCUMENT_TYPES).join(',')} disabled={busy||!!pending||!!outcome} onChange={event=>{setFile(event.target.files[0]||null);setError('');}}/></label>
       <button className="bank-chat-logout" data-testid="document-upload-submit" disabled={!file||busy||!!pending||!!outcome}>Upload and record file</button>
     </form>
     {busy&&<p role="status" data-testid="document-upload-busy">Uploading or recording… Keep this page open. Closing this panel does not cancel submitted writes.</p>}

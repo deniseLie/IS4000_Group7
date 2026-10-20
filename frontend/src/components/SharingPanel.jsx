@@ -27,7 +27,7 @@ export default function SharingPanel({onClose,onReviewActions}) {
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
   return <Panel label="Data sharing" title="Review data-sharing consent" closeLabel="Close data sharing" onClose={onClose}>
-    <p>Review whether your basic synthetic profile may be shared with your assigned relationship manager. Checking this status does not share data or change your consent.</p>
+    <p>Review whether your basic profile may be shared with your assigned relationship manager. Checking this status does not share data or change your consent.</p>
     {busy&&<p role="status">Checking data-sharing consent…</p>}
     {error&&<p role="alert" data-testid="sharing-error">{error}</p>}
     {status?.recipient&&<div data-testid="sharing-details">

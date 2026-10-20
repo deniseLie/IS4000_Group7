@@ -25,7 +25,7 @@ export default function RecordsPanel({onClose}) {
       try {
         const {data,error:sessionError}=await supabase.auth.getSession();
         if(sessionError)throw sessionError;
-        if(!data.session)throw new Error('Please sign in again to view your synthetic records.');
+        if(!data.session)throw new Error('Please sign in again to view your records.');
         const result=await loadRecords(data.session.access_token,query,controller.signal);
         if(!controller.signal.aborted)setRecords(result);
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
@@ -37,8 +37,8 @@ export default function RecordsPanel({onClose}) {
     event.preventDefault();
     setQuery({from_date:from||null,to_date:to||null,filters:status?{status}:null});setRevision(value=>value+1);
   }
-  return <Panel label="Synthetic customer records" title="Your demo records" closeLabel="Close records" onClose={onClose}>
-    <p>Read the synthetic records linked to your sign-in. Checklist preparation marks can be saved separately below.</p>
+  return <Panel label="Customer records" title="Your records" closeLabel="Close records" onClose={onClose}>
+    <p>View the records linked to your account. Checklist preparation marks can be saved separately below.</p>
     <form className="records-filters" onSubmit={refresh}>
       <label>Transactions from<input data-testid="records-from" type="date" value={from} onChange={event=>setFrom(event.target.value)}/></label>
       <label>Transactions to<input data-testid="records-to" type="date" value={to} onChange={event=>setTo(event.target.value)}/></label>

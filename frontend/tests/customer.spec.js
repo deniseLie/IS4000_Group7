@@ -17,7 +17,7 @@ test('customer records use real scoped audited services at all viewport sizes',a
     for(const [type,count] of [['account',fixture.account_count],['card',fixture.card_count],['loan',fixture.loan_count],['transaction',fixture.transaction_count]]) {
       await expect(page.getByTestId(`records-${type}`)).toHaveCount(count);
     }
-    const dialog=page.locator('dialog[aria-label="Synthetic customer records"]');
+    const dialog=page.getByTestId('records-content').locator('xpath=ancestor::dialog');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/customer-${width}.png`,fullPage:true});

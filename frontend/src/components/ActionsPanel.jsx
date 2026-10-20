@@ -7,46 +7,46 @@ import {appointmentTime} from '../lib/appointmentData';
 import {consentCategoryText} from '../lib/consentData';
 
 function commandTitle(command) {
-  if(command.type==='card.temporary_block')return `Temporarily block synthetic card ending ${command.target.last4}`;
-  if(command.type==='card.unblock')return `Staff reactivation of synthetic card ending ${command.target.last4}`;
-  if(command.type==='card.cancel_permanently')return `Staff cancellation of synthetic card ending ${command.target.last4}`;
+  if(command.type==='card.temporary_block')return `Temporarily block card ending ${command.target.last4}`;
+  if(command.type==='card.unblock')return `Staff reactivation of card ending ${command.target.last4}`;
+  if(command.type==='card.cancel_permanently')return `Staff cancellation of card ending ${command.target.last4}`;
   if(command.type==='handoff.claim')return 'Staff claimed a demo support handoff';
   if(command.type==='handoff.close')return 'Staff closed a demo support handoff';
   if(command.type==='handoff.create')return 'Record a demo support handoff';
-  if(command.type==='appointment.hold')return 'Hold a synthetic appointment';
-  if(command.type==='appointment.confirm')return 'Confirm a synthetic appointment';
-  if(command.type==='appointment.cancel')return 'Cancel a synthetic appointment';
+  if(command.type==='appointment.hold')return 'Hold a appointment';
+  if(command.type==='appointment.confirm')return 'Confirm a appointment';
+  if(command.type==='appointment.cancel')return 'Cancel a appointment';
   if(command.type==='consent.request')return 'Record a data-sharing consent request';
   if(command.type==='consent.grant')return 'Grant reviewed data-sharing consent';
   if(command.type==='consent.revoke')return 'Revoke a recorded data-sharing grant';
-  if(command.type==='compliance.update_checklist_item')return 'Save a synthetic checklist preparation mark';
-  if(command.type==='document.register')return 'Record a private synthetic document upload';
-  if(command.type==='requests.create')return 'Submit a synthetic relationship request';
-  if(command.type==='agenda.save')return 'Save a private synthetic agenda draft';
-  if(command.type==='rm.share_summary')return 'Share a saved synthetic agenda snapshot';
+  if(command.type==='compliance.update_checklist_item')return 'Save a checklist preparation mark';
+  if(command.type==='document.register')return 'Record a private document upload';
+  if(command.type==='requests.create')return 'Submit a relationship request';
+  if(command.type==='agenda.save')return 'Save a private agenda draft';
+  if(command.type==='rm.share_summary')return 'Share a saved agenda snapshot';
   throw new Error('This action type has no review title. Reload its recorded status.');
 }
 
 function receiptText(item) {
   if(item.receipt.outcome==='failed'&&item.command.type==='rm.share_summary')return 'This snapshot was not shared. The saved draft, assigned recipient or reviewed consent changed. Reopen Data sharing before proposing another snapshot.';
   if(item.receipt.outcome==='failed')return 'This command did not change the target. Its state changed before execution.';
-  if(item.command.type==='card.temporary_block')return 'This command temporarily blocked the synthetic card.';
-  if(item.command.type==='card.unblock')return 'A verified demo support session reactivated this synthetic card.';
-  if(item.command.type==='card.cancel_permanently')return 'A verified demo support session permanently cancelled this synthetic card.';
-  if(item.command.type==='handoff.claim')return 'A verified demo support session claimed this synthetic support case.';
-  if(item.command.type==='handoff.close')return 'A verified demo support session closed this synthetic support case. This does not change a card or reverse a transaction.';
+  if(item.command.type==='card.temporary_block')return 'This command temporarily blocked the card.';
+  if(item.command.type==='card.unblock')return 'A verified demo support session reactivated this card.';
+  if(item.command.type==='card.cancel_permanently')return 'A verified demo support session permanently cancelled this card.';
+  if(item.command.type==='handoff.claim')return 'A verified demo support session claimed this support case.';
+  if(item.command.type==='handoff.close')return 'A verified demo support session closed this support case. This does not change a card or reverse a transaction.';
   if(item.command.type==='handoff.create')return 'A support handoff is recorded in the demo. There is no staffed support queue.';
-  if(item.command.type==='appointment.hold')return 'This command recorded a ten-minute synthetic appointment hold. Check current appointments before confirming.';
-  if(item.command.type==='appointment.confirm')return 'This command confirmed the synthetic appointment. Check current appointments for its latest status. No real meeting or joining link is connected.';
-  if(item.command.type==='appointment.cancel')return 'This command cancelled the synthetic appointment.';
+  if(item.command.type==='appointment.hold')return 'This command recorded a ten-minute appointment hold. Check current appointments before confirming.';
+  if(item.command.type==='appointment.confirm')return 'This command confirmed the appointment. Check current appointments for its latest status. No real meeting or joining link is connected.';
+  if(item.command.type==='appointment.cancel')return 'This command cancelled the appointment.';
   if(item.command.type==='consent.request')return 'This command recorded a consent request. It did not grant consent or share data.';
   if(item.command.type==='consent.grant')return 'This command granted the reviewed consent scope. Check Data sharing for its current status. Granting consent does not itself share data.';
   if(item.command.type==='consent.revoke')return 'This command revoked the reviewed grant. Other active grants remain until separately revoked or expired. Previously shared records are not erased.';
   if(item.command.type==='compliance.update_checklist_item')return 'This command saved your preparation mark only. It did not submit or verify a document or change the bank review status. Reload Records for the current mark.';
   if(item.command.type==='document.register')return 'This command recorded a private uploaded file. It did not accept the document for the bank, complete a preliminary check or change the review case status. Reload Records for its current status.';
-  if(item.command.type==='requests.create')return 'This command recorded the reviewed synthetic request with status sent. This does not mean the service is fulfilled or a real advisor was contacted. Check Requests for its current status.';
+  if(item.command.type==='requests.create')return 'This command recorded the reviewed request with status sent. This does not mean the service is fulfilled or a real advisor was contacted. Check Requests for its current status.';
   if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
-  if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the synthetic relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
+  if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
   throw new Error('This action type has no verified receipt description.');
 }
 
@@ -101,7 +101,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
   return <Panel label="Actions" title="Review proposed actions" closeLabel="Close actions" onClose={onClose}>
-    <p>Review proposed changes before approving them. These actions affect synthetic demo records only; no real bank card is affected.</p>
+    <p>Review proposed changes before approving them. These actions affect fictional demo records only; no real bank card is affected.</p>
     <button data-testid="reload-actions" className="bank-chat-logout" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}>Reload recorded status</button>
     {busy&&<p role="status">Checking the recorded result… Closing this panel does not cancel a submitted decision. Reopen Actions to check its status.</p>}
     {error&&<p role="alert" data-testid="actions-error">{error} Reload the recorded status before making another decision.</p>}
@@ -130,8 +130,8 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
           <p>Proposal expires: <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
           {!chosen&&<button className="bank-chat-logout" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}>Review proposal</button>}
           {chosen&&<div className="command-review" data-testid="command-review">
-            <p>{command.type==='requests.create'?'Confirming records these exact request details for the displayed synthetic recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.':command.type==='rm.share_summary'?'Confirming shares exactly this saved snapshot with the displayed synthetic recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.':command.type==='consent.grant'?'Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.':command.type==='consent.revoke'?'Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.':command.type==='appointment.confirm'?'Confirming books this synthetic time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this synthetic appointment and releases its time.':'Confirming temporarily blocks this synthetic card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>
-            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type==='requests.create'?'relationship request':command.type==='rm.share_summary'?'saved agenda snapshot and consent':command.type.startsWith('consent.')?'data-sharing scope':command.type.startsWith('appointment.')?'synthetic appointment':'synthetic card'} and the proposed change.</label>
+            <p>{command.type==='requests.create'?'Confirming records these exact request details for the displayed recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.':command.type==='rm.share_summary'?'Confirming shares exactly this saved snapshot with the displayed recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.':command.type==='consent.grant'?'Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.':command.type==='consent.revoke'?'Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.':command.type==='appointment.confirm'?'Confirming books this time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this appointment and releases its time.':'Confirming temporarily blocks this card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>
+            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type==='requests.create'?'relationship request':command.type==='rm.share_summary'?'saved agenda snapshot and consent':command.type.startsWith('consent.')?'data-sharing scope':command.type.startsWith('appointment.')?'appointment':'card'} and the proposed change.</label>
             <div className="panel-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}>{command.type==='requests.create'?'Submit reviewed request':command.type==='rm.share_summary'?'Confirm sharing':command.type==='consent.grant'?'Confirm consent grant':command.type==='consent.revoke'?'Confirm revocation':command.type==='appointment.confirm'?'Confirm booking':command.type==='appointment.cancel'?'Confirm cancellation':'Confirm temporary block'}</button>
             <button className="bank-chat-logout" data-testid="reject-command" disabled={busy||!!error} onClick={()=>submit(rejectAction,command.command_id)}>Reject proposal</button></div>
           </div>}

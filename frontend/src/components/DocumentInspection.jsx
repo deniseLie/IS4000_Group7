@@ -5,9 +5,9 @@ import {inspectDocument} from '../lib/documentInspection';
 const STATUS={text_extracted:'Text extracted',no_extractable_text:'No extractable text layer',image_decoded:'Image decoded',encrypted:'Encrypted file — not inspected',
   invalid_file:'File could not be opened reliably',limits_exceeded:'File exceeds technical inspection limits',unsupported_content:'This file content is not supported for inspection'};
 const ISSUE={no_text_layer:'No text was extracted. A scan or image may need OCR.',ocr_unavailable:'Pixels decoded successfully. OCR and legibility assessment are unavailable.',
-  encrypted_file:'Provide an unencrypted synthetic copy. Do not share a password in chat.',invalid_structure:'The file structure could not be read reliably. Export a new synthetic copy.',
+  encrypted_file:'Provide an unencrypted demo copy. Do not share a password in chat.',invalid_structure:'The file structure could not be read reliably. Export a new demo copy.',
   format_mismatch:'The bytes do not match the recorded file type. Export a new copy in the selected format.',file_limits:'This check supports up to 20 PDF pages, 32,000 extracted characters, 16 million image pixels and bounded decoding. Large or complex files may exceed its time or memory budget.',
-  unsupported_content:'This check cannot inspect the file content reliably. Use a simpler synthetic copy.'};
+  unsupported_content:'This check cannot inspect the file content reliably. Use a simpler demo copy.'};
 
 export default function DocumentInspection({documentId}) {
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[result,setResult]=useState(null);
@@ -18,7 +18,7 @@ export default function DocumentInspection({documentId}) {
     try {
       const {data,error:failure}=await supabase.auth.getSession();
       if(failure)throw failure;
-      if(!data.session)throw new Error('Sign in again to inspect your private synthetic file.');
+      if(!data.session)throw new Error('Sign in again to inspect your private file.');
       const value=await inspectDocument(documentId,data.session.access_token,controller.signal);
       if(!controller.signal.aborted)setResult(value);
     } catch(failure) {if(!controller.signal.aborted)setError(failure.message);}

@@ -233,7 +233,7 @@ test('hosted technical inspections read existing private fixture bytes without c
   await expect(row.getByTestId('document-precheck-status')).toHaveText('not checked');inspected.push(record.document_id);
  }
  await page.setViewportSize({width:320,height:900});
- expect(await page.locator('dialog[aria-label="Synthetic customer records"]').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+ expect(await page.getByTestId('records-content').locator('xpath=ancestor::dialog').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
  const reloaded=page.waitForResponse(reply=>reply.url().endsWith('/customer/documents'));
  await page.getByTestId('reload-records').click();
  expect((await (await reloaded).json()).data.filter(row=>inspected.includes(row.document_id))).toEqual(records.filter(row=>inspected.includes(row.document_id)));
@@ -293,7 +293,7 @@ test('hosted private documents upload, download, isolate and notify through real
   saved.push(result);
  }
  await page.setViewportSize({width:320,height:900});
- const dialog=page.locator('dialog[aria-label="Synthetic customer records"]');
+ const dialog=page.getByTestId('records-content').locator('xpath=ancestor::dialog');
  expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
  await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
  for(const result of saved)await expect(page.locator(`[data-command-id="${result.command.command_id}"]`).getByTestId('command-receipt')).toContainText(result.receipt.receipt_id);
