@@ -19,7 +19,7 @@ AGENT_ACTIONS = {
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke'}),
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'actions.read','actions.list','actions.create_case','consent.records','agenda.list','notifications.list','notifications.read'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','notifications.list','notifications.read'}
 
 
 class PolicyResource(BaseModel):

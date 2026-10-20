@@ -1,4 +1,5 @@
 import ChecklistPreparation from './ChecklistPreparation';
+import DocumentRecords from './DocumentRecords';
 import {useEffect,useState} from 'react';
 import Panel from './Panel';
 import {supabase} from '../lib/supabase';
@@ -62,6 +63,7 @@ export default function RecordsPanel({onClose}) {
         {records.transactions.data.map(row=><article key={row.txn_id} data-testid="records-transaction"><h4>{row.description}</h4><p>{row.date} · {row.currency} {amount(row.amount)} · {row.status}{row.card_last4&&` · Card ****${row.card_last4}`}{row.is_overseas&&' · Overseas'}</p>{row.failure_reason&&<p>{row.failure_reason}</p>}</article>)}</section>
       <section><h3>Compliance review</h3>{records.compliance.data?<article data-testid="records-case"><h4>{records.compliance.data.title}</h4><p>{records.compliance.data.notice_text}</p><p>{label(records.compliance.data.status)} · Due: {recordedDate(records.compliance.data.due_date)}</p>
         <ul>{records.compliance.data.requested_items.map(item=><li key={item.item_id} data-checklist-item-id={item.item_id}>{item.label} · {label(item.submission_status)} · {label(item.client_mark)}{item.instructions&&<p>{item.instructions}</p>}<ChecklistPreparation review={records.compliance.data} item={item}/></li>)}</ul></article>:<p>No client-visible review recorded.</p>}</section>
+      <DocumentRecords snapshot={records.documents}/>
       <section><h3>Relationship manager</h3>{records.advisor.data?.current?<article data-testid="records-advisor"><h4>{records.advisor.data.current.name}</h4><p>{records.advisor.data.current.role} · {records.advisor.data.current.team}</p><p>Assigned since {records.advisor.data.current.started_on}</p></article>:<p>No current relationship manager recorded.</p>}
         {records.advisor.data?.previous&&<p>Previous: {records.advisor.data.previous.name} · Ended {records.advisor.data.previous.ended_on}</p>}</section>
       <p className="source-notice">Recorded as of <time dateTime={records.profile.as_of}>{new Date(records.profile.as_of).toLocaleString()}</time>. Each section is a separate audited read. Reload for current records.</p>

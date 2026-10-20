@@ -61,6 +61,15 @@ function advisor(value) {
     team:text(assignment?.team),started_on:day(assignment?.started_on)})),previous:nullable(value?.previous,assignment=>({
     rm_id:match(assignment?.rm_id,UUID),name:text(assignment?.name),ended_on:day(assignment?.ended_on)}))};
 }
+function documentRecord(value) {
+  const result={document_id:match(value?.document_id,UUID),case_id:match(value?.case_id,UUID),case_title:text(value?.case_title),
+    item_id:nullable(value?.item_id,id=>match(id,UUID)),item_label:nullable(value?.item_label,text),file_name:text(value?.file_name),
+    mime_type:choice(value?.mime_type,['application/pdf','image/jpeg','image/png']),size_bytes:number(value?.size_bytes),
+    precheck_status:choice(value?.precheck_status,['not_checked','pending','passed','issues_found']),uploaded_at:timestamp(value?.uploaded_at)};
+  if(!Number.isInteger(result.size_bytes)||result.size_bytes<1||result.size_bytes>10485760||
+    (result.item_id===null)!==(result.item_label===null))throw invalid();
+  return result;
+}
 export function parseRecord(value,parse) {
   return {call_id:match(value?.call_id,UUID),as_of:timestamp(value?.as_of),data:parse(value?.data)};
 }
@@ -73,7 +82,8 @@ async function body(response) {
 export async function loadRecords(token,query,signal) {
   const headers={Authorization:`Bearer ${token}`};
   const resources=[['profile',profile],['accounts',value=>rows(value,account,'account_id')],['cards',value=>rows(value,card,'card_id')],
-    ['loans',value=>rows(value,loan,'loan_id')],['compliance',review],['advisor',advisor]];
+    ['loans',value=>rows(value,loan,'loan_id')],['compliance',review],['advisor',advisor],
+    ['documents',value=>rows(value,documentRecord,'document_id')]];
   const results=await Promise.all(resources.map(async([path,parse])=>[path,parseRecord(await body(await fetch(`${API_URL}/customer/${path}`,{headers,signal})),parse)]));
   const transactions=parseRecord(await body(await fetch(`${API_URL}/customer/transactions`,{method:'POST',
     headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(query),signal})),value=>rows(value,transaction,'txn_id'));

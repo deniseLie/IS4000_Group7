@@ -15,6 +15,7 @@ from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuer
 from app.schemas.appointments import AppointmentRecord
 from app.schemas.consent_actions import ConsentRegistry
 from app.schemas.agendas import AgendaRegistry
+from app.schemas.documents import DocumentRecord
 from app.services.authorization import require_permission
 
 STUB=False
@@ -31,6 +32,7 @@ SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_lengt
 APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
 CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
 AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
+DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_length=200)]])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -84,6 +86,14 @@ async def get_loans(ctx: RequestContext) -> ToolResult:
 async def get_compliance_case(ctx: RequestContext) -> ToolResult:
     """Latest client-visible case; internal review records are never queried."""
     return _result(await _read('compliance.get_case','customer_read_compliance',{},CASE,ctx))
+
+
+async def get_documents(ctx: RequestContext) -> ToolResult:
+    """Bounded own-case metadata; Storage access and document processing use separate permission checks."""
+    envelope=await _read('documents.list','customer_read_documents',{},DOCUMENTS,ctx)
+    if len({row.document_id for row in envelope.data})!=len(envelope.data):
+        raise CustomerDataIntegrityError('Document snapshot contains duplicate document ids')
+    return _result(envelope)
 
 
 async def get_rm_assignment(ctx: RequestContext) -> ToolResult:

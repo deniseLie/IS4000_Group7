@@ -119,10 +119,10 @@ responses still bypass the model. Personal retail reads, compliance case explana
 and the reviewed fraud proposal workflow are connected; the remaining personal agents and uploaded-document
 processing report explicit limitations.
 
-The existing hosted project has migrations `0008`–`0049` applied, with source
+The existing hosted project has migrations `0008`–`0050` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
 `0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
-preserved. All three existing demo Auth logins pass RLS isolation and the 17
+preserved. All three existing demo Auth logins pass RLS isolation and the 18
 foundation reader endpoints; internal `events` remains unexposed. The normal local
 app uses hosted saved conversations. `npm run test:hosted` tests this running app
 with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats,

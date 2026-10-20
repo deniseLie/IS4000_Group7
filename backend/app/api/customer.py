@@ -63,6 +63,11 @@ async def advisor(request: Request,ctx: RequestContext=Depends(get_ctx)) -> Tool
     return await read_result(lambda:customer_data.get_rm_assignment(ctx),request,ctx,'rm.get_assignment')
 
 
+@router.get('/documents',response_model=ToolResult)
+async def documents(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_documents(ctx),request,ctx,'documents.list')
+
+
 @router.post('/transactions',response_model=ToolResult)
 async def transactions(query: TransactionQuery,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     filters=query.filters.model_dump(mode='json',exclude_none=True) if query.filters else None

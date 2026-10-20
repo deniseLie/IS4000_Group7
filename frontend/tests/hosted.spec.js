@@ -22,7 +22,13 @@ for(const [email,name,count] of expected)test(`hosted login, records and saved s
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
  await signIn(page,email);
  const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/transactions'));
+ const documentsLoaded=page.waitForResponse(response=>response.url().endsWith('/customer/documents'));
  await page.getByTestId('open-records').click();expect((await loaded).status()).toBe(200);
+ const documentsResponse=await documentsLoaded;expect(documentsResponse.status()).toBe(200);
+ const documentRows=(await documentsResponse.json()).data;
+ await expect(page.getByTestId('records-document')).toHaveCount(documentRows.length);
+ expect(await page.getByTestId('records-document').evaluateAll(nodes=>nodes.map(node=>node.dataset.documentId).sort()))
+  .toEqual(documentRows.map(row=>row.document_id).sort());
  await expect(page.getByTestId('records-name')).toHaveText(name);
  await expect(page.getByTestId('records-account')).toHaveCount(1);
  await expect(page.getByTestId('records-transaction')).toHaveCount(count);

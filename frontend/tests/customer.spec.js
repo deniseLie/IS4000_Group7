@@ -13,6 +13,7 @@ test('customer records use real scoped audited services at all viewport sizes',a
     await page.getByTestId('open-records').click();
     expect((await loaded).status()).toBe(200);
     await expect(page.getByTestId('records-name')).toHaveText(fixture.name);
+    await expect(page.getByTestId('records-documents-empty')).toBeVisible();
     for(const [type,count] of [['account',fixture.account_count],['card',fixture.card_count],['loan',fixture.loan_count],['transaction',fixture.transaction_count]]) {
       await expect(page.getByTestId(`records-${type}`)).toHaveCount(count);
     }
