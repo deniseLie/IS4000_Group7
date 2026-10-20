@@ -9,3 +9,4 @@ os.environ['CHAT_TRANSPORT']='api'  # unit suites must never use the signed-in C
 os.environ['PIPELINE']='v1'  # individual integration fixtures opt in to their pipeline/store
 os.environ['KNOWLEDGE_STORE']='memory'
 os.environ['CONVERSATION_STORE']='off'
+os.environ['RUN_WORKER_IN_API']='false'  # native worker fixtures opt in with their restricted local login

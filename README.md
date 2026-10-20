@@ -128,8 +128,9 @@ app uses hosted saved conversations. `npm run test:hosted` tests this running ap
 with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats,
 private agenda drafts and a reviewed sharing snapshot. The sharing test revokes
 its one-day test grant before finishing. `TEST_HOSTED_AI=1` additionally opts into a real provider call.
-Credentials remain git-ignored. Staff MFA, the restricted hosted worker login,
-reminder delivery and the remaining personal agents/record executors are pending.
+Credentials remain git-ignored. The restricted hosted worker is configured and
+in-app delivery is verified. Staff MFA and the remaining personal agents/record
+executors are pending.
 
 The database knowledge adapter validates citation keys, publisher URLs, review
 dates and ranked results. Empty searches and missing facts remain empty; no
@@ -281,10 +282,17 @@ owner or a service-role key. A stopped API-owned worker degrades `/health` to HT
 Signed-in customers can open **Inbox**, reload their own latest 50 messages and mark
 them read. The UI also subscribes to owned Supabase Realtime inbox changes; connection
 failures are visible. Native checks cover actual worker/API/UI delivery and explicit
-reload, including crash rollback and read persistence. Hosted Realtime push has not
-been verified. The publication migration is applied in Supabase. English
-templates are provided; other locales require approved versions. Email delivery,
-hosted worker activation, pg_cron installation and worker-started AI turns remain pending.
+reload, including crash rollback and read persistence. The hosted worker login
+passes the runtime privilege check, and a real saved agenda reaches an already-open
+inbox through Supabase Realtime. Read acknowledgements use a separate request from
+live refreshes so a pushed update cannot cancel the acknowledgement. The hosted
+browser check also verifies read persistence: `TEST_HOSTED_WORKER=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted worker delivery'`.
+It creates one synthetic private agenda draft and marks its notification read.
+The hosted reminder producer is verified with no currently due cases; native checks
+cover actual due-reminder delivery. English templates are provided; other locales
+require approved versions. Email delivery, pg_cron installation and worker-started
+AI turns remain pending. Database connection failures stop the worker and remain
+visible in health; a transient hosted socket failure was observed during activation.
 
 Customer Data reads (`services/customer_data.py`, migrations `0028`/`0029`) check
 permission before opening the caller's JWT Data API client. Invoker RPCs retain RLS

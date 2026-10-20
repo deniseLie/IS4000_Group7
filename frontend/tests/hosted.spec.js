@@ -85,6 +85,33 @@ async function confirmRecorded(page,commandId) {
  const result=await response.json();expect(result.receipt.outcome).toBe('succeeded');return result;
 }
 
+test('hosted worker delivery reaches the open inbox through Realtime',async({page,context})=>{
+ test.skip(!fixture||process.env.TEST_HOSTED_WORKER!=='1','Requires existing synthetic logins and the restricted hosted worker');
+ await signIn(page,'demo.david@example.com');await page.getByTestId('open-notifications').click();
+ await expect(page.getByTestId('inbox-live-status')).toHaveText('Live inbox updates connected.',{timeout:30000});
+ const before=await page.locator('[data-notification-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.notificationId));
+ const editor=await context.newPage();
+ try {
+  await editor.goto('/');await editor.getByTestId('open-data-sharing').click();
+  await editor.getByTestId('open-agenda-drafts').click();await editor.getByTestId('new-agenda').click();
+  await editor.getByTestId('agenda-topics').fill('Hosted synthetic worker and Realtime delivery integration check');
+  const recorded=editor.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+  await editor.getByTestId('save-agenda').click();const saved=await recorded;expect(saved.status()).toBe(200);
+  expect((await saved.json()).receipt.outcome).toBe('succeeded');
+  await expect.poll(async()=>page.locator('[data-notification-id][data-template-key="agenda.saved"]').evaluateAll(
+    (nodes,previous)=>nodes.filter(node=>!previous.includes(node.dataset.notificationId)).map(node=>node.dataset.notificationId),before),
+    {timeout:30000}).toHaveLength(1);
+  const current=await page.locator('[data-notification-id][data-template-key="agenda.saved"]').evaluateAll(
+    (nodes,previous)=>nodes.filter(node=>!previous.includes(node.dataset.notificationId)).map(node=>node.dataset.notificationId),before);
+  const notification=page.locator(`[data-notification-id="${current[0]}"]`);
+  const read=page.waitForResponse(response=>response.url().endsWith(`/notifications/${current[0]}/read`));
+  await notification.getByTestId('mark-notification-read').click();expect((await read).status()).toBe(200);
+  await expect(notification.getByTestId('notification-read-state')).toHaveText('Read');
+  await page.getByTestId('reload-notifications').click();
+  await expect(notification.getByTestId('notification-read-state')).toHaveText('Read');
+ } finally {await editor.close();}
+});
+
 test('hosted checklist preparation persists without changing bank review status',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
  await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
