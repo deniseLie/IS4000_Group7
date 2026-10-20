@@ -20,7 +20,7 @@ def test_v2_is_separate_and_fixed_guidance_has_no_prompt():
 # Released prompts are immutable: a changed id means a released file was edited.
 RELEASED={('answer','v1'):'v1+855ee8ff',('answer','v2'):'v2+88f886d0'}
 RELEASED.update({('domain_common','v1'):'v1+18c3cd30',('planner','v1'):'v1+5ef4e2b9',('retail','v1'):'v1+6bfcff22',
-    ('fraud','v1'):'v1+26e57492',('fraud','v2'):'v2+f78df743',('compliance','v1'):'v1+92455942',
+    ('retail','v2'):'v2+224affe7',('fraud','v1'):'v1+26e57492',('fraud','v2'):'v2+f78df743',('compliance','v1'):'v1+92455942',
     ('document','v1'):'v1+754f2c43',('relationship','v1'):'v1+6c756adf'})
 
 def test_released_prompt_ids_never_change():

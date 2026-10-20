@@ -1,5 +1,5 @@
-"""Real-provider domain agents. The initial public pipeline supplies approved evidence only.
+"""Real-provider domain agents with approved public evidence and scoped personal retail/fraud reads.
 
-Personal reads, document uploads and action execution are deliberately unavailable until their
-services are integrated. Agents cannot execute a database operation or an action directly.
+Document uploads and the remaining personal readers are not connected. Fraud proposals require
+customer review through the Action Service; agents cannot execute an action directly.
 """

@@ -115,9 +115,9 @@ The v1 adapter preserves authenticated account context and fixed safety response
 empty database searches stay empty and database failures never substitute local articles.
 Five real-provider domain agents return
 validated sections with their own sources and prompt versions. Fixed safety
-responses still bypass the model. Personal tools, uploaded documents and agent-proposed
-actions are not yet connected to v2; unavailable
-operations are reported explicitly.
+responses still bypass the model. Personal retail reads and the reviewed fraud
+proposal workflow are connected; the remaining personal agents and uploaded-document
+processing report explicit limitations.
 
 The existing hosted project has migrations `0008`–`0049` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
@@ -266,8 +266,19 @@ Failed continuation preserves its receipts and exposes **Resume saved reply** in
 The local native API/browser tests exercise these mechanics without replacing a model:
 their fixtures start after dispatch and use safety-origin text. Real-provider fraud
 proposal accuracy remains unverified (the configured provider returned HTTP 429).
-Other personal agents remain explicit unavailable sections; public agents and v1 keep
-their existing behaviour.
+The personal retail agent reads the caller's real profile, masked accounts/cards,
+loans and last 90 days of transactions through permission-first JWT/RLS readers.
+Its released personal prompt is `retail/v2`; the public retail prompt stays at v1.
+Separate dataset citations retain the captured timestamp. Card and loan currencies
+are unrecorded and must not be borrowed from another record. Collections are bounded
+to 200 rows and are separate reads, not an atomic statement. The agent is read-only;
+provider/validation failures withhold the section and never create an action.
+Native checks cover all three personas, failed reads, wrong currencies/citations and
+action claims. Real OpenRouter account checks pass for all three personas; a real
+native browser check verifies saved answers at four viewport widths. Computer Use
+also verified David's hosted account answer and saved-chat reload. These focused
+checks do not establish broad semantic accuracy. Compliance, relationship and document
+personal agents remain unavailable; public agents and v1 keep their existing behaviour.
 
 The notification foundation (`app/worker.py`, migrations `0023`–`0027`) consumes real
 outbox records under a restricted database login. Template delivery, inbox dedupe,
