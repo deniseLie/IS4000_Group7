@@ -18,6 +18,7 @@ from app.schemas.consent_actions import ConsentRegistry
 from app.schemas.agendas import AgendaRegistry
 from app.schemas.documents import DocumentRecord
 from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
+from app.schemas.document_inspection import DocumentObject
 from app.services.authorization import require_permission
 
 STUB=False
@@ -37,6 +38,7 @@ AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
 DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_length=200)]])
 DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
 DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
+DOCUMENT_OBJECT=TypeAdapter(CustomerEnvelope[DocumentObject | None])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -111,6 +113,14 @@ async def get_document_location(document_id: UUID,ctx: RequestContext) -> ToolRe
         envelope.data.storage_path!=f'{ctx.principal.customer_id}/{envelope.data.case_id}/{document_id}'):
         raise CustomerDataIntegrityError('Document location does not match its requested document and customer')
     return _result(envelope)
+
+
+async def get_document_object(document_id: UUID,ctx: RequestContext) -> CustomerEnvelope[DocumentObject | None]:
+    envelope=await _read('documents.inspect','customer_document_location',{'p_document_id':str(document_id)},DOCUMENT_OBJECT,ctx)
+    if envelope.data is not None and (envelope.data.document_id!=document_id or
+        envelope.data.storage_path!=f'{ctx.principal.customer_id}/{envelope.data.case_id}/{document_id}'):
+        raise CustomerDataIntegrityError('Inspection source does not match its requested document and customer')
+    return envelope
 
 
 async def get_rm_assignment(ctx: RequestContext) -> ToolResult:

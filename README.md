@@ -119,7 +119,7 @@ responses still bypass the model. Personal retail reads, compliance case explana
 and the reviewed fraud proposal workflow are connected; the remaining personal agents and uploaded-document
 processing report explicit limitations.
 
-The existing hosted project has migrations `0008`–`0052` applied, with source
+The existing hosted project has migrations `0008`–`0053` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
 `0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
 preserved. All three existing demo Auth logins pass RLS isolation and the
@@ -145,6 +145,21 @@ can leave a private unregistered object; automatic cleanup/resume is not impleme
 uploads the synthetic fixtures to hosted Storage and checks byte-identical downloads,
 access isolation, immutable uploads, receipts, notifications and lost-acknowledgement
 recovery. Run it only with approval to upload those fixtures to the configured project.
+
+Records also offers a technical file check for owned registered objects. Migration `0053`
+retains the existing invoker grants and verifies stored size/MIME before downloading with
+the customer JWT. PDF text-layer extraction reports actual page counts; DOCX extracts
+body paragraphs/tables without claiming pagination. PNG/JPEG checks decode pixels but
+perform no OCR. The credential-free parser child has a five-second wall budget, sampled
+256 MiB RSS watchdog and bounded output; format limits include 20 PDF pages, 32,000
+characters and 16 million image pixels. The watchdog is not an OS-enforced memory ceiling.
+The API returns counts, dimensions and a byte checksum, never extracted text. Contents
+are not saved, logged, checkpointed or sent to a model. Results are temporary and do not
+change preliminary-check, checklist or bank review status. Approved bank-specific page,
+field and OCR-legibility rules are not configured; AI document assessment remains pending.
+`TEST_HOSTED_INSPECTION=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted technical inspections'`
+reads the existing four synthetic fixture formats without uploading copies or calling a
+model, verifies checksums/mobile layout and rejects Alex/David access to Michelle's files.
 
 The database knowledge adapter validates citation keys, publisher URLs, review
 dates and ranked results. Empty searches and missing facts remain empty; no
@@ -460,7 +475,7 @@ Review `evaluation-results.json` against each case's acceptance check. Every suc
 
 ## Scope still outside this round
 
-Compliance document uploads, OCR, compliance tracking, advisor transfers, real meeting booking and real staffed support are not implemented. Synthetic appointments have a local hold/review/confirmation flow. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
+OCR, bank-specific document assessment, AI document explanations, advisor transfers, real calendar booking and real staffed support are not implemented. Private synthetic document uploads and technical checks are available through Records. Synthetic appointments use a hold/review/confirmation flow; agenda drafts and consent-reviewed sharing use the action ledger. No fine-tuned model was trained.
 
 ## Knowledge maintenance and limits
 

@@ -1,3 +1,4 @@
+import DocumentInspection from './DocumentInspection';
 import DocumentUpload from './DocumentUpload';
 import DocumentDownload from './DocumentDownload';
 export default function DocumentRecords({snapshot,review}) {
@@ -11,6 +12,7 @@ export default function DocumentRecords({snapshot,review}) {
         <dt>Recorded upload</dt><dd><time dateTime={row.uploaded_at}>{new Date(row.uploaded_at).toLocaleString()}</time></dd>
         <dt>Preliminary check</dt><dd data-testid="document-precheck-status">{row.precheck_status.replaceAll('_',' ')}</dd></dl>
       <DocumentDownload documentId={row.document_id}/>
+      <DocumentInspection documentId={row.document_id}/>
     </article>)}
     <p className="source-notice">Metadata as of <time dateTime={snapshot.as_of}>{new Date(snapshot.as_of).toLocaleString()}</time>.</p>
   </section>;

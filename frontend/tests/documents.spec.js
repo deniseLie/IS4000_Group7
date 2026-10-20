@@ -16,6 +16,10 @@ test('owned document metadata stays scoped and reloads at mobile widths',async({
   expect(await documents.evaluateAll(nodes=>nodes.map(node=>node.dataset.documentId).sort())).toEqual([...fixture.document_ids].sort());
   await expect(documents).toContainText(['1002-','1002-']);
   await expect(page.getByTestId('records-documents')).not.toContainText('PRIVATE PRECHECK NOTES');
+  const unavailable=page.waitForResponse(response=>response.url().includes('/documents/')&&response.url().endsWith('/inspection'));
+  await documents.first().getByTestId('document-inspect').click();
+  expect((await unavailable).status()).toBe(404);
+  await expect(documents.first().getByTestId('document-inspection-error')).toBeVisible();
   const preparations=[];
   page.on('request',request=>{if(request.url().endsWith('/documents/uploads/prepare'))preparations.push(request.url());});
   await page.getByTestId('document-upload-file').setInputFiles({name:'Empty DEMO.png',mimeType:'image/png',buffer:Buffer.alloc(0)});

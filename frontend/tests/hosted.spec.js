@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
 
 const fixture=process.env.TEST_PERSONA_FIXTURE_FILE;
 const personas=fixture?JSON.parse(fs.readFileSync(fixture,'utf8')):[];
@@ -198,6 +199,59 @@ test('hosted consent, sharing receipt and revocation keep the reviewed snapshot'
  await expect(original.getByTestId('command-agenda-sharing')).toContainText(saved.command.target.content);
  await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+});
+
+test('hosted technical inspections read existing private fixture bytes without changing review status',async({page,browser})=>{
+ test.skip(!fixture||process.env.TEST_HOSTED_INSPECTION!=='1','Requires existing synthetic fixture uploads in the approved hosted project');
+ test.setTimeout(180000);
+ const writes=[];page.on('request',request=>{
+  if(request.method()==='POST'&&/\/(chat|commands|documents\/uploads\/prepare)$/.test(new URL(request.url()).pathname))writes.push(request.url());
+ });
+ await signIn(page,'demo.michelle@example.com');
+ const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/documents'));
+ await page.getByTestId('open-records').click();const response=await loaded;expect(response.status()).toBe(200);
+ const records=(await response.json()).data;
+ await expect(page.getByTestId('document-upload')).toBeVisible({timeout:30000});
+ const inspected=[];
+ for(const extension of ['pdf','docx','png','jpg']) {
+  const record=records.find(row=>row.file_name===`Synthetic DEMO.${extension}`);
+  expect(record).toBeDefined();expect(record.precheck_status).toBe('not_checked');
+  const row=page.locator(`[data-document-id="${record.document_id}"]`);
+  const inspectedResponse=page.waitForResponse(reply=>reply.url().endsWith(`/documents/${record.document_id}/inspection`));
+  await row.getByTestId('document-inspect').click();const reply=await inspectedResponse;expect(reply.status()).toBe(200);
+  const result=(await reply.json()).data;
+  const bytes=fs.readFileSync(new URL(`./fixtures/documents/Synthetic DEMO.${extension}`,import.meta.url));
+  expect(result.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));expect(result.size_bytes).toBe(bytes.length);
+  expect(result.document_id).toBe(record.document_id);expect(result.scope).toBe('technical_only');
+  expect(result.ocr).toBe('not_performed');expect(result.bank_rules).toBe('not_configured');
+  for(const privateField of ['text','contents','storage_path','object_id'])expect(Object.hasOwn(result,privateField)).toBe(false);
+  const status=['pdf','docx'].includes(extension)?'text_extracted':'image_decoded';
+  expect(result.status).toBe(status);expect(result.page_count).toBe(extension==='pdf'?1:null);
+  if(status==='image_decoded')expect([result.width,result.height,result.extracted_characters,result.issue]).toEqual([32,32,0,'ocr_unavailable']);
+  else expect(result.extracted_characters).toBeGreaterThan(0);
+  await expect(row.getByTestId('document-inspection-result')).toHaveAttribute('data-inspection-status',status);
+  await expect(row.getByTestId('document-precheck-status')).toHaveText('not checked');inspected.push(record.document_id);
+ }
+ await page.setViewportSize({width:320,height:900});
+ expect(await page.locator('dialog[aria-label="Synthetic customer records"]').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+ const reloaded=page.waitForResponse(reply=>reply.url().endsWith('/customer/documents'));
+ await page.getByTestId('reload-records').click();
+ expect((await (await reloaded).json()).data.filter(row=>inspected.includes(row.document_id))).toEqual(records.filter(row=>inspected.includes(row.document_id)));
+ await expect(page.getByTestId('document-inspection-result')).toHaveCount(0);expect(writes).toEqual([]);
+ for(const email of ['demo.alex@example.com','demo.david@example.com']) {
+  const foreign=await browser.newContext();
+  try {
+   const visitor=await foreign.newPage();await signIn(visitor,email);
+   const owned=visitor.waitForResponse(reply=>reply.url().endsWith('/customer/documents'));
+   await visitor.getByTestId('open-records').click();const own=await owned;expect(own.status()).toBe(200);
+   for(const documentId of inspected) {
+    await expect(visitor.locator(`[data-document-id="${documentId}"]`)).toHaveCount(0);
+    const denied=await foreign.request.get(own.url().replace('/customer/documents',`/documents/${documentId}/inspection`),{
+     headers:{Authorization:own.request().headers().authorization}});
+    expect(denied.status()).toBe(404);
+   }
+  } finally {await foreign.close();}
+ }
 });
 
 test('hosted private documents upload, download, isolate and notify through real Storage',async({page,context,browser})=>{
