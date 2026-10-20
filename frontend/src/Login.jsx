@@ -72,7 +72,7 @@ export default function Login({onBack}) {
 
             {error && <p className="login-error" role="alert">{error}</p>}
 
-            <button className="login-submit primary-button" type="submit" disabled={loading}>
+            <button data-testid="submit-login" className="login-submit primary-button" type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Sign In →"}
             </button>
           </form>

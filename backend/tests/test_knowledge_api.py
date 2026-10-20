@@ -20,6 +20,21 @@ def guest() -> RequestContext:
     return RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
 
 
+def test_v1_database_failure_never_substitutes_memory_but_safety_still_works(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg
+    from app.core.config import settings
+    monkeypatch.setattr(settings,'knowledge_store','database')
+    monkeypatch.delenv('LLM_MODEL',raising=False)
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute('drop function public.kb_search(text,text[],integer)')
+    fixed=native_api_client.post('/chat',json={'messages':[{'role':'user','content':'I lost my card'}]})
+    assert 'event: answer' in fixed.text and '"response_origin": "safety"' in fixed.text
+    failed=native_api_client.post('/chat',json={'messages':[{'role':'user','content':'Explain fixed deposits'}]})
+    assert 'event: error' in failed.text and 'event: answer' not in failed.text
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert db.execute("select count(*) from audit.events where action='chat.reply_sent' and outcome='failed'").fetchone()==(1,)
+
+
 def test_real_search_scope_no_match_and_missing_fact(local_data_api: NativeAPI) -> None:
     with SyncPostgrestClient(local_data_api.url) as db:
         results=asyncio.run(kb.search(KnowledgeQuery(query='fixed deposit early withdrawal',scope='retail',k=4),guest(),db))

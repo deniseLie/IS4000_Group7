@@ -110,20 +110,33 @@ After: the customer reviews and edits a draft, then copies it. The page explicit
 `PIPELINE=v1` keeps the existing answer flow. `PIPELINE=v2` enables the initial
 public LangGraph flow: plan, prioritise, dispatch and compose. `KNOWLEDGE_STORE=memory`
 uses the approved in-memory library; `KNOWLEDGE_STORE=database` uses the read-only
-knowledge RPCs after migrations `0008`, `0009` and `0011` are applied. Five real-provider domain agents return
+knowledge RPCs in either pipeline after migrations `0008`, `0009` and `0011` are applied.
+The v1 adapter preserves authenticated account context and fixed safety responses;
+empty database searches stay empty and database failures never substitute local articles.
+Five real-provider domain agents return
 validated sections with their own sources and prompt versions. Fixed safety
 responses still bypass the model. Personal tools, uploaded documents and agent-proposed
 actions are not yet connected to v2; unavailable
-operations are reported explicitly. Supabase migration and live persona work
-remain pending.
+operations are reported explicitly.
+
+The existing hosted project has migrations `0008`–`0042` applied, with source
+checksums and executed SQL recorded in Supabase migration history. Its pre-existing
+`0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
+preserved. All three existing demo Auth logins pass RLS isolation and the 17
+foundation reader endpoints; internal `events` remains unexposed. The normal local
+app uses hosted saved conversations. `npm run test:hosted` tests this running app
+with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats and one
+private agenda draft. `TEST_HOSTED_AI=1` additionally opts into a real provider call.
+Credentials remain git-ignored. Staff MFA, the restricted hosted worker login,
+reminder delivery and the remaining personal agents/sharing executors are pending.
 
 The database knowledge adapter validates citation keys, publisher URLs, review
 dates and ranked results. Empty searches and missing facts remain empty; no
 sample fee or unrelated article is substituted. Exact version/section URLs open
 in the existing source dialog, including retired versions marked as no longer
 current. Source details require successful audit storage. Native database/API
-checks cover retrieval, facts, source details and v2 evidence; hosted deployment
-and live AI/browser verification of database-backed answers remain pending.
+checks cover retrieval, facts, source details and v2 evidence. Hosted source details
+are verified; real-model quality remains a separate check.
 
 Tool authorisation uses explicit rules in `services/authorization.py`. Customer
 readers and v2 knowledge retrieval audit their decisions before access. Rules
@@ -132,8 +145,7 @@ masking, confirmation and consent obligations. Staff/system access is unconfigur
 and denied. Consent lookup uses JWT/RLS scope, exact purpose/recipient/category
 coverage, revocation and wall-clock expiry. Signed-in users can open the
 data-sharing view to check basic-profile consent for their currently assigned
-manager. This requires migration `0010` on the target database; hosted application
-is still pending. Registry failures remain errors, and status is released only
+manager. This requires migration `0010` on the target database. Registry failures remain errors, and status is released only
 after audit succeeds. Migrations `0037`–`0040` add scoped consent requests and
 reviewed grant/revocation through the Action Service. **Data sharing** names the
 recipient, purpose, categories and fixed expiry; **Actions** requires explicit
@@ -156,8 +168,7 @@ appointment times. Migration `0012` calculates thirty-minute suggestions from th
 current advisor's hours, blocks, confirmed bookings and unexpired holds. The API
 checks the customer's scope and audits each read; no other customer's booking
 details are exposed. Native browser checks cover empty and populated records,
-invalid dates and registry failures at desktop/mobile sizes. Hosted application
-is pending. Suggestions do not hold or book an appointment. The explicit **Hold for
+invalid dates and registry failures at desktop/mobile sizes. Suggestions do not hold or book an appointment. The explicit **Hold for
 ten minutes** control uses migrations `0034`–`0036` to reserve a synthetic slot.
 Booking and cancellation require reviewing and confirming a proposal in **Actions**.
 SQL rechecks the active assignment, working-hours grid and calendar blocks; a native
@@ -169,7 +180,7 @@ notifications. The direct form creates an owned action case without inventing a 
 message or model reply. Reservations are thirty minutes, within 366 days. Native
 API/browser checks cover retries, competing customers, changed calendars, expiry,
 rejection, rollback and desktop/mobile review. No real calendar, meeting or joining
-link is connected; hosted migration application remains pending. Consent management
+link is connected. Consent management
 is separate from booking; actual agenda/summary sharing remains pending.
 
 Conversation storage APIs and migrations `0013`/`0014` provide owned session creation,
@@ -182,7 +193,8 @@ cover these boundaries. `CONVERSATION_STORE=database` connects `/chat` and the
 saved-chat UI after these migrations are applied; the default `off` preserves
 temporary browser history. Saved chats load server-owned history, reject stale
 revisions, preserve sources and expose explicit cancellation of pending replies.
-Guest browser access expires after 24 hours. Hosted application and real-provider
+Guest browser access expires after 24 hours. Hosted persona browser checks verify
+saved safety replies across refresh and history clearance on sign-out. Real-provider
 checks of saved follow-ups remain pending.
 
 Saved v2 turns also use durable LangGraph snapshots after migrations `0015`/`0016` and
@@ -207,7 +219,7 @@ keep business changes, ledger, outbox and audit atomic over the public-key/user-
 Data API. Python executor modules validate their typed contracts. Native API/browser
 checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
 The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
-session, not hosted password login. Hosted migration application and remaining record/sharing executors remain pending. No real bank
+session, not hosted password login. Remaining record/sharing executors are pending. No real bank
 card or staffed support service is connected.
 
 Staff handoff and card operations (`scripts/staff_support.py`, migrations `0030`–`0033`)
@@ -235,7 +247,7 @@ The local native API/browser tests exercise these mechanics without replacing a 
 their fixtures start after dispatch and use safety-origin text. Real-provider fraud
 proposal accuracy remains unverified (the configured provider returned HTTP 429).
 Other personal agents remain explicit unavailable sections; public agents and v1 keep
-their existing behaviour. Hosted migration application is still deferred.
+their existing behaviour.
 
 The notification foundation (`app/worker.py`, migrations `0023`–`0027`) consumes real
 outbox records under a restricted database login. Template delivery, inbox dedupe,
@@ -251,9 +263,9 @@ Signed-in customers can open **Inbox**, reload their own latest 50 messages and 
 them read. The UI also subscribes to owned Supabase Realtime inbox changes; connection
 failures are visible. Native checks cover actual worker/API/UI delivery and explicit
 reload, including crash rollback and read persistence. Hosted Realtime push has not
-been verified; it requires applying the publication migration in Supabase. English
+been verified. The publication migration is applied in Supabase. English
 templates are provided; other locales require approved versions. Email delivery,
-hosted activation, pg_cron installation and worker-started AI turns remain pending.
+hosted worker activation, pg_cron installation and worker-started AI turns remain pending.
 
 Customer Data reads (`services/customer_data.py`, migrations `0028`/`0029`) check
 permission before opening the caller's JWT Data API client. Invoker RPCs retain RLS
@@ -265,8 +277,8 @@ case and assigned advisor. Card/loan currency is currently unrecorded and shown 
 `/customer/*` is read-only; internal compliance records are never included.
 Native checks exercise all three synthetic personas, permissive-policy regressions,
 corrupt records, audit rollback, unavailable RPCs and desktop/mobile UI. These checks
-use local signed sessions, not hosted password login. Hosted migration application
-remains deferred; this stage does not add personal AI answers for the remaining agents.
+use local signed sessions; hosted password-login browser checks additionally cover
+the three personas' own records. This stage does not add personal AI answers for the remaining agents.
 
 Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
 call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m

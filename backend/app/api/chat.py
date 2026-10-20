@@ -19,7 +19,7 @@ from app.schemas.contracts import RequestContext
 from app.schemas.conversations import StoredFailure
 from app.schemas.events import AnswerEvent,WorkflowPausedEvent
 from app.schemas.workflows import OwnedWorkflow
-from app.services.answers import make_answer
+from app.services.answers import make_answer,make_database_answer
 from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
@@ -119,6 +119,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     else:result=(await answer_public(req,risk,ctx,None)).model_dump(mode='json')
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
+                elif settings.knowledge_store=='database':result=(await make_database_answer(req,current_context,ctx)).model_dump(mode='json')
                 else:result=await make_answer(req,current_context)
                 if prepared is not None:
                     turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)

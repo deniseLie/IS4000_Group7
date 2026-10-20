@@ -10,7 +10,8 @@
     "test": "node --test src/lib/*.test.js",
     "test:e2e": "playwright test",
     "test:live": "playwright test --config playwright.live.config.js",
-    "test:foundation": "playwright test --config playwright.foundation.config.js"
+    "test:foundation": "playwright test --config playwright.foundation.config.js",
+    "test:hosted": "playwright test --config playwright.hosted.config.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",

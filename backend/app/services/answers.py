@@ -1,13 +1,21 @@
 import json
 import re
+from collections.abc import Awaitable,Callable
 from app.core.observability import log_event, timer, span, add_span, current_trace
-from app.schemas.chat import Message
+from app.schemas.chat import ChatRequest,Message
+from app.schemas.agents import Evidence
+from app.schemas.contracts import RequestContext
+from app.schemas.events import AnswerEvent,Source
+from app.schemas.knowledge import KnowledgeQuery
+from app.core import data_api
 from app.services.knowledge import search, source, INDEX, ARTICLES, is_current
 from app.services.privacy import redact
 from app.services.guardrail import assess_request
 from app.services.source_checks import check_sources, numbers
 from app.services.llm import llm
-from app.services import prompts
+from app.services import kb,prompts
+
+EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
 
 NOTICE='General information only, not advice or a contract. Demo records are synthetic. Only the bank can confirm fees or approve a loan.'
 URL=re.compile(r'https?://',re.I)
@@ -65,17 +73,37 @@ def validate(raw,evidence):
     return answer,ids,reason
 
 async def make_answer(req, context=None, *, allow_model=True):
+    return await produce_answer(req,context,allow_model,memory_evidence)
+
+
+async def memory_evidence(question: str,history: list[Message],language: str) -> list[Evidence]:
+    return [Evidence(id=a.id,text=a.content,publisher=a.publisher,scope=a.notice,source=Source.model_validate(source(a)))
+        for a in retrieve(question,history,language)]
+
+
+async def make_database_answer(req: ChatRequest,context: str | None,ctx: RequestContext) -> AnswerEvent:
+    """Keep the v1 personal/safety flow while retrieving ordinary guidance from persisted knowledge."""
+    async def load(question: str,history: list[Message],language: str) -> list[Evidence]:
+        with span('retrieve','tool') as attrs:
+            with data_api.connect(ctx) as db:
+                sections=await kb.search(KnowledgeQuery(query=question,scope='public',k=4),ctx,db)
+            attrs.update(store='database',count=len(sections),article_ids=[item.cite for item in sections])
+        return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
+    return AnswerEvent.model_validate(await produce_answer(req,context,True,load))
+
+
+async def produce_answer(req,context,allow_model,evidence_loader: EvidenceLoader):
     """Log one summary line per request: route, retrieved ids, prompt version, reject reason, timings. No user text or records."""
     info={}
     with timer() as t:
-        result=await _answer(req,context,info,allow_model)
+        result=await _answer(req,context,info,allow_model,evidence_loader)
     info.update(source_check=result['source_check'],needs_human=result['needs_human'],privacy_warning=result['privacy_warning'],prompt_version=result['prompt_version'],ms=t.ms)
     log_event('answer',**info)
     trace=current_trace.get()
     if trace:trace.attrs.update(route=info.get('route'),source_check=result['source_check'],needs_human=result['needs_human'],privacy_warning=result['privacy_warning'],prompt_version=result['prompt_version'],reject_reason=info.get('reject_reason'),article_ids=info.get('article_ids',[]),history_trimmed=result['history_trimmed'])
     return result
 
-async def _answer(req, context, info, allow_model=True):
+async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
     history=clean_history(req.messages)
     question=history[-1].content
     risk=assess_request(req)
@@ -102,10 +130,10 @@ async def _answer(req, context, info, allow_model=True):
         decide(info,'guest_balance')
         result.update(answer='Sign in and select Personal demo records to ask about your synthetic balances, transactions or payment details. General banking help is available without login.',sources=[source(INDEX['accounts'])])
         return result
-    articles=retrieve(question,history,req.language)
-    info['article_ids']=[a.id for a in articles]
-    evidence=[{'id':a.id,'text':a.content,'publisher':a.publisher,'scope':a.notice} for a in articles]
-    sources={a.id:source(a) for a in articles}
+    retrieved=await evidence_loader(question,history,req.language)
+    info['article_ids']=[item.id for item in retrieved]
+    evidence=[item.model_dump(exclude={'source'}) for item in retrieved]
+    sources={item.id:item.source.model_dump() for item in retrieved}
     if context:
         evidence.append({'id':'customer-records','text':context})
         sources['customer-records']={'id':'customer-records','title':'Your authenticated synthetic records','url':None,'version':'Current request'}
