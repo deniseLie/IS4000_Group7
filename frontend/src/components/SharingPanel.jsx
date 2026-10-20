@@ -38,7 +38,7 @@ export default function SharingPanel({onClose,onReviewActions}) {
     {status&&!status.recipient&&<p role="status" data-testid="sharing-no-manager">No relationship manager is currently assigned to your demo profile.</p>}
     <ConsentControls registry={registry} recipient={status?.recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/>
     <button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>
-    {agendas&&<AgendaDrafts recipient={status?.recipient} onReviewActions={onReviewActions}/>}
+    {agendas&&<AgendaDrafts recipient={status?.recipient} consentRegistry={registry} consentBusy={busy} onReviewActions={onReviewActions}/>}
     <button className="bank-chat-logout" data-testid="open-relationship-details" aria-expanded={relationship} onClick={()=>setRelationship(!relationship)}>View requests and appointment times</button>
     {relationship&&<RelationshipDetails onReviewActions={onReviewActions}/>}
   </Panel>;

@@ -1,3 +1,4 @@
+import {CONSENT_CATEGORIES} from './consentData.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const AGENDA_PROFILE_FIELDS={name:'Name',preferred_language:'Preferred language',employment_status:'Employment status'};
 function invalid() {return new Error('The saved agenda could not be verified. Reload saved drafts before retrying.');}
@@ -32,6 +33,26 @@ export function parseAgendaResult(value) {
 }
 export function agendaTargetMatches(target,result) {
   return Object.entries(target).every(([key,value])=>JSON.stringify(value)===JSON.stringify(result[key]));
+}
+export function parseAgendaShareTarget(value) {
+  if(!value||!Number.isSafeInteger(value.agenda_revision)||value.agenda_revision<1||value.agenda_revision>2147483647||
+    !Array.isArray(value.profile_fields)||value.profile_fields.length>3||value.profile_fields.some(field=>!Object.hasOwn(AGENDA_PROFILE_FIELDS,field))||
+    JSON.stringify(value.profile_fields)!==JSON.stringify([...new Set(value.profile_fields)].sort())||
+    !Array.isArray(value.consent_categories)||!value.consent_categories.length||value.consent_categories.length>7||
+    value.consent_categories.some(category=>!Object.hasOwn(CONSENT_CATEGORIES,category))||
+    JSON.stringify(value.consent_categories)!==JSON.stringify([...new Set(value.consent_categories)].sort()))throw invalid();
+  const categories=value.profile_fields.length?['agenda','profile']:['agenda'];
+  if(JSON.stringify(value.categories)!==JSON.stringify(categories))throw invalid();
+  return {agenda_id:id(value.agenda_id),agenda_revision:value.agenda_revision,advisor_id:id(value.advisor_id),
+    consent_grant_id:id(value.consent_grant_id),agenda_command_id:id(value.agenda_command_id),recipient_name:text(value.recipient_name,200),
+    content:text(value.content,6000),profile_fields:[...value.profile_fields],categories,consent_categories:[...value.consent_categories],
+    grant_expires_at:value.grant_expires_at===null?null:timestamp(value.grant_expires_at)};
+}
+export function parseAgendaShareResult(value) {
+  const target=parseAgendaShareTarget(value),shared_at=timestamp(value.shared_at);
+  if(value.status!=='shared'||target.categories.some(category=>!target.consent_categories.includes(category))||
+    target.grant_expires_at!==null&&Date.parse(shared_at)>=Date.parse(target.grant_expires_at))throw invalid();
+  return {...target,summary_id:id(value.summary_id),shared_at,status:'shared'};
 }
 export function parseAgendas(value) {
   const data=value?.data;

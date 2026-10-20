@@ -4,8 +4,9 @@ import {createActionCase,proposeAction} from '../lib/actions';
 import {loadAgendas} from '../lib/relationship';
 import {AGENDA_PROFILE_FIELDS} from '../lib/agendaData';
 import {consentCategoryText} from '../lib/consentData';
+import AgendaSharing from './AgendaSharing';
 
-export default function AgendaDrafts({recipient,onReviewActions}) {
+export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onReviewActions}) {
   const [registry,setRegistry]=useState(null);
   const [editor,setEditor]=useState(null);
   const [topics,setTopics]=useState('');
@@ -13,6 +14,7 @@ export default function AgendaDrafts({recipient,onReviewActions}) {
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [outcome,setOutcome]=useState(null);
+  const [sharing,setSharing]=useState(null);
   const active=useRef(null);
   useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);
   async function token() {
@@ -22,7 +24,7 @@ export default function AgendaDrafts({recipient,onReviewActions}) {
     return data.session.access_token;
   }
   async function refresh() {
-    const controller=new AbortController();active.current=controller;setBusy(true);setError('');setRegistry(null);setEditor(null);
+    const controller=new AbortController();active.current=controller;setBusy(true);setError('');setRegistry(null);setEditor(null);setSharing(null);
     try {
       const result=await loadAgendas(await token(),controller.signal);
       if(!controller.signal.aborted)setRegistry(result);
@@ -30,10 +32,12 @@ export default function AgendaDrafts({recipient,onReviewActions}) {
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
   function newDraft() {
+    setSharing(null);
     setEditor({agenda_id:crypto.randomUUID(),advisor_id:recipient.rm_id,recipient_name:recipient.name,revision:0});
     setTopics('');setFields([]);setOutcome(null);
   }
   function editDraft(agenda) {
+    setSharing(null);
     setEditor(agenda);setTopics(agenda.topics.join('\n'));setFields(agenda.profile_fields);setOutcome(null);
   }
   async function save(event) {
@@ -76,10 +80,12 @@ export default function AgendaDrafts({recipient,onReviewActions}) {
       <ul className="command-list" data-testid="agenda-list">{registry.agendas.map(agenda=><li key={agenda.agenda_id} data-agenda-id={agenda.agenda_id}>
         <h4>Draft for {agenda.recipient_name}</h4><p>Revision <span data-testid="agenda-revision">{agenda.revision}</span>. Categories: {consentCategoryText(agenda.categories)}.</p>
         <pre className="agenda-content" data-testid="agenda-content">{agenda.content}</pre>
-        <p>Saved <time dateTime={agenda.updated_at}>{new Date(agenda.updated_at).toLocaleString()}</time>. This draft has not been shared.</p>
+        <p>Saved <time dateTime={agenda.updated_at}>{new Date(agenda.updated_at).toLocaleString()}</time>. Saving keeps this draft private. Sharing creates a separate recorded snapshot.</p>
         <button className="bank-chat-logout" data-testid="edit-agenda" disabled={busy||!!error} onClick={()=>editDraft(agenda)}>Edit saved draft</button>
+        <button className="bank-chat-logout" data-testid="prepare-agenda-sharing" disabled={busy||!!error||!recipient||recipient.rm_id!==agenda.advisor_id} onClick={()=>{setEditor(null);setSharing(agenda);}}>Review sharing</button>
       </li>)}</ul>
     </>}
+    {sharing&&<AgendaSharing key={`${sharing.agenda_id}:${sharing.revision}`} agenda={sharing} registry={consentRegistry} consentBusy={consentBusy} onReviewActions={onReviewActions}/>}
     {outcome&&<div data-testid="agenda-save-result"><p>{outcome.receipt.outcome==='succeeded'?'The private draft was saved. No data was shared.':'The draft could not be saved because its revision, profile or recipient changed. Reload it before editing.'}</p>
       <p>Receipt: <code>{outcome.receipt.receipt_id}</code></p><button className="bank-chat-logout" data-testid="review-agenda-actions" onClick={onReviewActions}>View recorded action</button></div>}
   </section>;

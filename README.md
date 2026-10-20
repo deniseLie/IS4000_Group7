@@ -119,16 +119,17 @@ responses still bypass the model. Personal tools, uploaded documents and agent-p
 actions are not yet connected to v2; unavailable
 operations are reported explicitly.
 
-The existing hosted project has migrations `0008`–`0042` applied, with source
+The existing hosted project has migrations `0008`–`0045` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
 `0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
 preserved. All three existing demo Auth logins pass RLS isolation and the 17
 foundation reader endpoints; internal `events` remains unexposed. The normal local
 app uses hosted saved conversations. `npm run test:hosted` tests this running app
-with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats and one
-private agenda draft. `TEST_HOSTED_AI=1` additionally opts into a real provider call.
+with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats,
+private agenda drafts and a reviewed sharing snapshot. The sharing test revokes
+its one-day test grant before finishing. `TEST_HOSTED_AI=1` additionally opts into a real provider call.
 Credentials remain git-ignored. Staff MFA, the restricted hosted worker login,
-reminder delivery and the remaining personal agents/sharing executors are pending.
+reminder delivery and the remaining personal agents/record executors are pending.
 
 The database knowledge adapter validates citation keys, publisher URLs, review
 dates and ranked results. Empty searches and missing facts remain empty; no
@@ -160,8 +161,16 @@ customers edit 1–12 topics, explicitly select basic profile fields and review 
 redacted, server-derived preview. Optimistic revisions prevent lost edits; each
 save has an atomic receipt, audit and notification. The data-sharing panel shows
 up to 200 current action-created drafts and their total; Actions retains historical
-save receipts. Saving never grants consent or shares data. Actual summary/agenda
-sharing, AI drafting and other record executors remain pending.
+save receipts. Saving never grants consent or shares data. Migrations `0043`–`0044`
+add confirmed `rm.share_summary`: the server copies an owned saved revision into
+`rm.shared_summaries` under one exact `rm_brief` grant. Review shows the recipient,
+content, categories, grant and expiry. Confirmation serialises with grant/revocation
+and rechecks the current recipient, saved revision and wall-clock expiry. Separate
+partial grants cannot combine. Later draft edits or revocation leave the recorded
+sharing snapshot and receipt intact. Native worker checks verify its service
+notification; hosted browser checks cover consent, sharing and revocation. AI
+drafting and other record executors remain pending. Migration `0045` rejects
+incompatible legacy consent categories before a sharing proposal enters the ledger.
 
 The data-sharing panel also opens relationship requests and suggested
 appointment times. Migration `0012` calculates thirty-minute suggestions from the
@@ -181,7 +190,7 @@ message or model reply. Reservations are thirty minutes, within 366 days. Native
 API/browser checks cover retries, competing customers, changed calendars, expiry,
 rejection, rollback and desktop/mobile review. No real calendar, meeting or joining
 link is connected. Consent management
-is separate from booking; actual agenda/summary sharing remains pending.
+is separate from booking; sharing requires its own reviewed action.
 
 Conversation storage APIs and migrations `0013`/`0014` provide owned session creation,
 recent-chat listing, bounded chronological history and cancellation of interrupted
@@ -219,7 +228,7 @@ keep business changes, ledger, outbox and audit atomic over the public-key/user-
 Data API. Python executor modules validate their typed contracts. Native API/browser
 checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
 The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
-session, not hosted password login. Remaining record/sharing executors are pending. No real bank
+session, not hosted password login. Other record executors are pending. No real bank
 card or staffed support service is connected.
 
 Staff handoff and card operations (`scripts/staff_support.py`, migrations `0030`–`0033`)
@@ -308,7 +317,7 @@ Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and mig
 
 ## Database migrations
 
-Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order; the hosted project records its own timestamp per migration. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/synthetic-data-spec.md`), `0005` adds the audit log, `0006` its row-change triggers and `0007` the once-per-session `auth.session_started` function. Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set.
+Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order and record their repository versions in Supabase migration history. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/synthetic-data-spec.md`), `0005` adds the audit log, `0006` its row-change triggers and `0007` the once-per-session `auth.session_started` function. Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set.
 
 ## Local setup
 

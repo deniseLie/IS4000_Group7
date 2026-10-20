@@ -7,11 +7,12 @@ from app.schemas.contracts import Priority
 from app.schemas.events import WorkflowStatus
 from app.schemas.appointments import AppointmentResult,AppointmentTarget,SlotTarget,StoredAppointmentTarget
 from app.schemas.agendas import AgendaSaveResult,AgendaSaveTarget,StoredAgendaSaveTarget
+from app.schemas.sharing import AgendaShareResult,AgendaShareTarget,StoredAgendaShareTarget
 from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentRequestResult,ConsentRequestTarget,
     ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
-    'consent.request','consent.grant','consent.revoke','agenda.save']
+    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary']
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
 ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -83,9 +84,9 @@ class ActionFailure(BaseModel):
 
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
-    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget)
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
-    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget)
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget)
 
 
 class ActionRecord(BaseModel):
@@ -115,6 +116,7 @@ class ActionRecord(BaseModel):
         if action_type=='consent.grant':return StoredConsentGrantTarget.model_validate(value)
         if action_type=='consent.revoke':return StoredConsentRevokeTarget.model_validate(value)
         if action_type=='agenda.save':return StoredAgendaSaveTarget.model_validate(value)
+        if action_type=='rm.share_summary':return StoredAgendaShareTarget.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -126,6 +128,8 @@ class ActionRecord(BaseModel):
             raise ValueError('Appointment confirmation/cancellation requires recorded customer confirmation')
         if self.state=='succeeded' and self.type in ('consent.grant','consent.revoke') and self.confirmed_at is None:
             raise ValueError('Consent changes require recorded customer confirmation')
+        if self.state=='succeeded' and self.type=='rm.share_summary' and self.confirmed_at is None:
+            raise ValueError('Agenda sharing requires recorded customer confirmation')
         if self.type in ('card.unblock','card.cancel_permanently','handoff.claim','handoff.close') and (self.state not in ('succeeded','failed') or self.confirmed_at is None):
             raise ValueError('Staff operations require an immediately recorded terminal result')
         return self
@@ -137,7 +141,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult
+    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -185,6 +189,15 @@ class ActionOutcome(BaseModel):
                 if command.type=='agenda.save':
                     if not isinstance(receipt.result,AgendaSaveResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
                         raise ValueError('Agenda receipt disagrees with the saved draft')
+                if command.type=='rm.share_summary':
+                    if not isinstance(receipt.result,AgendaShareResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
+                        raise ValueError('Sharing receipt disagrees with the reviewed saved snapshot')
+                    if not set(receipt.result.categories)<=set(receipt.result.consent_categories):
+                        raise ValueError('A sharing receipt requires one consent grant covering every category')
+                    if receipt.result.shared_at<command.confirmed_at:
+                        raise ValueError('Sharing cannot precede its recorded customer confirmation')
+                    if receipt.result.grant_expires_at is not None and receipt.result.shared_at>=receipt.result.grant_expires_at:
+                        raise ValueError('Sharing must occur before the reviewed consent expiry')
         return self
 
 
@@ -207,6 +220,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='consent.grant':return ConsentGrantTarget.model_validate(value)
         if info.data.get('type')=='consent.revoke':return ConsentRevokeTarget.model_validate(value)
         if info.data.get('type')=='agenda.save':return AgendaSaveTarget.model_validate(value)
+        if info.data.get('type')=='rm.share_summary':return AgendaShareTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

@@ -20,10 +20,12 @@ function commandTitle(command) {
   if(command.type==='consent.grant')return 'Grant reviewed data-sharing consent';
   if(command.type==='consent.revoke')return 'Revoke a recorded data-sharing grant';
   if(command.type==='agenda.save')return 'Save a private synthetic agenda draft';
+  if(command.type==='rm.share_summary')return 'Share a saved synthetic agenda snapshot';
   throw new Error('This action type has no review title. Reload its recorded status.');
 }
 
 function receiptText(item) {
+  if(item.receipt.outcome==='failed'&&item.command.type==='rm.share_summary')return 'This snapshot was not shared. The saved draft, assigned recipient or reviewed consent changed. Reopen Data sharing before proposing another snapshot.';
   if(item.receipt.outcome==='failed')return 'This command did not change the target. Its state changed before execution.';
   if(item.command.type==='card.temporary_block')return 'This command temporarily blocked the synthetic card.';
   if(item.command.type==='card.unblock')return 'A verified demo support session reactivated this synthetic card.';
@@ -38,6 +40,7 @@ function receiptText(item) {
   if(item.command.type==='consent.grant')return 'This command granted the reviewed consent scope. Check Data sharing for its current status. Granting consent does not itself share data.';
   if(item.command.type==='consent.revoke')return 'This command revoked the reviewed grant. Other active grants remain until separately revoked or expired. Previously shared records are not erased.';
   if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
+  if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the synthetic relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
   throw new Error('This action type has no verified receipt description.');
 }
 
@@ -103,6 +106,10 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         <h3>{commandTitle(command)}</h3>
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
         {command.type==='agenda.save'&&<div data-testid="command-agenda"><p>Draft recipient: {command.target.recipient_name}. Intended draft revision: {command.target.expected_revision+1}.</p><pre className="agenda-content">{command.target.content}</pre></div>}
+        {command.type==='rm.share_summary'&&<div data-testid="command-agenda-sharing"><p>Recipient: {command.target.recipient_name}. Saved agenda revision: {command.target.agenda_revision}.</p>
+          <p>Purpose: relationship-manager briefing. Data included: {consentCategoryText(command.target.categories)}.</p>
+          <p>Consent grant: <code>{command.target.consent_grant_id}</code>. Grant covers: {consentCategoryText(command.target.consent_categories)}. {command.target.grant_expires_at?`Expires ${new Date(command.target.grant_expires_at).toLocaleString()}.`:'This grant has no expiry.'}</p>
+          <pre className="agenda-content">{command.target.content}</pre>{receipt?.outcome==='succeeded'&&<p>Shared at {new Date(receipt.result.shared_at).toLocaleString()}. Snapshot: <code>{receipt.result.summary_id}</code>.</p>}</div>}
         {command.type.startsWith('appointment.')&&<p data-testid="command-appointment">{appointmentTime(command.target.starts_at)} – {appointmentTime(command.target.ends_at)} (Singapore time). Format: {command.target.format.replaceAll('_',' ')}.</p>}
         {command.type.startsWith('consent.')&&<div data-testid="command-consent-scope"><p>Recipient: {command.target.recipient_name||command.target.recipient}</p><p>Purpose: {command.target.purpose}. Data categories: {consentCategoryText(command.target.categories)}.</p><p>{command.type==='consent.request'?`Requested duration: ${command.target.duration_days} days.`:command.target.expires_at?`Grant expires: ${new Date(command.target.expires_at).toLocaleString()}.`:'This recorded grant has no expiry.'}</p></div>}
         <p>Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
@@ -114,9 +121,9 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
           <p>Proposal expires: <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
           {!chosen&&<button className="bank-chat-logout" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}>Review proposal</button>}
           {chosen&&<div className="command-review" data-testid="command-review">
-            <p>{command.type==='consent.grant'?'Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.':command.type==='consent.revoke'?'Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.':command.type==='appointment.confirm'?'Confirming books this synthetic time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this synthetic appointment and releases its time.':'Confirming temporarily blocks this synthetic card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>
-            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type.startsWith('consent.')?'data-sharing scope':command.type.startsWith('appointment.')?'synthetic appointment':'synthetic card'} and the proposed change.</label>
-            <div className="panel-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}>{command.type==='consent.grant'?'Confirm consent grant':command.type==='consent.revoke'?'Confirm revocation':command.type==='appointment.confirm'?'Confirm booking':command.type==='appointment.cancel'?'Confirm cancellation':'Confirm temporary block'}</button>
+            <p>{command.type==='rm.share_summary'?'Confirming shares exactly this saved snapshot with the displayed synthetic recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.':command.type==='consent.grant'?'Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.':command.type==='consent.revoke'?'Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.':command.type==='appointment.confirm'?'Confirming books this synthetic time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this synthetic appointment and releases its time.':'Confirming temporarily blocks this synthetic card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>
+            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type==='rm.share_summary'?'saved agenda snapshot and consent':command.type.startsWith('consent.')?'data-sharing scope':command.type.startsWith('appointment.')?'synthetic appointment':'synthetic card'} and the proposed change.</label>
+            <div className="panel-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}>{command.type==='rm.share_summary'?'Confirm sharing':command.type==='consent.grant'?'Confirm consent grant':command.type==='consent.revoke'?'Confirm revocation':command.type==='appointment.confirm'?'Confirm booking':command.type==='appointment.cancel'?'Confirm cancellation':'Confirm temporary block'}</button>
             <button className="bank-chat-logout" data-testid="reject-command" disabled={busy||!!error} onClick={()=>submit(rejectAction,command.command_id)}>Reject proposal</button></div>
           </div>}
         </>}

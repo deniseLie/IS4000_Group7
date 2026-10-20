@@ -75,3 +75,50 @@ test('hosted knowledge reaches the real model and opens an immutable source',asy
  await expect(panel).toBeVisible();
  await expect(panel).toContainText('MoneySense');
 });
+
+async function confirmRecorded(page,commandId) {
+ const command=page.locator(`[data-command-id="${commandId}"]`);
+ await command.getByTestId('review-command').click();
+ await command.getByTestId('acknowledge-command').check();
+ const recorded=page.waitForResponse(response=>response.url().endsWith(`/commands/${commandId}/confirm`));
+ await command.getByTestId('confirm-command').click();const response=await recorded;expect(response.status()).toBe(200);
+ const result=await response.json();expect(result.receipt.outcome).toBe('succeeded');return result;
+}
+
+test('hosted consent, sharing receipt and revocation keep the reviewed snapshot',async({page})=>{
+ test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
+ test.setTimeout(240000);
+ await signIn(page,'demo.david@example.com');await page.getByTestId('open-data-sharing').click();
+ await page.getByTestId('consent-category-agenda').check();
+ await page.getByTestId('consent-duration').selectOption('1');
+ const request=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.getByTestId('request-consent').click();const requested=await (await request).json();
+ const requestId=requested.receipt.result.request_id;
+ const prepareGrant=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.locator(`[data-consent-request-id="${requestId}"]`).getByTestId('prepare-consent-grant').click();
+ const grantProposal=await (await prepareGrant).json();
+ await page.getByTestId('review-consent-actions').click();
+ const granted=await confirmRecorded(page,grantProposal.command.command_id),grantId=granted.receipt.result.grant_id;
+ await page.keyboard.press('Escape');await page.getByTestId('open-data-sharing').click();
+ await page.getByTestId('open-agenda-drafts').click();await page.getByTestId('new-agenda').click();
+ await page.getByTestId('agenda-topics').fill('Hosted consent and sharing integration check');await page.getByTestId('agenda-field-name').check();
+ const save=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.getByTestId('save-agenda').click();const saved=await (await save).json();
+ const draft=page.locator(`[data-agenda-id="${saved.command.target.agenda_id}"]`);
+ await draft.getByTestId('prepare-agenda-sharing').click();await page.getByTestId('agenda-sharing-grant').selectOption(grantId);
+ const propose=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.getByTestId('propose-agenda-sharing').click();const proposed=await (await propose).json();
+ expect(proposed.receipt).toBeNull();
+ await page.getByTestId('review-agenda-sharing').click();const shared=await confirmRecorded(page,proposed.command.command_id);
+ expect(shared.receipt.result.content).toBe(saved.command.target.content);
+ await page.keyboard.press('Escape');await page.getByTestId('open-data-sharing').click();
+ const revoke=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.locator(`[data-consent-grant-id="${grantId}"]`).getByTestId('prepare-consent-revoke').click();
+ const revocation=await (await revoke).json();await page.getByTestId('review-consent-actions').click();
+ await confirmRecorded(page,revocation.command.command_id);
+ const original=page.locator(`[data-command-id="${proposed.command.command_id}"]`);
+ await expect(original.getByTestId('command-receipt')).toContainText(shared.receipt.receipt_id);
+ await expect(original.getByTestId('command-agenda-sharing')).toContainText(saved.command.target.content);
+ await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+});

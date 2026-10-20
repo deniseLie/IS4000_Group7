@@ -48,3 +48,19 @@ def test_persona_sees_only_own_rows(user):
                 _rows(sb, name)
     finally:
         sb.auth.sign_out()
+
+
+@pytest.mark.parametrize('user', json.load(open(FIXTURE)) if FIXTURE else [], ids=lambda u: u['email'].split('@')[0])
+def test_foundation_records_remain_customer_scoped(user):
+    """Mutable foundation records have no fixed seed counts; explicit foreign filters must still return nothing."""
+    (cid, _), = EXPECTED[user['email']].items()
+    sb=_client(user)
+    try:
+        for name in ['rm.agendas','rm.shared_summaries','consent.requests','consent.grants','actions.commands','actions.receipts']:
+            schema,table=name.split('.')
+            rows=sb.schema(schema).table(table).select('customer_id').limit(200).execute().data
+            assert {row['customer_id'] for row in rows}<={cid},name
+            foreign=sb.schema(schema).table(table).select('customer_id').neq('customer_id',cid).limit(1).execute().data
+            assert foreign==[],name
+    finally:
+        sb.auth.sign_out()
