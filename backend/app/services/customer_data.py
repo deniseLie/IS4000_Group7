@@ -5,6 +5,7 @@ customer scope, required payload fields and server call_id/as_of are validated b
 """
 from datetime import date
 from typing import Annotated,TypeVar
+from uuid import UUID
 from pydantic import Field,JsonValue,TypeAdapter
 from app.core import data_api
 from app.core.observability import span
@@ -16,6 +17,7 @@ from app.schemas.appointments import AppointmentRecord
 from app.schemas.consent_actions import ConsentRegistry
 from app.schemas.agendas import AgendaRegistry
 from app.schemas.documents import DocumentRecord
+from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
 from app.services.authorization import require_permission
 
 STUB=False
@@ -33,6 +35,8 @@ APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Fiel
 CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
 AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
 DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_length=200)]])
+DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
+DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -93,6 +97,19 @@ async def get_documents(ctx: RequestContext) -> ToolResult:
     envelope=await _read('documents.list','customer_read_documents',{},DOCUMENTS,ctx)
     if len({row.document_id for row in envelope.data})!=len(envelope.data):
         raise CustomerDataIntegrityError('Document snapshot contains duplicate document ids')
+    return _result(envelope)
+
+
+async def get_document_upload_context(case_id: UUID,item_id: UUID | None,ctx: RequestContext) -> CustomerEnvelope[DocumentUploadContext]:
+    return await _read('documents.prepare_upload','customer_document_upload_context',
+        {'p_case_id':str(case_id),'p_item_id':str(item_id) if item_id is not None else None},DOCUMENT_UPLOAD_CONTEXT,ctx)
+
+
+async def get_document_location(document_id: UUID,ctx: RequestContext) -> ToolResult:
+    envelope=await _read('documents.download','customer_document_location',{'p_document_id':str(document_id)},DOCUMENT_LOCATION,ctx)
+    if envelope.data is not None and (envelope.data.document_id!=document_id or
+        envelope.data.storage_path!=f'{ctx.principal.customer_id}/{envelope.data.case_id}/{document_id}'):
+        raise CustomerDataIntegrityError('Document location does not match its requested document and customer')
     return _result(envelope)
 
 

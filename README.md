@@ -119,11 +119,11 @@ responses still bypass the model. Personal retail reads, compliance case explana
 and the reviewed fraud proposal workflow are connected; the remaining personal agents and uploaded-document
 processing report explicit limitations.
 
-The existing hosted project has migrations `0008`–`0050` applied, with source
+The existing hosted project has migrations `0008`–`0052` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
 `0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
-preserved. All three existing demo Auth logins pass RLS isolation and the 18
-foundation reader endpoints; internal `events` remains unexposed. The normal local
+preserved. All three existing demo Auth logins pass RLS isolation and the
+foundation reader checks; internal `events` remains unexposed. The normal local
 app uses hosted saved conversations. `npm run test:hosted` tests this running app
 with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats,
 private agenda drafts and a reviewed sharing snapshot. The sharing test revokes
@@ -131,6 +131,20 @@ its one-day test grant before finishing. `TEST_HOSTED_AI=1` additionally opts in
 Credentials remain git-ignored. The restricted hosted worker is configured and
 in-app delivery is verified. Staff MFA and the remaining personal agents/record
 executors are pending.
+
+Records supports private PDF, DOCX, JPEG and PNG uploads up to 10 MiB. An audited
+preparation read checks the review scope; the caller's JWT uploads bytes directly
+to Supabase Storage. The `document.register` action verifies the owned object and
+records metadata, receipt, audit and notification event atomically. Customers cannot
+overwrite or delete stored files. Download links require an owned registered object
+and expire after 60 seconds. Uploading does not change the bank's review status or
+perform an AI precheck. After an ambiguous upload response, the open form can retry
+registration without uploading another copy. Closing the page before registration
+can leave a private unregistered object; automatic cleanup/resume is not implemented.
+`TEST_HOSTED_DOCUMENTS=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted (private documents|upload acknowledgement)'`
+uploads the synthetic fixtures to hosted Storage and checks byte-identical downloads,
+access isolation, immutable uploads, receipts, notifications and lost-acknowledgement
+recovery. Run it only with approval to upload those fixtures to the configured project.
 
 The database knowledge adapter validates citation keys, publisher URLs, review
 dates and ranked results. Empty searches and missing facts remain empty; no

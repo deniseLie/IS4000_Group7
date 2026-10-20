@@ -58,7 +58,7 @@ def test_foundation_records_remain_customer_scoped(user):
     (cid, _), = EXPECTED[user['email']].items()
     sb=_client(user)
     try:
-        for name in ['rm.agendas','rm.shared_summaries','consent.requests','consent.grants','actions.commands','actions.receipts','rm.requests']:
+        for name in ['rm.agendas','rm.shared_summaries','consent.requests','consent.grants','actions.commands','actions.receipts','rm.requests','compliance.documents']:
             schema,table=name.split('.')
             rows=sb.schema(schema).table(table).select('customer_id').limit(200).execute().data
             assert {row['customer_id'] for row in rows}<={cid},name

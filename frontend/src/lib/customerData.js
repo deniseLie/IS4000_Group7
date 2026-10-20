@@ -64,7 +64,7 @@ function advisor(value) {
 function documentRecord(value) {
   const result={document_id:match(value?.document_id,UUID),case_id:match(value?.case_id,UUID),case_title:text(value?.case_title),
     item_id:nullable(value?.item_id,id=>match(id,UUID)),item_label:nullable(value?.item_label,text),file_name:text(value?.file_name),
-    mime_type:choice(value?.mime_type,['application/pdf','image/jpeg','image/png']),size_bytes:number(value?.size_bytes),
+    mime_type:choice(value?.mime_type,['application/pdf','image/jpeg','image/png','application/vnd.openxmlformats-officedocument.wordprocessingml.document']),size_bytes:number(value?.size_bytes),
     precheck_status:choice(value?.precheck_status,['not_checked','pending','passed','issues_found']),uploaded_at:timestamp(value?.uploaded_at)};
   if(!Number.isInteger(result.size_bytes)||result.size_bytes<1||result.size_bytes>10485760||
     (result.item_id===null)!==(result.item_label===null))throw invalid();

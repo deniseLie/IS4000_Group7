@@ -10,7 +10,7 @@ from app.services import audit
 from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact'})
-AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request'})
+AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.order_replacement','appointment.confirm','appointment.cancel',
     'requests.create','rm.share_summary','consent.grant','consent.revoke'})
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
@@ -19,7 +19,7 @@ AGENT_ACTIONS = {
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke'}),
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','notifications.list','notifications.read'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','notifications.list','notifications.read'}
 
 
 class PolicyResource(BaseModel):

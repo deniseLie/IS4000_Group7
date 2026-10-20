@@ -1,1 +1,2 @@
 backend/app/prompts/**/*.md text eol=lf
+frontend/tests/fixtures/documents/*.pdf binary

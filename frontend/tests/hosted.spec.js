@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
+import {fileURLToPath} from 'node:url';
 
 const fixture=process.env.TEST_PERSONA_FIXTURE_FILE;
 const personas=fixture?JSON.parse(fs.readFileSync(fixture,'utf8')):[];
@@ -197,4 +198,104 @@ test('hosted consent, sharing receipt and revocation keep the reviewed snapshot'
  await expect(original.getByTestId('command-agenda-sharing')).toContainText(saved.command.target.content);
  await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+});
+
+test('hosted private documents upload, download, isolate and notify through real Storage',async({page,context,browser})=>{
+ test.skip(!fixture||process.env.TEST_HOSTED_DOCUMENTS!=='1','Requires approval for the synthetic file fixtures and hosted private bucket');
+ test.setTimeout(300000);
+ await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
+ await expect(page.getByTestId('document-upload')).toBeVisible({timeout:30000});
+ const saved=[];let storageHeaders,storageOrigin;
+ for(const extension of ['pdf','docx','jpg','png']) {
+  const file=new URL(`./fixtures/documents/Synthetic DEMO.${extension}`,import.meta.url);
+  await page.getByTestId('document-upload-file').setInputFiles(fileURLToPath(file));
+  const prepared=page.waitForResponse(response=>response.url().endsWith('/documents/uploads/prepare'));
+  const stored=page.waitForResponse(response=>response.url().includes('/storage/v1/object/demobank-compliance-private/')&&response.request().method()==='POST');
+  const recorded=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+  await page.getByTestId('document-upload-submit').click();
+  const preparation=await prepared;expect(preparation.status()).toBe(200);
+  const upload=await stored;expect(upload.status()).toBe(200);
+  expect(upload.request().headers()['x-upsert']).toBe('false');
+  storageHeaders=upload.request().headers();storageOrigin=new URL(upload.url()).origin;
+  expect(storageOrigin).toBe('https://ypztnwvadxmjaveewubm.supabase.co');
+  const response=await recorded;expect(response.status()).toBe(200);
+  const result=await response.json();expect(result.receipt?.outcome).toBe('succeeded');
+  expect(result.command.target.storage_path).toBe((await preparation.json()).data.storage_path);
+  const replay=await context.request.post(response.url(),{headers:{Authorization:response.request().headers().authorization},data:response.request().postDataJSON()});
+  expect(replay.status()).toBe(200);expect(await replay.json()).toEqual(result);
+  await expect(page.getByTestId('document-upload-outcome')).toContainText(result.receipt.receipt_id);
+  await page.getByTestId('reload-records').click();
+  const row=page.locator(`[data-document-id="${result.command.target.document_id}"]`);
+  await expect(row).toContainText(`Synthetic DEMO.${extension}`);
+  await expect(row.getByTestId('document-precheck-status')).toHaveText('not checked');
+  const downloaded=page.waitForEvent('download');await row.getByTestId('document-download').click();
+  const download=await downloaded;expect(download.suggestedFilename()).toBe(`Synthetic DEMO.${extension}`);
+  const path=await download.path();expect(fs.readFileSync(path)).toEqual(fs.readFileSync(file));
+  const publicRead=await context.request.get(`${storageOrigin}/storage/v1/object/public/demobank-compliance-private/${result.command.target.storage_path}`);
+  expect(publicRead.ok()).toBe(false);
+  const overwritten=await context.request.put(`${storageOrigin}/storage/v1/object/demobank-compliance-private/${result.command.target.storage_path}`,{
+   headers:{Authorization:storageHeaders.authorization,apikey:storageHeaders.apikey,'Content-Type':result.command.target.mime_type},data:fs.readFileSync(file)});
+  expect(overwritten.ok()).toBe(false);
+  saved.push(result);
+ }
+ await page.setViewportSize({width:320,height:900});
+ const dialog=page.locator('dialog[aria-label="Synthetic customer records"]');
+ expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+ await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
+ for(const result of saved)await expect(page.locator(`[data-command-id="${result.command.command_id}"]`).getByTestId('command-receipt')).toContainText(result.receipt.receipt_id);
+ await page.keyboard.press('Escape');await page.getByTestId('open-notifications').click();
+ await expect.poll(async()=>page.locator('[data-template-key="document.uploaded"]').count(),{timeout:45000}).toBeGreaterThanOrEqual(4);
+ await page.keyboard.press('Escape');
+ const foreign=await browser.newContext();
+ try {
+  const visitor=await foreign.newPage();await signIn(visitor,'demo.alex@example.com');
+  const owned=visitor.waitForResponse(response=>response.url().endsWith('/customer/documents'));
+  await visitor.getByTestId('open-records').click();const loaded=await owned;expect(loaded.status()).toBe(200);
+  const auth=loaded.request().headers().authorization;
+  for(const result of saved) {
+   await expect(visitor.locator(`[data-document-id="${result.command.target.document_id}"]`)).toHaveCount(0);
+   const location=await foreign.request.get(loaded.url().replace('/customer/documents',`/documents/${result.command.target.document_id}/location`),{headers:{Authorization:auth}});
+   expect(location.status()).toBe(404);
+   const signed=await foreign.request.post(`${storageOrigin}/storage/v1/object/sign/demobank-compliance-private/${result.command.target.storage_path}`,{
+    headers:{Authorization:auth,apikey:storageHeaders.apikey},data:{expiresIn:60}});
+   expect(signed.ok()).toBe(false);
+  }
+ } finally {await foreign.close();}
+ await page.getByTestId('sign-out').click();await expect(page.getByTestId('sign-in')).toBeVisible();
+});
+
+test('hosted upload acknowledgement loss can record the same real object without another copy',async({page,context})=>{
+ test.skip(!fixture||process.env.TEST_HOSTED_DOCUMENTS!=='1','Requires approval for synthetic hosted upload fault injection');
+ test.setTimeout(180000);
+ await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
+ await expect(page.getByTestId('document-upload')).toBeVisible({timeout:30000});
+ const pattern='**/storage/v1/object/demobank-compliance-private/**';
+ let received=false;
+ await page.route(pattern,async route=>{
+  expect(route.request().method()).toBe('POST');
+  if(received){await route.continue();return;}
+  // Forward the actual file bytes, then discard the browser's acknowledgement. Intercepted multipart data is not a reliable file-byte source.
+  const headers=route.request().headers();
+  const response=await context.request.post(route.request().url(),{headers:{Authorization:headers.authorization,apikey:headers.apikey,'x-upsert':'false'},
+   multipart:{cacheControl:'3600','':{name:'Synthetic DEMO.png',mimeType:'image/png',buffer:fs.readFileSync(new URL('./fixtures/documents/Synthetic DEMO.png',import.meta.url))}}});
+  expect(response.status(),await response.text()).toBe(200);received=true;
+  await route.abort('failed');
+ });
+ const prepared=page.waitForResponse(response=>response.url().endsWith('/documents/uploads/prepare'));
+ await page.getByTestId('document-upload-file').setInputFiles(fileURLToPath(new URL('./fixtures/documents/Synthetic DEMO.png',import.meta.url)));
+ await page.getByTestId('document-upload-submit').click();const response=await prepared;expect(response.status()).toBe(200);
+ const target=(await response.json()).data;
+ await expect(page.getByTestId('document-upload-retry')).toBeVisible({timeout:90000});expect(received).toBe(true);
+ await expect(page.getByTestId('document-upload-error')).toBeVisible();
+ const recorded=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.getByTestId('document-upload-retry').click();const command=await recorded;expect(command.status()).toBe(200);
+ const saved=await command.json();expect(saved.receipt?.outcome).toBe('succeeded');
+ expect(saved.command.target.document_id).toBe(target.document_id);
+ await expect(page.getByTestId('document-upload-outcome')).toContainText(saved.receipt.receipt_id);
+ await page.getByTestId('reload-records').click();
+ const row=page.locator(`[data-document-id="${target.document_id}"]`);await expect(row).toHaveCount(1);
+ const downloaded=page.waitForEvent('download');await row.getByTestId('document-download').click();
+ const download=await downloaded;expect(fs.readFileSync(await download.path())).toEqual(fs.readFileSync(new URL('./fixtures/documents/Synthetic DEMO.png',import.meta.url)));
+ await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await expect(page.getByTestId('sign-in')).toBeVisible();
 });
