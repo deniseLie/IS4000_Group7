@@ -2,28 +2,33 @@
 
 Uses the explicitly configured knowledge store and an optional owned durable checkpoint saver.
 Fraud proposals pause at a durable checkpoint; the remaining personal agents report explicit limitations.
+Independent public/personal tasks run concurrently under AGENT_TIMEOUT_S (reads, retries and
+answer generation together); failed sections have no evidence or proposals. Bounded English
+rules prioritise fraud, security, regulatory deadlines, then ordinary tasks, preserving ties.
 """
 import asyncio
 import re
 from typing import TypedDict
 from uuid import uuid5
+import httpx
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 from pydantic import ValidationError
+from postgrest.exceptions import APIError
 from app.core.config import settings
 from app.core import data_api
-from app.core.observability import span
+from app.core.observability import log_event,span
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
-from app.schemas.contracts import ActionCommand,AgentResult, Domain, RequestContext, RiskAssessment, Task, TaskPlan
+from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan
 from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, Source,WorkflowPausedEvent
 from app.schemas.fraud import FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery
-from app.services import actions,kb, llm_gateway, prompts,workflow_store
+from app.services import actions,audit,customer_data,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
 from app.services.agents import compliance,fraud,retail
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
@@ -34,8 +39,10 @@ from app.services.guardrail import FRAUD
 from app.services.authorization import require_permission
 
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]',re.I)
+SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b',re.I)
+DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)',re.I)
 TOPICS: dict[Domain, re.Pattern[str]] = {
-    'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|login|password)\b',re.I),
+    'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode)\b',re.I),
     'compliance':re.compile(r'\b(?:compliance|review|checklist|notice)\b',re.I),
     'document':re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b',re.I),
     'relationship':re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b',re.I),
@@ -72,6 +79,13 @@ class DispatchUpdate(TypedDict):
     evidence: list[list[Evidence]]
     metadata: list[ResponseMeta]
     proposals: list[FraudProposal | None]
+
+
+class TaskDispatch(TypedDict):
+    result: AgentResult
+    evidence: list[Evidence]
+    metadata: ResponseMeta
+    proposal: FraudProposal | None
 
 
 class ReviewUpdate(TypedDict):
@@ -121,15 +135,25 @@ async def plan(state: Turn) -> PlanUpdate:
     result = await llm_gateway.call(pv, pv['system'], [(m.role,m.content) for m in state['history']], schema)
     draft = PlannerDraft.model_validate(result.data)
     issues = route_issues(draft.issues) if req.language=='English' else draft.issues
-    if 'fraud_suspected' in state['risk'].risk_flags and not any(issue.domain=='fraud' for issue in issues):
-        raise llm_gateway.LLMBadOutput('Planner omitted the guardrail fraud issue')
     return {'issues':issues}
 
 
+def task_priority(issue: PlannedIssue) -> Priority:
+    """Bounded English rules classify security and regulatory deadlines; ties retain message order."""
+    if issue.domain=='fraud':return 'P0'
+    if SECURITY.search(issue.question):return 'P1'
+    if issue.domain in {'compliance','document'} and DEADLINE.search(issue.question):return 'P2'
+    return 'P3'
+
+
 def prioritise(state: Turn) -> PriorityUpdate:
+    risk=state['risk']
+    issues=state['issues']
+    if {'fraud_suspected','lost_card'}.intersection(risk.risk_flags) and not any(issue.domain=='fraud' for issue in issues):
+        issues=[PlannedIssue(domain='fraud',question=risk.redacted_message),*issues]
     tasks = [Task(task_id=f't{i+1}', domain=issue.domain, intent='answer_question',
-        priority='P0' if issue.domain=='fraud' else 'P3', entities={'question':issue.question})
-        for i,issue in enumerate(state['issues'])]
+        priority=task_priority(issue), entities={'question':issue.question})
+        for i,issue in enumerate(issues)]
     return {'plan':TaskPlan(tasks=tasks)}
 
 
@@ -148,65 +172,65 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 
-async def run_task(task: Task, state: Turn, evidence: list[Evidence]) -> AgentResult:
-    question = task.entities['question']
-    if not isinstance(question, str):raise ValueError('Planned task question must be text')
+def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
+    agent=AGENT_FOR[task.domain]
+    if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
+    if task.domain in {'fraud','retail','compliance'}:return prompts.load(agent,'v2')['id']
+    return None
+
+
+async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
+    """One independent task owns its evidence; only the later proposal node can write actions."""
+    if settings.knowledge_store=='database':
+        evidence=await database_evidence(task,ctx)
+    else:evidence=task_evidence(task,state['history'],state['request'].language)
+    proposal: FraudProposal | None=None
+    agent=AGENT_FOR[task.domain]
+    prompt_id=task_prompt_id(task,state['request'])
+    if state['request'].mode=='public' or task.domain=='smalltalk':
+        question=task.entities['question']
+        if not isinstance(question,str):raise ValueError('Planned task question must be text')
+        result=await respond(task,question,state['history'],evidence,state['request'].language)
+    elif task.domain=='fraud':
+        decision,evidence=await fraud.respond(task,state['history'],state['request'].language,
+            ctx.model_copy(update={'agent':'fraud'}),evidence)
+        result=decision.result;proposal=decision.proposal;prompt_id=decision.prompt_id
+    elif task.domain in {'retail','compliance'}:
+        responder=retail.respond if task.domain=='retail' else compliance.respond
+        result,evidence,prompt_id=await responder(task,state['history'],state['request'].language,
+            ctx.model_copy(update={'agent':agent}),evidence)
+    else:
+        result=AgentResult(task_id=task.task_id,agent=agent,status='error',
+            text='This personal service is not connected yet. Use General help for public information or your bank’s official support channel.')
+    return {'result':result,'evidence':evidence,'proposal':proposal,
+        'metadata':ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id)}
+
+
+async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
+    """Bound the whole task and withhold expected provider/data failures without releasing its evidence."""
+    agent=AGENT_FOR[task.domain]
     try:
-        return await asyncio.wait_for(respond(task, question, state['history'], evidence, state['request'].language),
-            timeout=settings.llm_timeout_s * (settings.llm_max_retries + 1) + 5)
-    except (llm_gateway.LLMError, TimeoutError, ValidationError):
-        # Only this failed section is withheld; the trace keeps the provider error.
-        return AgentResult(task_id=task.task_id, agent=AGENT_FOR[task.domain], status='error', text=WITHHELD)
+        with span('task','agent',task_id=task.task_id,agent=agent,priority=task.priority):
+            return await asyncio.wait_for(generate_task(task,state,ctx),timeout=settings.agent_timeout_s)
+    except (llm_gateway.LLMError,TimeoutError,ValidationError,APIError,httpx.TransportError,PermissionError,
+        customer_data.CustomerDataIntegrityError,kb.KnowledgeResponseError) as error:
+        code=data_api.database_code(error) if isinstance(error,APIError) else None
+        fields={'task_id':task.task_id,'agent':agent,'error_type':type(error).__name__,'db_code':code}
+        log_event('agent_failed',**fields)
+        audit.add('agent','agent.failed','failed',details=fields)
+        return {'result':AgentResult(task_id=task.task_id,agent=agent,status='error',text=WITHHELD),'evidence':[],
+            'proposal':None,'metadata':ResponseMeta(origin='validation',prompt_id=task_prompt_id(task,state['request']))}
 
 
 async def dispatch(state: Turn, runtime: Runtime[PipelineContext]) -> DispatchUpdate:
-    ctx = runtime.context.request
+    """Run reads/agents concurrently, preserving priority order and cancelling siblings on unexpected errors."""
+    ctx=runtime.context.request
     require_permission(ctx.principal,'kb.search',None,ctx)
-    tasks = state['plan'].by_priority()
-    if settings.knowledge_store=='database':
-        evidence=[await database_evidence(task,ctx) for task in tasks]
-    else:evidence = [task_evidence(task, state['history'], state['request'].language) for task in tasks]
-    if state['request'].mode=='public':
-        results = await asyncio.gather(*(run_task(task,state,items) for task,items in zip(tasks,evidence,strict=True)))
-        return {'results':list(results),'evidence':evidence,'proposals':[None for task in tasks],
-            'metadata':[ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=response_prompt_id(AGENT_FOR[task.domain]))
-                for task,result in zip(tasks,results,strict=True)]}
-    results: list[AgentResult]=[]
-    proposals: list[FraudProposal | None]=[]
-    metadata: list[ResponseMeta]=[]
-    for index,task in enumerate(tasks):
-        if task.domain=='fraud':
-            try:
-                decision,items=await fraud.respond(task,state['history'],state['request'].language,
-                    ctx.model_copy(update={'agent':'fraud'}),evidence[index])
-                evidence[index]=items
-                results.append(decision.result)
-                proposals.append(decision.proposal)
-                metadata.append(ResponseMeta(origin='validation' if decision.result.status=='error' else 'ai',prompt_id=decision.prompt_id))
-            except (llm_gateway.LLMError,ValidationError,TimeoutError):
-                results.append(AgentResult(task_id=task.task_id,agent='fraud',status='error',text=WITHHELD))
-                proposals.append(None)
-                metadata.append(ResponseMeta(origin='validation',prompt_id=prompts.load('fraud','v2')['id']))
-        elif task.domain in {'retail','compliance'}:
-            responder=retail.respond if task.domain=='retail' else compliance.respond
-            agent=AGENT_FOR[task.domain]
-            try:
-                result,items,prompt_id=await responder(task,state['history'],state['request'].language,
-                    ctx.model_copy(update={'agent':agent}),evidence[index])
-                evidence[index]=items;results.append(result);proposals.append(None)
-                metadata.append(ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id))
-            except (llm_gateway.LLMError,ValidationError,TimeoutError):
-                results.append(AgentResult(task_id=task.task_id,agent=agent,status='error',text=WITHHELD))
-                proposals.append(None);metadata.append(ResponseMeta(origin='validation',prompt_id=prompts.load(agent,'v2')['id']))
-        elif task.domain=='smalltalk':
-            result=await run_task(task,state,evidence[index])
-            results.append(result);proposals.append(None)
-            metadata.append(ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=response_prompt_id('retail')))
-        else:
-            results.append(AgentResult(task_id=task.task_id,agent=AGENT_FOR[task.domain],status='error',
-                text='This personal service is not connected yet. Use General help for public information or your bank’s official support channel.'))
-            proposals.append(None);metadata.append(ResponseMeta(origin='validation',prompt_id=None))
-    return {'results':results,'evidence':evidence,'metadata':metadata,'proposals':proposals}
+    async with asyncio.TaskGroup() as group:
+        running=[group.create_task(dispatch_task(task,state,ctx)) for task in state['plan'].by_priority()]
+    rows=[task.result() for task in running]
+    return {'results':[row['result'] for row in rows],'evidence':[row['evidence'] for row in rows],
+        'metadata':[row['metadata'] for row in rows],'proposals':[row['proposal'] for row in rows]}
 
 
 async def propose_actions(state: Turn,runtime: Runtime[PipelineContext]) -> ReviewUpdate:

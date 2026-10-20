@@ -6,7 +6,7 @@ function Sources({sources,onSource}) {
 }
 
 export default function Answer({message,pendingText,onSource}) {
-  if(message.sections?.length)return <div className="answer-sections" data-testid="answer-sections">{message.sections.map(section=><section className="answer-section" key={section.task_id} data-domain={section.domain} data-response-origin={section.response_origin} data-prompt-version={section.prompt_version}>
+  if(message.sections?.length)return <div className="answer-sections" data-testid="answer-sections">{message.sections.map(section=><section className="answer-section" key={section.task_id} data-domain={section.domain} data-priority={section.priority} data-response-origin={section.response_origin} data-prompt-version={section.prompt_version}>
     <h3>{DOMAIN_LABELS[section.domain]}{section.priority==='P0'&&<small>Urgent</small>}</h3>
     <span className="answer-text">{section.answer}</span>
     {section.response_origin==='validation'&&<small className="answer-origin">Answer withheld</small>}

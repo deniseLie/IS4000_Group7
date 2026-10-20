@@ -24,13 +24,22 @@ test('real v2 agent answer renders a sourced section and opens its source',async
   await expect(page.locator('dialog[aria-label="Source details"]')).toBeVisible();
 });
 
-test('real v2 planner separates a fraud issue from a banking question',async({page})=>{
+test('real v2 planner orders fraud security and banking sections',async({page})=>{
   await page.goto('/');
-  await ask(page,"There is an unfamiliar card charge. Also, what is the difference between secured and unsecured loans?");
+  await ask(page,"What is the difference between secured and unsecured loans? Also, I cannot log in. There is an unfamiliar card charge.");
   const sections=page.locator('.answer-section');
-  await expect(sections).toHaveCount(2);
+  await expect(sections).toHaveCount(3);
   await expect(sections.nth(0)).toHaveAttribute('data-domain','fraud');
+  await expect(sections.nth(0)).toHaveAttribute('data-priority','P0');
   await expect(sections.nth(0)).toHaveAttribute('data-response-origin','ai');
   await expect(sections.nth(1)).toHaveAttribute('data-domain','retail');
+  await expect(sections.nth(1)).toHaveAttribute('data-priority','P1');
   await expect(sections.nth(1)).toHaveAttribute('data-response-origin','ai');
+  await expect(sections.nth(2)).toHaveAttribute('data-domain','retail');
+  await expect(sections.nth(2)).toHaveAttribute('data-priority','P3');
+  await expect(sections.nth(2)).toHaveAttribute('data-response-origin','ai');
+  for(const width of [1280,768,390,320]) {
+    await page.setViewportSize({width,height:900});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
 });

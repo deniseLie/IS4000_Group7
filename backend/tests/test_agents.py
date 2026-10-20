@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -9,12 +10,12 @@ from app.core.config import Settings, settings
 from app.main import app
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest
-from app.schemas.contracts import AgentResult, Task, TaskPlan
+from app.schemas.contracts import AgentResult,Principal,RequestContext, Task, TaskPlan
 from app.schemas.events import Source
 from app.services.agents.answer import respond, validate_draft
 from app.services.guardrail import assess_request
 from app.services.knowledge import INDEX, source
-from app.services.orchestrator import compose, prioritise, route_issues, run_task, simple_issue
+from app.services.orchestrator import compose,dispatch_task, prioritise, route_issues,simple_issue,task_priority
 
 
 def evidence():
@@ -57,16 +58,41 @@ def test_inconsistent_clarification_is_withheld():
 def test_planning_prioritises_fraud_without_modifying_input():
     issues=[PlannedIssue(domain='retail',question='Explain my loan.'),PlannedIssue(domain='fraud',question='Unfamiliar charge')]
     before=[issue.model_dump() for issue in issues]
-    plan=prioritise({'issues':issues})['plan']
+    plan=prioritise({'issues':issues,'risk':assess_request(ChatRequest(messages=[{'role':'user','content':'Explain my loan.'}]))})['plan']
     assert [item.domain for item in plan.by_priority()]==['fraud','retail']
     assert [issue.model_dump() for issue in issues]==before
     with pytest.raises(ValidationError):PlannerDraft(issues=[])
     with pytest.raises(ValidationError):PlannerDraft(issues=issues*3)
     assert simple_issue('Hello!','English').domain=='smalltalk'
     assert simple_issue('What happens if I withdraw my fixed deposit early?','English').domain=='retail'
+    assert simple_issue('I cannot log in.','English').domain=='retail'
     assert simple_issue('There is an unfamiliar card charge. Also, explain loans.','English') is None
     mistaken=[PlannedIssue(domain='compliance',question='What is the difference between secured and unsecured loans?')]
     assert route_issues(mistaken)[0].domain=='retail' and mistaken[0].domain=='compliance'
+
+
+def test_security_deadline_order_and_guardrail_override_preserve_every_issue():
+    issues=[PlannedIssue(domain='retail',question='Explain account fees.'),
+        PlannedIssue(domain='compliance',question='When is my review due?'),
+        PlannedIssue(domain='retail',question='I cannot log in.'),
+        PlannedIssue(domain='document',question='When is the document deadline?'),
+        PlannedIssue(domain='retail',question='Explain deposit interest.')]
+    request=ChatRequest(messages=[{'role':'user','content':'There is an unfamiliar card charge.'}])
+    before=[issue.model_dump() for issue in issues]
+    plan=prioritise({'issues':issues,'risk':assess_request(request)})['plan']
+    assert [task.priority for task in plan.by_priority()]==['P0','P1','P2','P2','P3','P3']
+    assert plan.by_priority()[0].domain=='fraud'
+    assert plan.by_priority()[0].entities['question']==request.messages[-1].content
+    assert [task.entities['question'] for task in plan.by_priority()[3:]]==[issues[3].question,issues[0].question,issues[4].question]
+    assert [issue.model_dump() for issue in issues]==before
+    repeated=prioritise({'issues':[PlannedIssue(domain=task.domain,question=task.entities['question']) for task in plan.tasks],
+        'risk':assess_request(request)})['plan']
+    assert len(repeated.tasks)==len(plan.tasks)
+    ordinary=prioritise({'issues':[PlannedIssue(domain='retail',question='When is my loan payment due?')],
+        'risk':assess_request(ChatRequest(messages=[{'role':'user','content':'Explain payment dates.'}]))})['plan']
+    assert ordinary.tasks[0].priority=='P3'
+    for question in ['Explain compliance due diligence.','Is my review due to a transfer?']:
+        assert task_priority(PlannedIssue(domain='compliance',question=question))=='P3'
 
 
 def test_one_withheld_section_does_not_discard_other_sections():
@@ -97,7 +123,8 @@ def test_provider_configuration_failure_withholds_a_social_section(monkeypatch):
     monkeypatch.delenv('LLM_MODEL',raising=False)
     req=ChatRequest(messages=[{'role':'user','content':'Hello'}])
     planned=Task(task_id='t1',domain='smalltalk',intent='answer_question',entities={'question':'Hello'})
-    result=asyncio.run(run_task(planned,{'history':req.messages,'request':req},[]))
+    ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
+    result=asyncio.run(dispatch_task(planned,{'history':req.messages,'request':req},ctx))['result']
     assert result.status=='error' and result.agent=='retail'
     from app.schemas.workflows import ResponseMeta
     answer=compose({'request':req,'history':req.messages,'history_count':len(req.messages),'plan':TaskPlan(tasks=[planned]),'results':[result],'evidence':[[]],

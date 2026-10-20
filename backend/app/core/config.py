@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 30
     llm_max_retries: int = 1
     llm_request_token_budget: int = 24000
+    agent_timeout_s: float = Field(default=65,gt=0,le=300)
 
     # API Gateway Layer (core/gateway.py)
     jwt_audience: str = "authenticated"
