@@ -85,6 +85,31 @@ async function confirmRecorded(page,commandId) {
  const result=await response.json();expect(result.receipt.outcome).toBe('succeeded');return result;
 }
 
+test('hosted checklist preparation persists without changing bank review status',async({page})=>{
+ test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
+ await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
+ const item=page.locator('[data-checklist-item-id="00000000-0000-4000-8000-100200000011"]');
+ const previous=await item.getByTestId('checklist-mark').inputValue(),next=previous==='prepared'?'not_prepared':'prepared';
+ const status=await item.textContent();
+ await item.getByTestId('checklist-mark').selectOption(next);
+ const submitted=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await item.getByTestId('save-checklist-mark').click();const response=await submitted;expect(response.status()).toBe(200);
+ const saved=await response.json();expect(saved.receipt.outcome).toBe('succeeded');
+ await expect(item.getByTestId('checklist-outcome')).toContainText(saved.receipt.receipt_id);
+ await page.getByTestId('reload-records').click();await expect(item.getByTestId('checklist-mark')).toHaveValue(next);
+ expect(status).toContain(saved.receipt.result.submission_status.replaceAll('_',' '));
+ await item.getByTestId('checklist-mark').selectOption(previous);
+ const restored=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await item.getByTestId('save-checklist-mark').click();const restore=await restored;expect(restore.status()).toBe(200);
+ const result=await restore.json();expect(result.receipt.result.client_mark).toBe(previous);
+ expect(result.receipt.result.submission_status).toBe(saved.receipt.result.submission_status);
+ await page.getByTestId('reload-records').click();await expect(item.getByTestId('checklist-mark')).toHaveValue(previous);
+ await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
+ await expect(page.locator(`[data-command-id="${saved.command.command_id}"]`).getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
+ await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+});
+
 test('hosted consent, sharing receipt and revocation keep the reviewed snapshot',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
  test.setTimeout(240000);

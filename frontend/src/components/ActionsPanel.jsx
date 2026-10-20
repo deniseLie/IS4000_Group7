@@ -19,6 +19,7 @@ function commandTitle(command) {
   if(command.type==='consent.request')return 'Record a data-sharing consent request';
   if(command.type==='consent.grant')return 'Grant reviewed data-sharing consent';
   if(command.type==='consent.revoke')return 'Revoke a recorded data-sharing grant';
+  if(command.type==='compliance.update_checklist_item')return 'Save a synthetic checklist preparation mark';
   if(command.type==='agenda.save')return 'Save a private synthetic agenda draft';
   if(command.type==='rm.share_summary')return 'Share a saved synthetic agenda snapshot';
   throw new Error('This action type has no review title. Reload its recorded status.');
@@ -39,6 +40,7 @@ function receiptText(item) {
   if(item.command.type==='consent.request')return 'This command recorded a consent request. It did not grant consent or share data.';
   if(item.command.type==='consent.grant')return 'This command granted the reviewed consent scope. Check Data sharing for its current status. Granting consent does not itself share data.';
   if(item.command.type==='consent.revoke')return 'This command revoked the reviewed grant. Other active grants remain until separately revoked or expired. Previously shared records are not erased.';
+  if(item.command.type==='compliance.update_checklist_item')return 'This command saved your preparation mark only. It did not submit or verify a document or change the bank review status. Reload Records for the current mark.';
   if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
   if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the synthetic relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
   throw new Error('This action type has no verified receipt description.');
@@ -105,6 +107,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
       return <li key={command.command_id} data-command-id={command.command_id}>
         <h3>{commandTitle(command)}</h3>
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
+        {command.type==='compliance.update_checklist_item'&&<div data-testid="command-checklist"><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
         {command.type==='agenda.save'&&<div data-testid="command-agenda"><p>Draft recipient: {command.target.recipient_name}. Intended draft revision: {command.target.expected_revision+1}.</p><pre className="agenda-content">{command.target.content}</pre></div>}
         {command.type==='rm.share_summary'&&<div data-testid="command-agenda-sharing"><p>Recipient: {command.target.recipient_name}. Saved agenda revision: {command.target.agenda_revision}.</p>
           <p>Purpose: relationship-manager briefing. Data included: {consentCategoryText(command.target.categories)}.</p>

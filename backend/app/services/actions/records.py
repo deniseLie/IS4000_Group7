@@ -1,6 +1,7 @@
 """Typed record-action inputs; private SQL executors commit changes and receipts atomically."""
 from app.schemas.agendas import AgendaSaveTarget
 from app.schemas.sharing import AgendaShareTarget
+from app.schemas.checklist import ChecklistTarget
 from app.schemas.consent_actions import ConsentGrantTarget,ConsentRequestTarget,ConsentRevokeTarget
 from app.schemas.contracts import ActionCommand
 from app.services.privacy import redact
@@ -25,3 +26,7 @@ def save_agenda(command: ActionCommand) -> AgendaSaveTarget:
 
 def share_agenda(command: ActionCommand) -> AgendaShareTarget:
     return AgendaShareTarget.model_validate(command.target)
+
+
+def update_checklist(command: ActionCommand) -> ChecklistTarget:
+    return ChecklistTarget.model_validate(command.target)

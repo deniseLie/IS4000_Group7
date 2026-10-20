@@ -119,7 +119,7 @@ responses still bypass the model. Personal tools, uploaded documents and agent-p
 actions are not yet connected to v2; unavailable
 operations are reported explicitly.
 
-The existing hosted project has migrations `0008`–`0045` applied, with source
+The existing hosted project has migrations `0008`–`0047` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
 `0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
 preserved. All three existing demo Auth logins pass RLS isolation and the 17
@@ -284,6 +284,14 @@ validated before release. **Records** in the normal signed-in UI shows accounts,
 cards, loans, Singapore-date transaction filters, the latest client-visible compliance
 case and assigned advisor. Card/loan currency is currently unrecorded and shown as such.
 `/customer/*` is read-only; internal compliance records are never included.
+Migrations `0046`–`0047` add `compliance.update_checklist_item` through the existing
+Action Service. Records lets customers review and save prepared/not-prepared marks,
+with a durable receipt in Actions. Case/item ownership and the previous mark/timestamp
+prevent cross-customer changes and stale edits; completed/closed cases reject changes.
+Only preparation fields change: bank submission status, case decisions and documents
+remain separate. Writes, receipts, audit and notification events commit together.
+The hosted checklist browser check saves a synthetic mark, restores the previous mark
+and verifies that bank review status remains unchanged.
 Native checks exercise all three synthetic personas, permissive-policy regressions,
 corrupt records, audit rollback, unavailable RPCs and desktop/mobile UI. These checks
 use local signed sessions; hosted password-login browser checks additionally cover

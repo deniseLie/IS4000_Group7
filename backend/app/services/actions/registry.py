@@ -15,4 +15,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'consent.revoke': records.revoke_consent,
     'agenda.save': records.save_agenda,
     'rm.share_summary': records.share_agenda,
+    'compliance.update_checklist_item': records.update_checklist,
 }

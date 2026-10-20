@@ -53,7 +53,7 @@ function review(value) {
       'awaiting_client_documents','under_review','information_requested','completed','closed']),
     requested_items:rows(value?.requested_items,item=>({item_id:match(item?.item_id,UUID),label:text(item?.label),
       instructions:nullable(item?.instructions,text),submission_status:choice(item?.submission_status,['not_submitted','submitted_awaiting_review','accepted','rejected','unknown']),
-      client_mark:choice(item?.client_mark,['prepared','not_prepared'])}),'item_id')};
+      client_mark:choice(item?.client_mark,['prepared','not_prepared']),client_marked_at:nullable(item?.client_marked_at,timestamp)}),'item_id')};
 }
 function advisor(value) {
   if(value===null)return null;
