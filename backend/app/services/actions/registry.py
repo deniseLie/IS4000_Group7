@@ -16,4 +16,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'agenda.save': records.save_agenda,
     'rm.share_summary': records.share_agenda,
     'compliance.update_checklist_item': records.update_checklist,
+    'requests.create': records.create_request,
 }

@@ -11,11 +11,11 @@ pytestmark = pytest.mark.skipif(not FIXTURE, reason='Requires persona test login
 EXPECTED = {
     'demo.alex@example.com': {1001: {'banking.bank_accounts': 1, 'banking.credit_cards': 1, 'banking.transactions': 4, 'banking.loans': 1, 'notify.preferences': 1}},
     'demo.michelle@example.com': {1002: {'banking.bank_accounts': 1, 'banking.transactions': 1, 'compliance.cases': 1, 'compliance.requested_items': 4, 'compliance.status_history': 4, 'compliance.info_requests': 1, 'notify.preferences': 1}},
-    'demo.david@example.com': {1003: {'banking.bank_accounts': 1, 'rm.assignments': 2, 'rm.requests': 1, 'rm.advisors': 2, 'rm.working_hours': 5, 'notify.preferences': 1}},
+    'demo.david@example.com': {1003: {'banking.bank_accounts': 1, 'rm.assignments': 2, 'rm.advisors': 2, 'rm.working_hours': 5, 'notify.preferences': 1}},
 }
 CUSTOMER_TABLES = ['banking.bank_accounts', 'banking.credit_cards', 'banking.transactions', 'banking.loans',
                    'compliance.cases', 'compliance.requested_items', 'compliance.status_history', 'compliance.info_requests',
-                   'rm.assignments', 'rm.requests', 'notify.preferences']
+                   'rm.assignments', 'notify.preferences']
 INTERNAL = ['compliance.case_internal', 'rm.advisor_blocks', 'notify.templates']
 
 
@@ -41,6 +41,8 @@ def test_persona_sees_only_own_rows(user):
             rows = _rows(sb, name, 'customer_id')
             assert {r['customer_id'] for r in rows} <= {cid}, name
             assert len(rows) == expected.get(name, 0), name
+        seed=sb.schema('rm').table('requests').select('customer_id').eq('request_id','00000000-0000-4000-8000-100300000031').execute().data
+        assert seed==([{'customer_id':1003}] if cid==1003 else [])
         for name in ['rm.advisors', 'rm.working_hours']:
             assert len(_rows(sb, name)) == expected.get(name, 0), name
         for name in INTERNAL:
@@ -56,7 +58,7 @@ def test_foundation_records_remain_customer_scoped(user):
     (cid, _), = EXPECTED[user['email']].items()
     sb=_client(user)
     try:
-        for name in ['rm.agendas','rm.shared_summaries','consent.requests','consent.grants','actions.commands','actions.receipts']:
+        for name in ['rm.agendas','rm.shared_summaries','consent.requests','consent.grants','actions.commands','actions.receipts','rm.requests']:
             schema,table=name.split('.')
             rows=sb.schema(schema).table(table).select('customer_id').limit(200).execute().data
             assert {row['customer_id'] for row in rows}<={cid},name

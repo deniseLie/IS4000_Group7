@@ -40,6 +40,6 @@ export default function SharingPanel({onClose,onReviewActions}) {
     <button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>
     {agendas&&<AgendaDrafts recipient={status?.recipient} consentRegistry={registry} consentBusy={busy} onReviewActions={onReviewActions}/>}
     <button className="bank-chat-logout" data-testid="open-relationship-details" aria-expanded={relationship} onClick={()=>setRelationship(!relationship)}>View requests and appointment times</button>
-    {relationship&&<RelationshipDetails onReviewActions={onReviewActions}/>}
+    {relationship&&<RelationshipDetails recipient={status?.recipient} recipientBusy={busy} onReviewActions={onReviewActions}/>}
   </Panel>;
 }

@@ -38,13 +38,13 @@ def legacy_database(local_postgres: str) -> Iterator[str]:
 def test_all_hosted_batches_preserve_legacy_tables_and_are_idempotent(legacy_database: str) -> None:
     import psycopg
     with psycopg.connect(legacy_database,autocommit=True) as db:
-        for first,last in [(8,12),(13,19),(20,27),(28,33),(34,42),(43,44),(45,45),(46,47)]:
+        for first,last in [(8,12),(13,19),(20,27),(28,33),(34,42),(43,44),(45,45),(46,47),(48,49)]:
             bundle=render_bundle(load_migrations(MIGRATIONS,first,last))
             db.execute(bundle)
             before=db.execute('select count(*) from audit.events').fetchone()
             db.execute(bundle)
             assert db.execute('select count(*) from audit.events').fetchone()==before
-        assert db.execute('select count(*) from supabase_migrations.schema_migrations').fetchone()==(41,)
+        assert db.execute('select count(*) from supabase_migrations.schema_migrations').fetchone()==(43,)
         assert db.execute('select source_id from kb.documents').fetchone()==('legacy-preserved',)
         assert db.execute("select count(*) from kb.articles where status='published'").fetchone()[0]>0
         assert db.execute("select count(*) from information_schema.columns where table_schema='rm' and table_name='agendas' and column_name='revision'").fetchone()==(1,)

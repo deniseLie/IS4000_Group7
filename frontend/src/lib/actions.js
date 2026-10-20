@@ -1,3 +1,4 @@
+import {parseRequestTarget,parseRequestResult,requestTargetMatches} from './requestData.js';
 import {parseChecklistTarget,parseChecklistResult,checklistTargetMatches} from './checklistData.js';
 import {parseWorkflow} from './workflows.js';
 import {parseAppointmentResult,parseAppointmentTarget,parseSlotTarget} from './appointmentData.js';
@@ -21,7 +22,7 @@ function timestamp(value) {
 
 export function parseAction(value) {
   const command=value?.command,receipt=value?.receipt;
-  if(!command||!['card.temporary_block','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
+  if(!command||!['card.temporary_block','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
   const command_id=id(command.command_id),case_id=id(command.case_id);
   if(typeof command.idempotency_key!=='string'||!command.idempotency_key.startsWith(`${case_id}:`)||!command.idempotency_key.endsWith(`:${command.type}`)||!/^[A-Za-z0-9_-]{1,40}$/.test(command.idempotency_key.split(':')[1])||command.idempotency_key.split(':').length!==3)throw invalid();
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
@@ -43,6 +44,7 @@ export function parseAction(value) {
   else if(command.type==='consent.grant')canonical=parseConsentGrantTarget(target);
   else if(command.type==='consent.revoke')canonical=parseConsentRevokeTarget(target);
   else if(command.type==='compliance.update_checklist_item')canonical=parseChecklistTarget(target);
+  else if(command.type==='requests.create')canonical=parseRequestTarget(target);
   else if(command.type==='agenda.save')canonical=parseAgendaTarget(target);
   else if(command.type==='rm.share_summary')canonical=parseAgendaShareTarget(target);
   else canonical={handoff_id:id(target?.handoff_id)};
@@ -72,6 +74,9 @@ export function parseAction(value) {
     } else if(command.type==='compliance.update_checklist_item') {
       result=parseChecklistResult(receipt.result);
       if(!checklistTargetMatches(canonical,result))throw invalid();
+    } else if(command.type==='requests.create') {
+      result=parseRequestResult(receipt.result);
+      if(confirmed_at===null||!requestTargetMatches(canonical,result))throw invalid();
     } else if(command.type==='agenda.save') {
       result=parseAgendaResult(receipt.result);
       if(!agendaTargetMatches(canonical,result))throw invalid();

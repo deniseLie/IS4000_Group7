@@ -119,7 +119,7 @@ responses still bypass the model. Personal tools, uploaded documents and agent-p
 actions are not yet connected to v2; unavailable
 operations are reported explicitly.
 
-The existing hosted project has migrations `0008`–`0047` applied, with source
+The existing hosted project has migrations `0008`–`0049` applied, with source
 checksums and executed SQL recorded in Supabase migration history. Its pre-existing
 `0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
 preserved. All three existing demo Auth logins pass RLS isolation and the 17
@@ -171,6 +171,16 @@ sharing snapshot and receipt intact. Native worker checks verify its service
 notification; hosted browser checks cover consent, sharing and revocation. AI
 drafting and other record executors remain pending. Migration `0045` rejects
 incompatible legacy consent categories before a sharing proposal enters the ledger.
+
+Migrations `0048`–`0049` add confirmed relationship-request intake. The form records
+a proposal with redacted details, optional deadline/country/currency references and
+urgency; the server derives the customer and current recipient. Actions reviews the
+exact stored fields before submission or rejection. Confirmation rechecks assignment,
+names and the Singapore-date deadline, then atomically records the request, receipt,
+audit and notification event. Requests shows its current recorded status. Status
+`sent` acknowledges synthetic intake only: no financial action is executed, real
+advisor contacted or fulfilment/deadline promised. The hosted test leaves one clearly
+labelled synthetic request and its immutable receipt.
 
 The data-sharing panel also opens relationship requests and suggested
 appointment times. Migration `0012` calculates thirty-minute suggestions from the

@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import RequestIntake from './RequestIntake';
 import {supabase} from '../lib/supabase';
 import {holdAppointment,loadAppointments,loadRequests,loadSlots} from '../lib/relationship';
 import {proposeAction} from '../lib/actions';
@@ -19,7 +20,7 @@ async function records(range,accessToken,signal) {
   return {requests,slots,appointments};
 }
 
-export default function RelationshipDetails({onReviewActions}) {
+export default function RelationshipDetails({recipient,recipientBusy,onReviewActions}) {
   const [query,setQuery]=useState(initialRange);
   const [range,setRange]=useState(query);
   const [result,setResult]=useState(null);
@@ -81,9 +82,10 @@ export default function RelationshipDetails({onReviewActions}) {
       {deciding&&<button className="primary-button" data-testid="review-booking-actions" disabled={busy} onClick={onReviewActions}>Review in Actions</button>}
     </div>}
     {result&&<>
+      <RequestIntake recipient={recipient} recipientBusy={recipientBusy} onReviewActions={onReviewActions}/>
       <h4>Your requests</h4>
       {!result.requests.data.length&&<p data-testid="requests-empty">No requests were found for your demo profile.</p>}
-      <ul className="relationship-list" data-testid="relationship-requests">{result.requests.data.map(item=><li key={item.request_id} data-testid="relationship-request"><strong>{item.who}</strong><p>{item.what}</p><span>Status: {item.status} · Urgency: {item.urgency}{item.deadline&&` · Due: ${item.deadline}`}</span></li>)}</ul>
+      <ul className="relationship-list" data-testid="relationship-requests">{result.requests.data.map(item=><li key={item.request_id} data-testid="relationship-request" data-request-id={item.request_id}><strong>{item.who}</strong><p>{item.what}</p><span>Status: {item.status} · Urgency: {item.urgency}{item.deadline&&` · Due: ${item.deadline}`}{item.country&&` · Country reference: ${item.country}`}{item.currency&&` · Currency reference: ${item.currency}`}</span></li>)}</ul>
       <h4>Current appointments</h4>
       {!result.appointments.data.length&&<p data-testid="appointments-empty">No synthetic appointments are recorded.</p>}
       <ul className="relationship-list" data-testid="relationship-appointments">{result.appointments.data.map(item=><li key={item.appointment_id} data-appointment-id={item.appointment_id}>

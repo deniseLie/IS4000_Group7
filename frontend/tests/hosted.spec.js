@@ -110,6 +110,24 @@ test('hosted checklist preparation persists without changing bank review status'
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
 });
 
+test('hosted relationship intake persists only after reviewed confirmation',async({page})=>{
+ test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
+ await signIn(page,'demo.david@example.com');await page.getByTestId('open-data-sharing').click();
+ await page.getByTestId('open-relationship-details').click();
+ await page.getByTestId('request-details').fill('Hosted synthetic relationship request integration check');
+ await page.getByTestId('request-country').fill('SG');await page.getByTestId('request-currency').fill('USD');
+ const proposed=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
+ await page.getByTestId('prepare-request').click();const proposal=await proposed;expect(proposal.status()).toBe(200);
+ const saved=await proposal.json();expect(saved.receipt).toBeNull();
+ await page.getByTestId('review-request-actions').click();const result=await confirmRecorded(page,saved.command.command_id);
+ expect(result.receipt.result.status).toBe('sent');expect(result.receipt.result.what).toBe(saved.command.target.what);
+ await page.keyboard.press('Escape');await page.getByTestId('open-data-sharing').click();await page.getByTestId('open-relationship-details').click();
+ const request=page.locator(`[data-request-id="${result.receipt.result.request_id}"]`);
+ await expect(request).toContainText(saved.command.target.what);await expect(request).toContainText('Currency reference: USD');
+ await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+});
+
 test('hosted consent, sharing receipt and revocation keep the reviewed snapshot',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
  test.setTimeout(240000);

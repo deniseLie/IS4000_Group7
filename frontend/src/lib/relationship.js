@@ -6,6 +6,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function invalid() {return new Error('The relationship records could not be verified. Please retry.');}
 function text(value) {if(typeof value!=='string'||!value.trim())throw invalid();return value;}
+function code(value,pattern) {if(value!==null&&(typeof value!=='string'||!pattern.test(value)))throw invalid();return value;}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
 function timestamp(value) {
   if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value)||!Number.isFinite(Date.parse(value)))throw invalid();
@@ -21,7 +22,7 @@ export function parseRequests(value) {
   const data=value.data.map(item=>{
     if(!item||!['sent','seen','answered','closed'].includes(item.status)||!['low','normal','high'].includes(item.urgency))throw invalid();
     if(item.deadline!==null&&(typeof item.deadline!=='string'||!/^\d{4}-\d\d-\d\d$/.test(item.deadline)||!Number.isFinite(Date.parse(item.deadline))))throw invalid();
-    return {request_id:id(item.request_id),who:text(item.who),what:text(item.what),status:item.status,urgency:item.urgency,deadline:item.deadline};
+    return {request_id:id(item.request_id),who:text(item.who),what:text(item.what),status:item.status,urgency:item.urgency,deadline:item.deadline,country:code(item.country,/^[A-Z]{2}$/),currency:code(item.currency,/^[A-Z]{3}$/)};
   });
   return {...metadata,data};
 }
