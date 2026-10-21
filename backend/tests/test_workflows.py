@@ -195,7 +195,9 @@ def test_personal_chat_missing_provider_reads_owned_records_but_never_proposes(l
     assert 'event: answer' in response.text and 'event: workflow_paused' not in response.text,response.text
     assert '"response_origin": "validation"' in response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
+        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
+        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
+        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
         assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('active',)
         assert db.execute('select state from conversation.turns where session_id=%s',(sid,)).fetchone()==('completed',)
 

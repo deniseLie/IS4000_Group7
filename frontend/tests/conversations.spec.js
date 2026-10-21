@@ -91,7 +91,7 @@ async function unavailableChat(page) {
   await page.getByLabel('Your message',{exact:true}).fill('Hello!');
   await page.getByTestId('send-message').click();
   await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');
-  await expect(page.getByTestId('answer-sections').locator('[data-domain="smalltalk"]')).toHaveAttribute('data-response-origin','validation');
+  await expect(page.getByTestId('answer-sections').locator('[data-domain="smalltalk"][data-response-origin="validation"]')).toHaveAttribute('data-response-origin','validation');
   await expect(page.getByLabel('Your message',{exact:true})).toBeEnabled();
   await page.reload();
   await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');
@@ -104,8 +104,18 @@ async function unavailableChat(page) {
 test('saved customer v2 unavailable section stays withheld after refresh and the next safety turn works',async({page})=>{
   await seedSession(page);
   await unavailableChat(page);
+  const handoff=page.getByTestId('answer-sections').locator('section[data-response-origin="safety"]');
+  await expect(handoff).toContainText('A support handoff is recorded for the withheld part');
+  await page.getByTestId('open-actions').click();
+  await expect(page.getByTestId('command-state')).toHaveText('succeeded');
+  await expect(page.getByTestId('command-receipt')).toHaveCount(1);
+  await expect(page.getByTestId('review-command')).toHaveCount(0);
+  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.reload();
+  await expect(handoff).toContainText('There is no staffed queue');
 });
 
 test('saved guest v2 unavailable section stays withheld after refresh and the next safety turn works',async({page})=>{
   await unavailableChat(page);
+  await expect(page.getByTestId('answer-sections').locator('section[data-response-origin="safety"]')).toHaveCount(0);
 });

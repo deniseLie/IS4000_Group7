@@ -80,3 +80,6 @@ def test_saved_v2_checkpoint_ui(local_data_api: NativeAPI,native_api_client: Tes
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute('select count(*) from conversation.checkpoints').fetchone()[0]>=5
         assert db.execute("select count(*) from conversation.turns where state='processing'").fetchone()[0]==0
+        assert db.execute('select count(*) from support.handoffs').fetchone()==(1 if kind=='customer' else 0,)
+        assert db.execute('select count(*) from actions.receipts').fetchone()==(1 if kind=='customer' else 0,)
+        assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)

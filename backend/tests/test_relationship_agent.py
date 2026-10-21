@@ -93,7 +93,7 @@ def test_relationship_validator_rejects_wrong_sources_dates_and_action_claims(lo
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
-def test_missing_relationship_provider_withholds_saved_answer_without_creating_actions(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_relationship_provider_withholds_answer_and_records_support_handoff(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
     import psycopg
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-relationship-key-with-at-least-32-characters')
@@ -105,7 +105,9 @@ def test_missing_relationship_provider_withholds_saved_answer_without_creating_a
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
     assert 'v2+6ed24a45' in response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
+        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
+        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
+        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
         assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool'='rm.get_assignment'").fetchone()==(1,)
 
 

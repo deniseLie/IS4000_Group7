@@ -38,7 +38,7 @@ async def resume(turn_id: UUID,ctx: RequestContext) -> WorkflowStatus:
             snapshot=await graph.aget_state(config)
             if snapshot.values.get('workflow_version')!='v2-actions-v1' or not snapshot.values.get('pending_reviews'):
                 raise CheckpointIntegrityError('The saved workflow does not contain the expected reviewed actions')
-            if any(node not in ('review_actions','settle_actions','compose') for node in snapshot.next):
+            if any(node not in ('review_actions','settle_actions','escalate_validation','compose') for node in snapshot.next):
                 raise CheckpointIntegrityError('A confirmed workflow cannot rerun planning or model dispatch')
             if snapshot.next:
                 value=Command(resume={'turn_id':str(turn_id)}) if snapshot.interrupts else None

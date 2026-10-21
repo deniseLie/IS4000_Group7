@@ -237,10 +237,11 @@ forms for booking, intake, consent and sharing.
 
 The v2 orchestrator implements planning, priority ordering, bounded concurrent
 agents, section composition and durable action review. Personal fraud can propose
-a demo card block and pause for confirmation, but live proposal accuracy still
-needs verification. Do not use the fixed lost-card response as proof of this flow.
-Combined real-provider acceptance, automatic handoff on general validation failure,
-full follow-up evaluation and latency/report checks remain outstanding. Docker
+a demo card block and pause for confirmation. Focused real-provider and UI checks
+pass with the explicit Dots model documented below; broader accuracy remains
+unverified. Do not use the fixed lost-card response as proof of this flow.
+Combined real-provider acceptance, full follow-up evaluation and latency/report
+checks remain outstanding. Docker
 startup is deferred. The five public agent entries do not mean all five personal
 agent workflows are complete.
 
@@ -468,13 +469,29 @@ LLM_MODEL=dots-studio/dots-3-note-preview:free \
 This sends masked fictional card/transaction evidence to OpenRouter and changes only
 disposable local records. For a manual preview, follow `tests/preview_fraud.py`.
 
+V2 withheld sections create one automatic `general_support` handoff per saved,
+linked customer case. Its fixed summary contains no rejected model text or customer
+records. The existing action service commits the handoff, receipt, audit and outbox
+together, and idempotent replay reuses the receipt. The reply preserves every withheld
+section and any valid sections; a separate receipt-backed notice directs the customer
+to Actions and explains that there is no staffed queue. A failed handoff transaction
+fails the reply explicitly. Guests and unsaved public chats retain official-support
+guidance because they have no customer-owned action case. V1 is unchanged.
+Native graph/API tests cover mixed sections, priority, replay, ownership, rejected-text
+exclusion, outbox rollback and retry. Normal browser checks exercise missing real
+provider configuration for a saved customer and guest, reload and subsequent safety
+messages. Computer Use also verified a personal unavailable-provider reply, automatic
+receipt and saved reload on disposable local records. These are failure-path checks,
+not AI accuracy evidence.
+
 The personal retail agent reads the caller's real profile, masked accounts/cards,
 loans and last 90 days of transactions through permission-first JWT/RLS readers.
 Its released personal prompt is `retail/v2`; the public retail prompt stays at v1.
 Separate dataset citations retain the captured timestamp. Card and loan currencies
 are unrecorded and must not be borrowed from another record. Collections are bounded
 to 200 rows and are separate reads, not an atomic statement. The agent is read-only;
-provider/validation failures withhold the section and never create an action.
+provider/validation failures withhold the section. In a saved linked customer case,
+the orchestrator records the separate support handoff described above.
 Native checks cover all three personas, failed reads, wrong currencies/citations and
 action claims. Real OpenRouter account checks pass for all three personas; a real
 native browser check verifies saved answers at four viewport widths. Computer Use
