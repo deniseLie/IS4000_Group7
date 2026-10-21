@@ -105,6 +105,275 @@ Expected answer: ask whether the problem happened at an ATM, online or in a shop
 
 After: the customer reviews and edits a draft, then copies it. The page explicitly says that copying does not send a ticket or contact staff.
 
+## Foundation pipeline
+
+`PIPELINE=v1` keeps the existing answer flow. `PIPELINE=v2` enables the initial
+public LangGraph flow: plan, prioritise, dispatch and compose. `KNOWLEDGE_STORE=memory`
+uses the approved in-memory library; `KNOWLEDGE_STORE=database` uses the read-only
+knowledge RPCs in either pipeline after migrations `0008`, `0009` and `0011` are applied.
+The v1 adapter preserves authenticated account context and fixed safety responses;
+empty database searches stay empty and database failures never substitute local articles.
+Five real-provider domain agents return
+validated sections with their own sources and prompt versions. Fixed safety
+responses still bypass the model. Personal retail reads, compliance case explanations
+and the reviewed fraud proposal workflow are connected; the remaining personal agents and uploaded-document
+processing report explicit limitations.
+
+The existing hosted project has migrations `0008`–`0053` applied, with source
+checksums and executed SQL recorded in Supabase migration history. Its pre-existing
+`0001`–`0007` baseline was checked before deployment; legacy knowledge tables were
+preserved. All three existing demo Auth logins pass RLS isolation and the
+foundation reader checks; internal `events` remains unexposed. The normal local
+app uses hosted saved conversations. `npm run test:hosted` tests this running app
+with `TEST_PERSONA_FIXTURE_FILE=../personas.json`; it creates synthetic chats,
+private agenda drafts and a reviewed sharing snapshot. The sharing test revokes
+its one-day test grant before finishing. `TEST_HOSTED_AI=1` additionally opts into a real provider call.
+Credentials remain git-ignored. The restricted hosted worker is configured and
+in-app delivery is verified. Staff MFA and the remaining personal agents/record
+executors are pending.
+
+Records supports private PDF, DOCX, JPEG and PNG uploads up to 10 MiB. An audited
+preparation read checks the review scope; the caller's JWT uploads bytes directly
+to Supabase Storage. The `document.register` action verifies the owned object and
+records metadata, receipt, audit and notification event atomically. Customers cannot
+overwrite or delete stored files. Download links require an owned registered object
+and expire after 60 seconds. Uploading does not change the bank's review status or
+perform an AI precheck. After an ambiguous upload response, the open form can retry
+registration without uploading another copy. Closing the page before registration
+can leave a private unregistered object; automatic cleanup/resume is not implemented.
+`TEST_HOSTED_DOCUMENTS=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted (private documents|upload acknowledgement)'`
+uploads the synthetic fixtures to hosted Storage and checks byte-identical downloads,
+access isolation, immutable uploads, receipts, notifications and lost-acknowledgement
+recovery. Run it only with approval to upload those fixtures to the configured project.
+
+Records also offers a technical file check for owned registered objects. Migration `0053`
+retains the existing invoker grants and verifies stored size/MIME before downloading with
+the customer JWT. PDF text-layer extraction reports actual page counts; DOCX extracts
+body paragraphs/tables without claiming pagination. PNG/JPEG checks decode pixels but
+perform no OCR. The credential-free parser child has a five-second wall budget, sampled
+256 MiB RSS watchdog and bounded output; format limits include 20 PDF pages, 32,000
+characters and 16 million image pixels. The watchdog is not an OS-enforced memory ceiling.
+The API returns counts, dimensions and a byte checksum, never extracted text. Contents
+are not saved, logged, checkpointed or sent to a model. Results are temporary and do not
+change preliminary-check, checklist or bank review status. Approved bank-specific page,
+field and OCR-legibility rules are not configured; AI document assessment remains pending.
+`TEST_HOSTED_INSPECTION=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted technical inspections'`
+reads the existing four synthetic fixture formats without uploading copies or calling a
+model, verifies checksums/mobile layout and rejects Alex/David access to Michelle's files.
+
+The database knowledge adapter validates citation keys, publisher URLs, review
+dates and ranked results. Empty searches and missing facts remain empty; no
+sample fee or unrelated article is substituted. Exact version/section URLs open
+in the existing source dialog, including retired versions marked as no longer
+current. Source details require successful audit storage. Native database/API
+checks cover retrieval, facts, source details and v2 evidence. Hosted source details
+are verified; real-model quality remains a separate check.
+
+Tool authorisation uses explicit rules in `services/authorization.py`. Customer
+readers and v2 knowledge retrieval audit their decisions before access. Rules
+check the trusted principal, customer scope and backend-assigned agent, and return
+masking, confirmation and consent obligations. Staff/system access is unconfigured
+and denied. Consent lookup uses JWT/RLS scope, exact purpose/recipient/category
+coverage, revocation and wall-clock expiry. Signed-in users can open the
+data-sharing view to check basic-profile consent for their currently assigned
+manager. This requires migration `0010` on the target database. Registry failures remain errors, and status is released only
+after audit succeeds. Migrations `0037`–`0040` add scoped consent requests and
+reviewed grant/revocation through the Action Service. **Data sharing** names the
+recipient, purpose, categories and fixed expiry; **Actions** requires explicit
+customer confirmation before changing a grant. Requests can cover 1–365 days,
+and confirmation does not extend that expiry. Revoking one grant leaves other
+grants intact and does not erase previously shared records. Registry snapshots
+use JWT/RLS plus explicit customer filters, show active grants first and disclose
+the 200-row bounds and totals. Writes, receipts, audit and outbox are atomic;
+grant/revocation notifications are service records. A grant does not itself share
+data. Migrations `0041`–`0042` add private agenda drafts through `agenda.save`:
+customers edit 1–12 topics, explicitly select basic profile fields and review the
+redacted, server-derived preview. Optimistic revisions prevent lost edits; each
+save has an atomic receipt, audit and notification. The data-sharing panel shows
+up to 200 current action-created drafts and their total; Actions retains historical
+save receipts. Saving never grants consent or shares data. Migrations `0043`–`0044`
+add confirmed `rm.share_summary`: the server copies an owned saved revision into
+`rm.shared_summaries` under one exact `rm_brief` grant. Review shows the recipient,
+content, categories, grant and expiry. Confirmation serialises with grant/revocation
+and rechecks the current recipient, saved revision and wall-clock expiry. Separate
+partial grants cannot combine. Later draft edits or revocation leave the recorded
+sharing snapshot and receipt intact. Native worker checks verify its service
+notification; hosted browser checks cover consent, sharing and revocation. AI
+drafting and other record executors remain pending. Migration `0045` rejects
+incompatible legacy consent categories before a sharing proposal enters the ledger.
+
+Migrations `0048`–`0049` add confirmed relationship-request intake. The form records
+a proposal with redacted details, optional deadline/country/currency references and
+urgency; the server derives the customer and current recipient. Actions reviews the
+exact stored fields before submission or rejection. Confirmation rechecks assignment,
+names and the Singapore-date deadline, then atomically records the request, receipt,
+audit and notification event. Requests shows its current recorded status. Status
+`sent` acknowledges synthetic intake only: no financial action is executed, real
+advisor contacted or fulfilment/deadline promised. The hosted test leaves one clearly
+labelled synthetic request and its immutable receipt.
+
+The data-sharing panel also opens relationship requests and suggested
+appointment times. Migration `0012` calculates thirty-minute suggestions from the
+current advisor's hours, blocks, confirmed bookings and unexpired holds. The API
+checks the customer's scope and audits each read; no other customer's booking
+details are exposed. Native browser checks cover empty and populated records,
+invalid dates and registry failures at desktop/mobile sizes. Suggestions do not hold or book an appointment. The explicit **Hold for
+ten minutes** control uses migrations `0034`–`0036` to reserve a synthetic slot.
+Booking and cancellation require reviewing and confirming a proposal in **Actions**.
+SQL rechecks the active assignment, working-hours grid and calendar blocks; a native
+GiST exclusion constraint rejects overlapping reservations. Expired holds cannot
+confirm and stop blocking new holds. The current-appointments view checks wall-clock
+expiry, while receipts describe immutable command outcomes. Business changes,
+receipts, audit and outbox commit together; the worker delivers verified booking
+notifications. The direct form creates an owned action case without inventing a chat
+message or model reply. Reservations are thirty minutes, within 366 days. Native
+API/browser checks cover retries, competing customers, changed calendars, expiry,
+rejection, rollback and desktop/mobile review. No real calendar, meeting or joining
+link is connected. Consent management
+is separate from booking; sharing requires its own reviewed action.
+
+Conversation storage APIs and migrations `0013`/`0014` provide owned session creation,
+recent-chat listing, bounded chronological history and cancellation of interrupted
+turns. Customers retain RLS protection; guests use a separate hashed access token
+with a 24-hour expiry. Starting a turn stores its redacted question; finishing
+stores a validated reply or explicit failure. Each transition and audit event
+commit together, with revision conflicts and idempotency checks. Native tests
+cover these boundaries. `CONVERSATION_STORE=database` connects `/chat` and the
+saved-chat UI after these migrations are applied; the default `off` preserves
+temporary browser history. Saved chats load server-owned history, reject stale
+revisions, preserve sources and expose explicit cancellation of pending replies.
+Guest browser access expires after 24 hours. Hosted persona browser checks verify
+saved safety replies across refresh and history clearance on sign-out. Real-provider
+checks of saved follow-ups remain pending.
+
+Saved v2 turns also use durable LangGraph snapshots after migrations `0015`/`0016` and
+configuration of a private, stable `CHECKPOINT_SIGNING_KEY` (generation command in
+`.env.example`). `services/checkpoints.py` scopes the public-key/JWT connector to
+the owned turn; its module docstring describes signing and key rotation. Runtime
+authentication stays outside graph state. Native tests cover pause/restart/resume,
+pending writes, tampering, customer/guest isolation, cancellation and atomic audit
+failure. The normal UI also preserves explicit unavailable sections across refresh.
+Automatic recovery of interrupted model requests remains pending.
+
+The Action Service (`services/actions/`, migrations `0017`–`0019`) now persists proposals,
+customer confirmation/rejection and receipts for temporary synthetic-card blocks and
+demo support handoffs. `POST /commands` requires an owned conversation case;
+`POST /commands/{id}/confirm` loads the stored target and rechecks policy. Customers
+review their latest 50 commands in **Actions**; expired/rejected commands execute
+nothing, and failed commands have an explicit failed receipt. Card blocks require
+confirmation; support handoffs follow the policy's automatic-action rule. Reusing an
+open handoff keeps its identity and emits a reuse event instead of another creation.
+SQL executors
+keep business changes, ledger, outbox and audit atomic over the public-key/user-JWT
+Data API. Python executor modules validate their typed contracts. Native API/browser
+checks cover idempotency, concurrency, scope, expiry, changed targets and rollback.
+The manual native preview in `tests/preview_actions.py` uses a pre-issued local test
+session, not hosted password login. Other record executors are pending. No real bank
+card or staffed support service is connected.
+
+Staff handoff and card operations (`scripts/staff_support.py`, migrations `0030`–`0033`)
+use the public Data API key and a staff member's verified Auth JWT. SQL requires an
+administrator-assigned support role in `app_metadata`, `aal2`, and ownership of the
+claimed handoff before closing it or changing a card. Only a temporarily blocked
+synthetic card can be reactivated or permanently cancelled. Customer and agent
+proposal paths cannot execute staff operations. The queue orders priority then age;
+stable command UUIDs retrieve the original receipt after a retry. Staff effects use
+the same transactional ledger, audit and outbox, and appear in customer Actions,
+Records and Inbox. The CLI module docstring contains setup and invocation details.
+Native CLI/SQL/browser checks use locally signed test tokens; hosted staff account
+provisioning, MFA and login have not been performed. No real support service or bank
+card is connected.
+
+Migrations `0020`–`0022` connect the first personal fraud workflow to these services.
+With `PIPELINE=v2` and saved conversations enabled, the fraud agent reads masked card
+and transaction evidence and may propose one eligible synthetic card block. The graph
+pauses at a signed checkpoint before the UI enables review. Confirm/reject resumes only
+post-review nodes, reads canonical outcomes, records a synthetic support handoff and
+saves a separate receipt-based section. Cancelling rejects undecided proposals; it does
+not reverse previously executed commands. Resume leases exclude competing workers.
+Failed continuation preserves its receipts and exposes **Resume saved reply** in Actions.
+The local native API/browser tests exercise these mechanics without replacing a model:
+their fixtures start after dispatch and use safety-origin text. Real-provider fraud
+proposal accuracy remains unverified (the configured provider returned HTTP 429).
+The personal retail agent reads the caller's real profile, masked accounts/cards,
+loans and last 90 days of transactions through permission-first JWT/RLS readers.
+Its released personal prompt is `retail/v2`; the public retail prompt stays at v1.
+Separate dataset citations retain the captured timestamp. Card and loan currencies
+are unrecorded and must not be borrowed from another record. Collections are bounded
+to 200 rows and are separate reads, not an atomic statement. The agent is read-only;
+provider/validation failures withhold the section and never create an action.
+Native checks cover all three personas, failed reads, wrong currencies/citations and
+action claims. Real OpenRouter account checks pass for all three personas; a real
+native browser check verifies saved answers at four viewport widths. Computer Use
+also verified David's hosted account answer and saved-chat reload. These focused
+checks do not establish broad semantic accuracy. Relationship and document personal
+agents remain unavailable; public agents and v1 keep their existing behaviour.
+
+The personal compliance agent uses one audited latest-case snapshot and the separate
+case, checklist, history and information-request citations. It excludes internal
+assessments and unneeded record IDs from model/checkpoint evidence. Preparation marks
+remain distinct from bank submission/review status; the agent cannot edit either.
+Customers can save their own preparation marks through Records. Native checks cover
+all three personas, missing cases, permission/read failures, unsupported figures and
+strict checkpoint round trips. Real OpenRouter checks cover preparation versus bank
+acceptance and the normal saved-chat UI at four widths; Computer Use verifies Michelle's
+hosted status, source and reload. Run the direct live test and browser suite in separate
+processes, as explained in `tests/test_compliance_agent.py`. The public compliance
+prompt remains v1; the personal prompt is v2. These samples do not prove general
+semantic accuracy or multilingual quality.
+
+The notification foundation (`app/worker.py`, migrations `0023`–`0027`) consumes real
+outbox records under a restricted database login. Template delivery, inbox dedupe,
+event completion and audit commit together. Expected failures retry five times before
+dead-lettering; an unknown database failure stops the worker. Service messages ignore
+opt-outs and quiet hours; optional messages honour them. The worker schedules recorded
+compliance deadline reminders; the exact window and login setup are in its module docstring.
+Run it separately with `python -m app.worker`, or explicitly set `RUN_WORKER_IN_API=true`.
+`WORKER_DATABASE_URL` is private and must use the restricted role, never the database
+owner or a service-role key. A stopped API-owned worker degrades `/health` to HTTP 503.
+
+Signed-in customers can open **Inbox**, reload their own latest 50 messages and mark
+them read. The UI also subscribes to owned Supabase Realtime inbox changes; connection
+failures are visible. Native checks cover actual worker/API/UI delivery and explicit
+reload, including crash rollback and read persistence. The hosted worker login
+passes the runtime privilege check, and a real saved agenda reaches an already-open
+inbox through Supabase Realtime. Read acknowledgements use a separate request from
+live refreshes so a pushed update cannot cancel the acknowledgement. The hosted
+browser check also verifies read persistence: `TEST_HOSTED_WORKER=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted worker delivery'`.
+It creates one synthetic private agenda draft and marks its notification read.
+The hosted reminder producer is verified with no currently due cases; native checks
+cover actual due-reminder delivery. English templates are provided; other locales
+require approved versions. Email delivery, pg_cron installation and worker-started
+AI turns remain pending. Database connection failures stop the worker and remain
+visible in health; a transient hosted socket failure was observed during activation.
+
+Customer Data reads (`services/customer_data.py`, migrations `0028`/`0029`) check
+permission before opening the caller's JWT Data API client. Invoker RPCs retain RLS
+and explicit customer predicates; each snapshot commits its read audit before returning
+server call-id/as-of metadata. Required payload fields, masks and customer scope are
+validated before release. **Records** in the normal signed-in UI shows accounts,
+cards, loans, Singapore-date transaction filters, the latest client-visible compliance
+case and assigned advisor. Card/loan currency is currently unrecorded and shown as such.
+`/customer/*` is read-only; internal compliance records are never included.
+Migrations `0046`–`0047` add `compliance.update_checklist_item` through the existing
+Action Service. Records lets customers review and save prepared/not-prepared marks,
+with a durable receipt in Actions. Case/item ownership and the previous mark/timestamp
+prevent cross-customer changes and stale edits; completed/closed cases reject changes.
+Only preparation fields change: bank submission status, case decisions and documents
+remain separate. Writes, receipts, audit and notification events commit together.
+The hosted checklist browser check saves a synthetic mark, restores the previous mark
+and verifies that bank review status remains unchanged.
+Native checks exercise all three synthetic personas, permissive-policy regressions,
+corrupt records, audit rollback, unavailable RPCs and desktop/mobile UI. These checks
+use local signed sessions; hosted password-login browser checks additionally cover
+the three personas' own records. This stage does not add personal AI answers for the remaining agents.
+
+Run `npm run test:foundation` from `frontend/` for the v2 browser checks, which
+call the real configured provider. Run `TEST_AGENTS_LIVE=1 ../.venv/bin/python -m
+pytest tests/test_agents.py -q -k real_domain_agent` from `backend/` to check each
+domain agent against that provider. These checks consume provider quota and
+fail on invalid or unavailable answers. The normal backend suite skips them.
+
 ## Prompt versioning
 
 Prompts live in `backend/app/prompts/<agent>/<version>/`, not in Python. The answer agent uses `prompts/answer/<version>/` (`system.md`, `format.md`, `public_only.md`) and `PROMPT_VERSION` (default `v2`) selects the directory; other agents are selected with `PROMPT_VERSIONS` (JSON, e.g. `{"planner":"v1"}`). Every model call goes through the LLM Gateway (`backend/app/services/llm_gateway.py`): strict JSON check, `LLM_TIMEOUT_S` per attempt, `LLM_MAX_RETRIES` on timeouts/429/5xx only, and a per-request `LLM_REQUEST_TOKEN_BUDGET`. Gateway failures are reported as errors, never replaced with a sample answer. To change wording, copy the latest directory to a new `vN`, edit it and set `PROMPT_VERSION=vN`; do not edit a released version. Each model-generated answer carries `prompt_version` (e.g. `v1+1a2b3c4d`, the version plus a content hash). Fixed no-model responses carry `null`. Evaluation reports record it too, so `--compare` can show before/after for two prompt versions.
@@ -127,7 +396,7 @@ Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and mig
 
 ## Database migrations
 
-Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order; the hosted project records its own timestamp per migration. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/synthetic-data-spec.md`), `0005` adds the audit log, `0006` its row-change triggers and `0007` the once-per-session `auth.session_started` function. Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set.
+Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order and record their repository versions in Supabase migration history. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/synthetic-data-spec.md`), `0005` adds the audit log, `0006` its row-change triggers and `0007` the once-per-session `auth.session_started` function. Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set.
 
 ## Local setup
 
@@ -206,7 +475,7 @@ Review `evaluation-results.json` against each case's acceptance check. Every suc
 
 ## Scope still outside this round
 
-Compliance document uploads, OCR, compliance tracking, advisor transfers, meeting booking, saved cross-session conversations and real staffed support are not implemented. The summary feature only prepares a draft for the customer to use. No fine-tuned model was trained.
+OCR, bank-specific document assessment, AI document explanations, advisor transfers, real calendar booking and real staffed support are not implemented. Private synthetic document uploads and technical checks are available through Records. Synthetic appointments use a hold/review/confirmation flow; agenda drafts and consent-reviewed sharing use the action ledger. No fine-tuned model was trained.
 
 ## Knowledge maintenance and limits
 

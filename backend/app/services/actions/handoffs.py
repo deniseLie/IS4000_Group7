@@ -1,8 +1,8 @@
-"""STUB handoff executor (architecture §5.7.3). The real version writes support.handoffs (open -> claimed -> closed)."""
+"""Handoff executor contract; atomic deduplication and creation/reuse events live in migration 0019."""
+from app.schemas.actions import HandoffTarget
 from app.schemas.contracts import ActionCommand
+from app.services.privacy import redact
 
-STUB = True
-
-
-def create(command: ActionCommand, tx=None) -> dict:
-    return {'handoff_id': 'hnd_sample_1', 'priority': command.target.get('priority', 'P3'), 'status': 'open'}
+def create(command: ActionCommand) -> HandoffTarget:
+    target=HandoffTarget.model_validate(command.target)
+    return target.model_copy(update={'summary':redact(target.summary)[0]})

@@ -1,26 +1,87 @@
-"""STUB Action Service (architecture §5.7.3): run_action() with the agreed signature and sample receipts.
-The real version adds expiry, a Postgres transaction, the outbox row and the audit event; nothing is persisted here."""
-from datetime import timedelta
-from app.schemas.contracts import ActionCommand, ProposedCommand, Receipt, RequestContext, now
-from app.services.policy import decide
+"""Action Service: guarded proposal/confirmation, with durable receipts and no in-memory effects.
 
-STUB = True
-CONFIRM_WINDOW = timedelta(minutes=5)
-_receipts: dict[str, Receipt] = {}  # idempotency_key -> receipt, in memory for the stub only
+The agreed run_action(command, ctx, confirmed) interface delegates each write to one SQL transaction
+(migrations 0017–0019). SQL independently checks JWT ownership and confirmation; executors, ledger,
+outbox and audit commit together. API confirmation loads canonical parameters, never a client target.
+"""
+from uuid import UUID
+from pydantic import JsonValue,TypeAdapter
+from postgrest import SyncPostgrestClient
+from app.core import data_api
+from app.schemas.actions import ActionOutcome,CustomerActionType
+from app.schemas.contracts import ActionCommand,ProposedCommand,Receipt,RequestContext
+from app.schemas.workflows import OwnedWorkflow
+from app.services.actions.store import ActionIntegrityError,checked,load
+from app.services.authorization import PolicyDenied,require_permission
+
+STUB=False
 
 
-async def run_action(command: ActionCommand, ctx: RequestContext, confirmed: bool = False) -> Receipt | ProposedCommand:
-    from app.services.actions.registry import EXECUTORS  # lazy: executors import this package
-    if command.idempotency_key in _receipts:
-        return _receipts[command.idempotency_key]
-    decision = decide(ctx.principal, command.type, command.target, ctx)
-    if not decision.allow:
-        raise PermissionError(command.type)
-    if 'require:confirmation' in decision.obligations and not confirmed:
-        return ProposedCommand(command_id=command.command_id, expires_at=now() + CONFIRM_WINDOW)
-    if command.type not in EXECUTORS:
-        raise ValueError(f'unknown action type {command.type}')
-    EXECUTORS[command.type](command)
-    receipt = Receipt(receipt_id=f'rcpt_{command.command_id.hex[:12]}', command_id=command.command_id, outcome='succeeded')
-    _receipts[command.idempotency_key] = receipt
-    return receipt
+class ActionStateError(ValueError):
+    """A rejected or expired command cannot produce an execution receipt."""
+
+
+def canonical_target(command: ActionCommand) -> dict[str,JsonValue]:
+    from app.services.actions.registry import EXECUTORS
+    action_type=TypeAdapter(CustomerActionType).validate_python(command.type)
+    return TypeAdapter(dict[str,JsonValue]).validate_python(EXECUTORS[action_type](command).model_dump(mode='json'))
+
+
+def receipt_for(outcome: ActionOutcome) -> Receipt | ProposedCommand:
+    if outcome.receipt is not None:
+        receipt=outcome.receipt
+        return Receipt(receipt_id=receipt.receipt_id,command_id=receipt.command_id,outcome=receipt.outcome,audit_event_id=receipt.audit_event_id)
+    if outcome.command.state=='proposed':return ProposedCommand(command_id=outcome.command.command_id,expires_at=outcome.command.expires_at)
+    raise ActionStateError(outcome.command.state)
+
+
+async def run_action(command: ActionCommand,ctx: RequestContext,confirmed: bool) -> Receipt | ProposedCommand:
+    require_permission(ctx.principal,command.type,{'customer_id':ctx.principal.customer_id},ctx)
+    target=canonical_target(command)
+    if ctx.case_id is None:raise ActionIntegrityError('Actions require an owned conversation case')
+    if confirmed and ctx.agent is not None:raise PolicyDenied('Agents may propose actions; only the customer can confirm them')
+    with data_api.connect(ctx) as db:
+        if confirmed:
+            current=await load(command.command_id,ctx,db)
+            stored=current.command
+            if stored.case_id!=ctx.case_id or stored.type!=command.type or stored.idempotency_key!=command.idempotency_key:
+                raise ActionIntegrityError('Confirmation must use the stored case, type and idempotency key')
+            saved=ActionCommand(command_id=stored.command_id,idempotency_key=stored.idempotency_key,type=stored.type,
+                target=stored.target.model_dump(mode='json'))
+            if canonical_target(saved)!=target:raise ActionIntegrityError('Confirmation target differs from the stored proposal')
+            response=await data_api.execute(lambda:db.rpc('action_confirm',{'p_command_id':str(command.command_id)}).execute(),'actions.confirm')
+        else:
+            if command.state!='proposed' or command.expires_at is not None:raise ActionIntegrityError('Proposal state and expiry are assigned by the database')
+            response=await data_api.execute(lambda:db.rpc('action_propose',{'p_command_id':str(command.command_id),
+                'p_case_id':str(ctx.case_id),'p_type':command.type,'p_target':target,'p_idempotency_key':command.idempotency_key}).execute(),'actions.propose')
+    result=checked(response.data,ctx)
+    if result.command.case_id!=ctx.case_id or result.command.type!=command.type or result.command.idempotency_key!=command.idempotency_key:
+        raise ActionIntegrityError('The returned command does not match the proposed case and operation')
+    return receipt_for(result)
+
+
+async def reject_action(command_id: UUID,ctx: RequestContext,db: SyncPostgrestClient) -> ActionOutcome:
+    current=await load(command_id,ctx,db)
+    require_permission(ctx.principal,current.command.type,{'customer_id':ctx.principal.customer_id},ctx)
+    if ctx.agent is not None:raise PolicyDenied('Only the customer can reject a proposed action')
+    response=await data_api.execute(lambda:db.rpc('action_reject',{'p_command_id':str(command_id)}).execute(),'actions.reject')
+    result=checked(response.data,ctx)
+    if result.command.command_id!=command_id:raise ActionIntegrityError('Rejection returned another command')
+    return result
+
+
+async def propose_for_workflow(command: ActionCommand,task_id: str,owned: OwnedWorkflow,ctx: RequestContext) -> ActionOutcome:
+    require_permission(ctx.principal,command.type,{'customer_id':ctx.principal.customer_id},ctx)
+    if ctx.case_id!=owned.turn.case_id or owned.turn.customer_id!=ctx.principal.customer_id:
+        raise ActionIntegrityError('Workflow proposal requires the current owned customer turn')
+    with data_api.connect(ctx) as db:
+        response=await data_api.execute(lambda:db.rpc('workflow_propose_action',{'p_session_id':str(owned.access.session_id),
+            'p_turn_id':str(owned.turn.turn_id),'p_run_id':str(owned.turn.run_id),'p_task_id':task_id,
+            'p_command_id':str(command.command_id),'p_type':command.type,'p_target':canonical_target(command),
+            'p_idempotency_key':command.idempotency_key}).execute(),'workflow.propose')
+    result=checked(response.data,ctx)
+    if result.command.case_id!=ctx.case_id or result.command.idempotency_key!=command.idempotency_key or result.command.type!=command.type:
+        raise ActionIntegrityError('Workflow returned a different proposed action')
+    if result.workflow is None or result.workflow.turn_id!=owned.turn.turn_id:
+        raise ActionIntegrityError('The proposed action is not bound to the owned turn')
+    return result

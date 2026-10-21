@@ -1,139 +1,159 @@
-"""Customer Data Service (architecture §5.7.2): read-only queries over the hosted banking, compliance and rm schemas.
-Every query runs with the signed-in user's JWT so RLS applies, AND filters by customer_id in code so a policy
-regression cannot leak another customer's rows. customer_id comes from RequestContext, never from model arguments.
-The profile row is looked up again from Principal.user_id (auth user) through banking.customer_profiles, so this
-service does not depend on the gateway's cached Principal.customer_id."""
-import logging
-import os
-from datetime import date, datetime, timedelta, timezone
-from typing import Any
-from app.schemas.contracts import RequestContext, ToolResult
-from app.services.policy import decide
+"""Permission-first customer reads using the caller's JWT, invoker RLS and explicit SQL customer predicates.
 
-STUB = False
-logger = logging.getLogger(__name__)
-SGT = timezone(timedelta(hours=8))  # dates are reported in the bank's local day
-TXN_LIMIT = 200
+Each bounded snapshot and its data.read audit commit in one RPC transaction. The returned
+customer scope, required payload fields and server call_id/as_of are validated before release.
+"""
+from datetime import date
+from typing import Annotated,TypeVar
+from uuid import UUID
+from pydantic import Field,JsonValue,TypeAdapter
+from app.core import data_api
+from app.core.observability import span
+from app.schemas.contracts import RequestContext,ToolResult
+from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,CustomerEnvelope,CustomerLoan,
+    CustomerProfile,CustomerTransaction,RelationshipAssignment,TransactionQuery)
+from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
+from app.schemas.appointments import AppointmentRecord
+from app.schemas.consent_actions import ConsentRegistry
+from app.schemas.agendas import AgendaRegistry
+from app.schemas.documents import DocumentRecord
+from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
+from app.schemas.document_inspection import DocumentObject
+from app.services.authorization import require_permission
 
-
-def _client(jwt: str):
-    from supabase import create_client
-    sb = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_ANON_KEY'])  # public anon key only
-    sb.postgrest.auth(jwt)
-    return sb
-
-
-def _session(ctx: RequestContext, tool: str):
-    """Policy check, then the user's own DB client and their bigint customer_id."""
-    p = ctx.principal
-    if not decide(p, tool, {'customer_id': p.customer_id}, ctx).allow:
-        raise PermissionError(tool)
-    if p.kind != 'customer' or not p.user_id or not p.jwt:
-        raise PermissionError(tool)
-    db = _client(p.jwt.get_secret_value())
-    rows = db.schema('banking').table('customer_profiles').select('customer_id,full_name,preferred_language,employment_status') \
-        .eq('auth_user_id', str(p.user_id)).limit(2).execute().data
-    if len(rows) != 1:
-        logger.warning('customer_profile_unresolved', extra={'tool': tool, 'count': len(rows)})
-        raise PermissionError(tool)
-    return db, rows[0]
-
-
-def _own(rows: list[dict], customer_id: int) -> list[dict]:
-    return [r for r in rows if r.get('customer_id') == customer_id]  # second check if RLS ever regresses
+STUB=False
+T=TypeVar('T')
+PROFILE=TypeAdapter(CustomerEnvelope[CustomerProfile])
+ACCOUNTS=TypeAdapter(CustomerEnvelope[Annotated[list[BankAccount],Field(max_length=200)]])
+CARDS=TypeAdapter(CustomerEnvelope[Annotated[list[CreditCard],Field(max_length=200)]])
+LOANS=TypeAdapter(CustomerEnvelope[Annotated[list[CustomerLoan],Field(max_length=200)]])
+TRANSACTIONS=TypeAdapter(CustomerEnvelope[Annotated[list[CustomerTransaction],Field(max_length=200)]])
+CASE=TypeAdapter(CustomerEnvelope[ComplianceCase | None])
+ASSIGNMENT=TypeAdapter(CustomerEnvelope[RelationshipAssignment | None])
+REQUESTS=TypeAdapter(CustomerEnvelope[Annotated[list[RelationshipRequest],Field(max_length=200)]])
+SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_length=20)]])
+APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
+CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
+AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
+DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_length=200)]])
+DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
+DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
+DOCUMENT_OBJECT=TypeAdapter(CustomerEnvelope[DocumentObject | None])
 
 
-def _rows(db, schema: str, table: str, cols: str, customer_id: int, order: str | None = None, **eq) -> list[dict]:
-    q = db.schema(schema).table(table).select(cols).eq('customer_id', customer_id)
-    for k, v in eq.items():
-        q = q.eq(k, v)
-    if order:
-        q = q.order(order, desc=True)
-    return _own(q.limit(TXN_LIMIT).execute().data, customer_id)
+class CustomerDataIntegrityError(ValueError):
+    """Returned records do not match their authenticated customer scope or requested bound."""
 
 
-def _day(ts: str) -> str:
-    return datetime.fromisoformat(ts.replace('Z', '+00:00')).astimezone(SGT).date().isoformat()
+def _snapshot(rpc: str,params: dict[str,JsonValue],adapter: TypeAdapter[CustomerEnvelope[T]],ctx: RequestContext) -> CustomerEnvelope[T]:
+    with data_api.connect(ctx) as db:
+        envelope=adapter.validate_python(db.rpc(rpc,{'p_customer_id':ctx.principal.customer_id,**params}).execute().data)
+    if envelope.customer_id!=ctx.principal.customer_id:
+        raise CustomerDataIntegrityError('Customer snapshot does not match the authenticated request scope')
+    return envelope
 
 
-def _num(v):
-    return None if v is None else float(v)
+async def _read(tool: str,rpc: str,params: dict[str,JsonValue],adapter: TypeAdapter[CustomerEnvelope[T]],ctx: RequestContext) -> CustomerEnvelope[T]:
+    require_permission(ctx.principal,tool,{'customer_id':ctx.principal.customer_id},ctx)
+    with span(tool,'tool',tool=tool) as fields:
+        envelope=await data_api.execute(lambda:_snapshot(rpc,params,adapter,ctx),tool)
+        fields['call_id']=str(envelope.call_id)
+        return envelope
+
+
+def _result(envelope: CustomerEnvelope[T]) -> ToolResult:
+    return ToolResult(data=envelope.model_dump(mode='json')['data'],call_id=envelope.call_id,as_of=envelope.as_of)
 
 
 async def get_profile(ctx: RequestContext) -> ToolResult:
-    _, p = _session(ctx, 'customer.get_profile')
-    return ToolResult(data={'name': p['full_name'], 'preferred_language': p['preferred_language'], 'employment_status': p['employment_status']})
+    return _result(await _read('customer.get_profile','customer_read_profile',{},PROFILE,ctx))
 
 
 async def get_accounts(ctx: RequestContext) -> ToolResult:
-    db, p = _session(ctx, 'customer.get_accounts')
-    rows = _rows(db, 'banking', 'bank_accounts', 'customer_id,account_id,account_type,masked_account_number,balance,currency,status', p['customer_id'])
-    return ToolResult(data=[{'account_id': f"acc_{r['account_id']}", 'type': r['account_type'], 'number': '****' + r['masked_account_number'][-4:],
-                             'currency': r['currency'], 'balance': _num(r['balance']), 'status': r['status']} for r in rows])
+    return _result(await _read('customer.get_accounts','customer_read_accounts',{},ACCOUNTS,ctx))
 
 
-async def get_transactions(ctx: RequestContext, from_: date | None = None, to: date | None = None, filters: dict[str, Any] | None = None) -> ToolResult:
-    db, p = _session(ctx, 'customer.get_transactions')
-    cid = p['customer_id']
-    last4 = {c['card_id']: c['last4'] for c in _rows(db, 'banking', 'credit_cards', 'customer_id,card_id,last4', cid)}
-    q = db.schema('banking').table('transactions').select('customer_id,transaction_id,card_id,txn_date,merchant,amount,currency,status,failure_reason,is_overseas').eq('customer_id', cid)
-    if from_:
-        q = q.gte('txn_date', f'{from_.isoformat()}T00:00:00+08:00')
-    if to:
-        q = q.lt('txn_date', f'{(to + timedelta(days=1)).isoformat()}T00:00:00+08:00')
-    rows = [{'txn_id': f"txn_{r['transaction_id']}", 'date': _day(r['txn_date']), 'description': r['merchant'], 'amount': _num(r['amount']),
-             'currency': r['currency'], 'status': r['status'], 'card_last4': last4.get(r['card_id']), 'is_overseas': r['is_overseas'],
-             'failure_reason': r['failure_reason']} for r in _own(q.order('txn_date', desc=True).limit(TXN_LIMIT).execute().data, cid)]
-    rows = [t for t in rows if (not from_ or t['date'] >= from_.isoformat()) and (not to or t['date'] <= to.isoformat())]
-    return ToolResult(data=[t for t in rows if all(t.get(k) == v for k, v in (filters or {}).items())])
+async def get_transactions(ctx: RequestContext,from_: date | None,to: date | None,filters: dict[str,JsonValue] | None) -> ToolResult:
+    query=TransactionQuery.model_validate({'from_date':from_,'to_date':to,'filters':filters})
+    params: dict[str,JsonValue]={'p_from':query.from_date.isoformat() if query.from_date else None,
+        'p_to':query.to_date.isoformat() if query.to_date else None,
+        'p_filters':query.filters.model_dump(mode='json',exclude_none=True) if query.filters else {}}
+    return _result(await _read('customer.get_transactions','customer_read_transactions',params,TRANSACTIONS,ctx))
 
 
 async def get_credit_cards(ctx: RequestContext) -> ToolResult:
-    db, p = _session(ctx, 'customer.get_credit_cards')
-    rows = _rows(db, 'banking', 'credit_cards', 'customer_id,card_id,card_name,network,last4,status,credit_limit,outstanding_balance,minimum_payment_due,payment_due_date', p['customer_id'])
-    return ToolResult(data=[{'card_id': f"card_{r['card_id']}", 'name': r['card_name'], 'network': r['network'], 'last4': str(r['last4'])[-4:],
-                             'status': r['status'], 'limit': _num(r['credit_limit']), 'outstanding': _num(r['outstanding_balance']),
-                             'minimum_payment': _num(r['minimum_payment_due']), 'due_date': r['payment_due_date']} for r in rows])
+    return _result(await _read('customer.get_credit_cards','customer_read_cards',{},CARDS,ctx))
 
 
 async def get_loans(ctx: RequestContext) -> ToolResult:
-    db, p = _session(ctx, 'customer.get_loans')
-    rows = _rows(db, 'banking', 'loans', 'customer_id,loan_id,loan_type,original_amount,outstanding_amount,monthly_repayment,next_due_date,status', p['customer_id'])
-    return ToolResult(data=[{'loan_id': f"loan_{r['loan_id']}", 'type': r['loan_type'], 'principal': _num(r['original_amount']),
-                             'outstanding': _num(r['outstanding_amount']), 'next_payment': r['next_due_date'], 'next_amount': _num(r['monthly_repayment']),
-                             'status': r['status']} for r in rows])
+    return _result(await _read('customer.get_loans','customer_read_loans',{},LOANS,ctx))
 
 
 async def get_compliance_case(ctx: RequestContext) -> ToolResult:
-    """compliance.get_case: the latest client-visible case. compliance.case_internal is never read."""
-    db, p = _session(ctx, 'compliance.get_case')
-    cid = p['customer_id']
-    cases = _rows(db, 'compliance', 'cases', 'customer_id,case_id,case_type,title,notice_text,notice_date,due_date,status,status_updated_at', cid, order='notice_date')
-    if not cases:
-        return ToolResult(data=None)
-    case = {k: v for k, v in cases[0].items() if k != 'customer_id'}
-    by_case = {'case_id': case['case_id']}
-    items = _rows(db, 'compliance', 'requested_items', 'customer_id,item_id,label,instructions,submission_status,client_mark,client_marked_at,sort_order,updated_at', cid, **by_case)
-    history = _rows(db, 'compliance', 'status_history', 'customer_id,status,note,changed_at', cid, order='changed_at', **by_case)
-    requests = _rows(db, 'compliance', 'info_requests', 'customer_id,request_id,question,instructions,due_date,status,responded_at,created_at', cid, **by_case)
-    drop = lambda rows: [{k: v for k, v in r.items() if k != 'customer_id'} for r in rows]
-    return ToolResult(data={**case, 'requested_items': sorted(drop(items), key=lambda i: i['sort_order']), 'status_history': drop(history), 'info_requests': drop(requests)})
+    """Latest client-visible case; internal review records are never queried."""
+    return _result(await _read('compliance.get_case','customer_read_compliance',{},CASE,ctx))
+
+
+async def get_documents(ctx: RequestContext) -> ToolResult:
+    """Bounded own-case metadata; Storage access and document processing use separate permission checks."""
+    envelope=await _read('documents.list','customer_read_documents',{},DOCUMENTS,ctx)
+    if len({row.document_id for row in envelope.data})!=len(envelope.data):
+        raise CustomerDataIntegrityError('Document snapshot contains duplicate document ids')
+    return _result(envelope)
+
+
+async def get_document_upload_context(case_id: UUID,item_id: UUID | None,ctx: RequestContext) -> CustomerEnvelope[DocumentUploadContext]:
+    return await _read('documents.prepare_upload','customer_document_upload_context',
+        {'p_case_id':str(case_id),'p_item_id':str(item_id) if item_id is not None else None},DOCUMENT_UPLOAD_CONTEXT,ctx)
+
+
+async def get_document_location(document_id: UUID,ctx: RequestContext) -> ToolResult:
+    envelope=await _read('documents.download','customer_document_location',{'p_document_id':str(document_id)},DOCUMENT_LOCATION,ctx)
+    if envelope.data is not None and (envelope.data.document_id!=document_id or
+        envelope.data.storage_path!=f'{ctx.principal.customer_id}/{envelope.data.case_id}/{document_id}'):
+        raise CustomerDataIntegrityError('Document location does not match its requested document and customer')
+    return _result(envelope)
+
+
+async def get_document_object(document_id: UUID,ctx: RequestContext) -> CustomerEnvelope[DocumentObject | None]:
+    envelope=await _read('documents.inspect','customer_document_location',{'p_document_id':str(document_id)},DOCUMENT_OBJECT,ctx)
+    if envelope.data is not None and (envelope.data.document_id!=document_id or
+        envelope.data.storage_path!=f'{ctx.principal.customer_id}/{envelope.data.case_id}/{document_id}'):
+        raise CustomerDataIntegrityError('Inspection source does not match its requested document and customer')
+    return envelope
 
 
 async def get_rm_assignment(ctx: RequestContext) -> ToolResult:
-    """rm.get_assignment: current RM (and the previous one, for transition questions). Advisors are visible only via RLS on assignment."""
-    db, p = _session(ctx, 'rm.get_assignment')
-    rows = _rows(db, 'rm', 'assignments', 'customer_id,advisor_id,started_on,ended_on,transition_reason_code', p['customer_id'], order='started_on')
-    if not rows:
-        return ToolResult(data=None)
-    ids = [r['advisor_id'] for r in rows]
-    advisors = {a['advisor_id']: a for a in db.schema('rm').table('advisors').select('advisor_id,full_name,role,team_name,email,phone,timezone').in_('advisor_id', ids).execute().data if a['advisor_id'] in ids}
+    """Current and most recent previous relationship manager, restricted by assignment RLS."""
+    return _result(await _read('rm.get_assignment','customer_read_assignment',{},ASSIGNMENT,ctx))
 
-    def rm(r):
-        a = advisors.get(r['advisor_id'], {})
-        return {'rm_id': r['advisor_id'], 'name': a.get('full_name'), 'role': a.get('role'), 'team': a.get('team_name'),
-                'contact': {'email': a.get('email'), 'phone': a.get('phone')}, 'timezone': a.get('timezone'),
-                'started_on': r['started_on'], 'ended_on': r['ended_on'], 'transition_reason_code': r['transition_reason_code']}
-    current = next((r for r in rows if not r['ended_on']), None)
-    previous = next((r for r in rows if r['ended_on']), None)
-    return ToolResult(data={'current': rm(current) if current else None, 'previous': rm(previous) if previous else None})
+
+async def get_requests(ctx: RequestContext) -> ToolResult:
+    envelope=await _read('requests.list','customer_read_requests',{},REQUESTS,ctx)
+    if any(row.customer_id!=envelope.customer_id for row in envelope.data):
+        raise CustomerDataIntegrityError('Relationship requests contain records outside the authenticated customer scope')
+    return ToolResult(data=[row.model_dump(mode='json',exclude={'customer_id'}) for row in envelope.data],
+        call_id=envelope.call_id,as_of=envelope.as_of)
+
+
+async def get_appointments(ctx: RequestContext) -> ToolResult:
+    return _result(await _read('appointments.list','customer_read_appointments',{},APPOINTMENTS,ctx))
+
+
+async def get_consent_records(ctx: RequestContext) -> ToolResult:
+    return _result(await _read('consent.records','customer_read_consent_records',{},CONSENTS,ctx))
+
+
+async def get_agendas(ctx: RequestContext) -> ToolResult:
+    """Current action-created drafts; legacy rows have no reviewed content snapshot and are excluded."""
+    return _result(await _read('agenda.list','customer_read_agendas',{},AGENDAS,ctx))
+
+
+async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
+    """Suggestions only; booking must recheck conflicts atomically."""
+    envelope=await _read('appointments.find_slots','customer_read_slots',{'p_from':query.from_date.isoformat(),
+        'p_to':query.to_date.isoformat(),'p_limit':query.limit},SLOTS,ctx)
+    if len(envelope.data)>query.limit or any(row.customer_id!=envelope.customer_id for row in envelope.data):
+        raise CustomerDataIntegrityError('Appointment suggestions exceed their requested limit or customer scope')
+    return ToolResult(data=[row.model_dump(mode='json',exclude={'customer_id'}) for row in envelope.data],
+        call_id=envelope.call_id,as_of=envelope.as_of)

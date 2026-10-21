@@ -33,7 +33,7 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .brand-caption { padding-left: 24px; border-left: 1px solid var(--line); display: grid; gap: 5px; }
 .brand-caption strong { font-size: 14px; font-weight: 500; }
 .brand-caption span { font-size: 11px; color: var(--muted); }
-.chat-actions { display: flex; gap: 10px; align-items: center; }
+.chat-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .bank-chat-logout { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 12px; }
 .bank-chat-logout svg { width: 16px; height: 16px; }
 .bank-chat-logout:hover { background: var(--canvas); border-color: #aaa9a2; }
@@ -88,6 +88,10 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .bank-chat-bubble { min-width: 0; max-width: 90%; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
 .bank-chat-message.user .bank-chat-bubble { max-width: 82%; background: #efefea; padding: 12px 18px; border-radius: 13px 13px 3px 13px; }
 .answer-text { white-space: pre-wrap; }
+.answer-sections { display: grid; gap: 24px; }
+.answer-section + .answer-section { border-top: 1px solid var(--line); padding-top: 20px; }
+.answer-section h3 { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; font-size: 13px; font-weight: 500; }
+.answer-section h3 small { color: var(--red); font-size: 11px; }
 .answer-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; margin-bottom: 10px; min-height: 30px; }
 .answer-origin { font-size: 10px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 4px; }
 .answer-sources { margin-top: 18px; font-size: 12px; }
@@ -217,3 +221,37 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
   .panel-heading h2 { font-size: 23px; }
 }
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+.sharing-details {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0.5rem 1rem;}
+.command-list {list-style:none;padding:0;display:grid;gap:20px;}
+.command-list>li {border-top:1px solid var(--line);padding-top:16px;overflow-wrap:anywhere;}
+.command-list h3 {font-size:17px;line-height:1.4;}
+.command-review {border-left:3px solid #b5261c;padding-left:14px;}
+.command-review label {display:flex;align-items:flex-start;gap:9px;line-height:1.5;}
+.command-review input {flex-shrink:0;margin-top:5px;}
+.sharing-details dt {font-weight:600;}
+.sharing-details dd {margin:0;overflow-wrap:anywhere;}
+.relationship-details {border-top:1px solid #e7e7e7;margin-top:1rem;padding-top:1rem;}
+.relationship-range {display:flex;flex-wrap:wrap;gap:.75rem;align-items:end;}
+.relationship-range label {display:flex;flex-direction:column;gap:.35rem;min-width:0;}
+.relationship-range input {max-width:100%;padding:.5rem;border:1px solid #d8d8d8;border-radius:6px;font:inherit;}
+.relationship-list {list-style:none;padding:0;}
+.relationship-list li {padding:.75rem 0;border-bottom:1px solid #e7e7e7;overflow-wrap:anywhere;}
+.relationship-list p {margin:.35rem 0;}
+.saved-chat-controls {display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;font-size:12px;}
+.saved-chats-list {list-style:none;padding:0;}
+.saved-chat-button {display:flex;flex-direction:column;gap:.35rem;width:100%;padding:1rem;text-align:left;background:#fff;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere;}
+.saved-chats-list li {margin:.75rem 0;}
+.saved-chat-button span {font-size:12px;color:var(--muted);}
+
+.records-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:20px 0}
+.records-filters label{display:grid;gap:6px;font-size:.85rem;min-width:0;flex:1 1 130px}
+.records-filters .request-details-field{flex-basis:100%}
+.records-filters input,.records-filters select{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:white;color:inherit;font:inherit}
+.customer-records section{margin-top:24px;overflow-wrap:anywhere}
+.customer-records article{padding:12px 0;border-bottom:1px solid var(--line)}
+.customer-records h4{margin:0 0 8px;font-size:.95rem}
+.customer-records article p{margin:6px 0}
+.customer-records .sharing-details dd{overflow-wrap:anywhere}
+.agenda-content {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;}
+.relationship-details textarea {display:block;width:100%;resize:vertical;min-height:7rem;padding:.75rem;}
+.relationship-details fieldset label {display:flex;align-items:flex-start;gap:.4rem;line-height:1.5;margin:.35rem 0;}

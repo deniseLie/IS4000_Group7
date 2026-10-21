@@ -6,12 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
+AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py
 CommandState = Literal['proposed', 'confirmed', 'succeeded', 'failed', 'expired']
 RiskFlag = Literal['fraud_suspected', 'lost_card', 'secret_shared', 'human_requested']
-RedactionType = Literal['card_number', 'password', 'otp', 'nric']
+RedactionType = Literal['card_number', 'password', 'pin', 'otp', 'cvv', 'nric', 'email']
 AuditCategory = Literal['auth', 'chat', 'agent', 'data', 'policy', 'action', 'row', 'consent', 'notification', 'handoff', 'document', 'admin']
 
 
@@ -38,6 +39,7 @@ class RequestContext(Contract):
     session_id: UUID
     case_id: UUID | None = None
     principal: Principal
+    agent: AgentName | None = None  # set only by backend dispatch; never read from tool arguments
     locale: str = 'en-SG'
     received_at: datetime = Field(default_factory=now)
 
@@ -107,10 +109,19 @@ class AgentResult(Contract):
     status: AgentStatus
     answer_kind: AnswerKind = 'banking'
     text: str = ''
+    question: str | None = None
     citations: list[Citation] = []
     tool_calls: list[ToolCallRef] = []
     pending_action: PendingAction | None = None
     receipts: list[ReceiptRef] = []
+
+    @model_validator(mode='after')
+    def _clarification(self):
+        if self.status == 'needs_clarification' and not (self.question and self.question.strip()):
+            raise ValueError('needs_clarification requires a question')
+        if self.status != 'needs_clarification' and self.question is not None:
+            raise ValueError('question is only valid for needs_clarification')
+        return self
 
 
 # ActionCommand / Receipt: Action Service; the executor comes from `type` in the registry, never from the model

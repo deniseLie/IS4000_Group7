@@ -13,5 +13,11 @@
   {"text":"Never share your PIN, password, OTP or CVV.","secret":null},
   {"text":"My balance is SGD 1,234.56.","secret":null},
   {"text":"What does a ５% rate mean?","secret":null},
-  {"text":"I need a password reset.","secret":null}
+  {"text":"I need a password reset.","secret":null},
+  {"text":"My NRIC is S1234567D","secret":"S1234567D"},
+  {"text":"FIN: m1234567a","secret":"m1234567a"},
+  {"text":"My NRIC is Ｓ１２３４５６７Ｄ","secret":"Ｓ１２３４５６７Ｄ"},
+  {"text":"My NRIC is S123​4567D","secret":"S1234567D"},
+  {"text":"Where do I update my NRIC details?","secret":null},
+  {"text":"My account ending 6012 has SGD 5230.45.","secret":null}
 ]

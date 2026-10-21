@@ -31,16 +31,16 @@ export default function Login({onBack}) {
       <div className="login-container">
         <section className="login-brand">
           <span className="brand-name">DemoBank<span className="brand-dot">.</span></span>
-          <div><span className="small-rule"/><h2>A clearer view.<br/><span>A helping hand.</span></h2><p>Sign in to explore your synthetic demo records, with guidance from your banking assistant.</p></div>
-          <small>IS4000 · Coursework demo · Not a real bank</small>
+          <div><span className="small-rule"/><h2>A clearer view.<br/><span>A helping hand.</span></h2><p>Sign in to explore your accounts, with guidance from your banking assistant.</p></div>
+          <small>IS4000 · Coursework demo · Fictional customer data · Not a real bank</small>
         </section>
 
         <section className="login-panel">
           <form onSubmit={handleLogin}>
             <div className="login-heading">
-              <span className="eyebrow">DEMO ACCOUNT ACCESS</span>
+              <span className="eyebrow">ACCOUNT ACCESS</span>
               <h1>Welcome back</h1>
-              <p>Use your demo account to view synthetic records. General banking help is available without signing in.</p>
+              <p>Use your demo account to view your records. General banking help is available without signing in.</p>
             </div>
 
             <label htmlFor="email">Email address</label>
@@ -72,7 +72,7 @@ export default function Login({onBack}) {
 
             {error && <p className="login-error" role="alert">{error}</p>}
 
-            <button className="login-submit primary-button" type="submit" disabled={loading}>
+            <button data-testid="submit-login" className="login-submit primary-button" type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Sign In →"}
             </button>
           </form>

@@ -1,8 +1,10 @@
-"""STUB card executor (architecture §5.7.3). The real version owns the card state transitions in banking.cards."""
+"""Card executor contract. The state transition runs in actions.execute_card_block (migration 0019).
+
+PostgreSQL keeps the synthetic card update, receipt, audit and outbox atomic while the backend
+connects using the customer's JWT, without a privileged database credential.
+"""
+from app.schemas.actions import CardBlockTarget
 from app.schemas.contracts import ActionCommand
 
-STUB = True
-
-
-def temporary_block(command: ActionCommand, tx=None) -> dict:
-    return {'card_id': command.target.get('card_id'), 'status': 'temporarily_blocked'}
+def temporary_block(command: ActionCommand) -> CardBlockTarget:
+    return CardBlockTarget.model_validate(command.target)
