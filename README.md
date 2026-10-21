@@ -2,6 +2,8 @@
 
 The chatbot improvements, including the banking knowledge and source-check changes, have been integrated into the main working copy with user approval. The two-customer live Supabase check and further complex-query model testing are deferred. This is a coursework demo, not an official bank product.
 
+For the current presentation, use the [ordered demo walkthrough](#demo-walkthrough) and [startup commands](#local-setup).
+
 For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
 
 ## Real AI update — 13 October 2026
@@ -104,6 +106,156 @@ Expected answer: ask whether the problem happened at an ATM, online or in a shop
 **Human support**
 
 After: the customer reviews and edits a draft, then copies it. The page explicitly says that copying does not send a ticket or contact staff.
+
+## Demo walkthrough
+
+Use this order to show the implemented customer workflows. The setup commands in
+[Local setup](#local-setup) start the v2 foundation demo at `http://localhost:5173`
+with the API at `http://127.0.0.1:5001`. `PIPELINE=v2` is an explicit startup
+override; the application's default remains v1. Use the existing private `.env`
+with `CHAT_TRANSPORT=api`, `LLM_BASE_URL=https://openrouter.ai/api/v1`,
+`LLM_MODEL=openrouter/free`, `KNOWLEDGE_STORE=database`,
+`CONVERSATION_STORE=database` and `RUN_WORKER_IN_API=true`. The worker also needs
+its restricted `WORKER_DATABASE_URL`. Keep the existing checkpoint signing key.
+
+Normal banking replies use the configured real AI provider. Lost-card guidance,
+secret warnings, requests for human support and a guest's personal-balance request
+use fixed safety responses. Action receipts and notification templates describe
+recorded outcomes without an AI call. Provider failures stay visible; the app does
+not replace them with scripted banking answers. The configuration above selects
+OpenRouter; [the Codex guide](docs/codex-local-provider.md) describes the explicit
+alternative. Neither mode supplies real bank product terms.
+
+The demo uses fictional customers in actual hosted Supabase Auth, database and
+Storage services. Use the existing Alex, Michelle and David logins from the private
+`personas.json`; passwords and API keys must stay outside the presentation and Git.
+Saving, confirming or uploading creates real demo records in the hosted project.
+Whenever a step opens Actions for confirmation, select **Review proposal** on the
+matching item, check the acknowledgement and select its specific confirmation
+button. A saved proposal alone does not execute its requested change.
+
+### 1. Guest help, sources and fixed safety guidance
+
+1. Open the site signed out and leave **Information** on **General help**.
+2. Ask: "Does paying only the minimum on my credit card avoid interest?"
+3. For a successful model reply, show **AI-generated**, its source controls and
+   the source detail panel. Topic cards only fill the composer; press **Send**.
+4. Start **New chat**, then send "I lost my card". Show **Safety guidance** and
+   the urgent instructions. This fixed route does not currently propose a block.
+5. In another new guest chat, ask "What is my balance?" to show the login boundary.
+6. Open **Talk to a person**, review the editable summary, then show the copy step.
+   Copying the summary does not send a ticket or contact a staffed support queue.
+
+If the provider is unavailable or a reply fails validation, show the explicit error
+or withheld answer. A safety response is not evidence that the AI provider works.
+
+### 2. Alex: owned records, personal AI and saved chats
+
+1. Sign in as Alex and open **Records**. Show masked accounts, cards, loans and
+   transactions. Change a transaction date/status filter and **Reload records**.
+2. Close Records, change **Information** to **My records**, and ask
+   "What are my recorded account balances?" Show the personal answer's sources.
+3. Use **Reload saved chat**, then **Saved chats**, to reopen the recorded answer.
+   Refresh the browser and show that the owned conversation remains available.
+4. Sign out before switching personas. Another customer must not see Alex's chats
+   or records. This demonstrates scoped demo data, not a connection to a real bank.
+
+Personal retail answers have focused real-provider/browser verification. Approved
+bank fees, product rates, loan eligibility and application procedures are still
+missing; do not present unsupported product advice as implemented.
+
+### 3. Michelle: compliance case and preparation marks
+
+1. Sign in as Michelle, choose **My records**, and ask
+   "What is the current status of my compliance review?"
+2. Open **Records** and show the notice, recorded status, deadline, checklist and
+   information requests. Compare the answer with these records and its sources.
+3. Change one **Your preparation mark** selection and **Save preparation mark**.
+4. **Reload records**, then open **Actions** to show the durable receipt.
+   Preparation changes must not change submission status or the bank's decision.
+5. Open **Inbox** to show the resulting service notification. Mark it read, reload
+   the inbox and show that the read state persists.
+
+### 4. Michelle: private documents and technical checks
+
+1. In **Records**, find **Document records**. Use an existing registered demo file
+   and select **Run technical file check**.
+2. A supported text PDF/DOCX shows extracted-character counts; a PDF also shows
+   page count. PNG/JPEG shows decoded dimensions. No extracted text is displayed.
+3. Explain the explicit limits: no OCR, required-field assessment, bank-specific
+   page rules, AI document explanation or formal compliance approval is performed.
+4. To demonstrate a new upload manually, choose a requested item, select a tiny
+   fictional fixture from `frontend/tests/fixtures/documents/`, and select
+   **Upload and record file**. Keep the form open until its receipt appears.
+5. **Reload records** and show the new owned record, download control and Actions
+   receipt. The download link expires after 60 seconds. Uploading does not yet set
+   the checklist item to submitted-awaiting-review or approve the document.
+
+### 5. David: advisor details, a private agenda and reviewed sharing
+
+1. Sign in as David. In **Records**, show the currently recorded relationship
+   manager. Close Records and open **Data sharing** to show recipient and consent.
+2. Select **Prepare meeting agenda**, then **New agenda draft**. Enter one topic
+   per line, choose any recorded profile fields to include, and **Save private draft**.
+3. Show the saved preview, categories and revision. Saving keeps the draft private;
+   **View recorded action** opens its receipt in Actions.
+4. Back in Data sharing, select all categories required by this draft, choose a
+   duration and **Record consent request**. Refresh the recorded consent status.
+5. Select **Review grant**, then **Review in Actions**. Review the stored scope,
+   acknowledge the confirmation and confirm. Return and refresh consent status.
+6. Open the saved agenda's **Review sharing**, select one active grant that covers
+   all draft categories, and **Prepare sharing proposal**. Confirm it in Actions.
+7. Show the separate sharing receipt and inbox notification. No real advisor is
+   contacted. Editing a draft later does not change its already-shared snapshot.
+8. To show revocation, select **Review revocation** for that grant and confirm in
+   Actions. Refresh its status. Revocation does not erase an earlier shared copy.
+
+These are working forms and recorded actions. AI agenda drafting and a complete
+personal Relationship AI workflow are not part of the verified demonstration.
+
+### 6. David: appointment review and relationship-request intake
+
+1. In **Data sharing**, open **View requests and appointment times**. Choose a
+   date range containing advisor working days and **Refresh recorded status**.
+2. Choose a meeting format and **Hold for ten minutes** on an available slot.
+   The hold is not a confirmed booking.
+3. Select **Review booking**, then **Review in Actions**. Review and confirm the
+   stored proposal before it expires. Refresh current appointments to show status.
+4. Use **Review cancellation** and confirm in Actions to demonstrate cancellation.
+   No external calendar, real meeting or joining link is connected.
+5. In the same relationship view, enter a fictional request, urgency and any
+   optional deadline/country/currency references. **Prepare request for review**.
+6. Open **Review in Actions**, check the exact details, acknowledge and confirm.
+   Refresh recorded status to show the request and inspect its receipt in Actions.
+   `sent` means recorded demo intake, not fulfilment or delivery to a real advisor.
+7. For a second proposal, choose **Reject** to show that it executes nothing.
+
+### 7. Explain the remaining workflows without claiming completion
+
+The v2 orchestrator implements planning, priority ordering, bounded concurrent
+agents, section composition and durable action review. Personal fraud can propose
+a demo card block and pause for confirmation, but live proposal accuracy still
+needs verification. Do not use the fixed lost-card response as proof of this flow.
+Combined real-provider acceptance, automatic handoff on general validation failure,
+full follow-up evaluation and latency/report checks remain outstanding. Docker
+startup is deferred. The five public agent entries do not mean all five personal
+agent workflows are complete.
+
+Staff claim/close/unblock/cancel operations have native integration coverage, but
+hosted staff provisioning and MFA are still required; see the invocation examples
+in `backend/scripts/staff_support.py`. For a read-only audit-chain demonstration,
+run from `backend/` with the configured private environment:
+
+```bash
+../.venv/bin/python -m scripts.verify_audit --login-file ../personas.json
+```
+
+The checker prints counts/hashes and its result, not customer conversations.
+Tracing configuration is described under [Tracing](#tracing). Private document
+checks, record forms, receipts and inbox delivery can be demonstrated independently
+of model availability. Last recorded live Relationship attempts failed with a
+routing error and quota exhaustion; current provider availability requires a new
+live check and is not established by this walkthrough.
 
 ## Foundation pipeline
 
@@ -402,22 +554,31 @@ Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four
 
 Use Python 3.12 and Node.js 22. Copy `.env.example` to a private root `.env` and fill in the values. Existing environment variables take priority; a backend `.env` takes priority over the root file. Only the public Supabase URL/anonymous key and API URL use the `VITE_` prefix. The application does not need a service-role key.
 
-From the repository root:
+First-time dependency installation, from the repository root:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.txt
+```
+
+Start the foundation demo backend in one terminal:
+
+```bash
 cd backend
-../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+PIPELINE=v2 ../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 5001
 ```
 
 In another terminal:
 
 ```bash
 cd frontend
-npm ci
-npm run dev
+npm ci  # first install, or after the dependency lockfile changes
+VITE_API_URL=/api BACKEND_PORT=5001 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
+
+Open `http://localhost:5173`. Stop each process with Ctrl+C. The private root
+`.env` supplies the configured AI provider, hosted Supabase and worker settings.
+Omit `PIPELINE=v2` to use the existing default v1 answer flow.
 
 Keep root `PORT` consistent with the backend command. Use `VITE_API_URL=/api` for the Vite development proxy. A production host must also proxy `/api` to the backend, or supply a public API URL and configure CORS. Vite preview alone does not provide the backend.
 
