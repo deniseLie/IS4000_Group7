@@ -449,7 +449,25 @@ not reverse previously executed commands. Resume leases exclude competing worker
 Failed continuation preserves its receipts and exposes **Resume saved reply** in Actions.
 The local native API/browser tests exercise these mechanics without replacing a model:
 their fixtures start after dispatch and use safety-origin text. Real-provider fraud
-proposal accuracy remains unverified (the configured provider returned HTTP 429).
+proposal checks pass with the explicit real OpenRouter model
+`dots-studio/dots-3-note-preview:free` and released personal prompt `fraud/v3`.
+The focused direct call, saved-chat API review and normal browser check selected the
+owned card/transaction pair, paused before confirmation, recorded two receipts and
+reopened the saved answer. Computer Use verified the same flow on disposable local
+records. One additional manual answer was withheld by source validation; free-router
+checks also returned timeouts or invalid structured output. These checks do not prove
+general fraud accuracy or reliability of `openrouter/free`. No private provider
+setting is changed by these tests. Reproduce the live browser check from `backend/`:
+
+```bash
+TEST_DATABASE_LOCAL=1 TEST_DATA_API_LOCAL=1 TEST_BROWSER_LOCAL=1 TEST_FRAUD_LIVE=1 \
+LLM_MODEL=dots-studio/dots-3-note-preview:free \
+../.venv/bin/python -m pytest -q tests/test_fraud_agent_browser.py
+```
+
+This sends masked fictional card/transaction evidence to OpenRouter and changes only
+disposable local records. For a manual preview, follow `tests/preview_fraud.py`.
+
 The personal retail agent reads the caller's real profile, masked accounts/cards,
 loans and last 90 days of transactions through permission-first JWT/RLS readers.
 Its released personal prompt is `retail/v2`; the public retail prompt stays at v1.
@@ -559,7 +577,7 @@ Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_
 
 ## Audit log
 
-`audit.events` (migrations `0005`, `0006`) is the append-only, hash-chained record of who did what (`docs/system-architecture.md` §6). Rows are written only by `audit.record()`; app roles cannot update, delete or truncate it, and each row's `hash` covers the previous row's hash. A generic trigger records insert/update/delete on the business tables in the same transaction (changed column names; values only for enum-like columns). `POST /chat` collects its events in `app/services/audit.py` and writes them in one `public.audit_record_batch` call before the `answer` event; if that write fails the client gets `error` and no answer. Events hold ids, enums and counts only; both the Python helper and the database reject free text.
+`audit.events` (migrations `0005`, `0006`) is the append-only, hash-chained record of who did what (`docs/system-architecture.md` §6). Rows are written only by `audit.record()`; app roles cannot update, delete or truncate it, and each row's `hash` covers the previous row's hash. A generic trigger records insert/update/delete on the business tables in the same transaction (changed column names; values only for enum-like columns). `POST /chat` collects its events in `app/services/audit.py` and writes them in one `public.audit_record_batch` call before the `answer` event; if that write fails the client gets `error` and no answer. Events hold ids, enums and counts only; both the Python helper and the database reject free text. Migration `0054` preserves canonical UUID identifiers even when their suffix contains twelve digits; other long-number strings remain rejected. It is applied and verified in the hosted project. The native registration regression covers the numeric-suffix Storage object id and verifies the audit chain.
 
 Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and migration `0005` applied, and a missing configuration or failed write fails the chat request. The only off switch is `AUDIT_STORE=0`, which the unit and browser test runners set so they never add rows to the append-only table; do not set it elsewhere. Check the chain with `python -m scripts.verify_audit` from `backend/` (signs in with `TEST_PERSONA_FIXTURE_FILE`); `--record` saves the head to `docs/evidence/audit-anchor.json`, and later runs fail if older rows were rewritten or the newest removed. Known limits: the table owner can disable the triggers and rewrite the chain (caught only against a recorded anchor); the structural check cannot prove a short token is not personal data; guest events share a 20,000-per-day cap because the anon key is public; every audited write is serialised by one lock.
 

@@ -43,7 +43,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     records=await fraud_records.load(ctx)
     evidence=[*public_evidence,evidence_for(records)]
     pairs=fraud_records.eligible_proposals(question,records)
-    pv=prompts.load('fraud','v2')
+    pv=prompts.load('fraud','v3')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

@@ -175,7 +175,8 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
 def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     agent=AGENT_FOR[task.domain]
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
-    if task.domain in {'fraud','retail','compliance','relationship'}:return prompts.load(agent,'v2')['id']
+    if task.domain=='fraud':return prompts.load(agent,'v3')['id']
+    if task.domain in {'retail','compliance','relationship'}:return prompts.load(agent,'v2')['id']
     return None
 
 
