@@ -10,9 +10,13 @@ test('customer records use real scoped audited services at all viewport sizes',a
     await page.setViewportSize({width,height:900});
     await page.goto('/');
     const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/transactions'));
+    const advisorLoaded=page.waitForResponse(response=>response.url().endsWith('/customer/advisor'));
     await page.getByTestId('open-records').click();
     expect((await loaded).status()).toBe(200);
     await expect(page.getByTestId('records-name')).toHaveText(fixture.name);
+    const advisor=(await (await advisorLoaded).json()).data?.current;
+    if(advisor)await expect(page.getByTestId('records-advisor-contact')).toHaveText(`Email: ${advisor.contact.email||'Not recorded'} · Phone: ${advisor.contact.phone||'Not recorded'}`);
+    else await expect(page.getByTestId('records-advisor-contact')).toHaveCount(0);
     await expect(page.getByTestId('records-documents-empty')).toBeVisible();
     for(const [type,count] of [['account',fixture.account_count],['card',fixture.card_count],['loan',fixture.loan_count],['transaction',fixture.transaction_count]]) {
       await expect(page.getByTestId(`records-${type}`)).toHaveCount(count);

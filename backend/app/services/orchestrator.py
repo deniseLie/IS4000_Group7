@@ -30,7 +30,7 @@ from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,Re
 from app.schemas.knowledge import KnowledgeQuery
 from app.services import actions,audit,customer_data,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
-from app.services.agents import compliance,fraud,retail
+from app.services.agents import compliance,fraud,relationship,retail
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -175,7 +175,7 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
 def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     agent=AGENT_FOR[task.domain]
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
-    if task.domain in {'fraud','retail','compliance'}:return prompts.load(agent,'v2')['id']
+    if task.domain in {'fraud','retail','compliance','relationship'}:return prompts.load(agent,'v2')['id']
     return None
 
 
@@ -195,8 +195,8 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         decision,evidence=await fraud.respond(task,state['history'],state['request'].language,
             ctx.model_copy(update={'agent':'fraud'}),evidence)
         result=decision.result;proposal=decision.proposal;prompt_id=decision.prompt_id
-    elif task.domain in {'retail','compliance'}:
-        responder=retail.respond if task.domain=='retail' else compliance.respond
+    elif task.domain in {'retail','compliance','relationship'}:
+        responder={'retail':retail.respond,'compliance':compliance.respond,'relationship':relationship.respond}[task.domain]
         result,evidence,prompt_id=await responder(task,state['history'],state['request'].language,
             ctx.model_copy(update={'agent':agent}),evidence)
     else:

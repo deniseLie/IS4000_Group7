@@ -210,8 +210,11 @@ missing; do not present unsupported product advice as implemented.
 8. To show revocation, select **Review revocation** for that grant and confirm in
    Actions. Refresh its status. Revocation does not erase an earlier shared copy.
 
-These are working forms and recorded actions. AI agenda drafting and a complete
-personal Relationship AI workflow are not part of the verified demonstration.
+For the read-only Relationship AI demonstration, select **My records** and ask
+"Who is my relationship manager?" Show the recorded-assignment source and reload
+the saved answer. Requests and appointment suggestions use their own sources.
+AI agenda drafting and conversational changes remain pending; use the reviewed
+forms for booking, intake, consent and sharing.
 
 ### 6. David: appointment review and relationship-request intake
 
@@ -253,9 +256,9 @@ run from `backend/` with the configured private environment:
 The checker prints counts/hashes and its result, not customer conversations.
 Tracing configuration is described under [Tracing](#tracing). Private document
 checks, record forms, receipts and inbox delivery can be demonstrated independently
-of model availability. Last recorded live Relationship attempts failed with a
-routing error and quota exhaustion; current provider availability requires a new
-live check and is not established by this walkthrough.
+of model availability. Focused Relationship checks passed against real OpenRouter
+on 21 October 2026, including the hosted Computer Use walkthrough. These samples
+do not establish broader answer accuracy or continuing provider availability.
 
 ## Foundation pipeline
 
@@ -458,8 +461,26 @@ Native checks cover all three personas, failed reads, wrong currencies/citations
 action claims. Real OpenRouter account checks pass for all three personas; a real
 native browser check verifies saved answers at four viewport widths. Computer Use
 also verified David's hosted account answer and saved-chat reload. These focused
-checks do not establish broad semantic accuracy. Relationship and document personal
-agents remain unavailable; public agents and v1 keep their existing behaviour.
+checks do not establish broad semantic accuracy. The personal document agent remains
+unavailable; public agents and v1 keep their existing behaviour.
+
+The personal Relationship implementation connects the existing owned advisor assignment,
+requests, appointments and available-time readers. It provides separate cited snapshots,
+up to 20 suggestions in a runtime 14-day Singapore-date window, and no action execution.
+Advisor emails stay outside model/checkpoint evidence; recorded contact details are
+shown directly in Records. The current/previous advisor distinction, empty collections,
+request statuses and reservation states are preserved. Booking, intake, consent and
+sharing still use the reviewed forms/Actions flow; AI agenda drafting is pending.
+Native integration, source/bounds/privacy validation, checkpoint round trips and explicit
+reader/provider failure checks pass. Four focused real OpenRouter checks cover all
+three personas' advisor results and David's recorded request status. A separate real-model
+browser check verifies citations, saved-chat reload and four viewport widths. Computer Use
+also verified David's hosted advisor answer against its source and saved-chat reload.
+The current stage passes 645 backend tests (50 opt-in skips), 46 frontend tests, the
+production build and three hosted persona smoke checks. These checks do not prove
+broad semantic accuracy, multilingual quality or availability of the free provider.
+Run the opt-in `TEST_RELATIONSHIP_LIVE=1` direct and browser modules separately,
+as described in `tests/test_relationship_agent.py`.
 
 The personal compliance agent uses one audited latest-case snapshot and the separate
 case, checklist, history and information-request citations. It excludes internal
