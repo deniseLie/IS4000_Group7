@@ -72,6 +72,26 @@ def test_audit_batch_rolls_back_every_event_on_invalid_details(database: 'Connec
     assert database.execute('select checked from public.audit_verify_chain(null)').fetchone()==(0,)
 
 
+def test_uuid_audit_details_preserve_ids_and_reject_other_long_digit_tokens(database: 'Connection[SqlRow]') -> None:
+    from psycopg.errors import RaiseException
+    from app.services.audit import is_safe
+    identifier='12345678-1234-4234-8234-123456789012'
+    valid={'object_id':identifier}
+    assert is_safe(valid)
+    set_customer(database,1001)
+    event={'category':'data','action':'data.read','details':valid}
+    database.execute('select public.audit_record_batch(%s::jsonb)',(json.dumps([event]),))
+    assert database.execute('select details from audit.events').fetchone()==(valid,)
+    for value in ['4111111111111111','token_123456789012','12345678-1234-4234-8234-1234567890123',
+        '12345678-1234-4234-8234-123456789012z','private free text']:
+        details={'object_id':value}
+        assert not is_safe(details)
+        with pytest.raises(RaiseException,match='audit details'):
+            with database.transaction():
+                database.execute('select public.audit_record_batch(%s::jsonb)',(json.dumps([{**event,'details':details}]),))
+    assert database.execute('select checked,first_bad_event_id from public.audit_verify_chain(null)').fetchone()==(1,None)
+
+
 def test_audit_actor_and_customer_are_derived_from_claims(database: 'Connection[SqlRow]') -> None:
     set_customer(database,1002)
     events=[{'category':'policy','action':'policy.decided','outcome':'denied',
