@@ -31,7 +31,7 @@ export default function RelationshipPage({onReviewActions,onSharing,onSupport}) 
     }
     load();return ()=>controller.abort();
   },[]);
-  const current=advisor?.data.current,previous=advisor?.data.previous,recipient=status?.recipient;
+  const current=advisor?.data?.current,previous=advisor?.data?.previous,recipient=status?.recipient;
   const first=current?.name.split(' ')[0]||'your manager';
   return <section className="app-page-body relationship-page" aria-label="Relationship and advisory" data-testid="relationship-page">
     <div className="page-banner">
