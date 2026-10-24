@@ -40,6 +40,7 @@ def test_card_action_to_recorded_inbox(local_data_api: NativeAPI,native_api_clie
 def test_empty_inbox_and_guest_scope(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr,monkeypatch: pytest.MonkeyPatch,tmp_path: Path) -> None:
     monkeypatch.setattr(settings,'run_worker_in_api',True)
     monkeypatch.setattr(settings,'worker_database_url',worker_uri)
-    ctx=context(local_data_api,1002)
+    # Michelle's open recorded information deadline now produces a service reminder.
+    ctx=context(local_data_api,1001)
     run_browser(native_api_client,NativeBrowserSession(data_api_url=local_data_api.url,access_token=ctx.principal.jwt.get_secret_value(),user_id=ctx.principal.user_id),
         'recorded notification empty',tmp_path)

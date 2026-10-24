@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
 
-export default function ChecklistPreparation({review,item}) {
+export default function ChecklistPreparation({review,item,onSaved}) {
   const [mark,setMark]=useState(item.client_mark);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -23,6 +23,7 @@ export default function ChecklistPreparation({review,item}) {
           expected_client_mark:item.client_mark,expected_client_marked_at:item.client_marked_at}},token,controller.signal);
       if(!result.receipt)throw new Error('The preparation command has no recorded receipt. Check Actions before retrying.');
       if(!controller.signal.aborted)setOutcome(result);
+      if(!controller.signal.aborted&&result.receipt.outcome==='succeeded'&&onSaved)onSaved();
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     finally {if(!controller.signal.aborted)setBusy(false);}
   }

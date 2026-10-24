@@ -4,8 +4,8 @@ import {createActionCase,proposeAction} from '../lib/actions';
 import {DOCUMENT_TYPES,fileDescriptor} from '../lib/documentUploadData';
 import {prepareUpload,uploadFile} from '../lib/documentStorage';
 
-export default function DocumentUpload({review}) {
-  const [file,setFile]=useState(null),[item,setItem]=useState(''),[busy,setBusy]=useState(false);
+export default function DocumentUpload({review,itemId=null,onRegistered=null,disabled=false}) {
+  const [file,setFile]=useState(null),[item,setItem]=useState(itemId||''),[busy,setBusy]=useState(false);
   const [error,setError]=useState(''),[pending,setPending]=useState(null),[outcome,setOutcome]=useState(null);
   const mounted=useRef(true),active=useRef(null);
   useEffect(()=>{mounted.current=true;return ()=>{mounted.current=false;active.current?.abort();};},[]);
@@ -19,9 +19,10 @@ export default function DocumentUpload({review}) {
     const result=await proposeAction(preparation.command,token,undefined);
     if(!result.receipt)throw new Error('No upload receipt was returned. Check Actions or retry recording this uploaded file.');
     if(mounted.current)setOutcome(result);
+    if(result.receipt.outcome==='succeeded'&&onRegistered)await onRegistered(preparation.command.target.document_id);
   }
   async function submit(event) {
-    event.preventDefault();setBusy(true);setError('');
+    event.preventDefault();if(disabled||busy)return;setBusy(true);setError('');
     const controller=new AbortController();active.current=controller;
     try {
       const descriptor=fileDescriptor(file),auth=await session();
@@ -52,10 +53,10 @@ export default function DocumentUpload({review}) {
     <h4>Upload a document</h4>
     <p>Use demo files only; do not upload real personal documents. PDF, DOCX, JPEG or PNG, up to 10 MiB. Uploading records a file; bank acceptance, preliminary checks and checklist submission status are separate.</p>
     <form className="records-filters" onSubmit={submit}>
-      <label>Requested item <select data-testid="document-upload-item" value={item} disabled={busy||!!pending||!!outcome} onChange={event=>setItem(event.target.value)}>
-        <option value="">General evidence for this review</option>{review.requested_items.map(row=><option key={row.item_id} value={row.item_id}>{row.label}</option>)}</select></label>
-      <label>Document <input data-testid="document-upload-file" type="file" accept={Object.keys(DOCUMENT_TYPES).join(',')} disabled={busy||!!pending||!!outcome} onChange={event=>{setFile(event.target.files[0]||null);setError('');}}/></label>
-      <button className="bank-chat-logout" data-testid="document-upload-submit" disabled={!file||busy||!!pending||!!outcome}>Upload and record file</button>
+      {!itemId&&<label>Requested item <select data-testid="document-upload-item" value={item} disabled={busy||!!pending||!!outcome} onChange={event=>setItem(event.target.value)}>
+        <option value="">General evidence for this review</option>{review.requested_items.map(row=><option key={row.item_id} value={row.item_id}>{row.label}</option>)}</select></label>}
+      <label>Document <input data-testid="document-upload-file" type="file" accept={Object.keys(DOCUMENT_TYPES).join(',')} disabled={disabled||busy||!!pending||!!outcome} onChange={event=>{setFile(event.target.files[0]||null);setError('');}}/></label>
+      <button className="bank-chat-logout" data-testid="document-upload-submit" disabled={disabled||!file||busy||!!pending||!!outcome}>{onRegistered?'Upload, check and submit':'Upload and record file'}</button>
     </form>
     {busy&&<p role="status" data-testid="document-upload-busy">Uploading or recording… Keep this page open. Closing this panel does not cancel submitted writes.</p>}
     {error&&<p role="alert" data-testid="document-upload-error">{error}</p>}

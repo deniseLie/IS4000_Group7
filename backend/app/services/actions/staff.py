@@ -65,3 +65,9 @@ async def cancel(command_id: UUID,handoff_id: UUID,card_id: str,db: SyncPostgres
     outcome=await _record('staff_cancel_card','card.cancel_permanently',command_id,handoff_id,{'p_card_id':card},db)
     if outcome.command.target.card_id!=card:raise ActionIntegrityError('Staff cancellation returned another card')
     return outcome
+
+
+async def compliance_context(handoff_id: UUID,db: SyncPostgrestClient) -> dict | None:
+    value=await _call('staff_compliance_context',{'p_handoff_id':str(handoff_id)},'staff.compliance_context',db)
+    if value is not None and not isinstance(value,dict):raise ActionIntegrityError('Invalid compliance support context')
+    return value

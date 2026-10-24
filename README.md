@@ -182,14 +182,21 @@ missing; do not present unsupported product advice as implemented.
 5. Open **Inbox** to show the resulting service notification. Mark it read, reload
    the inbox and show that the read state persists.
 
-### 4. Michelle: private documents and technical checks
+### 4. Michelle: documents and preliminary checks
+
+The completed native implementation adds **Your compliance review** in chat, per-item
+upload/correction, durable notice-based preliminary checks, receipt-backed submission,
+grounded AI explanations and action-specific reminders. Setup, scope and verification:
+[Michelle workflow](docs/workflows/workflow-2-michelle.md). Migrations `0055`–`0061` and the matching private signing key are activated on the hosted project (2026-10-24); local OCR and the restricted worker are configured. Generic requirements come from the owned notice and approved guidance; policy controls report expiry and date coverage. Upload findings automatically receive a selected-record explanation in saved chat; scoped support uses real handoff receipts.
+
+The existing Records-only technical check remains available:
 
 1. In **Records**, find **Document records**. Use an existing registered demo file
    and select **Run technical file check**.
 2. A supported text PDF/DOCX shows extracted-character counts; a PDF also shows
    page count. PNG/JPEG shows decoded dimensions. No extracted text is displayed.
-3. Explain the explicit limits: no OCR, required-field assessment, bank-specific
-   page rules, AI document explanation or formal compliance approval is performed.
+3. This technical-only control reports parser counts. Preliminary notice-based findings
+   and optional local OCR are separate controls in **Your compliance review**; neither approves a document.
 4. To demonstrate a new upload manually, choose a requested item, select a tiny
    fictional fixture from `frontend/tests/fixtures/documents/`, and select
    **Upload and record file**. Keep the form open until its receipt appears.
@@ -318,7 +325,8 @@ characters and 16 million image pixels. The watchdog is not an OS-enforced memor
 The API returns counts, dimensions and a byte checksum, never extracted text. Contents
 are not saved, logged, checkpointed or sent to a model. Results are temporary and do not
 change preliminary-check, checklist or bank review status. Approved bank-specific page,
-field and OCR-legibility rules are not configured; AI document assessment remains pending.
+field and OCR-legibility rules for real bank documents are not configured. The separate
+Michelle workspace uses the recorded notice/item instructions, flexible-layout real-model interpretation and optional local OCR after migrations `0056`–`0061`. Extracted synthetic text is sent to the configured provider for each check; values are not retained in reports/logs. Unknown or ungrounded requirements cannot pass. Notice changes invalidate earlier verdicts at both read and submission boundaries.
 `TEST_HOSTED_INSPECTION=1 TEST_PERSONA_FIXTURE_FILE=../personas.json npm run test:hosted -- --grep 'hosted technical inspections'`
 reads the existing four synthetic fixture formats without uploading copies or calling a
 model, verifies checksums/mobile layout and rejects Alex/David access to Michelle's files.
@@ -502,8 +510,8 @@ Native checks cover all three personas, failed reads, wrong currencies/citations
 action claims. Real OpenRouter account checks pass for all three personas; a real
 native browser check verifies saved answers at four viewport widths. Computer Use
 also verified David's hosted account answer and saved-chat reload. These focused
-checks do not establish broad semantic accuracy. The personal document agent remains
-unavailable; public agents and v1 keep their existing behaviour.
+checks do not establish broad semantic accuracy. The personal document agent now explains stored preliminary notice-based findings;
+public agents and v1 keep their existing behaviour.
 
 The personal Relationship implementation connects the existing owned advisor assignment,
 requests, appointments and available-time readers. It provides separate cited snapshots,
@@ -698,7 +706,7 @@ Review `evaluation-results.json` against each case's acceptance check. Every suc
 
 ## Scope still outside this round
 
-OCR, bank-specific document assessment, AI document explanations, advisor transfers, real calendar booking and real staffed support are not implemented. Private synthetic document uploads and technical checks are available through Records. Synthetic appointments use a hold/review/confirmation flow; agenda drafts and consent-reviewed sharing use the action ledger. No fine-tuned model was trained.
+Formal bank document acceptance, advisor transfers, real calendar booking and real staffed support are not implemented. Michelle’s new workspace adds optional local OCR, notice-based preliminary text checks and AI explanations of stored findings; activation and limits are documented in `docs/workflows/workflow-2-michelle.md`. Private synthetic document uploads and technical checks remain available through Records. Synthetic appointments use a hold/review/confirmation flow; agenda drafts and consent-reviewed sharing use the action ledger. No fine-tuned model was trained.
 
 ## Knowledge maintenance and limits
 

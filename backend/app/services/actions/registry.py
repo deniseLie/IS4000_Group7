@@ -18,4 +18,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'compliance.update_checklist_item': records.update_checklist,
     'requests.create': records.create_request,
     'document.register': records.register_document,
+    'document.submit': records.submit_document,
 }

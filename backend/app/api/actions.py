@@ -14,7 +14,7 @@ from app.core.observability import log_event
 from app.schemas.actions import ActionCase,ActionOutcome,CreateAction,CreateActionCase
 from app.schemas.contracts import ActionCommand,RequestContext
 from app.schemas.events import WorkflowPreview,WorkflowStatus
-from app.services import actions,audit,workflows
+from app.services import actions,audit,customer_data,workflows
 from app.services.checkpoint_codec import CheckpointIntegrityError
 from app.services.conversations import ConversationIntegrityError
 from app.services.actions import store
@@ -29,7 +29,10 @@ async def response_for(operation: Callable[[],Awaitable[T]],ctx: RequestContext,
     if ctx.principal.customer_id is None:raise ApiError(403,'profile_missing','A linked demo customer profile is required for actions.')
     batch=audit.start_batch(request.state.db,session_id=ctx.session_id)
     try:result=await operation()
-    except (PolicyDenied,store.ActionNotFound,actions.ActionStateError,store.ActionIntegrityError,ConversationIntegrityError,CheckpointIntegrityError,ValidationError,APIError,httpx.TransportError) as error:
+    except ApiError:
+        await flush(batch)
+        raise
+    except (PolicyDenied,store.ActionNotFound,actions.ActionStateError,store.ActionIntegrityError,ConversationIntegrityError,CheckpointIntegrityError,customer_data.CustomerDataIntegrityError,ValidationError,APIError,httpx.TransportError) as error:
         code=data_api.database_code(error) if isinstance(error,APIError) else None
         log_event('action_request_failed',db_code=code,error_type=type(error).__name__)
         await flush(batch)

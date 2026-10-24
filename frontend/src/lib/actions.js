@@ -23,7 +23,7 @@ function timestamp(value) {
 
 export function parseAction(value) {
   const command=value?.command,receipt=value?.receipt;
-  if(!command||!['card.temporary_block','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
+  if(!command||!['card.temporary_block','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
   const command_id=id(command.command_id),case_id=id(command.case_id);
   if(typeof command.idempotency_key!=='string'||!command.idempotency_key.startsWith(`${case_id}:`)||!command.idempotency_key.endsWith(`:${command.type}`)||!/^[A-Za-z0-9_-]{1,40}$/.test(command.idempotency_key.split(':')[1])||command.idempotency_key.split(':').length!==3)throw invalid();
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
@@ -47,6 +47,10 @@ export function parseAction(value) {
   else if(command.type==='compliance.update_checklist_item')canonical=parseChecklistTarget(target);
   else if(command.type==='requests.create')canonical=parseRequestTarget(target);
   else if(command.type==='document.register')canonical=parseStoredUpload(target,command.customer_id);
+  else if(command.type==='document.submit') {
+    if(typeof target?.item_label!=='string'||!target.item_label.trim()||typeof target.file_name!=='string'||!target.file_name.trim()||typeof target.sha256!=='string'||!/^[a-f0-9]{64}$/.test(target.sha256))throw invalid();
+    canonical={document_id:id(target.document_id),check_id:id(target.check_id),case_id:id(target.case_id),item_id:id(target.item_id),item_label:target.item_label,file_name:target.file_name,sha256:target.sha256};
+  }
   else if(command.type==='agenda.save')canonical=parseAgendaTarget(target);
   else if(command.type==='rm.share_summary')canonical=parseAgendaShareTarget(target);
   else canonical={handoff_id:id(target?.handoff_id)};
@@ -79,6 +83,9 @@ export function parseAction(value) {
     } else if(command.type==='requests.create') {
       result=parseRequestResult(receipt.result);
       if(confirmed_at===null||!requestTargetMatches(canonical,result))throw invalid();
+    } else if(command.type==='document.submit') {
+      if(receipt.result?.status!=='submitted_awaiting_review'||Object.entries(canonical).some(([key,value])=>receipt.result[key]!==value))throw invalid();
+      result={...canonical,status:'submitted_awaiting_review'};
     } else if(command.type==='document.register') {
       result=parseUploadResult(receipt.result,command.customer_id);
       if(!uploadTargetMatches(canonical,result))throw invalid();

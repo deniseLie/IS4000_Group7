@@ -4,6 +4,7 @@ from app.schemas.sharing import AgendaShareTarget
 from app.schemas.checklist import ChecklistTarget
 from app.schemas.request_actions import RequestTarget
 from app.schemas.document_uploads import DocumentUploadTarget
+from app.schemas.prechecks import SubmitDocumentTarget
 from app.schemas.consent_actions import ConsentGrantTarget,ConsentRequestTarget,ConsentRevokeTarget
 from app.schemas.contracts import ActionCommand
 from app.services.privacy import redact
@@ -41,3 +42,7 @@ def create_request(command: ActionCommand) -> RequestTarget:
 
 def register_document(command: ActionCommand) -> DocumentUploadTarget:
     return DocumentUploadTarget.model_validate(command.target)
+
+
+def submit_document(command: ActionCommand) -> SubmitDocumentTarget:
+    return SubmitDocumentTarget.model_validate(command.target)

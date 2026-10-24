@@ -44,6 +44,7 @@ def pdf_text(data: bytes) -> ParsedDocument:
             pieces: list[str]=[]
             for page in reader.pages:
                 text=page.extract_text()
+                if not text.strip():return empty_result('no_extractable_text','no_text_layer',count)
                 if sum(map(len,pieces))+len(text)+len(pieces)>MAX_TEXT:return empty_result('limits_exceeded','file_limits',count)
                 pieces.append(text)
             text='\n'.join(pieces)

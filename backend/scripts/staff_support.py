@@ -40,6 +40,8 @@ async def run(args: argparse.Namespace) -> None:
         if args.operation=='queue':
             print(json.dumps([item.model_dump(mode='json') for item in await staff.queue(args.limit,db)],indent=2))
             return
+        if args.operation=='compliance-context':
+            print(json.dumps(await staff.compliance_context(args.handoff,db),indent=2));return
         if args.operation=='claim':outcome=await staff.claim(args.command,args.handoff,db)
         elif args.operation=='close':outcome=await staff.close(args.command,args.handoff,db)
         elif args.operation=='unblock':outcome=await staff.unblock(args.command,args.handoff,args.card,db)
@@ -54,6 +56,7 @@ def main() -> None:
     operations=parser.add_subparsers(dest='operation',required=True)
     queue=operations.add_parser('queue')
     queue.add_argument('--limit',required=True,type=int)
+    context=operations.add_parser('compliance-context');context.add_argument('--handoff',required=True,type=UUID)
     for name in ['claim','close','unblock','cancel']:
         command=operations.add_parser(name)
         command.add_argument('--handoff',required=True,type=UUID)

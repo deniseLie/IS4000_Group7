@@ -68,6 +68,11 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     p,db=ctx.principal,request.state.db
     if req.mode=='personal' and p.kind!='customer':raise ApiError(401,'auth_required','Please sign in to use your account.')
     if req.mode=='personal' and p.customer_id is None:raise ApiError(403,'profile_missing','No demo customer profile is linked to this login.')
+    if req.record_context is not None:
+        from app.api.customer import read_result
+        from app.services import prechecks,compliance_selection
+        snapshot=await read_result(lambda:prechecks.workspace(ctx),request,ctx,'compliance.workspace')
+        compliance_selection.validate(req.record_context,prechecks.Workspace.model_validate(snapshot.data))
     prepared=None
     if settings.conversation_store=='database':
         prepared=await response_for(lambda:chat_store.prepare(req,request,ctx),ctx,request,'conversation.start')

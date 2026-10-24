@@ -22,6 +22,9 @@ async def read_result(operation: Callable[[],Awaitable[ToolResult]],request: Req
     if ctx.principal.customer_id is None:raise ApiError(403,'profile_missing','No synthetic customer profile is linked to this login.')
     batch=audit.start_batch(request.state.db,session_id=ctx.session_id)
     try:result=await operation()
+    except ApiError:
+        await flush(batch)
+        raise
     except (PolicyDenied,PermissionError,APIError,httpx.TransportError,ValidationError,customer_data.CustomerDataIntegrityError) as error:
         code=database_code(error) if isinstance(error,APIError) else None
         batch.add('data','data.read','failed',details={'tool':tool,'error_type':type(error).__name__,'db_code':code})

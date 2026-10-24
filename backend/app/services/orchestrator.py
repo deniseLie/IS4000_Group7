@@ -32,7 +32,7 @@ from app.schemas.knowledge import KnowledgeQuery
 from app.services import actions,audit,customer_data,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
-from app.services.agents import compliance,fraud,relationship,retail
+from app.services.agents import compliance,document,fraud,relationship,retail
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -45,7 +45,7 @@ SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|password|passcode
 DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)',re.I)
 TOPICS: dict[Domain, re.Pattern[str]] = {
     'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode)\b',re.I),
-    'compliance':re.compile(r'\b(?:compliance|review|checklist|notice)\b',re.I),
+    'compliance':re.compile(r'\b(?:compliance|review|checklist|notice)\b|\bletter\b[^.!?]{0,100}\b(?:update|provide|send)\b[^.!?]{0,80}\b(?:info(?:rmation)?|documents?|details)\b',re.I),
     'document':re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b',re.I),
     'relationship':re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b',re.I),
 }
@@ -127,6 +127,8 @@ def route_issues(issues: list[PlannedIssue]) -> list[PlannedIssue]:
 async def plan(state: Turn) -> PlanUpdate:
     req = state['request']
     question = state['risk'].redacted_message
+    if req.record_context is not None:
+        return {'issues':[PlannedIssue(domain='document' if req.record_context.kind=='document' else 'compliance',question=question)]}
     single = simple_issue(question, req.language)
     if single is not None:return {'issues':[single]}
     pv = prompts.current('planner')
@@ -179,6 +181,7 @@ def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
     if task.domain=='fraud':return prompts.load(agent,'v3')['id']
     if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
+    if task.domain=='document':return prompts.load('document','v3')['id']
     if task.domain in {'compliance','relationship'}:return prompts.load(agent,'v2')['id']
     return None
 
@@ -199,10 +202,14 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         decision,evidence=await fraud.respond(task,state['history'],state['request'].language,
             ctx.model_copy(update={'agent':'fraud'}),evidence)
         result=decision.result;proposal=decision.proposal;prompt_id=decision.prompt_id
-    elif task.domain in {'retail','compliance','relationship'}:
-        responder={'retail':retail.respond,'compliance':compliance.respond,'relationship':relationship.respond}[task.domain]
-        result,evidence,prompt_id=await responder(task,state['history'],state['request'].language,
-            ctx.model_copy(update={'agent':agent}),evidence)
+    elif task.domain in {'retail','compliance','relationship','document'}:
+        responder={'retail':retail.respond,'compliance':compliance.respond,'relationship':relationship.respond,'document':document.respond}[task.domain]
+        from app.services.compliance_selection import selection
+        token=selection.set(state['request'].record_context)
+        try:
+            result,evidence,prompt_id=await responder(task,state['history'],state['request'].language,
+                ctx.model_copy(update={'agent':agent}),evidence)
+        finally:selection.reset(token)
     else:
         result=AgentResult(task_id=task.task_id,agent=agent,status='error',
             text='This personal service is not connected yet. Use General help for public information or your bank’s official support channel.')

@@ -19,7 +19,11 @@ test('recorded notification delivery follows a confirmed action and preserves re
   await page.getByTestId('open-notifications').click();
   expect((await delivery).status()).toBe(200);
   const item=page.locator('[data-template-key="card.blocked"]');
-  await expect(item).toHaveCount(1);
+  // Native PostgreSQL has no Realtime; delivery may finish after the first inbox read.
+  await expect(async()=>{
+    await page.getByRole('button',{name:'Reload notifications',exact:true}).click();
+    await expect(item).toHaveCount(1,{timeout:1000});
+  }).toPass({timeout:10000});
   await expect(item).toContainText('4821');
   await expect(item.getByTestId('notification-read-state')).toHaveText('Unread');
   const read=page.waitForResponse(response=>response.url().endsWith('/read')&&response.request().method()==='POST');

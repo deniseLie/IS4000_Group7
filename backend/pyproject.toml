@@ -37,6 +37,7 @@ include = ["app*", "evaluation*", "scripts*"]
 [tool.setuptools.package-data]
 app = ["prompts/*/v*/*.md"]
 evaluation = ["*cases.json"]
+scripts = ["*.swift"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

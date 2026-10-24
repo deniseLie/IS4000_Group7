@@ -110,6 +110,7 @@ class RequestedItem(BaseModel):
     item_id: UUID
     label: Text
     instructions: Text | None
+    check_guidance: Text | None=None
     submission_status: Literal['not_submitted','submitted_awaiting_review','accepted','rejected','unknown']
     client_mark: Literal['prepared','not_prepared']
     client_marked_at: AwareDatetime | None

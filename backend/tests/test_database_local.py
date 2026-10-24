@@ -55,21 +55,23 @@ def test_guest_has_no_personal_table_access(database: 'Connection[SqlRow]') -> N
 
 
 def test_customer_session_event_is_idempotent_and_chain_is_valid(database: 'Connection[SqlRow]') -> None:
+    initial=database.execute('select count(*) from audit.events').fetchone()[0]
     set_customer(database,1001)
     assert database.execute('select public.audit_session_started(%s)',(uuid4(),)).fetchone()==(True,)
     assert database.execute('select public.audit_session_started(%s)',(uuid4(),)).fetchone()==(False,)
     checked,bad,head,_=database.execute('select * from public.audit_verify_chain(null)').fetchone()
-    assert checked==1 and bad is None and len(head)==64
+    assert checked==initial+1 and bad is None and len(head)==64
 
 
 def test_audit_batch_rolls_back_every_event_on_invalid_details(database: 'Connection[SqlRow]') -> None:
     from psycopg.errors import RaiseException
+    initial=database.execute('select checked from audit.verify_chain(null)').fetchone()
     set_customer(database,1001)
     events=[{'category':'chat','action':'chat.message_received','details':{'count':1}},
         {'category':'chat','action':'chat.reply_sent','details':{'text':'private free text'}}]
     with pytest.raises(RaiseException):
         with database.transaction():database.execute('select public.audit_record_batch(%s::jsonb)',(json.dumps(events),))
-    assert database.execute('select checked from public.audit_verify_chain(null)').fetchone()==(0,)
+    assert database.execute('select checked from public.audit_verify_chain(null)').fetchone()==initial
 
 
 def test_uuid_audit_details_preserve_ids_and_reject_other_long_digit_tokens(database: 'Connection[SqlRow]') -> None:
@@ -78,10 +80,11 @@ def test_uuid_audit_details_preserve_ids_and_reject_other_long_digit_tokens(data
     identifier='12345678-1234-4234-8234-123456789012'
     valid={'object_id':identifier}
     assert is_safe(valid)
+    initial=database.execute('select count(*) from audit.events').fetchone()[0]
     set_customer(database,1001)
     event={'category':'data','action':'data.read','details':valid}
     database.execute('select public.audit_record_batch(%s::jsonb)',(json.dumps([event]),))
-    assert database.execute('select details from audit.events').fetchone()==(valid,)
+    assert database.execute("select details from audit.events where category='data' order by event_id desc limit 1").fetchone()==(valid,)
     for value in ['4111111111111111','token_123456789012','12345678-1234-4234-8234-1234567890123',
         '12345678-1234-4234-8234-123456789012z','private free text']:
         details={'object_id':value}
@@ -89,7 +92,7 @@ def test_uuid_audit_details_preserve_ids_and_reject_other_long_digit_tokens(data
         with pytest.raises(RaiseException,match='audit details'):
             with database.transaction():
                 database.execute('select public.audit_record_batch(%s::jsonb)',(json.dumps([{**event,'details':details}]),))
-    assert database.execute('select checked,first_bad_event_id from public.audit_verify_chain(null)').fetchone()==(1,None)
+    assert database.execute('select checked,first_bad_event_id from public.audit_verify_chain(null)').fetchone()==(initial+1,None)
 
 
 def test_audit_actor_and_customer_are_derived_from_claims(database: 'Connection[SqlRow]') -> None:
@@ -98,17 +101,18 @@ def test_audit_actor_and_customer_are_derived_from_claims(database: 'Connection[
         'actor_type':'agent','actor_id':'document','details':{'tool':'customer.get_accounts','reasons':['agent_tool_forbidden'],'version':'v1'}}]
     database.execute('select public.audit_record_batch(%s::jsonb)',(json.dumps(events),))
     database.execute('reset role')
-    assert database.execute('select customer_id,actor_type,actor_id from audit.events').fetchall()==[(1002,'agent','document')]
+    assert database.execute("select customer_id,actor_type,actor_id from audit.events where action='policy.decided'").fetchall()==[(1002,'agent','document')]
 
 
 def test_native_row_change_and_audit_commit_together(database: 'Connection[SqlRow]') -> None:
+    initial=database.execute('select count(*) from audit.events').fetchone()[0]
     database.execute("update banking.credit_cards set status='temporarily_blocked' where card_id=10011")
-    assert database.execute("select customer_id,category,resource_type from audit.events").fetchall()==[(1001,'row','banking.credit_cards')]
+    assert database.execute("select customer_id,category,resource_type from audit.events where resource_type='banking.credit_cards'").fetchall()==[(1001,'row','banking.credit_cards')]
     checked,bad,_,_=database.execute('select * from audit.verify_chain(null)').fetchone()
-    assert checked==1 and bad is None
+    assert checked==initial+1 and bad is None
     database.rollback()
     assert database.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('active',)
-    assert database.execute('select count(*) from audit.events').fetchone()==(0,)
+    assert database.execute('select count(*) from audit.events').fetchone()==(initial,)
 
 
 def test_audit_events_are_immutable_even_for_table_owner(database: 'Connection[SqlRow]') -> None:

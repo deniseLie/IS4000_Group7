@@ -8,6 +8,8 @@ import ActionsPanel from './components/ActionsPanel';
 import NotificationsPanel from './components/NotificationsPanel';
 import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
+import ComplianceWorkspace from './components/ComplianceWorkspace';
+import {prepareComplianceSupport} from './lib/compliance';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
@@ -51,6 +53,9 @@ export default function Chat({session,onSignIn}) {
   const [actionsOpen,setActionsOpen]=useState(false);
   const [inboxOpen,setInboxOpen]=useState(false);
   const [recordsOpen,setRecordsOpen]=useState(false);
+  const [complianceOpen,setComplianceOpen]=useState(null);
+  const [complianceBusy,setComplianceBusy]=useState(false);
+  const [complianceReview,setComplianceReview]=useState(null),[supportScope,setSupportScope]=useState(null);
   const [blockAction,setBlockAction]=useState(null);
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const messageList=useRef(null);
@@ -136,7 +141,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);setComplianceOpen(null);if(store!==null)setBootError('');
     return true;
   }
 
@@ -147,9 +152,9 @@ export default function Chat({session,onSignIn}) {
     } catch {}
   }
 
-  async function send(e) {
-    e.preventDefault();
-    const question=input.trim();if(!question||loading||booting||bootError||pending)return;
+  async function send(e,supplied=null,recordContext=null) {
+    e?.preventDefault();
+    const question=(supplied??input).trim();if(!question||loading||booting||bootError||pending||(e&&complianceBusy))return;
     const safe=redact(question);
     if(safe!==question) {
       setInput('');setNotice('Private details were removed. Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. Please ask again without them. If your real card is lost or stolen, contact your bank immediately through its official app or website.');return;
@@ -171,7 +176,7 @@ export default function Chat({session,onSignIn}) {
       }
       if(thread?.guest_token)headers['X-Conversation-Token']=thread.guest_token;
       const stored=store==='database'?{conversation_id:thread.session_id,turn_id:crypto.randomUUID(),revision:thread.revision}:{};
-      const response=await fetch(`${API_URL}/chat`,{method:'POST',headers,body:JSON.stringify({messages:history,mode,language,...stored}),signal:controller.signal});
+      const response=await fetch(`${API_URL}/chat`,{method:'POST',headers,body:JSON.stringify({messages:history,mode,language,...stored,...(recordContext&&{record_context:recordContext})}),signal:controller.signal});
       if(!response.ok) {
         const code=await response.json().then(b=>b?.error?.code,()=>null);
         throw new Error(ERRORS[code]||'The banking service is unavailable. Please retry.');
@@ -212,7 +217,13 @@ export default function Chat({session,onSignIn}) {
   }
 
   function draft(question) { setInput(question);composer.current?.focus(); }
-  function prepareSummary() { setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''}); }
+  async function prepareReviewSupport(selection){
+    setSupportScope(null);setHandoff({saving:true,outcome:null,error:''});
+    try{const headers=await sessionHeaders();const token=headers.Authorization?.replace(/^Bearer /,'');
+      const prepared=await prepareComplianceSupport(selection,token);setSupportScope(prepared.case_id);setSummary(prepared.summary);setHandoff({saving:false,outcome:null,error:''});
+    }catch(error){setNotice(error.message);setHandoff({saving:false,outcome:null,error:error.message});}
+  }
+  function prepareSummary() { if(session&&showCompliance&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;} setSupportScope(null);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''}); }
   async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
     setHandoff({saving:true,outcome:null,error:''});
     try {
@@ -220,7 +231,7 @@ export default function Chat({session,onSignIn}) {
       if(error)throw error;
       if(!data.session)throw new Error('Session expired. Please sign in again.');
       const token=data.session.access_token;
-      const scope=await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},token);
+      const scope=supportScope?{case_id:supportScope}:await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},token);
       const urgent=messages.some(m=>m.sections?.some(section=>section.priority==='P0'));
       const saved=await proposeAction({command_id:crypto.randomUUID(),task_id:'handoff',case_id:scope.case_id,type:'handoff.create',
         target:{reason:'general_support',priority:urgent?'P0':'P2',summary}},token);
@@ -235,6 +246,7 @@ export default function Chat({session,onSignIn}) {
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
+  const showCompliance=complianceOpen??messages.some(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
     <header className="bank-chat-header">
@@ -258,6 +270,7 @@ export default function Chat({session,onSignIn}) {
         <div className="chat-settings"><label>Information <select aria-label="Information" disabled={booting} value={mode} onChange={e=>{if(reset())setMode(e.target.value);}}><option value="public">General help</option>{session&&<option value="personal">My records</option>}</select></label>
           <label>Answer language <select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select></label></div>
         <p className="language-note">The language choice applies to AI answers. Menus, safety guidance and notices remain in English. Translation quality is still being tested.</p>
+        {session&&mode==='personal'&&<button className="bank-chat-logout" data-testid="open-compliance" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>Your compliance review</button>}
         {store==='database'&&conversation&&<div className="saved-chat-controls"><button className="bank-chat-logout" data-testid="reload-saved-chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Reload saved chat</button>{pending&&<><span role="status">{workflow?'Review the action workflow to continue.':'A reply is pending.'}</span>{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}<button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel pending reply</button></>}</div>}
         <section className="bank-chat-window" aria-label="Banking conversation">
           {booting&&<p className="chat-notice" role="status">Opening chat…</p>}
@@ -273,10 +286,11 @@ export default function Chat({session,onSignIn}) {
                 {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
               </div>
             </div>)}
+            {session&&mode==='personal'&&showCompliance&&<ComplianceWorkspace key="compliance-workspace" onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>send(null,question,selection)}/>}
           </div>
           <div className="composer-area"><form className="bank-chat-composer" onSubmit={send}>
-            <input ref={composer} id="chat-composer" aria-label="Your message" value={input} onChange={e=>setInput(e.target.value)} disabled={loading||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"/>
-            <div className="composer-tools"><span><Icon name="shield"/>Never share your PIN, password or OTP</span><button data-testid="send-message" disabled={loading||booting||!!bootError||!!pending||!input.trim()}>{loading?'Please wait':'Send'}<Icon name="send"/></button></div>
+            <input ref={composer} id="chat-composer" aria-label="Your message" value={input} onChange={e=>setInput(e.target.value)} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"/>
+            <div className="composer-tools"><span><Icon name="shield"/>Never share your PIN, password or OTP</span><button data-testid="send-message" disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}>{loading?'Please wait':'Send'}<Icon name="send"/></button></div>
           </form><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
           <details className="session-note"><summary>About this conversation</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile. Use Saved chats to reopen them. Starting a new chat keeps previous saved chats.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears this browser’s access to the previous guest chat.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be omitted from long chats. General guidance works without login. Sign in to view your account records.</p></details></div>
         </section>

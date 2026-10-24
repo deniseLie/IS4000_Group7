@@ -6,7 +6,7 @@ from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.customer_data import ComplianceCase,CustomerEnvelope
 from app.schemas.events import Source
-from app.services import customer_data,llm_gateway,prompts
+from app.services import customer_data,llm_gateway,prompts,compliance_selection
 from app.services.agents.answer import draft_schema,validate_draft
 
 
@@ -31,7 +31,14 @@ def evidence_for(snapshot: CustomerEnvelope[ComplianceCase | None]) -> list[Evid
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Compliance task question must be text')
-    evidence=[*public_evidence,*evidence_for(await load(ctx))]
+    snapshot=await load(ctx)
+    chosen=compliance_selection.selection.get()
+    if chosen is not None:
+        if snapshot.data is None or snapshot.data.case_id!=chosen.case_id:raise customer_data.CustomerDataIntegrityError('Selected case changed')
+        requests=[r for r in snapshot.data.info_requests if r.request_id==chosen.request_id]
+        if not requests:raise customer_data.CustomerDataIntegrityError('Selected request changed')
+        snapshot=snapshot.model_copy(update={'data':snapshot.data.model_copy(update={'requested_items':[],'status_history':[],'info_requests':requests})})
+    evidence=[*public_evidence,*evidence_for(snapshot)]
     pv=prompts.load('compliance','v2')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)

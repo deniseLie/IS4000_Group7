@@ -11,11 +11,12 @@ from app.schemas.sharing import AgendaShareResult,AgendaShareTarget,StoredAgenda
 from app.schemas.checklist import ChecklistResult,ChecklistTarget,StoredChecklistTarget
 from app.schemas.request_actions import RequestResult,RequestTarget,StoredRequestTarget
 from app.schemas.document_uploads import DocumentUploadResult,DocumentUploadTarget,StoredDocumentUploadTarget
+from app.schemas.prechecks import SubmitDocumentTarget,StoredSubmission,SubmissionResult
 from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentRequestResult,ConsentRequestTarget,
     ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
-    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register']
+    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit']
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
 ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -87,9 +88,9 @@ class ActionFailure(BaseModel):
 
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
-    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget)
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
-    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget)
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget)
 
 
 class ActionRecord(BaseModel):
@@ -123,6 +124,7 @@ class ActionRecord(BaseModel):
         if action_type=='compliance.update_checklist_item':return StoredChecklistTarget.model_validate(value)
         if action_type=='requests.create':return StoredRequestTarget.model_validate(value)
         if action_type=='document.register':return StoredDocumentUploadTarget.model_validate(value)
+        if action_type=='document.submit':return StoredSubmission.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -151,7 +153,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult
+    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -173,6 +175,9 @@ class ActionOutcome(BaseModel):
                 raise ValueError('Receipt belongs to another command, customer or outcome')
             if receipt.outcome=='failed' and not isinstance(receipt.result,ActionFailure):raise ValueError('Failed receipts require an explicit reason')
             if receipt.outcome=='succeeded':
+                if command.type=='document.submit' and (not isinstance(receipt.result,SubmissionResult) or
+                    any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items())):
+                    raise ValueError('Submission receipt disagrees with its checked document')
                 if command.type=='card.temporary_block' and (not isinstance(receipt.result,CardBlockResult) or receipt.result.card_id!=command.target.card_id):
                     raise ValueError('Card receipt does not match its proposed target')
                 if command.type=='handoff.create' and not isinstance(receipt.result,HandoffResult):raise ValueError('Handoff receipt requires a stored handoff')
@@ -243,6 +248,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='compliance.update_checklist_item':return ChecklistTarget.model_validate(value)
         if info.data.get('type')=='requests.create':return RequestTarget.model_validate(value)
         if info.data.get('type')=='document.register':return DocumentUploadTarget.model_validate(value)
+        if info.data.get('type')=='document.submit':return SubmitDocumentTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

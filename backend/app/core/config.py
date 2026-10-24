@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     conversation_store: Literal['off','database'] = 'off'
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
+    document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
+    document_ocr_command: str | None = None
+    document_ocr_languages: str=Field(default="eng",pattern=r"^[A-Za-z0-9_+.-]{1,80}$")
+    document_ocr_vision_languages: str=Field(default="en-US",pattern=r"^[A-Za-z0-9,_.-]{1,100}$")
+    document_ocr_word_confidence: float=Field(default=80,ge=0,le=100)
+    document_ocr_mean_confidence: float=Field(default=90,ge=0,le=100)
     worker_database_url: SecretStr | None = Field(default=None,repr=False)
     cors_origins: list[str] = ["http://localhost:5173"]
 

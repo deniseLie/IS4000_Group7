@@ -185,6 +185,7 @@ def test_database_session_crash_rolls_back_uncommitted_delivery(local_data_api: 
 def test_reminder_producer_uses_recorded_due_dates_and_rechecks_open_items(local_data_api: NativeAPI,worker_uri: SecretStr) -> None:
     import psycopg
     with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute("update compliance.info_requests set due_date=null where customer_id=1002")
         db.execute("update compliance.cases set due_date=(clock_timestamp() at time zone 'Asia/Singapore')::date+2 where customer_id=1002")
     assert asyncio.run(produce_reminders(worker_uri))==1
     assert asyncio.run(produce_reminders(worker_uri))==0
@@ -210,6 +211,7 @@ def test_reused_handoff_is_one_notification(local_data_api: NativeAPI,native_api
 def test_recorded_deadline_window_and_delivered_reminder(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr,days: int) -> None:
     import psycopg
     with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute("update compliance.info_requests set due_date=null where customer_id=1002")
         due_date=db.execute("update compliance.cases set due_date=(clock_timestamp() at time zone 'Asia/Singapore')::date+%s where customer_id=1002 returning due_date",(days,)).fetchone()[0]
     assert asyncio.run(produce_reminders(worker_uri))==(1 if days<=7 else 0)
     asyncio.run(drain(worker_uri))
@@ -218,7 +220,31 @@ def test_recorded_deadline_window_and_delivered_reminder(local_data_api: NativeA
     assert response.status_code==200,response.text
     items=response.json()['items']
     assert len(items)==(1 if days<=7 else 0)
-    if items:assert str(due_date) in items[0]['body'] and items[0]['priority']=='P2'
+    if items:
+        assert str(due_date) in items[0]['body'] and items[0]['priority']=='P2'
+        assert 'Proof of residential address' in items[0]['body']
+
+
+@pytest.mark.parametrize('change',[None,'answered','changed_deadline','closed'])
+def test_information_reminder_has_its_own_action_and_deadline(local_data_api,worker_uri,change):
+    import psycopg
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute("update compliance.cases set due_date=null where customer_id=1002")
+        due=db.execute("update compliance.info_requests set due_date=(clock_timestamp() at time zone 'Asia/Singapore')::date+3 where customer_id=1002 returning due_date").fetchone()[0]
+    assert asyncio.run(produce_reminders(worker_uri))==1
+    assert asyncio.run(produce_reminders(worker_uri))==0
+    with psycopg.connect(local_data_api.database_uri) as db:
+        if change=='answered':db.execute("update compliance.info_requests set status='responded' where customer_id=1002")
+        elif change=='changed_deadline':db.execute("update compliance.info_requests set due_date=due_date+1 where customer_id=1002")
+        elif change=='closed':db.execute("update compliance.cases set status='closed' where customer_id=1002")
+    results=asyncio.run(drain(worker_uri))
+    with psycopg.connect(local_data_api.database_uri) as db:
+        rows=db.execute("select body from notify.inbox where customer_id=1002").fetchall()
+        if change:assert not rows and any(result.disposition=='stale' for result in results)
+        else:
+            assert len(rows)==1 and str(due) in rows[0][0]
+            assert 'source' in rows[0][0].lower() and 'instructions' in rows[0][0].lower()
+        assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
 def test_inheriting_app_read_privileges_is_refused(local_data_api: NativeAPI,worker_uri: SecretStr) -> None:
