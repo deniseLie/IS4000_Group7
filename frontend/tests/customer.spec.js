@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -11,7 +12,7 @@ test('customer records use real scoped audited services at all viewport sizes',a
     await page.goto('/');
     const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/transactions'));
     const advisorLoaded=page.waitForResponse(response=>response.url().endsWith('/customer/advisor'));
-    await page.getByTestId('open-records').click();
+    await openMenuItem(page,'open-records');
     expect((await loaded).status()).toBe(200);
     await expect(page.getByTestId('records-name')).toHaveText(fixture.name);
     const advisor=(await (await advisorLoaded).json()).data?.current;
@@ -45,7 +46,7 @@ test('customer records use real scoped audited services at all viewport sizes',a
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/customer-bottom-${width}.png`,fullPage:true});
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByTestId('open-records')).toBeFocused();
+    await expect(page.getByTestId('open-account-menu')).toBeFocused();
   }
   expect(chatCalls).toEqual([]);
 });
@@ -53,7 +54,7 @@ test('customer records use real scoped audited services at all viewport sizes',a
 test('unavailable customer records show an explicit error without stale data',async({page})=>{
   await page.goto('/');
   const failed=page.waitForResponse(response=>response.url().endsWith('/customer/accounts'));
-  await page.getByTestId('open-records').click();
+  await openMenuItem(page,'open-records');
   expect((await failed).status()).toBe(503);
   await expect(page.getByTestId('records-error')).toBeVisible();
   await expect(page.getByTestId('records-content')).toHaveCount(0);

@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -10,9 +11,9 @@ test('consent status uses real assigned manager and registry at desktop and mobi
     await page.setViewportSize({width,height:900});
     await page.goto('/');
     const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/rm'));
-    await page.getByTestId('open-data-sharing').click();
+    await openMenuItem(page,'open-data-sharing');
     expect((await loaded).status()).toBe(200);
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('sharing-page');
     await expect(dialog).toBeVisible();
     await expect(page.getByTestId('sharing-recipient')).toHaveText(fixture.manager);
     await expect(page.getByTestId('sharing-status')).toHaveText(fixture.granted?
@@ -20,9 +21,9 @@ test('consent status uses real assigned manager and registry at desktop and mobi
     await expect(page.getByTestId('sharing-error')).toHaveCount(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/sharing-${width}.png`,fullPage:true});
-    await page.keyboard.press('Escape');
+    await page.goBack();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByTestId('open-data-sharing')).toBeFocused();
+    await expect(page.locator('#chat-composer')).toBeVisible();
   }
   expect(chatCalls).toEqual([]);
 });
@@ -30,7 +31,7 @@ test('consent status uses real assigned manager and registry at desktop and mobi
 test('unavailable registry is an explicit UI error without a consent status',async({page})=>{
   await page.goto('/');
   const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/rm'));
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   expect((await loaded).status()).toBe(503);
   await expect(page.getByTestId('sharing-error')).toBeVisible();
   await expect(page.getByTestId('sharing-status')).toHaveCount(0);

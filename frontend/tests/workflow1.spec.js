@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
 
@@ -37,7 +38,7 @@ async function signIn(page) {
     await page.locator('#password').fill(user.password);
     await page.getByTestId('submit-login').click();
   }
-  await expect(page.getByTestId('sign-out')).toBeVisible({timeout:30000});
+  await expect(page.getByTestId('open-account-menu')).toBeVisible({timeout:30000});
 }
 
 for(const decision of ['confirm','decline'])test(`workflow one ${decision}: guest, three problems, follow-ups, handover and logout`,async({page})=>{
@@ -125,7 +126,7 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   for(const text of await page.getByTestId('chat-message-assistant').allInnerTexts())expect(text).not.toMatch(ASKS_SECRET);
 
   // Logout: personal data needs login again.
-  await page.getByTestId('sign-out').click();
+  await openMenuItem(page,'sign-out');
   await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
   const after=await ask(page,'whats my balance');
   await expect(after).toHaveAttribute('data-response-origin','safety');

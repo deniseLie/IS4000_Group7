@@ -4,7 +4,7 @@ import {checkIsFresh,findingText,loadWorkspace,primaryStatus,runPrecheck,submitD
 import ChecklistPreparation from './ChecklistPreparation';
 import DocumentUpload from './DocumentUpload';
 
-export default function ComplianceWorkspace({onAsk,chatBusy=false,onBusyChange,onSupport,onReviewLoaded}){
+export default function ComplianceWorkspace({onAsk,chatBusy=false,onBusyChange,onSupport,onReviewLoaded,submissionReceipt=null,onSubmitted}){
  const [workspace,setWorkspace]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[now,setNow]=useState(Date.now());
  const mounted=useRef(false),active=useRef(null),serverClock=useRef(null);
  function snapshot(result){serverClock.current={server:Date.parse(result.as_of),local:performance.now()};setNow(serverClock.current.server);setWorkspace(result);onReviewLoaded?.(result.review?.case_id??null);}
@@ -24,7 +24,7 @@ export default function ComplianceWorkspace({onAsk,chatBusy=false,onBusyChange,o
    if(report.status==='no_issues'){
     const result=await submitDocument(documentId,access);
     if(result.receipt?.outcome!=='succeeded')throw new Error('The item or file changed. Your document was not submitted. Reload before retrying.');
-    if(mounted.current)setReceipt(result.receipt.receipt_id);
+    if(mounted.current){setReceipt(result.receipt.receipt_id);onSubmitted?.({case_id:report.case_id,receipt_id:result.receipt.receipt_id});}
    }
    const result=await loadWorkspace(access);if(mounted.current)snapshot(result);
    if(mounted.current&&onAsk)await onAsk('Please explain the recorded preliminary check for the document I just checked, including any corrections and its actual submission status.',{kind:'document',case_id:report.case_id,item_id:report.item_id,document_id:report.document_id,check_id:report.check_id});
@@ -32,6 +32,7 @@ export default function ComplianceWorkspace({onAsk,chatBusy=false,onBusyChange,o
   finally{if(mounted.current)setBusy(false);}
  }
  const review=workspace?.review;
+ const displayedReceipt=receipt||(submissionReceipt&&submissionReceipt.case_id===review?.case_id?submissionReceipt.receipt_id:null);
  const stale=review&&now-Date.parse(review.status_updated_at)>workspace.policy.status_stale_days*86400000;
  const closed=review&&['completed','closed'].includes(review.status);
  return <section className="compliance-workspace" data-testid="compliance-workspace" aria-label="Your compliance review">
@@ -68,7 +69,7 @@ export default function ComplianceWorkspace({onAsk,chatBusy=false,onBusyChange,o
      {!closed&&item.submission_status!=='accepted'&&<DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/>}
     </li>;
    })}</ul>
-   {receipt&&<p role="status" data-testid="submission-receipt">Submitted – awaiting review. Receipt: <code>{receipt}</code>. This is not bank acceptance.</p>}
+   {displayedReceipt&&<p role="status" data-testid="submission-receipt">Submitted – awaiting review. Receipt: <code>{displayedReceipt}</code>. This is not bank acceptance.</p>}
    <p>Retrieved {new Date(workspace.as_of).toLocaleString()}. Case deadline: {review.due_date||'Not recorded'}.</p>
   </>}
  </section>;

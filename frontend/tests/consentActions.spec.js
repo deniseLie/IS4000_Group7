@@ -1,9 +1,10 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession';
 
 async function openSharing(page) {
   const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/records'));
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   expect((await loaded).status()).toBe(200);
   await expect(page.getByTestId('refresh-consent-records')).toBeEnabled();
 }
@@ -60,7 +61,7 @@ test('consent form requests grants and revokes through real reviewed receipts',a
     const saved=page.locator(`[data-consent-grant-id="${granted.receipt.result.grant_id}"]`);
     await expect(saved.getByTestId('consent-grant-status')).toHaveText('active');
     await saved.scrollIntoViewIfNeeded();
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('sharing-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/consent-current-${width}.png`,fullPage:true});
     const revocation=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
@@ -81,7 +82,7 @@ test('consent form requests grants and revokes through real reviewed receipts',a
 test('failed consent records do not display an apparently active grant',async({page})=>{
   await seedSession(page);await page.goto('/');
   const failed=page.waitForResponse(response=>response.url().endsWith('/consent/records'));
-  await page.getByTestId('open-data-sharing').click();expect((await failed).status()).toBe(503);
+  await openMenuItem(page,'open-data-sharing');expect((await failed).status()).toBe(503);
   await expect(page.getByTestId('sharing-error')).toBeVisible();
   await expect(page.getByTestId('sharing-status')).toHaveCount(0);
   await expect(page.getByTestId('consent-grants')).toHaveCount(0);

@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -9,7 +10,7 @@ test('relationship records use real scoped requests and available times',async({
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
     await page.goto('/');
-    await page.getByTestId('open-data-sharing').click();
+    await openMenuItem(page,'open-data-sharing');
     const loaded=Promise.all(['/relationship/requests','/relationship/slots'].map(path=>page.waitForResponse(response=>response.url().endsWith(path))));
     await page.getByTestId('open-relationship-details').click();
     expect((await loaded).map(response=>response.status())).toEqual([200,200]);
@@ -19,7 +20,7 @@ test('relationship records use real scoped requests and available times',async({
     if(fixture.expects_slots)await expect(page.getByTestId('relationship-slot').first()).toBeVisible();
     else await expect(page.getByTestId('slots-empty')).toBeVisible();
     await expect(page.getByTestId('relationship-error')).toHaveCount(0);
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('relationship-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/relationship-${width}.png`,fullPage:true});
     if(width===320) {
@@ -33,7 +34,7 @@ test('relationship records use real scoped requests and available times',async({
     expect((await invalid).status()).toBe(422);
     await expect(page.getByTestId('relationship-error')).toBeVisible();
     await expect(page.getByTestId('relationship-slots')).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await page.goBack();
     await expect(dialog).toHaveCount(0);
   }
   expect(chatCalls).toEqual([]);
@@ -41,7 +42,7 @@ test('relationship records use real scoped requests and available times',async({
 
 test('unavailable appointment registry shows an explicit relationship error',async({page})=>{
   await page.goto('/');
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   const loaded=page.waitForResponse(response=>response.url().endsWith('/relationship/slots'));
   await page.getByTestId('open-relationship-details').click();
   expect((await loaded).status()).toBe(503);

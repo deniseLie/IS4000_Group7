@@ -1,7 +1,7 @@
 import {useEffect,useRef} from 'react';
 import Icon from './Icon';
 
-export default function Panel({label,title,closeLabel,onClose,children}) {
+export default function Panel({label,title,closeLabel,onClose,children,eyebrow='DemoBank assistant',subtitle,footer,size}) {
   const dialog=useRef(null);
   useEffect(()=>{
     const node=dialog.current;const trigger=document.activeElement;
@@ -15,10 +15,11 @@ export default function Panel({label,title,closeLabel,onClose,children}) {
     if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
   }
-  return <dialog ref={dialog} className="panel-dialog" aria-label={label} onKeyDown={containFocus} onCancel={e=>{e.preventDefault();onClose();}}>
+  return <dialog ref={dialog} className={`panel-dialog ${size||''}`} aria-label={label} onKeyDown={containFocus} onCancel={e=>{e.preventDefault();onClose();}}>
     <section className="support-panel" aria-label={label}>
-      <div className="panel-heading"><div><span className="eyebrow">DemoBank assistant</span><h2>{title}</h2></div><button className="icon-button" aria-label={closeLabel} onClick={onClose}><Icon name="close"/></button></div>
+      <div className="panel-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2>{subtitle&&<p className="panel-subtitle">{subtitle}</p>}</div><button className="icon-button" aria-label={closeLabel} onClick={onClose}><Icon name="close"/></button></div>
       {children}
+      {footer&&<div className="panel-footer">{footer}</div>}
     </section>
   </dialog>;
 }

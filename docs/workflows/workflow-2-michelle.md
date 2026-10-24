@@ -87,3 +87,9 @@ Uploaded verification files (all fictional), retained in Michelle's private immu
 | `Tax narrative DEMO.pdf` | Synthetic Demo and Fictional Country A tax residency statement; checked against the published field list, submitted. |
 
 Review copies and the exact synthetic notice configuration are in `/private/tmp/michelle-generic-review/`. No real personal documents were uploaded. Screenshots: `/private/tmp/michelle-scoped-support-verified.png`, `/private/tmp/michelle-inbox-generic-verified.png`, and `/private/tmp/michelle-workflow-final-verified.png` after reload and a final recheck under the deployed final prompts. The app/API remain local on ports 5173/8000; no public web deployment or actual staffed support has been added.
+
+### Integration with incoming page navigation
+
+The merge with `c1b33ed` preserves the incoming account menu, Inbox, Relationship and Data sharing pages. The Compliance page now renders the same live workspace as the chat, replacing its earlier design-only checking placeholders. Selected upload explanations return to the saved chat; a case-scoped submission receipt survives that navigation. Scoped support summaries retain their exact reviewed content. The mobile relationship grid is bounded so the incoming page does not overflow at 320px.
+
+Post-merge verification: 54 frontend unit tests and production build pass; both real-provider Michelle browser scenarios pass (`/private/tmp/michelle-merge-final-browser.log`); nine shared scenarios pass (`/private/tmp/michelle-merge-shared-browser.log`), and the four-width appointment hold/confirm/cancel regression passes after the grid correction (`/private/tmp/michelle-merge-appointments-final.log`). Computer Use verified the merged hosted-connected Compliance page with all four documents still submitted. No source-reference assets or private configuration are included in the commit.

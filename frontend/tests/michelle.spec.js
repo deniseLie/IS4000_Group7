@@ -7,13 +7,15 @@ test('michelle corrects and submits documents',async({page})=>{
  page.on('pageerror',error=>console.error('Michelle browser error:',error.stack));
  const fixture=JSON.parse(fs.readFileSync(process.env.NATIVE_BROWSER_FIXTURE,'utf8'));
  await seedSession(page);await page.goto('/');
- await expect(page.getByTestId('sign-out')).toBeVisible();
+ await expect(page.getByTestId('open-account-menu')).toBeVisible();
  if(fixture.live){
   await page.locator('#chat-composer').fill('I got a letter asking me to update my information. What do I need to send?');
   await page.getByTestId('send-message').click();
   await expect(page.locator('section.answer-section[data-domain="compliance"]')).toBeVisible({timeout:170000});
   await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai');
  }else await page.getByTestId('open-compliance').click();
+ await page.getByTestId('open-compliance').click();
+ await expect(page.getByTestId('compliance-page')).toBeVisible();
  const workspace=page.getByTestId('compliance-workspace');
  await expect(workspace.getByRole('heading',{name:'Documents to upload',exact:true})).toBeVisible();
  await expect(workspace.getByTestId('compliance-item')).toHaveCount(4);
@@ -41,7 +43,7 @@ test('michelle corrects and submits documents',async({page})=>{
  await expect(workspace).not.toContainText('Accepted by bank');
  await page.getByTestId('open-notifications').click();
  await expect(page.locator('[data-template-key="document.submitted"]')).toContainText('not approval',{timeout:10000});
- await page.getByRole('button',{name:'Close notifications',exact:true}).click();
+ await page.getByTestId('open-chat').click();
  if(fixture.live){
   await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
   const beforeExplanation=await page.getByTestId('chat-message-assistant').count();
@@ -77,8 +79,8 @@ test('michelle corrects and submits documents',async({page})=>{
   await page.setViewportSize({width,height:900});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
  }
- await page.getByTestId('open-compliance').click();await expect(workspace).toHaveCount(0);
- await page.getByTestId('open-compliance').click();await expect(workspace).toBeVisible();
+ await page.getByTestId('toggle-compliance-workspace').click();await expect(workspace).toHaveCount(0);
+ await page.getByTestId('toggle-compliance-workspace').click();await expect(workspace).toBeVisible();
 });
 
 test('rechecks expired Michelle upload before a new submission',async({page})=>{
