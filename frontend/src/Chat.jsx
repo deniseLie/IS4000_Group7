@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon';
 import Panel from './components/Panel';
 import Answer from './components/Answer';
-import SharingPanel from './components/SharingPanel';
+import SharingPage from './components/SharingPage';
+import RelationshipPage from './components/RelationshipPage';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
@@ -28,7 +29,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable. Select General help to continue.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat','inbox'];
+const PAGES=['chat','inbox','sharing','relationship'];
 function pageFromHash() {const page=location.hash.slice(1);return PAGES.includes(page)?page:'chat';}
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
 
@@ -44,7 +45,6 @@ export default function Chat({session,onSignIn}) {
   const [copied,setCopied]=useState(false);
   const [copyError,setCopyError]=useState('');
   const [article,setArticle]=useState(null);
-  const [sharing,setSharing]=useState(false);
   const [store,setStore]=useState(null);
   const [booting,setBooting]=useState(true);
   const [bootError,setBootError]=useState('');
@@ -57,6 +57,7 @@ export default function Chat({session,onSignIn}) {
   const [blockAction,setBlockAction]=useState(null);
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const [view,setView]=useState(()=>session?pageFromHash():'chat');
+  const [pageKey,setPageKey]=useState(0);
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -111,7 +112,7 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);
+    setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);
     setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
@@ -143,7 +144,7 @@ export default function Chat({session,onSignIn}) {
     }
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
-    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
+    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
     setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);if(store!==null)setBootError('');
     return true;
   }
@@ -220,7 +221,7 @@ export default function Chat({session,onSignIn}) {
   }
 
   function navigate(page) {
-    if(page===view)return;
+    if(page===view){if(page!=='chat')setPageKey(key=>key+1);return;}  // choosing the open page reloads it
     if(page==='chat')history.pushState(null,'',location.pathname+location.search);else location.hash=page;
     setView(page);
   }
@@ -250,13 +251,14 @@ export default function Chat({session,onSignIn}) {
 
   const footer=<footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
   function openActions() {closeOverlays();setActionsOpen(true);}
-  const review={label:'Review in Actions',onSelect:openActions};
-  function closeOverlays() {setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
+  const review={label:'Review in Actions',onSelect:openActions},relationship={label:'Open relationship page',onSelect:()=>navigate('relationship')};
+  function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
     {testid:'menu-open-chat',icon:'chat',label:'Banking assistant',mobile:true,onSelect:()=>navigate('chat')},
+    {testid:'menu-open-relationship',icon:'people',label:'Relationship & advisory',mobile:true,onSelect:()=>{closeOverlays();navigate('relationship');}},
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
-    {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();setSharing(true);}},
+    {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
     ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();setSavedChats(true);}}]:[]),
     {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
@@ -264,6 +266,7 @@ export default function Chat({session,onSignIn}) {
   const pages=[
     {view:'chat',testid:'open-chat',icon:'chat',label:'Banking assistant'},
     {icon:'shield',label:'Privacy & safety',question:'How can I keep my details safe in chat?'},
+    ...(session?[{view:'relationship',testid:'open-relationship',icon:'people',label:'Relationship & advisory'}]:[]),
   ];
 
   return <div className="bank-chat-page">
@@ -301,7 +304,9 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>
       {view!=='chat'&&<main className="app-page">
-        {view==='inbox'&&<InboxPage onActions={openActions} links={{Cards:review,Support:review}}/>}
+        {view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:review,Appointments:relationship,Requests:relationship,Relationship:relationship,'Data sharing':{label:'Open data sharing',onSelect:()=>navigate('sharing')}}}/>}
+        {view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions} onRelationship={()=>navigate('relationship')}/>}
+        {view==='relationship'&&<RelationshipPage key={pageKey} onReviewActions={openActions} onSharing={()=>navigate('sharing')} onSupport={prepareSummary}/>}
         {footer}
       </main>}
     </div>
@@ -319,7 +324,6 @@ export default function Chat({session,onSignIn}) {
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
-    {sharing&&<SharingPanel onClose={()=>setSharing(false)} onReviewActions={()=>{setSharing(false);setActionsOpen(true);}}/>}
     {blockAction&&<CardBlockDialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
       if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
     }}/>}

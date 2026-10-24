@@ -61,7 +61,7 @@ test('consent form requests grants and revokes through real reviewed receipts',a
     const saved=page.locator(`[data-consent-grant-id="${granted.receipt.result.grant_id}"]`);
     await expect(saved.getByTestId('consent-grant-status')).toHaveText('active');
     await saved.scrollIntoViewIfNeeded();
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('sharing-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/consent-current-${width}.png`,fullPage:true});
     const revocation=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');

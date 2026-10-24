@@ -61,7 +61,7 @@ test('appointment form holds confirms and cancels through real action receipts',
     const confirmed=page.locator(`[data-appointment-id="${id}"]`);
     await expect(confirmed.getByTestId('appointment-status')).toHaveText('confirmed');
     await expect(confirmed).toContainText('phone');
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('relationship-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await confirmed.scrollIntoViewIfNeeded();
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/booking-current-${width}.png`,fullPage:true});

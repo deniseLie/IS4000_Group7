@@ -79,13 +79,17 @@ async function body(response) {
   if(!response.ok)throw new Error(typeof value?.error?.message==='string'?value.error.message:'Recorded customer data is unavailable. Reload records to retry.');
   return value;
 }
+const RESOURCES={profile,accounts:value=>rows(value,account,'account_id'),cards:value=>rows(value,card,'card_id'),
+  loans:value=>rows(value,loan,'loan_id'),compliance:review,advisor,documents:value=>rows(value,documentRecord,'document_id')};
+// Pages read only the sections they show; each section stays a separate audited read.
+export async function loadSections(token,paths,signal) {
+  const headers={Authorization:`Bearer ${token}`};
+  return Object.fromEntries(await Promise.all(paths.map(async path=>[path,parseRecord(await body(await fetch(`${API_URL}/customer/${path}`,{headers,signal})),RESOURCES[path])])));
+}
 export async function loadRecords(token,query,signal) {
   const headers={Authorization:`Bearer ${token}`};
-  const resources=[['profile',profile],['accounts',value=>rows(value,account,'account_id')],['cards',value=>rows(value,card,'card_id')],
-    ['loans',value=>rows(value,loan,'loan_id')],['compliance',review],['advisor',advisor],
-    ['documents',value=>rows(value,documentRecord,'document_id')]];
-  const results=await Promise.all(resources.map(async([path,parse])=>[path,parseRecord(await body(await fetch(`${API_URL}/customer/${path}`,{headers,signal})),parse)]));
+  const results=await loadSections(token,Object.keys(RESOURCES),signal);
   const transactions=parseRecord(await body(await fetch(`${API_URL}/customer/transactions`,{method:'POST',
     headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(query),signal})),value=>rows(value,transaction,'txn_id'));
-  return {...Object.fromEntries(results),transactions};
+  return {...results,transactions};
 }

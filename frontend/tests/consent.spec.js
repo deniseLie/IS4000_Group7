@@ -13,7 +13,7 @@ test('consent status uses real assigned manager and registry at desktop and mobi
     const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/rm'));
     await openMenuItem(page,'open-data-sharing');
     expect((await loaded).status()).toBe(200);
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('sharing-page');
     await expect(dialog).toBeVisible();
     await expect(page.getByTestId('sharing-recipient')).toHaveText(fixture.manager);
     await expect(page.getByTestId('sharing-status')).toHaveText(fixture.granted?
@@ -21,9 +21,9 @@ test('consent status uses real assigned manager and registry at desktop and mobi
     await expect(page.getByTestId('sharing-error')).toHaveCount(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/sharing-${width}.png`,fullPage:true});
-    await page.keyboard.press('Escape');
+    await page.goBack();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByTestId('open-account-menu')).toBeFocused();
+    await expect(page.locator('#chat-composer')).toBeVisible();
   }
   expect(chatCalls).toEqual([]);
 });

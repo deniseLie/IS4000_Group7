@@ -52,7 +52,7 @@ test('private agenda drafts save and edit through real action receipts',async({p
     const persisted=page.locator(`[data-agenda-id="${second.action.command.target.agenda_id}"]`);
     await expect(persisted.getByTestId('agenda-revision')).toHaveText('2');
     await persisted.scrollIntoViewIfNeeded();
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('sharing-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/agenda-draft-${width}.png`,fullPage:true});
     await persisted.getByTestId('edit-agenda').click();

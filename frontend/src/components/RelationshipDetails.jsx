@@ -101,7 +101,7 @@ export default function RelationshipDetails({recipient,recipientBusy,onReviewAct
       <h4>Suggested appointment times</h4>
       <label>Meeting format <select data-testid="appointment-format" value={format} disabled={busy||deciding} onChange={event=>setFormat(event.target.value)}><option value="video">Video</option><option value="phone">Phone</option><option value="in_person">In person</option></select></label>
       {!result.slots.data.length&&<p data-testid="slots-empty">No available times were found in this range for an assigned manager.</p>}
-      <ul className="relationship-list" data-testid="relationship-slots">{result.slots.data.map(item=><li key={`${item.advisor_id}:${item.starts_at}`} data-testid="relationship-slot"><p><time dateTime={item.starts_at}>{appointmentTime(item.starts_at)}</time> – <time dateTime={item.ends_at}>{appointmentTime(item.ends_at)}</time></p><button className="bank-chat-logout" data-testid="hold-appointment" disabled={busy||!!error||deciding} onClick={()=>holdSlot(item)}>Hold for ten minutes</button></li>)}</ul>
+      <ul className="relationship-list slot-grid" data-testid="relationship-slots">{result.slots.data.map(item=><li key={`${item.advisor_id}:${item.starts_at}`} data-testid="relationship-slot"><p><time dateTime={item.starts_at}>{appointmentTime(item.starts_at)}</time> – <time dateTime={item.ends_at}>{appointmentTime(item.ends_at)}</time></p><button className="bank-chat-logout" data-testid="hold-appointment" disabled={busy||!!error||deciding} onClick={()=>holdSlot(item)}>Hold for ten minutes</button></li>)}</ul>
       <p className="source-notice">Appointments are recorded within this demo. Holding or booking a time does not grant consent to share an agenda or customer data.</p>
     </>}
   </section>;

@@ -20,7 +20,7 @@ test('relationship records use real scoped requests and available times',async({
     if(fixture.expects_slots)await expect(page.getByTestId('relationship-slot').first()).toBeVisible();
     else await expect(page.getByTestId('slots-empty')).toBeVisible();
     await expect(page.getByTestId('relationship-error')).toHaveCount(0);
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('relationship-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/relationship-${width}.png`,fullPage:true});
     if(width===320) {
@@ -34,7 +34,7 @@ test('relationship records use real scoped requests and available times',async({
     expect((await invalid).status()).toBe(422);
     await expect(page.getByTestId('relationship-error')).toBeVisible();
     await expect(page.getByTestId('relationship-slots')).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await page.goBack();
     await expect(dialog).toHaveCount(0);
   }
   expect(chatCalls).toEqual([]);
