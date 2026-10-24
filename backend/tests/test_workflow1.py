@@ -202,3 +202,16 @@ def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
     assert issue is not None and issue.domain=='retail'
     assert search('can i get a car loan')[0].id=='car-loans'
     assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail','v3')['system']
+
+
+@pytest.mark.parametrize('raw',['not json',json.dumps({'answer':'Contact your bank.','source_ids':['customer-records']}),
+    fraud_draft('Contact your bank now.',[{'card_id':'card_10031','transaction_id':'txn_100311'}])])
+def test_malformed_flagged_fraud_draft_still_offers_the_record_based_block(raw: str) -> None:
+    from pydantic import ValidationError
+    from app.services.llm_gateway import LLMBadOutput
+    evidence=[evidence_for(records())]
+    pairs=[FraudProposal(card_id='card_10011',transaction_id='txn_100111')]
+    decision=decision_for(fraud_task(),raw,evidence,pairs,'test',flagged=True)
+    assert decision.proposal==pairs[0] and decision.result.status=='error' and decision.result.text.startswith(fraud.URGENT)
+    with pytest.raises((ValidationError,LLMBadOutput)):decision_for(fraud_task(),raw,evidence,pairs,'test')
+    with pytest.raises((ValidationError,LLMBadOutput)):decision_for(fraud_task(),raw,evidence,pairs*2,'test',flagged=True)

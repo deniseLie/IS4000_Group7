@@ -28,3 +28,12 @@ test('saved sources must use the local source route and approved publisher links
   for(const url of ['https://example.invalid','/knowledge/../../secret'])assert.throws(()=>parseSavedAnswer({...answer(),sources:[{id:'a',title:'A',version:'v1',url}]}));
   assert.throws(()=>parseSavedAnswer({...answer(),sources:[{id:'a',title:'A',version:'v1',url:'/knowledge/a',reference_url:'https://example.invalid'}]}));
 });
+test('saved replies keep the recorded card-block decision on its section',()=>{
+  const section={task_id:'t1',domain:'fraud',priority:'P0',answer:'Withheld.',response_origin:'validation',prompt_version:null,sources:[],
+    decision:'Your card ending 4821 is temporarily blocked. This did not reverse any transaction.'};
+  const saved={answer:'x',disclaimer:'',response_origin:'validation',source_check:'rejected',needs_human:true,prompt_version:null,sources:[],sections:[section,{...section,task_id:'t2',domain:'retail',priority:'P3',decision:undefined}]};
+  const parsed=parseSavedAnswer(saved);
+  assert.equal(parsed.sections[0].decision,section.decision);
+  assert.equal(parsed.sections[1].decision,null);
+  assert.throws(()=>parseSavedAnswer({...saved,sections:[{...section,decision:42}]}));
+});

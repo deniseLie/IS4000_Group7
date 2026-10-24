@@ -29,7 +29,8 @@ export function parseSavedAnswer(value) {
     result.sections=value.sections.map(section=>{
       if(!section||!['retail','fraud','compliance','document','relationship','smalltalk'].includes(section.domain)||!['P0','P1','P2','P3'].includes(section.priority)||!Array.isArray(section.sources)||!['ai','safety','validation'].includes(section.response_origin))throw invalid();
       return {task_id:text(section.task_id),domain:section.domain,priority:section.priority,answer:text(section.answer),
-        response_origin:section.response_origin,prompt_version:section.prompt_version,sources:section.sources.map(source)};
+        response_origin:section.response_origin,prompt_version:section.prompt_version,sources:section.sources.map(source),
+        decision:section.decision===null||section.decision===undefined?null:text(section.decision)};
     });
   }
   return result;

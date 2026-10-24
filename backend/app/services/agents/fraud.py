@@ -1,14 +1,15 @@
 """Real-model fraud guidance with bounded proposals; no model response executes an action."""
 import json
-from pydantic import JsonValue
+from pydantic import JsonValue,ValidationError
+from app.core.observability import log_event
 from app.schemas.agents import AgentDraft,Evidence
 from app.schemas.chat import Message
-from app.schemas.contracts import RequestContext,Task
+from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
 from app.schemas.fraud import FraudDecision,FraudDraft,FraudProposal,SecurityRecords
-from app.services import llm_gateway,prompts
+from app.services import audit,llm_gateway,prompts
 from app.services.agents import fraud_records
-from app.services.agents.answer import draft_schema,validate_draft
+from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
@@ -33,12 +34,23 @@ def schema_for(evidence: list[Evidence]) -> dict[str,JsonValue]:
 
 
 def decision_for(task: Task,raw: str,evidence: list[Evidence],pairs: list[FraudProposal],prompt_id: str,flagged: bool=False) -> FraudDecision:
-    """A rule-flagged report with exactly one eligible pair is always offered; offers execute nothing until confirmed."""
-    draft=FraudDraft.model_validate_json(raw)
-    base=AgentDraft.model_validate(draft.model_dump(exclude={'proposals'}))
-    result=validate_draft(task,base.model_dump_json(),evidence)
-    proposal=draft.proposals[0] if draft.proposals else None
-    if proposal is not None and proposal not in pairs:raise llm_gateway.LLMBadOutput('Fraud proposal is outside the eligible customer card/transaction pairs')
+    """A rule-flagged report with exactly one eligible pair is always offered; offers execute nothing until confirmed.
+
+    The offer comes from records, so a malformed or out-of-scope model draft withholds the text but keeps the offer.
+    """
+    try:
+        draft=FraudDraft.model_validate_json(raw)
+        base=AgentDraft.model_validate(draft.model_dump(exclude={'proposals'}))
+        result=validate_draft(task,base.model_dump_json(),evidence)
+        proposal=draft.proposals[0] if draft.proposals else None
+        if proposal is not None and proposal not in pairs:raise llm_gateway.LLMBadOutput('Fraud proposal is outside the eligible customer card/transaction pairs')
+    except (ValidationError,llm_gateway.LLMBadOutput) as error:
+        if not (flagged and len(pairs)==1):raise
+        fields={'task_id':task.task_id,'agent':'fraud','error_type':type(error).__name__,'db_code':None}
+        log_event('agent_failed',**fields)
+        audit.add('agent','agent.failed','failed',details=fields)
+        return FraudDecision(result=AgentResult(task_id=task.task_id,agent='fraud',status='error',text=URGENT+' '+WITHHELD),
+            proposal=pairs[0],prompt_id=prompt_id)
     if result.status=='error':proposal=None
     if flagged and proposal is None and len(pairs)==1:proposal=pairs[0]
     if flagged and result.status=='error':result=result.model_copy(update={'text':URGENT+' '+result.text})
