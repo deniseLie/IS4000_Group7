@@ -1,9 +1,10 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession';
 
 async function openSharing(page) {
   const loaded=page.waitForResponse(response=>response.url().endsWith('/consent/records'));
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   expect((await loaded).status()).toBe(200);
   await expect(page.getByTestId('refresh-consent-records')).toBeEnabled();
 }
@@ -81,7 +82,7 @@ test('consent form requests grants and revokes through real reviewed receipts',a
 test('failed consent records do not display an apparently active grant',async({page})=>{
   await seedSession(page);await page.goto('/');
   const failed=page.waitForResponse(response=>response.url().endsWith('/consent/records'));
-  await page.getByTestId('open-data-sharing').click();expect((await failed).status()).toBe(503);
+  await openMenuItem(page,'open-data-sharing');expect((await failed).status()).toBe(503);
   await expect(page.getByTestId('sharing-error')).toBeVisible();
   await expect(page.getByTestId('sharing-status')).toHaveCount(0);
   await expect(page.getByTestId('consent-grants')).toHaveCount(0);

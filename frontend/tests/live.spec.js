@@ -117,7 +117,7 @@ for(const scenario of [
 test('real unlinked synthetic login cannot access banking records',async({page})=>{
  test.skip(!process.env.TEST_UNLINKED_FIXTURE_FILE,'Requires a temporary unlinked synthetic test login');
  const [user]=JSON.parse(fs.readFileSync(process.env.TEST_UNLINKED_FIXTURE_FILE,'utf8'));
- await page.goto('/');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByLabel('Email address').fill(user.email);await page.getByLabel('Password',{exact:true}).fill(user.password);await page.getByRole('button',{name:'Sign In →',exact:true}).click();
+ await page.goto('/');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByLabel('Email address').fill(user.email);await page.getByLabel('Password',{exact:true}).fill(user.password);await page.getByTestId('submit-login').click();
  await expect(page.getByRole('button',{name:'Sign out'})).toBeVisible({timeout:20000});
  await page.getByRole('textbox',{name:'Your message'}).fill('What is my balance?');await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.locator('.bank-chat-bubble.error')).toContainText('No demo customer profile',{timeout:30000});

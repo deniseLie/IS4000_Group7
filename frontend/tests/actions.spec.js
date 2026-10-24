@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -6,7 +7,7 @@ test('recorded action review confirms, rejects, expires and preserves real recei
   await page.goto('/');
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
-    await page.getByTestId('open-actions').click();
+    await openMenuItem(page,'open-actions');
     const dialog=page.locator('dialog[aria-label="Actions"]');
     await expect(dialog.locator('[data-command-id]')).toHaveCount(5);
     const handoff=page.locator(`[data-command-id="${fixture.handoff_command_id}"]`);
@@ -17,9 +18,9 @@ test('recorded action review confirms, rejects, expires and preserves real recei
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/action-review-${width}.png`,fullPage:true});
     await page.getByRole('button',{name:'Close actions',exact:true}).click();
-    await expect(page.getByTestId('open-actions')).toBeFocused();
+    await expect(page.getByTestId('open-account-menu')).toBeFocused();
   }
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   const rejected=page.locator(`[data-command-id="${fixture.reject_command_id}"]`);
   await rejected.getByTestId('review-command').click();
   await expect(rejected.getByTestId('confirm-command')).toBeDisabled();
@@ -45,7 +46,7 @@ test('recorded action review confirms, rejects, expires and preserves real recei
   await expect(approved.getByTestId('command-state')).toHaveText('succeeded');
   await expect(approved.getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
   await page.reload();
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   await expect(approved.getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
   const changed=page.locator(`[data-command-id="${fixture.failed_command_id}"]`);
   await changed.getByTestId('review-command').click();
@@ -58,7 +59,7 @@ test('recorded action review confirms, rejects, expires and preserves real recei
 test('recorded action empty scope and guest access stay separate',async({page,browser})=>{
   await seedSession(page);
   await page.goto('/');
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   await expect(page.getByTestId('actions-empty')).toBeVisible();
   const guest=await browser.newContext();
   try {

@@ -8,6 +8,8 @@ import ActionsPanel from './components/ActionsPanel';
 import NotificationsPanel from './components/NotificationsPanel';
 import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
+import TopBar from './components/TopBar';
+import Sidebar from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
@@ -26,6 +28,8 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable. Select General help to continue.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
+const PAGES=['chat'];
+function pageFromHash() {const page=location.hash.slice(1);return PAGES.includes(page)?page:'chat';}
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
 
 export default function Chat({session,onSignIn}) {
@@ -53,6 +57,7 @@ export default function Chat({session,onSignIn}) {
   const [recordsOpen,setRecordsOpen]=useState(false);
   const [blockAction,setBlockAction]=useState(null);
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
+  const [view,setView]=useState(()=>session?pageFromHash():'chat');
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -62,6 +67,10 @@ export default function Chat({session,onSignIn}) {
     if(messages.length&&list)list.scrollTo({top:list.scrollHeight,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
   },[messages]);
   useEffect(()=>()=>request.current?.abort(),[]);
+  useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
+    const sync=()=>setView(session?pageFromHash():'chat');
+    window.addEventListener('hashchange',sync);return ()=>window.removeEventListener('hashchange',sync);
+  },[]);
   useEffect(()=>{
     const controller=new AbortController();
     async function open() {
@@ -211,7 +220,12 @@ export default function Chat({session,onSignIn}) {
     }catch{if(epoch===version.current)setNotice('Source unavailable. Please retry.');}
   }
 
-  function draft(question) { setInput(question);composer.current?.focus(); }
+  function navigate(page) {
+    if(page===view)return;
+    if(page==='chat')history.pushState(null,'',location.pathname+location.search);else location.hash=page;
+    setView(page);
+  }
+  function draft(question) { setInput(question);requestAnimationFrame(()=>composer.current?.focus()); }
   function prepareSummary() { setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''}); }
   async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
     setHandoff({saving:true,outcome:null,error:''});
@@ -235,26 +249,27 @@ export default function Chat({session,onSignIn}) {
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
+  function closeOverlays() {setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);}
+  async function signOut() {request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
+  const menu=[
+    {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
+    {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();setSharing(true);}},
+    ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();setSavedChats(true);}}]:[]),
+    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:()=>{closeOverlays();setActionsOpen(true);}},
+    {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
+  ];
+  const pages=[
+    {view:'chat',testid:'open-chat',icon:'chat',label:'Banking assistant'},
+    {icon:'shield',label:'Privacy & safety',question:'How can I keep my details safe in chat?'},
+  ];
+
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
-    <header className="bank-chat-header">
-      <div className="bank-chat-brand"><span className="brand-name">DemoBank<span className="brand-dot">.</span></span><div className="brand-caption"><strong>Banking assistant</strong><span>AI-powered · Student project</span></div></div>
-      <div className="chat-actions"><button className="bank-chat-logout" data-testid="new-chat" disabled={booting} onClick={reset}><Icon name="plus"/>New chat</button><button className="bank-chat-logout support-action" onClick={prepareSummary}><Icon name="support"/><span>Talk to a person</span></button>
-      {session&&store==='database'&&<button className="bank-chat-logout support-action" aria-label="Open saved conversations" data-testid="open-saved-chats" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(true);}}><Icon name="history"/><span>Saved chats</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="Review data-sharing consent" title="Data-sharing consent" data-testid="open-data-sharing" onClick={()=>{setSummary(null);setArticle(null);setSharing(true);}}><Icon name="shield"/><span>Data sharing</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="Review proposed actions" data-testid="open-actions" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(true);}}><Icon name="card"/><span>Actions</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="Open notifications" data-testid="open-notifications" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(true);}}><Icon name="bell"/><span>Inbox</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="View your customer records" data-testid="open-records" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(true);}}><Icon name="user"/><span>Records</span></button>}
-      {session?<button data-testid="sign-out" className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button data-testid="sign-in" className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
-    </header>
+    <TopBar session={session} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
+      inbox={()=>{closeOverlays();setInboxOpen(true);}}/>
     <div className="bank-chat-layout">
-      <aside className="bank-sidebar" aria-label="Banking topics">
-        <div className="sidebar-group"><span className="eyebrow">Your support</span><div className="sidebar-current"><Icon name="chat"/>Banking assistant</div><button onClick={()=>draft('How can I keep my details safe in chat?')}><Icon name="shield"/>Privacy & safety</button></div>
-        <div className="sidebar-group"><span className="eyebrow">Explore topics</span>{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/>{t.title}</button>)}</div>
-        <div className="sidebar-note"><span className="small-rule"/><h2>A little clarity.<br/>A helpful next step.</h2><p>General guidance for your everyday banking questions.</p></div>
-        <div className="sidebar-session"><span className="session-avatar"><Icon name="user"/></span><div>{session?'Demo account':'Guest session'}<small>{session?'Signed in':'No account connected'}</small></div></div>
-      </aside>
-      <main className="chat-workspace">
+      <Sidebar session={session} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}}/>
+      <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-settings"><label>Information <select aria-label="Information" disabled={booting} value={mode} onChange={e=>{if(reset())setMode(e.target.value);}}><option value="public">General help</option>{session&&<option value="personal">My records</option>}</select></label>
           <label>Answer language <select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select></label></div>
         <p className="language-note">The language choice applies to AI answers. Menus, safety guidance and notices remain in English. Translation quality is still being tested.</p>

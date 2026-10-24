@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -8,7 +9,7 @@ test('owned document metadata stays scoped and reloads at mobile widths',async({
   page.on('request',request=>{if(request.url().endsWith('/chat'))chatCalls.push(request.url());});
   await page.goto('/');
   const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/documents'));
-  await page.getByTestId('open-records').click();
+  await openMenuItem(page,'open-records');
   const response=await loaded;expect(response.status()).toBe(200);
   const snapshot=await response.json();
   const documents=page.getByTestId('records-document');
@@ -43,6 +44,6 @@ test('owned document metadata stays scoped and reloads at mobile widths',async({
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/documents-${width}.png`,fullPage:true});
   }
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('open-records')).toBeFocused();
+  await expect(page.getByTestId('open-account-menu')).toBeFocused();
   expect(chatCalls).toEqual([]);
 });

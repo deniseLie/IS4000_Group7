@@ -1,9 +1,10 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession';
 
 async function openAgenda(page) {
   const consent=page.waitForResponse(response=>response.url().endsWith('/consent/records'));
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   const consentResponse=await consent;expect(consentResponse.status()).toBe(200);
   const grants=(await consentResponse.json()).data.grants;
   const loaded=page.waitForResponse(response=>response.url().endsWith('/relationship/agendas'));
@@ -55,7 +56,7 @@ test('agenda sharing reviews exact snapshots at all viewport sizes',async({page}
   await draft.item.getByTestId('edit-agenda').click();await page.getByTestId('agenda-topics').fill('Changed after sharing');
   const saved=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
   await page.getByTestId('save-agenda').click();expect((await saved).status()).toBe(200);
-  await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
+  await page.keyboard.press('Escape');await openMenuItem(page,'open-actions');
   const historical=page.locator(`[data-command-id="${snapshots[0].action.command.command_id}"]`);
   await expect(historical.getByTestId('command-agenda-sharing')).toContainText(draft.agenda.content);
   await expect(historical.getByTestId('command-agenda-sharing')).not.toContainText('Changed after sharing');
@@ -74,7 +75,7 @@ test('agenda edit after review produces a failed sharing receipt',async({page})=
   await current.item.getByTestId('edit-agenda').click();await page.getByTestId('agenda-topics').fill('Edited before sharing confirmation');
   const saved=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
   await page.getByTestId('save-agenda').click();expect((await saved).status()).toBe(200);
-  await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
+  await page.keyboard.press('Escape');await openMenuItem(page,'open-actions');
   const result=await confirmSharing(page,proposal);expect(result.receipt.outcome).toBe('failed');
   await expect(proposal.command.getByTestId('command-receipt')).toContainText('This snapshot was not shared');
 });

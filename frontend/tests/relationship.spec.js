@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -9,7 +10,7 @@ test('relationship records use real scoped requests and available times',async({
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
     await page.goto('/');
-    await page.getByTestId('open-data-sharing').click();
+    await openMenuItem(page,'open-data-sharing');
     const loaded=Promise.all(['/relationship/requests','/relationship/slots'].map(path=>page.waitForResponse(response=>response.url().endsWith(path))));
     await page.getByTestId('open-relationship-details').click();
     expect((await loaded).map(response=>response.status())).toEqual([200,200]);
@@ -41,7 +42,7 @@ test('relationship records use real scoped requests and available times',async({
 
 test('unavailable appointment registry shows an explicit relationship error',async({page})=>{
   await page.goto('/');
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   const loaded=page.waitForResponse(response=>response.url().endsWith('/relationship/slots'));
   await page.getByTestId('open-relationship-details').click();
   expect((await loaded).status()).toBe(503);

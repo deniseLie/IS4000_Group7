@@ -1,8 +1,9 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession';
 
 async function openDrafts(page) {
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   await expect(page.getByTestId('sharing-recipient')).toBeVisible();
   const read=page.waitForResponse(response=>response.url().endsWith('/relationship/agendas'));
   await page.getByTestId('open-agenda-drafts').click();

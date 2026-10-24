@@ -1,8 +1,9 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
 async function openAppointments(page) {
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   const loaded=page.waitForResponse(response=>response.url().endsWith('/relationship/appointments'));
   await page.getByTestId('open-relationship-details').click();
   expect((await loaded).status()).toBe(200);

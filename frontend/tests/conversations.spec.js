@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -25,7 +26,7 @@ test('saved customer chats reopen with real stored replies and sources',async({p
     await expect(page.getByLabel('Your message',{exact:true})).toBeEnabled();
     await page.getByTestId('new-chat').click();
     await expect(page.getByTestId('chat-message-user')).toHaveCount(0);
-    await page.getByTestId('open-saved-chats').click();
+    await openMenuItem(page,'open-saved-chats');
     const entry=page.locator(`[data-conversation-id="${saved.session_id}"]`);
     await expect(entry).toBeVisible();
     expect(await page.locator('dialog[aria-label="Saved chats"]').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
@@ -61,7 +62,7 @@ test('saved guest chat survives refresh and new chat clears its browser access',
 test('saved pending reply can be cancelled and the real chat remains usable',async({page})=>{
   await seedSession(page);
   await page.goto('/');
-  await page.getByTestId('open-saved-chats').click();
+  await openMenuItem(page,'open-saved-chats');
   await page.locator(`[data-conversation-id="${fixture.pending_session_id}"]`).click();
   await expect(page.getByTestId('cancel-pending-reply')).toBeVisible();
   await expect(page.getByLabel('Your message',{exact:true})).toBeDisabled();
@@ -106,7 +107,7 @@ test('saved customer v2 unavailable section stays withheld after refresh and the
   await unavailableChat(page);
   const handoff=page.getByTestId('answer-sections').locator('section[data-response-origin="safety"]');
   await expect(handoff).toContainText('A support handoff is recorded for the withheld part');
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   await expect(page.getByTestId('command-state')).toHaveText('succeeded');
   await expect(page.getByTestId('command-receipt')).toHaveCount(1);
   await expect(page.getByTestId('review-command')).toHaveCount(0);

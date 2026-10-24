@@ -1,9 +1,10 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession.js';
 
 test.beforeEach(async({page})=>seedSession(page));
 async function openRequests(page) {
-  await page.getByTestId('open-data-sharing').click();await page.getByTestId('open-relationship-details').click();
+  await openMenuItem(page,'open-data-sharing');await page.getByTestId('open-relationship-details').click();
   await expect(page.getByTestId('request-intake')).toBeVisible();
 }
 async function proposal(page,details) {

@@ -1,10 +1,11 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
 test('recorded notification delivery follows a confirmed action and preserves read state',async({page})=>{
   await seedSession(page);
   await page.goto('/');
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   const command=page.locator(`[data-command-id="${fixture.command_id}"]`);
   await command.getByTestId('review-command').click();
   await command.getByTestId('acknowledge-command').check();
