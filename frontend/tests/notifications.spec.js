@@ -1,10 +1,11 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
 test('recorded notification delivery follows a confirmed action and preserves read state',async({page})=>{
   await seedSession(page);
   await page.goto('/');
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   const command=page.locator(`[data-command-id="${fixture.command_id}"]`);
   await command.getByTestId('review-command').click();
   await command.getByTestId('acknowledge-command').check();
@@ -31,7 +32,7 @@ test('recorded notification delivery follows a confirmed action and preserves re
   await expect(item.getByTestId('notification-read-state')).toHaveText('Read');
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
-    const dialog=page.locator('dialog[aria-label="Notifications"]');
+    const dialog=page.getByTestId('inbox-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/inbox-${width}.png`,fullPage:true});

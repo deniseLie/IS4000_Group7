@@ -1,8 +1,9 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
 async function openAppointments(page) {
-  await page.getByTestId('open-data-sharing').click();
+  await openMenuItem(page,'open-data-sharing');
   const loaded=page.waitForResponse(response=>response.url().endsWith('/relationship/appointments'));
   await page.getByTestId('open-relationship-details').click();
   expect((await loaded).status()).toBe(200);
@@ -60,7 +61,7 @@ test('appointment form holds confirms and cancels through real action receipts',
     const confirmed=page.locator(`[data-appointment-id="${id}"]`);
     await expect(confirmed.getByTestId('appointment-status')).toHaveText('confirmed');
     await expect(confirmed).toContainText('phone');
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');
+    const dialog=page.getByTestId('relationship-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await confirmed.scrollIntoViewIfNeeded();
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/booking-current-${width}.png`,fullPage:true});

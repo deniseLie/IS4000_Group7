@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -15,9 +16,9 @@ async function signIn(page,email) {
  await page.getByTestId('sign-in').click();
  await page.locator('#email').fill(user.email);await page.locator('#password').fill(user.password);
  await page.getByTestId('submit-login').click();
- await expect(page.getByTestId('sign-out')).toBeVisible({timeout:30000});
+ await expect(page.getByTestId('open-account-menu')).toBeVisible({timeout:30000});
  await expect(page.getByTestId('send-message')).toBeDisabled();
- await expect(page.getByTestId('open-saved-chats')).toBeVisible();
+ await openMenu(page);await expect(page.getByTestId('open-saved-chats')).toBeVisible();await page.keyboard.press('Escape');
 }
 
 for(const [email,name,count] of expected)test(`hosted login, records and saved safety reply: ${name}`,async({page})=>{
@@ -26,7 +27,7 @@ for(const [email,name,count] of expected)test(`hosted login, records and saved s
  const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/transactions'));
  const documentsLoaded=page.waitForResponse(response=>response.url().endsWith('/customer/documents'));
  const advisorLoaded=page.waitForResponse(response=>response.url().endsWith('/customer/advisor'));
- await page.getByTestId('open-records').click();expect((await loaded).status()).toBe(200);
+ await openMenuItem(page,'open-records');expect((await loaded).status()).toBe(200);
  const documentsResponse=await documentsLoaded;expect(documentsResponse.status()).toBe(200);
  const documentRows=(await documentsResponse.json()).data;
  const advisor=(await (await advisorLoaded).json()).data?.current;
@@ -49,14 +50,14 @@ for(const [email,name,count] of expected)test(`hosted login, records and saved s
  await page.reload();
  await expect(page.getByTestId('chat-message-user')).toHaveText('I lost my card',{timeout:30000});
  await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','safety');
- await page.getByTestId('sign-out').click();await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+ await openMenuItem(page,'sign-out');await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
  await expect(page.getByTestId('chat-message-user')).toHaveCount(0);
 });
 
 test('hosted private agenda is persisted with a receipt and a new revision',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
  await signIn(page,'demo.david@example.com');
- await page.getByTestId('open-data-sharing').click();
+ await openMenuItem(page,'open-data-sharing');
  await expect(page.getByTestId('sharing-recipient')).toBeVisible({timeout:30000});
  await page.getByTestId('open-agenda-drafts').click();
  await page.getByTestId('new-agenda').click();
@@ -69,7 +70,7 @@ test('hosted private agenda is persisted with a receipt and a new revision',asyn
  const item=page.locator(`[data-agenda-id="${action.command.target.agenda_id}"]`);
  await expect(item.getByTestId('agenda-revision')).toHaveText('1');
  await expect(item.getByTestId('agenda-content')).toHaveText(action.command.target.content);
- await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'sign-out');
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
 });
 
@@ -104,7 +105,7 @@ test('hosted worker delivery reaches the open inbox through Realtime',async({pag
  const before=await page.locator('[data-notification-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.notificationId));
  const editor=await context.newPage();
  try {
-  await editor.goto('/');await editor.getByTestId('open-data-sharing').click();
+  await editor.goto('/');await openMenuItem(editor,'open-data-sharing');
   await editor.getByTestId('open-agenda-drafts').click();await editor.getByTestId('new-agenda').click();
   await editor.getByTestId('agenda-topics').fill('Hosted synthetic worker and Realtime delivery integration check');
   const recorded=editor.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
@@ -126,7 +127,7 @@ test('hosted worker delivery reaches the open inbox through Realtime',async({pag
 
 test('hosted checklist preparation persists without changing bank review status',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
- await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
+ await signIn(page,'demo.michelle@example.com');await openMenuItem(page,'open-records');
  const item=page.locator('[data-checklist-item-id="00000000-0000-4000-8000-100200000011"]');
  const previous=await item.getByTestId('checklist-mark').inputValue(),next=previous==='prepared'?'not_prepared':'prepared';
  const status=await item.textContent();
@@ -143,15 +144,15 @@ test('hosted checklist preparation persists without changing bank review status'
  const result=await restore.json();expect(result.receipt.result.client_mark).toBe(previous);
  expect(result.receipt.result.submission_status).toBe(saved.receipt.result.submission_status);
  await page.getByTestId('reload-records').click();await expect(item.getByTestId('checklist-mark')).toHaveValue(previous);
- await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'open-actions');
  await expect(page.locator(`[data-command-id="${saved.command.command_id}"]`).getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
- await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'sign-out');
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
 });
 
 test('hosted relationship intake persists only after reviewed confirmation',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
- await signIn(page,'demo.david@example.com');await page.getByTestId('open-data-sharing').click();
+ await signIn(page,'demo.david@example.com');await openMenuItem(page,'open-data-sharing');
  await page.getByTestId('open-relationship-details').click();
  await page.getByTestId('request-details').fill('Hosted synthetic relationship request integration check');
  await page.getByTestId('request-country').fill('SG');await page.getByTestId('request-currency').fill('USD');
@@ -160,17 +161,17 @@ test('hosted relationship intake persists only after reviewed confirmation',asyn
  const saved=await proposal.json();expect(saved.receipt).toBeNull();
  await page.getByTestId('review-request-actions').click();const result=await confirmRecorded(page,saved.command.command_id);
  expect(result.receipt.result.status).toBe('sent');expect(result.receipt.result.what).toBe(saved.command.target.what);
- await page.keyboard.press('Escape');await page.getByTestId('open-data-sharing').click();await page.getByTestId('open-relationship-details').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'open-data-sharing');await page.getByTestId('open-relationship-details').click();
  const request=page.locator(`[data-request-id="${result.receipt.result.request_id}"]`);
  await expect(request).toContainText(saved.command.target.what);await expect(request).toContainText('Currency reference: USD');
- await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'sign-out');
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
 });
 
 test('hosted consent, sharing receipt and revocation keep the reviewed snapshot',async({page})=>{
  test.skip(!fixture,'Requires existing synthetic persona logins in a git-ignored fixture');
  test.setTimeout(240000);
- await signIn(page,'demo.david@example.com');await page.getByTestId('open-data-sharing').click();
+ await signIn(page,'demo.david@example.com');await openMenuItem(page,'open-data-sharing');
  await page.getByTestId('consent-category-agenda').check();
  await page.getByTestId('consent-duration').selectOption('1');
  const request=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
@@ -181,7 +182,7 @@ test('hosted consent, sharing receipt and revocation keep the reviewed snapshot'
  const grantProposal=await (await prepareGrant).json();
  await page.getByTestId('review-consent-actions').click();
  const granted=await confirmRecorded(page,grantProposal.command.command_id),grantId=granted.receipt.result.grant_id;
- await page.keyboard.press('Escape');await page.getByTestId('open-data-sharing').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'open-data-sharing');
  await page.getByTestId('open-agenda-drafts').click();await page.getByTestId('new-agenda').click();
  await page.getByTestId('agenda-topics').fill('Hosted consent and sharing integration check');await page.getByTestId('agenda-field-name').check();
  const save=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
@@ -193,7 +194,7 @@ test('hosted consent, sharing receipt and revocation keep the reviewed snapshot'
  expect(proposed.receipt).toBeNull();
  await page.getByTestId('review-agenda-sharing').click();const shared=await confirmRecorded(page,proposed.command.command_id);
  expect(shared.receipt.result.content).toBe(saved.command.target.content);
- await page.keyboard.press('Escape');await page.getByTestId('open-data-sharing').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'open-data-sharing');
  const revoke=page.waitForResponse(response=>response.url().endsWith('/commands')&&response.request().method()==='POST');
  await page.locator(`[data-consent-grant-id="${grantId}"]`).getByTestId('prepare-consent-revoke').click();
  const revocation=await (await revoke).json();await page.getByTestId('review-consent-actions').click();
@@ -201,7 +202,7 @@ test('hosted consent, sharing receipt and revocation keep the reviewed snapshot'
  const original=page.locator(`[data-command-id="${proposed.command.command_id}"]`);
  await expect(original.getByTestId('command-receipt')).toContainText(shared.receipt.receipt_id);
  await expect(original.getByTestId('command-agenda-sharing')).toContainText(saved.command.target.content);
- await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'sign-out');
  await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
 });
 
@@ -213,7 +214,7 @@ test('hosted technical inspections read existing private fixture bytes without c
  });
  await signIn(page,'demo.michelle@example.com');
  const loaded=page.waitForResponse(response=>response.url().endsWith('/customer/documents'));
- await page.getByTestId('open-records').click();const response=await loaded;expect(response.status()).toBe(200);
+ await openMenuItem(page,'open-records');const response=await loaded;expect(response.status()).toBe(200);
  const records=(await response.json()).data;
  await expect(page.getByTestId('document-upload')).toBeVisible({timeout:30000});
  const inspected=[];
@@ -247,7 +248,7 @@ test('hosted technical inspections read existing private fixture bytes without c
   try {
    const visitor=await foreign.newPage();await signIn(visitor,email);
    const owned=visitor.waitForResponse(reply=>reply.url().endsWith('/customer/documents'));
-   await visitor.getByTestId('open-records').click();const own=await owned;expect(own.status()).toBe(200);
+   await openMenuItem(visitor,'open-records');const own=await owned;expect(own.status()).toBe(200);
    for(const documentId of inspected) {
     await expect(visitor.locator(`[data-document-id="${documentId}"]`)).toHaveCount(0);
     const denied=await foreign.request.get(own.url().replace('/customer/documents',`/documents/${documentId}/inspection`),{
@@ -261,7 +262,7 @@ test('hosted technical inspections read existing private fixture bytes without c
 test('hosted private documents upload, download, isolate and notify through real Storage',async({page,context,browser})=>{
  test.skip(!fixture||process.env.TEST_HOSTED_DOCUMENTS!=='1','Requires approval for the synthetic file fixtures and hosted private bucket');
  test.setTimeout(300000);
- await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
+ await signIn(page,'demo.michelle@example.com');await openMenuItem(page,'open-records');
  await expect(page.getByTestId('document-upload')).toBeVisible({timeout:30000});
  const saved=[];let storageHeaders,storageOrigin;
  for(const extension of ['pdf','docx','jpg','png']) {
@@ -299,7 +300,7 @@ test('hosted private documents upload, download, isolate and notify through real
  await page.setViewportSize({width:320,height:900});
  const dialog=page.getByTestId('records-content').locator('xpath=ancestor::dialog');
  expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
- await page.keyboard.press('Escape');await page.getByTestId('open-actions').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'open-actions');
  for(const result of saved)await expect(page.locator(`[data-command-id="${result.command.command_id}"]`).getByTestId('command-receipt')).toContainText(result.receipt.receipt_id);
  await page.keyboard.press('Escape');await page.getByTestId('open-notifications').click();
  await expect.poll(async()=>page.locator('[data-template-key="document.uploaded"]').count(),{timeout:45000}).toBeGreaterThanOrEqual(4);
@@ -308,7 +309,7 @@ test('hosted private documents upload, download, isolate and notify through real
  try {
   const visitor=await foreign.newPage();await signIn(visitor,'demo.alex@example.com');
   const owned=visitor.waitForResponse(response=>response.url().endsWith('/customer/documents'));
-  await visitor.getByTestId('open-records').click();const loaded=await owned;expect(loaded.status()).toBe(200);
+  await openMenuItem(visitor,'open-records');const loaded=await owned;expect(loaded.status()).toBe(200);
   const auth=loaded.request().headers().authorization;
   for(const result of saved) {
    await expect(visitor.locator(`[data-document-id="${result.command.target.document_id}"]`)).toHaveCount(0);
@@ -319,13 +320,13 @@ test('hosted private documents upload, download, isolate and notify through real
    expect(signed.ok()).toBe(false);
   }
  } finally {await foreign.close();}
- await page.getByTestId('sign-out').click();await expect(page.getByTestId('sign-in')).toBeVisible();
+ await openMenuItem(page,'sign-out');await expect(page.getByTestId('sign-in')).toBeVisible();
 });
 
 test('hosted upload acknowledgement loss can record the same real object without another copy',async({page,context})=>{
  test.skip(!fixture||process.env.TEST_HOSTED_DOCUMENTS!=='1','Requires approval for synthetic hosted upload fault injection');
  test.setTimeout(180000);
- await signIn(page,'demo.michelle@example.com');await page.getByTestId('open-records').click();
+ await signIn(page,'demo.michelle@example.com');await openMenuItem(page,'open-records');
  await expect(page.getByTestId('document-upload')).toBeVisible({timeout:30000});
  const pattern='**/storage/v1/object/demobank-compliance-private/**';
  let received=false;
@@ -354,6 +355,6 @@ test('hosted upload acknowledgement loss can record the same real object without
  const row=page.locator(`[data-document-id="${target.document_id}"]`);await expect(row).toHaveCount(1);
  const downloaded=page.waitForEvent('download');await row.getByTestId('document-download').click();
  const download=await downloaded;expect(fs.readFileSync(await download.path())).toEqual(fs.readFileSync(new URL('./fixtures/documents/Synthetic DEMO.png',import.meta.url)));
- await page.keyboard.press('Escape');await page.getByTestId('sign-out').click();
+ await page.keyboard.press('Escape');await openMenuItem(page,'sign-out');
  await expect(page.getByTestId('sign-in')).toBeVisible();
 });

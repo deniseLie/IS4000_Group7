@@ -1,9 +1,15 @@
 import {useEffect,useRef,useState} from 'react';
-import Panel from './Panel';
+import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {loadInbox,markNotificationRead} from '../lib/notifications';
 
-export default function NotificationsPanel({onClose}) {
+const CATEGORIES={card:'Cards',booking:'Appointments',compliance:'Compliance',document:'Documents',consent:'Data sharing',agenda:'Data sharing',rm:'Relationship',request:'Requests',requests:'Requests',handoff:'Support'};
+const TABS=[['all','All',()=>true],['unread','Unread',item=>!item.read_at],['service','Service updates',item=>item.is_service],['read','Read',item=>!!item.read_at]];
+export function category(item) {return CATEGORIES[item.template_key.split('.')[0]]||'Update';}
+
+// Links map a notification category to the page or panel where it can be followed up.
+export default function InboxPage({links={},onActions}) {
+  const [tab,setTab]=useState('all');
   const [inbox,setInbox]=useState(null);
   const [busy,setBusy]=useState(false);
   const [marking,setMarking]=useState(false);
@@ -42,7 +48,7 @@ export default function NotificationsPanel({onClose}) {
       if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)) {
         setLive(`Live inbox updates are unavailable (${status}). Use Reload notifications to check recorded messages.`);
         subscription.current=null;
-        supabase.removeChannel(channel).then(result=>{if(result!=='ok'&&mounted.current)setLive('Live inbox disconnect could not be confirmed. Close this panel and reopen it to reconnect.');});
+        supabase.removeChannel(channel).then(result=>{if(result!=='ok'&&mounted.current)setLive('Live inbox disconnect could not be confirmed. Leave this page and reopen Inbox to reconnect.');});
       }
     });
   }
@@ -65,18 +71,24 @@ export default function NotificationsPanel({onClose}) {
     } catch(failure) {if(failure.name!=='AbortError'&&mounted.current)setError(failure.message);}
     finally {if(!controller.signal.aborted&&mounted.current){acknowledgement.current=null;setMarking(false);}}
   }
-  return <Panel label="Notifications" title="Your inbox" closeLabel="Close notifications" onClose={onClose}>
-    <p>Updates for your account in this demo. These messages do not change a real bank account.</p>
-    <p data-testid="inbox-live-status" role="status">{live}</p>
-    <button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}>Reload notifications</button>
+  const items=inbox?.items||[];
+  const visible=items.filter(TABS.find(entry=>entry[0]===tab)[2]);
+  return <section className="app-page-body inbox-page" aria-label="Notifications" data-testid="inbox-page">
+    <div className="page-header"><div><span className="eyebrow">Notifications</span><h1>Inbox</h1><p>Updates for your account in this demo. These messages do not change a real bank account.</p></div>
+      <div className="page-header-actions"><button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}><Icon name="history"/>Reload notifications</button>{onActions&&<button className="bank-chat-logout" onClick={onActions}><Icon name="card"/>Actions</button>}</div></div>
+    <p className="page-status" data-testid="inbox-live-status" role="status">{live}</p>
+    <div className="page-tabs" role="tablist" aria-label="Filter notifications">{TABS.map(([key,label,match])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{items.filter(match).length}</span></button>)}</div>
     {busy&&<p role="status">Checking recorded notifications…</p>}
     {error&&<p role="alert" data-testid="inbox-error">{error}</p>}
-    {inbox?.items.length===0&&<p data-testid="inbox-empty">No notifications are recorded for your account.</p>}
-    <ul className="command-list" data-testid="inbox-list">{inbox?.items.map(item=><li key={item.notification_id} data-notification-id={item.notification_id} data-template-key={item.template_key}>
-      <h3>{item.title}</h3><p>{item.body}</p>
-      <p>{item.is_service?'Service update':'Optional update'} · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></p>
-      <p data-testid="notification-read-state">{item.read_at?'Read':'Unread'}</p>
-      {!item.read_at&&<button className="bank-chat-logout" data-testid="mark-notification-read" disabled={busy||marking||!!error} onClick={()=>markRead(item)}>Mark as read</button>}
-    </li>)}</ul>
-  </Panel>;
+    {inbox?.items.length===0&&<p className="page-empty" data-testid="inbox-empty">No notifications are recorded for your account.</p>}
+    {inbox&&items.length>0&&visible.length===0&&<p className="page-empty">No notifications in this view.</p>}
+    <ul className="notification-list" data-testid="inbox-list">{visible.map(item=>{
+      const label=category(item),link=links[label];
+      return <li key={item.notification_id} className={item.read_at?'':'unread'} data-notification-id={item.notification_id} data-template-key={item.template_key}>
+        <div className="notification-head"><div><span className="category-badge">{label}</span><h3>{item.title}</h3></div><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></div>
+        <p>{item.body}</p>
+        <div className="notification-foot"><span>{item.is_service?'Service update':'Optional update'} · <span data-testid="notification-read-state">{item.read_at?'Read':'Unread'}</span></span>
+          <div className="panel-actions">{link&&<button className="bank-chat-logout" onClick={link.onSelect}>{link.label}</button>}{!item.read_at&&<button className="bank-chat-logout" data-testid="mark-notification-read" disabled={busy||marking||!!error} onClick={()=>markRead(item)}>Mark as read</button>}</div></div>
+      </li>;})}</ul>
+  </section>;
 }

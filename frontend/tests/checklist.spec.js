@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession.js';
 
@@ -8,7 +9,7 @@ test('checklist preparation saves an audited mark and preserves bank status',asy
   await page.goto('/');
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
-    await page.getByTestId('open-records').click();
+    await openMenuItem(page,'open-records');
     const item=page.locator(`[data-checklist-item-id="${itemId}"]`);
     await expect(item.getByTestId('checklist-mark')).toHaveValue('not_prepared');
     await expect(item.getByTestId('save-checklist-mark')).toBeDisabled();
@@ -26,7 +27,7 @@ test('checklist preparation saves an audited mark and preserves bank status',asy
     await item.getByTestId('save-checklist-mark').click();
     await expect(item.getByTestId('checklist-outcome')).toContainText('Recorded preparation: not prepared.');
     await page.keyboard.press('Escape');
-    await page.getByTestId('open-actions').click();
+    await openMenuItem(page,'open-actions');
     const action=page.locator(`[data-command-id="${saved.command.command_id}"]`);
     await expect(action.getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
     await expect(action.getByTestId('command-checklist')).toBeVisible();
@@ -35,7 +36,7 @@ test('checklist preparation saves an audited mark and preserves bank status',asy
 });
 
 test('closed checklist review blocks preparation changes',async({page})=>{
-  await page.goto('/');await page.getByTestId('open-records').click();
+  await page.goto('/');await openMenuItem(page,'open-records');
   await expect(page.getByTestId('records-case')).toBeVisible();
   await expect(page.getByTestId('save-checklist-mark')).toHaveCount(0);
 });

@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon';
 import Panel from './components/Panel';
 import Answer from './components/Answer';
-import SharingPanel from './components/SharingPanel';
+import SharingPage from './components/SharingPage';
+import RelationshipPage from './components/RelationshipPage';
+import CompliancePage from './components/CompliancePage';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
-import NotificationsPanel from './components/NotificationsPanel';
+import InboxPage from './components/InboxPage';
 import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
+import TopBar from './components/TopBar';
+import Sidebar from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
@@ -26,6 +30,9 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable. Select General help to continue.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
+const PAGES=['chat','inbox','sharing','relationship','compliance'];
+const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Relationship manager']];
+function pageFromHash() {const page=location.hash.slice(1);return PAGES.includes(page)?page:'chat';}
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
 
 export default function Chat({session,onSignIn}) {
@@ -40,7 +47,6 @@ export default function Chat({session,onSignIn}) {
   const [copied,setCopied]=useState(false);
   const [copyError,setCopyError]=useState('');
   const [article,setArticle]=useState(null);
-  const [sharing,setSharing]=useState(false);
   const [store,setStore]=useState(null);
   const [booting,setBooting]=useState(true);
   const [bootError,setBootError]=useState('');
@@ -49,10 +55,12 @@ export default function Chat({session,onSignIn}) {
   const [workflow,setWorkflow]=useState(null);
   const [savedChats,setSavedChats]=useState(false);
   const [actionsOpen,setActionsOpen]=useState(false);
-  const [inboxOpen,setInboxOpen]=useState(false);
   const [recordsOpen,setRecordsOpen]=useState(false);
   const [blockAction,setBlockAction]=useState(null);
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
+  const [helpTopic,setHelpTopic]=useState('general');
+  const [view,setView]=useState(()=>session?pageFromHash():'chat');
+  const [pageKey,setPageKey]=useState(0);
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -62,6 +70,10 @@ export default function Chat({session,onSignIn}) {
     if(messages.length&&list)list.scrollTo({top:list.scrollHeight,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
   },[messages]);
   useEffect(()=>()=>request.current?.abort(),[]);
+  useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
+    const sync=()=>setView(session?pageFromHash():'chat');
+    window.addEventListener('hashchange',sync);return ()=>window.removeEventListener('hashchange',sync);
+  },[]);
   useEffect(()=>{
     const controller=new AbortController();
     async function open() {
@@ -103,7 +115,7 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);
+    setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);
     setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
@@ -135,8 +147,8 @@ export default function Chat({session,onSignIn}) {
     }
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
-    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);if(store!==null)setBootError('');
+    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);if(store!==null)setBootError('');
     return true;
   }
 
@@ -211,8 +223,13 @@ export default function Chat({session,onSignIn}) {
     }catch{if(epoch===version.current)setNotice('Source unavailable. Please retry.');}
   }
 
-  function draft(question) { setInput(question);composer.current?.focus(); }
-  function prepareSummary() { setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''}); }
+  function navigate(page) {
+    if(page===view){if(page!=='chat')setPageKey(key=>key+1);return;}  // choosing the open page reloads it
+    if(page==='chat')history.pushState(null,'',location.pathname+location.search);else location.hash=page;
+    setView(page);
+  }
+  function draft(question) { setInput(question);requestAnimationFrame(()=>composer.current?.focus()); }
+  function prepareSummary() { setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic('general'); }
   async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
     setHandoff({saving:true,outcome:null,error:''});
     try {
@@ -223,38 +240,47 @@ export default function Chat({session,onSignIn}) {
       const scope=await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},token);
       const urgent=messages.some(m=>m.sections?.some(section=>section.priority==='P0'));
       const saved=await proposeAction({command_id:crypto.randomUUID(),task_id:'handoff',case_id:scope.case_id,type:'handoff.create',
-        target:{reason:'general_support',priority:urgent?'P0':'P2',summary}},token);
+        target:{reason:'general_support',priority:urgent?'P0':'P2',summary:handoffText}},token);
       if(saved.receipt?.outcome!=='succeeded')throw new Error('The support handoff could not be recorded. Please retry.');
       setHandoff({saving:false,outcome:saved,error:''});
       setNotice(`A support handoff is recorded (receipt ${saved.receipt.receipt_id}). This demo has no staffed queue, so no person will reply.`);
     } catch(failure) {setHandoff({saving:false,outcome:null,error:failure.message});}
   }
+  const handoffText=summary===null?null:`${summary} Requested help: ${HELP_TOPICS.find(entry=>entry[0]===helpTopic)[1]}.`;  // fixed labels only
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of everyday banking.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
+  const footer=<footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
+  function openActions() {closeOverlays();setActionsOpen(true);}
+  const review={label:'Review in Actions',onSelect:openActions},relationship={label:'Open relationship page',onSelect:()=>navigate('relationship')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
+  function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
+  async function signOut() {request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
+  const menu=[
+    {testid:'menu-open-chat',icon:'chat',label:'Banking assistant',mobile:true,onSelect:()=>navigate('chat')},
+    {testid:'menu-open-compliance',icon:'document',label:'Compliance review',mobile:true,onSelect:()=>{closeOverlays();navigate('compliance');}},
+    {testid:'menu-open-relationship',icon:'people',label:'Relationship & advisory',mobile:true,onSelect:()=>{closeOverlays();navigate('relationship');}},
+    {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
+    {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
+    ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();setSavedChats(true);}}]:[]),
+    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:openActions},
+    {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
+  ];
+  const pages=[
+    {view:'chat',testid:'open-chat',icon:'chat',label:'Banking assistant'},
+    {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',onSelect:session?null:onSignIn},
+    {view:'relationship',testid:'open-relationship',icon:'people',label:'Relationship & advisory',onSelect:session?null:onSignIn},
+  ];
+
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
-    <header className="bank-chat-header">
-      <div className="bank-chat-brand"><span className="brand-name">DemoBank<span className="brand-dot">.</span></span><div className="brand-caption"><strong>Banking assistant</strong><span>AI-powered · Student project</span></div></div>
-      <div className="chat-actions"><button className="bank-chat-logout" data-testid="new-chat" disabled={booting} onClick={reset}><Icon name="plus"/>New chat</button><button className="bank-chat-logout support-action" onClick={prepareSummary}><Icon name="support"/><span>Talk to a person</span></button>
-      {session&&store==='database'&&<button className="bank-chat-logout support-action" aria-label="Open saved conversations" data-testid="open-saved-chats" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(true);}}><Icon name="history"/><span>Saved chats</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="Review data-sharing consent" title="Data-sharing consent" data-testid="open-data-sharing" onClick={()=>{setSummary(null);setArticle(null);setSharing(true);}}><Icon name="shield"/><span>Data sharing</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="Review proposed actions" data-testid="open-actions" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(true);}}><Icon name="card"/><span>Actions</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="Open notifications" data-testid="open-notifications" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(true);}}><Icon name="bell"/><span>Inbox</span></button>}
-      {session&&<button className="bank-chat-logout support-action" aria-label="View your customer records" data-testid="open-records" onClick={()=>{setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(true);}}><Icon name="user"/><span>Records</span></button>}
-      {session?<button data-testid="sign-out" className="bank-chat-logout sign-in-action" onClick={async()=>{request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}}>Sign out<Icon name="arrow"/></button>:<button data-testid="sign-in" className="bank-chat-logout sign-in-action" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
-    </header>
+    <TopBar session={session} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
+      inbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
-      <aside className="bank-sidebar" aria-label="Banking topics">
-        <div className="sidebar-group"><span className="eyebrow">Your support</span><div className="sidebar-current"><Icon name="chat"/>Banking assistant</div><button onClick={()=>draft('How can I keep my details safe in chat?')}><Icon name="shield"/>Privacy & safety</button></div>
-        <div className="sidebar-group"><span className="eyebrow">Explore topics</span>{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/>{t.title}</button>)}</div>
-        <div className="sidebar-note"><span className="small-rule"/><h2>A little clarity.<br/>A helpful next step.</h2><p>General guidance for your everyday banking questions.</p></div>
-        <div className="sidebar-session"><span className="session-avatar"><Icon name="user"/></span><div>{session?'Demo account':'Guest session'}<small>{session?'Signed in':'No account connected'}</small></div></div>
-      </aside>
-      <main className="chat-workspace">
+      <Sidebar session={session} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}}/>
+      <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-settings"><label>Information <select aria-label="Information" disabled={booting} value={mode} onChange={e=>{if(reset())setMode(e.target.value);}}><option value="public">General help</option>{session&&<option value="personal">My records</option>}</select></label>
           <label>Answer language <select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select></label></div>
         <p className="language-note">The language choice applies to AI answers. Menus, safety guidance and notices remain in English. Translation quality is still being tested.</p>
@@ -280,30 +306,36 @@ export default function Chat({session,onSignIn}) {
           </form><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
           <details className="session-note"><summary>About this conversation</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile. Use Saved chats to reopen them. Starting a new chat keeps previous saved chats.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears this browser’s access to the previous guest chat.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be omitted from long chats. General guidance works without login. Sign in to view your account records.</p></details></div>
         </section>
-        <footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>
+        {footer}
       </main>
+      {view!=='chat'&&<main className="app-page">
+        {view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:review,Appointments:relationship,Requests:relationship,Relationship:relationship,Compliance:compliance,Documents:compliance,'Data sharing':{label:'Open data sharing',onSelect:()=>navigate('sharing')}}}/>}
+        {view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions} onRelationship={()=>navigate('relationship')}/>}
+        {view==='compliance'&&<CompliancePage key={pageKey} onSupport={prepareSummary} onAsk={question=>{navigate('chat');draft(question);}}/>}
+        {view==='relationship'&&<RelationshipPage key={pageKey} onReviewActions={openActions} onSharing={()=>navigate('sharing')} onSupport={prepareSummary}/>}
+        {footer}
+      </main>}
     </div>
-    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" onClose={()=>setSummary(null)}>
-      <p>Approving sends this short summary to bank staff as a support handoff in this demo. The demo has no staffed queue, so no person will reply. For a real issue, use your bank’s official app or website.</p>
-      <p className="handoff-summary" data-testid="handoff-summary">{summary}</p>
-      {!handoff.outcome&&<div className="panel-actions"><button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to support</button><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button></div>}
+    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle="Send a short, label-only summary to bank staff as a support handoff in this demo." onClose={()=>setSummary(null)}
+      footer={<><span>No staffed queue · no person will reply</span>{handoff.outcome?<button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button><button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to support</button></div>}</>}>
+      <label className="form-field">What do you need help with?<select data-testid="handoff-topic" value={helpTopic} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setHelpTopic(e.target.value)}>{HELP_TOPICS.map(([value,text])=><option key={value} value={value}>{text}</option>)}</select></label>
+      <div className="form-field"><span>Summary staff will see</span><p className="handoff-summary" data-testid="handoff-summary">{handoffText}</p></div>
+      <p className="security-note"><Icon name="shield"/>Never share your PIN, password or OTP. For a real issue, use your bank’s official app or website.</p>
       {handoff.saving&&<p role="status">Recording the support handoff…</p>}
       {handoff.error&&<p role="alert">{handoff.error}</p>}
       {handoff.outcome&&<div role="status" data-testid="handoff-receipt"><p>{handoff.outcome.receipt.result.created?'A support handoff is recorded.':'Your open support handoff was reused.'} This demo has no staffed queue.</p><p>Receipt: <code>{handoff.outcome.receipt.receipt_id}</code></p></div>}
     </Panel>}
-    {summary!==null&&!session&&<Panel label="Human support" closeLabel="Close summary" title="Prepare a support summary" onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
+    {summary!==null&&!session&&<Panel label="Human support" closeLabel="Close summary" title="Prepare a support summary" subtitle="Draft a summary you can copy into your bank’s official support channel." onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
     {article&&<Panel label="Source details" closeLabel="Close source" title={article.title} onClose={()=>setArticle(null)}><p className="source-notice">{article.notice}</p><p>{article.content}</p><p className="source-publisher">Publisher: {article.publisher}</p>
       {article.reference_url&&<p><a href={article.reference_url} target="_blank" rel="noopener noreferrer">Read the original source <span aria-hidden="true">↗</span></a></p>}
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
-    {sharing&&<SharingPanel onClose={()=>setSharing(false)} onReviewActions={()=>{setSharing(false);setActionsOpen(true);}}/>}
     {blockAction&&<CardBlockDialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
       if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
     }}/>}
-    {inboxOpen&&<NotificationsPanel onClose={()=>setInboxOpen(false)}/>}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
-    {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}
+    {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
     {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
       setActionsOpen(false);
       if(workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});

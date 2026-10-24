@@ -13,6 +13,14 @@ const paths = {
   user: <><circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/></>,
   spark: <path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z"/>,
   close: <path d="m6 6 12 12M6 18 18 6"/>,
+  chevron: <path d="m6 9 6 6 6-6"/>,
+  check: <path d="m5 12 5 5 9-10"/>,
+  lock: <><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></>,
+  people: <><circle cx="9" cy="8" r="3.5"/><path d="M2 21v-1a7 7 0 0 1 14 0v1M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 4 6v1"/></>,
+  document: <><path d="M14 2H6v20h12V6l-4-4Zm0 0v4h4M9 13h6m-6 4h4"/></>,
+  info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-9.5v.5"/></>,
+  logout: <><path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/></>,
 };
 
 export default function Icon({name}) {

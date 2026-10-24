@@ -1,3 +1,4 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
@@ -57,7 +58,7 @@ test('durable action workflow cancellation rejects the pending proposal',async({
   await open(page);
   await page.getByTestId('cancel-pending-reply').click();
   await expect(page.locator('#chat-composer')).toBeEnabled();
-  await page.getByTestId('open-actions').click();
+  await openMenuItem(page,'open-actions');
   const command=page.locator(`[data-command-id="${fixture.command_id}"]`);
   await expect(command.getByTestId('command-state')).toHaveText('rejected');
   await expect(command.getByTestId('command-receipt')).toHaveCount(0);
@@ -82,7 +83,7 @@ test('real fraud proposal uses reviewed confirmation and persists the AI answer 
   await expect(command.getByTestId('command-state')).toHaveText('proposed');
   await page.getByRole('button',{name:'Close actions',exact:true}).click();
   await expect(page.locator('#chat-composer')).toBeDisabled();
-  await page.getByTestId('open-records').click();
+  await openMenuItem(page,'open-records');
   await expect(page.getByTestId('records-card').locator('dd').first()).toHaveText('active');
   await page.getByRole('button',{name:'Close records',exact:true}).click();
   await page.getByTestId('review-pending-workflow').click();
@@ -105,7 +106,7 @@ test('real fraud proposal uses reviewed confirmation and persists the AI answer 
   expect((await reloaded).status()).toBe(200);
   await expect(page.getByTestId('reload-saved-chat')).toBeEnabled();
   await expect(section.locator('.answer-text')).toHaveText(answer);
-  await page.getByTestId('open-records').click();
+  await openMenuItem(page,'open-records');
   await expect(page.getByTestId('records-card')).toContainText('temporarily blocked');
   await page.getByRole('button',{name:'Close records',exact:true}).click();
   for(const width of [1280,390,320]) {

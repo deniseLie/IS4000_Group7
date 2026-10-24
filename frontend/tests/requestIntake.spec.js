@@ -1,9 +1,10 @@
+import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {seedSession} from './nativeSession.js';
 
 test.beforeEach(async({page})=>seedSession(page));
 async function openRequests(page) {
-  await page.getByTestId('open-data-sharing').click();await page.getByTestId('open-relationship-details').click();
+  await openMenuItem(page,'open-data-sharing');await page.getByTestId('open-relationship-details').click();
   await expect(page.getByTestId('request-intake')).toBeVisible();
 }
 async function proposal(page,details) {
@@ -33,7 +34,7 @@ test('request intake reviews confirms and reloads the exact stored request',asyn
     const request=page.locator(`[data-request-id="${result.receipt.result.request_id}"]`);
     await expect(request).toContainText(saved.command.target.what);await expect(request).toContainText('Currency reference: USD');
     await request.scrollIntoViewIfNeeded();
-    const dialog=page.locator('dialog[aria-label="Data sharing"]');expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+    const dialog=page.getByTestId('relationship-page');expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/request-intake-${width}.png`,fullPage:true});
     await page.keyboard.press('Escape');
   }
