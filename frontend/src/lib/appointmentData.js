@@ -33,3 +33,5 @@ export function parseAppointments(value) {
 export function appointmentTime(value) {
   return new Date(value).toLocaleString('en-SG',{timeZone:'Asia/Singapore',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
+export function slotDay(value) {return new Date(value).toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'short',day:'numeric',month:'short'});}
+export function slotTime(value) {return new Date(value).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour:'2-digit',minute:'2-digit'});}

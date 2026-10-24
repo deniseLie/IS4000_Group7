@@ -469,3 +469,21 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .documents-card .bank-chat-logout { min-height: 30px; padding: 5px 10px; font-size: 11px; }
 .documents-card .relationship-details { margin-top: 8px; padding-top: 8px; }
 .documents-card .relationship-details h4 { font-size: 12px; }
+
+/* Existing record controls inside the new pages share the page type scale. */
+.app-page-body .relationship-details { font-size: 13px; }
+.app-page-body .relationship-details h3 { margin: 0 0 6px; font-size: 16px; }
+.app-page-body .relationship-details h4 { margin: 20px 0 8px; font-size: 14px; }
+.app-page-body .relationship-details p { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.app-page-body .relationship-details strong, .app-page-body .relationship-details code { color: var(--ink); }
+.app-page-body .relationship-details label { font-size: 12px; }
+.app-page-body .relationship-details input:not([type="checkbox"]):not([type="radio"]), .app-page-body .relationship-details select, .app-page-body .relationship-details textarea { padding: 7px 9px; border: 1px solid #d4d4cb; border-radius: 7px; background: #fff; color: var(--ink); font-size: 12px; }
+.app-page-body .relationship-details fieldset { display: grid; grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 0 12px; margin: 12px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.app-page-body .relationship-details legend { padding: 0 6px; color: var(--muted); font-size: 11px; }
+.app-page-body .relationship-details .review-summary { margin: 4px 0; font-size: 12px; }
+.app-page-body .relationship-details .bank-chat-logout, .app-page-body .relationship-details .primary-button { min-height: 32px; padding: 6px 12px; font-size: 12px; }
+.app-page-body .relationship-list li { margin-bottom: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 12px; }
+.app-page-body .relationship-list li p { margin: 2px 0; color: var(--ink); }
+.app-page-body .slot-grid li { margin: 0; padding: 12px; }
+.slot-grid li p strong { display: block; margin-bottom: 2px; }
+.app-page-body .command-review { margin: 12px 0; padding: 10px 14px; background: var(--canvas); border-radius: 0 8px 8px 0; }
