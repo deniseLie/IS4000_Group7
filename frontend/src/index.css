@@ -407,3 +407,48 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .slot-grid .bank-chat-logout { min-height: 30px; padding: 5px 8px; font-size: 11px; }
 @media (max-width:1000px) { .relationship-grid { grid-template-columns: 1fr; } }
 @media (max-width:760px) { .scope-grid { grid-template-columns: 1fr; } .transition-card { flex-direction: column; padding: 18px; } .advisor-card, .scheduler-card { padding: 16px; } }
+
+/* Compliance review page and support dialog fields. */
+.case-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; color: var(--muted); font-size: 11px; }
+.status-badge.warning { color: #8a5a00; background: #fdf5e4; border-color: #f0dfb5; }
+.status-badge svg { width: 12px; height: 12px; }
+.case-card { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,3fr); gap: 24px; align-items: center; padding: 22px 24px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 6px 24px #0000000a; }
+.case-progress { display: grid; gap: 10px; }
+.progress-label { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 11px; }
+.progress-label strong { color: var(--ink); font-size: 13px; }
+.progress-track { height: 8px; border-radius: 999px; background: var(--canvas); overflow: hidden; }
+.progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--red); }
+.compliance-grid { display: grid; grid-template-columns: minmax(0,7fr) minmax(0,5fr); gap: 24px; margin-top: 28px; align-items: start; }
+.compliance-grid .relationship-column { display: grid; gap: 14px; }
+.compliance-grid .column-label { margin-bottom: 0; }
+.requirement-card { position: relative; display: grid; gap: 12px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden; overflow-wrap: anywhere; }
+.requirement-card.priority { padding-top: 22px; }
+.requirement-card.priority::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--red); }
+.requirement-head { display: flex; gap: 14px; }
+.requirement-head h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; font-size: 14px; }
+.requirement-head p { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.requirement-meta { font-size: 11px !important; }
+.requirement-card .relationship-details { margin-top: 0; padding-top: 12px; }
+.requirement-card .relationship-details p { font-size: 11px; color: var(--muted); }
+.guidance-list { display: grid; gap: 4px; margin: 0; font-size: 12px; }
+.guidance-list dt { margin-top: 6px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+.guidance-list dd { margin: 0; }
+.info-card { display: flex; gap: 12px; padding: 14px 16px; border-radius: 10px; background: var(--canvas); font-size: 12px; }
+.info-card svg { width: 16px; height: 16px; color: var(--muted); }
+.info-card p { margin: 4px 0 0; color: var(--muted); line-height: 1.6; }
+.compliance-grid .advisor-card h3 { margin-top: 0; font-size: 15px; }
+.compliance-grid .advisor-card p { font-size: 12px; line-height: 1.6; }
+.faq-card details { border-top: 1px solid var(--line); padding-top: 10px; font-size: 12px; }
+.faq-card summary { font-weight: 600; line-height: 1.5; }
+.faq-card details p { color: var(--muted); }
+.faq-card .bank-chat-logout { min-height: 30px; padding: 5px 12px; }
+.guidance-card { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; text-align: left; }
+.guidance-card:hover { background: var(--canvas); }
+.guidance-card small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.form-field { display: grid; gap: 6px; margin-bottom: 16px; font-size: 12px; }
+.form-field select { padding: 9px 10px; border: 1px solid #d4d4cb; border-radius: 7px; background: #fff; color: var(--ink); font-size: 13px; }
+.form-field .handoff-summary { margin: 0; }
+.security-note { display: flex; align-items: center; gap: 8px; font-size: 11px !important; }
+.security-note svg { width: 14px; height: 14px; }
+.panel-footer .panel-actions .bank-chat-logout, .panel-footer .primary-button { min-height: 32px; padding: 6px 14px; }
+@media (max-width:1000px) { .compliance-grid, .case-card { grid-template-columns: 1fr; } }
