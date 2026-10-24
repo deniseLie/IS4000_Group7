@@ -31,10 +31,10 @@ test('staff outcomes remain recorded in customer actions records and inbox',asyn
     for(const key of ['card.unblocked','card.cancelled','handoff.claimed','handoff.closed']) {
       await expect(page.locator(`[data-template-key="${key}"]`)).toHaveCount(1);
     }
-    const dialog=page.locator('dialog[aria-label="Notifications"]');
+    const dialog=page.getByTestId('inbox-page');
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/staff-inbox-${width}.png`,fullPage:true});
-    await page.keyboard.press('Escape');
+    await page.goBack();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
 });

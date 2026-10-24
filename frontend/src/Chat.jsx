@@ -5,7 +5,7 @@ import Answer from './components/Answer';
 import SharingPanel from './components/SharingPanel';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
-import NotificationsPanel from './components/NotificationsPanel';
+import InboxPage from './components/InboxPage';
 import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
 import TopBar from './components/TopBar';
@@ -28,7 +28,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable. Select General help to continue.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat'];
+const PAGES=['chat','inbox'];
 function pageFromHash() {const page=location.hash.slice(1);return PAGES.includes(page)?page:'chat';}
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
 
@@ -53,7 +53,6 @@ export default function Chat({session,onSignIn}) {
   const [workflow,setWorkflow]=useState(null);
   const [savedChats,setSavedChats]=useState(false);
   const [actionsOpen,setActionsOpen]=useState(false);
-  const [inboxOpen,setInboxOpen]=useState(false);
   const [recordsOpen,setRecordsOpen]=useState(false);
   const [blockAction,setBlockAction]=useState(null);
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
@@ -112,7 +111,7 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);
+    setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);
     setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
@@ -145,7 +144,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);setSharing(false);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);if(store!==null)setBootError('');
     return true;
   }
 
@@ -249,13 +248,17 @@ export default function Chat({session,onSignIn}) {
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
-  function closeOverlays() {setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);}
+  const footer=<footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
+  function openActions() {closeOverlays();setActionsOpen(true);}
+  const review={label:'Review in Actions',onSelect:openActions};
+  function closeOverlays() {setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
+    {testid:'menu-open-chat',icon:'chat',label:'Banking assistant',mobile:true,onSelect:()=>navigate('chat')},
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
     {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();setSharing(true);}},
     ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();setSavedChats(true);}}]:[]),
-    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:()=>{closeOverlays();setActionsOpen(true);}},
+    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
   const pages=[
@@ -266,7 +269,7 @@ export default function Chat({session,onSignIn}) {
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
     <TopBar session={session} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
-      inbox={()=>{closeOverlays();setInboxOpen(true);}}/>
+      inbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
       <Sidebar session={session} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
@@ -295,8 +298,12 @@ export default function Chat({session,onSignIn}) {
           </form><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
           <details className="session-note"><summary>About this conversation</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile. Use Saved chats to reopen them. Starting a new chat keeps previous saved chats.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears this browser’s access to the previous guest chat.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be omitted from long chats. General guidance works without login. Sign in to view your account records.</p></details></div>
         </section>
-        <footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>
+        {footer}
       </main>
+      {view!=='chat'&&<main className="app-page">
+        {view==='inbox'&&<InboxPage onActions={openActions} links={{Cards:review,Support:review}}/>}
+        {footer}
+      </main>}
     </div>
     {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" onClose={()=>setSummary(null)}>
       <p>Approving sends this short summary to bank staff as a support handoff in this demo. The demo has no staffed queue, so no person will reply. For a real issue, use your bank’s official app or website.</p>
@@ -316,9 +323,8 @@ export default function Chat({session,onSignIn}) {
     {blockAction&&<CardBlockDialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
       if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
     }}/>}
-    {inboxOpen&&<NotificationsPanel onClose={()=>setInboxOpen(false)}/>}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
-    {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}
+    {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
     {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
       setActionsOpen(false);
       if(workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});

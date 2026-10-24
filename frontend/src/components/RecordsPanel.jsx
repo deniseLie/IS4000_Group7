@@ -37,9 +37,10 @@ export default function RecordsPanel({onClose}) {
     event.preventDefault();
     setQuery({from_date:from||null,to_date:to||null,filters:status?{status}:null});setRevision(value=>value+1);
   }
-  return <Panel label="Customer records" title="Your records" closeLabel="Close records" onClose={onClose}>
-    <p>View the records linked to your account. Checklist preparation marks can be saved separately below.</p>
-    <form className="records-filters" onSubmit={refresh}>
+  const footer=<><span>{records?<>Recorded as of <time dateTime={records.profile.as_of}>{new Date(records.profile.as_of).toLocaleString()}</time>. Each section is a separate audited read.</>:'Synthetic records · read only'}</span><button className="bank-chat-logout" onClick={onClose}>Close</button></>;
+  return <Panel label="Customer records" eyebrow="Synthetic records · Read only" title="Your records" closeLabel="Close records" onClose={onClose} size="wide" footer={footer}>
+    <p className="panel-notice">Read the synthetic records linked to your sign-in. This view does not change your data. Checklist preparation marks can be saved separately below.</p>
+    <form className="records-filters records-filter-bar" onSubmit={refresh}>
       <label>Transactions from<input data-testid="records-from" type="date" value={from} onChange={event=>setFrom(event.target.value)}/></label>
       <label>Transactions to<input data-testid="records-to" type="date" value={to} onChange={event=>setTo(event.target.value)}/></label>
       <label>Status<select data-testid="records-status" value={status} onChange={event=>setStatus(event.target.value)}><option value="">All</option>{['posted','pending','failed'].map(value=><option key={value}>{value}</option>)}</select></label>
@@ -48,15 +49,15 @@ export default function RecordsPanel({onClose}) {
     {loading&&<p role="status" data-testid="records-loading">Loading recorded data…</p>}
     {error&&<p role="alert" data-testid="records-error">{error}</p>}
     {records&&<div data-testid="records-content" className="customer-records">
-      <section><h3 data-testid="records-name">{records.profile.data.name}</h3><p>{label(records.profile.data.employment_status)} · Preferred language: {records.profile.data.preferred_language}</p></section>
+      <section className="records-profile"><h3 data-testid="records-name">{records.profile.data.name}</h3><p>{label(records.profile.data.employment_status)} · Preferred language: {records.profile.data.preferred_language}</p></section>
       <section><h3>Accounts</h3>{records.accounts.data.length===0&&<p data-testid="records-accounts-empty">No accounts recorded.</p>}
         {records.accounts.data.map(row=><article key={row.account_id} data-testid="records-account"><h4>{label(row.type)} · {row.number}</h4><p>{row.currency} {amount(row.balance)} · {label(row.status)}</p></article>)}</section>
       <section><h3>Cards</h3>{records.cards.data.length===0&&<p>No cards recorded.</p>}
         {records.cards.data.map(row=><article key={row.card_id} data-testid="records-card"><h4>{row.name} · ****{row.last4}</h4>
-          <dl className="sharing-details"><dt>Status</dt><dd>{label(row.status)}</dd><dt>Credit limit</dt><dd>{amount(row.limit)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Minimum payment</dt><dd>{amount(row.minimum_payment)}</dd><dt>Due date</dt><dd>{recordedDate(row.due_date)}</dd></dl></article>)}</section>
+          <dl className="sharing-details record-table"><dt>Status</dt><dd>{label(row.status)}</dd><dt>Credit limit</dt><dd>{amount(row.limit)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Minimum payment</dt><dd>{amount(row.minimum_payment)}</dd><dt>Due date</dt><dd>{recordedDate(row.due_date)}</dd></dl></article>)}</section>
       <section><h3>Loans</h3>{records.loans.data.length===0&&<p data-testid="records-loans-empty">No loans recorded.</p>}
         {records.loans.data.map(row=><article key={row.loan_id} data-testid="records-loan"><h4>{label(row.type)} · {label(row.status)}</h4>
-          <dl className="sharing-details"><dt>Original amount</dt><dd>{amount(row.principal)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Next payment</dt><dd>{amount(row.next_amount)}</dd><dt>Due date</dt><dd>{recordedDate(row.next_payment)}</dd></dl></article>)}
+          <dl className="sharing-details record-table"><dt>Original amount</dt><dd>{amount(row.principal)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Next payment</dt><dd>{amount(row.next_amount)}</dd><dt>Due date</dt><dd>{recordedDate(row.next_payment)}</dd></dl></article>)}
         <p className="source-notice">Currency is not recorded for card and loan amounts.</p></section>
       <section><h3>Transactions</h3><p>Latest {records.transactions.data.length} matching records, up to 200. Dates use Singapore time.</p>
         {records.transactions.data.length===0&&<p data-testid="records-transactions-empty">No matching transactions.</p>}
@@ -67,7 +68,7 @@ export default function RecordsPanel({onClose}) {
       <section><h3>Relationship manager</h3>{records.advisor.data?.current?<article data-testid="records-advisor"><h4>{records.advisor.data.current.name}</h4><p>{records.advisor.data.current.role} · {records.advisor.data.current.team}</p><p>Assigned since {records.advisor.data.current.started_on}</p>
         <p data-testid="records-advisor-contact">Email: {records.advisor.data.current.contact.email||'Not recorded'} · Phone: {records.advisor.data.current.contact.phone||'Not recorded'}</p></article>:<p>No current relationship manager recorded.</p>}
         {records.advisor.data?.previous&&<p>Previous: {records.advisor.data.previous.name} · Ended {records.advisor.data.previous.ended_on}</p>}</section>
-      <p className="source-notice">Recorded as of <time dateTime={records.profile.as_of}>{new Date(records.profile.as_of).toLocaleString()}</time>. Each section is a separate audited read. Reload for current records.</p>
+      <p className="source-notice">Reload for current records.</p>
     </div>}
   </Panel>;
 }
