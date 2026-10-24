@@ -24,6 +24,14 @@ class Source(BaseModel):  # same fields as services/knowledge.source()
     current: bool = True
 
 
+class ActionRequiredEvent(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    command_id: UUID
+    type: str
+    summary: str
+    expires_at: datetime
+
+
 class AnswerSection(BaseModel):  # one per task, priority order
     model_config = ConfigDict(extra='forbid')
     task_id: str
@@ -35,6 +43,8 @@ class AnswerSection(BaseModel):  # one per task, priority order
     needs_human: bool = False
     response_origin: Origin
     prompt_version: str | None = None
+    pending_action: ActionRequiredEvent | None = None  # paused previews only; never saved in a final reply
+    decision: str | None = None  # fixed text for a recorded action outcome on this section's task
 
 
 class AnswerEvent(BaseModel):  # today's answer object + optional sections
@@ -48,14 +58,6 @@ class AnswerEvent(BaseModel):  # today's answer object + optional sections
     prompt_version: str | None = None
     response_origin: Origin
     sections: list[AnswerSection] | None = None
-
-
-class ActionRequiredEvent(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    command_id: UUID
-    type: str
-    summary: str
-    expires_at: datetime
 
 
 class WorkflowStatus(BaseModel):
@@ -77,3 +79,10 @@ class WorkflowPausedEvent(BaseModel):
     model_config=ConfigDict(extra='forbid')
     workflow: WorkflowStatus
     actions: list[ActionRequiredEvent]=Field(min_length=1,max_length=5)
+    preview: AnswerEvent  # every section, shown while the customer decides
+
+
+class WorkflowPreview(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    workflow: WorkflowStatus
+    preview: AnswerEvent

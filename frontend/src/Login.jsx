@@ -70,7 +70,7 @@ export default function Login({onBack}) {
               </button>
             </div>
 
-            {error && <p className="login-error" role="alert">{error}</p>}
+            {error && <p className="login-error" role="alert" data-testid="login-error">{error}</p>}
 
             <button data-testid="submit-login" className="login-submit primary-button" type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Sign In →"}

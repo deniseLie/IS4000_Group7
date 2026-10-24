@@ -21,7 +21,30 @@ export function parsePausedWorkflow(value,sessionId) {
     return id(action.command_id);
   });
   if(new Set(ids).size!==ids.length||ids.length!==workflow.pending_commands.length||ids.some(commandId=>!workflow.pending_commands.includes(commandId)))throw invalid();
+  if(value.preview!==undefined)parsePreview(value.preview,workflow);
   return workflow;
+}
+// The paused reply shows every section; only urgent fraud sections may carry one of the pending block offers.
+export function parsePreview(value,workflow) {
+  const sections=value?.sections;
+  if(!Array.isArray(sections)||!sections.length||sections.length>5||typeof value.answer!=='string')throw invalid();
+  const offered=sections.filter(section=>{
+    if(typeof section?.task_id!=='string'||typeof section.answer!=='string')throw invalid();
+    const action=section.pending_action;
+    if(action===null||action===undefined)return false;
+    if(section.domain!=='fraud'||section.priority!=='P0'||action.type!=='card.temporary_block'||typeof action.summary!=='string'||!action.summary.trim()||!Number.isFinite(Date.parse(action.expires_at)))throw invalid();
+    id(action.command_id);return true;
+  }).map(section=>section.pending_action.command_id);
+  if(new Set(offered).size!==offered.length||offered.length!==workflow.pending_commands.length||offered.some(commandId=>!workflow.pending_commands.includes(commandId)))throw invalid();
+  return value;
+}
+export async function loadWorkflowPreview(turnId,headers,signal) {
+  const response=await fetch(`${API_URL}/workflows/${id(turnId)}/preview`,{headers,signal});
+  const body=await response.json();
+  if(!response.ok)throw new Error(typeof body?.error?.message==='string'?body.error.message:'The waiting reply could not be loaded. Reload the saved chat.');
+  const workflow=parseWorkflow(body?.workflow);
+  if(workflow.turn_id!==turnId)throw invalid();
+  return {workflow,preview:parsePreview(body.preview,workflow)};
 }
 export async function resumeWorkflow(turnId,token,signal) {
   const response=await fetch(`${API_URL}/workflows/${id(turnId)}/resume`,{method:'POST',headers:{Authorization:`Bearer ${token}`},signal});

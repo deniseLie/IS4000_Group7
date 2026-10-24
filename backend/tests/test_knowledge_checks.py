@@ -20,6 +20,21 @@ from evaluation.run import evaluate, write_report
 def test_topics_retrieve_primary_sources(question,expected):
     assert expected in [a.id for a in knowledge.search(question)]
 
+@pytest.mark.parametrize('question,expected',[
+ ('wats the monthly fee for a savings acc?','savings-fees'),
+ ('i got locked out of the app on my phone','app-login-recovery'),
+ ('can i get a car loan','car-loans'),
+ ('theres a $2400 charge i dont recognise','unrecognised-charge'),
+])
+def test_workflow_one_questions_retrieve_demo_guidance(question,expected):
+    assert knowledge.search(question)[0].id==expected
+    article=knowledge.INDEX[expected]
+    assert article.reference_url is None and not answers.URL.search(article.content)
+
+def test_revised_guidance_describes_confirmed_block_and_recorded_handoff():
+    assert 'only after you confirm' in knowledge.INDEX['lost-card'].content and 'cannot block a card from this reply' in knowledge.INDEX['lost-card'].content
+    assert 'records a support handoff' in knowledge.INDEX['support'].content and 'no staffed queue' in knowledge.INDEX['support'].content
+
 @pytest.mark.parametrize('change',[
  {'review_due':'2000-01-01'}, {'checked_on':'2099-01-01'},
  {'reference_url':'https://www.moneysense.gov.sg.evil.invalid/page'},

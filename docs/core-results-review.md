@@ -62,3 +62,7 @@ rerun; no database users or permissions were changed.
 
 Luna results do not verify the OpenRouter model intended for showcase day. Use
 the focused suite and real browser checks again after switching providers.
+
+## Workflow 1 focused run (24 October 2026)
+
+One live run of `python -m evaluation.run --live --suite focused` (now six cases: the three source questions plus the public Workflow 1 questions), model `openrouter/free` through the API transport, public pipeline. All six were AI answers that passed the basic source checks and cited the expected articles (`savings-fees`, `app-login-recovery`, `car-loans` for the new cases). Manual review: the savings-fee and app-lockout answers match their sources and ask for no secret. The car-loan answer says the bank makes the final decision and claims no approval, but adds an unsupported condition ("whether you are an existing DemoBank customer"); the figure and citation checks cannot catch this. One run is not a reliability measure, and the signed-in three-problem flow (section order, block offer) is not covered by this suite. Its end-to-end spec (`frontend/tests/workflow1.spec.js`) was not run in this round: the native runner needs a PostgREST build that the project does not pin for Windows, and the hosted run was deliberately skipped to avoid writing to the shared project.

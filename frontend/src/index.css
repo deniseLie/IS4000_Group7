@@ -92,6 +92,10 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .answer-section + .answer-section { border-top: 1px solid var(--line); padding-top: 20px; }
 .answer-section h3 { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; font-size: 13px; font-weight: 500; }
 .answer-section h3 small { color: var(--red); font-size: 11px; }
+.answer-decision { margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid var(--red); background: var(--canvas); font-size: 13px; line-height: 1.6; }
+.block-card { display: block; margin-top: 14px; }
+.chat-greeting { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.handoff-summary { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--canvas); font-size: 13px; }
 .answer-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; margin-bottom: 10px; min-height: 30px; }
 .answer-origin { font-size: 10px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 4px; }
 .answer-sources { margin-top: 18px; font-size: 12px; }

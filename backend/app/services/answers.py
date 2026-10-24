@@ -19,7 +19,7 @@ EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
 
 NOTICE='General information only, not advice or a contract. Demo records are synthetic. Only the bank can confirm fees or approve a loan.'
 URL=re.compile(r'https?://',re.I)
-ACTION_CLAIM=re.compile(r'\b(?:I have|I\x27ve|we have|successfully)\s+(?:blocked|transferred|approved|submitted|refunded)',re.I)
+ACTION_CLAIM=re.compile(r'\b(?:I have|I\x27ve|we have|successfully)\s+(?:blocked|transferred|approved|submitted|refunded|reversed|cancell?ed|disputed|investigated|expedited|sped up)',re.I)
 
 def clean_history(messages):
     history=[Message(role=m.role,content=redact(m.content)[0]) for m in messages]

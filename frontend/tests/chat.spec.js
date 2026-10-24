@@ -23,6 +23,9 @@ test('refresh clears conversation and sends no previous context',async({page})=>
  await ask(page,'I lost my card');
  expect((await sent).postDataJSON().messages).toEqual([{role:'user',content:'I lost my card'}]);
 });
+test('chat opens by saying it is an AI assistant giving general information',async({page})=>{
+ await expect(page.getByTestId('chat-greeting')).toHaveText("I'm DemoBank's AI assistant. I give general information, not advice.");
+});
 test('language scope is explained and safety guidance stays labelled',async({page})=>{
  await page.getByLabel('Answer language',{exact:true}).selectOption('Chinese');
  await expect(page.getByText('The language choice applies to AI answers.',{exact:false})).toBeVisible();

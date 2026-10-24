@@ -7,10 +7,12 @@ import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
 import NotificationsPanel from './components/NotificationsPanel';
 import RecordsPanel from './components/RecordsPanel';
+import CardBlockDialog from './components/CardBlockDialog';
 import { supabase } from './lib/supabase';
-import { boundedHistory, readEvents, redact, supportSummary } from './lib/chatTools';
+import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
-import {parsePausedWorkflow} from './lib/workflows';
+import {loadWorkflowPreview,parsePausedWorkflow,parsePreview} from './lib/workflows';
+import {createActionCase,proposeAction} from './lib/actions';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const GUEST_SESSION = globalThis.crypto?.randomUUID?.();  // needs a secure context (https or localhost); correlation id for guest requests; signed-in sessions use the token's session_id
@@ -49,6 +51,8 @@ export default function Chat({session,onSignIn}) {
   const [actionsOpen,setActionsOpen]=useState(false);
   const [inboxOpen,setInboxOpen]=useState(false);
   const [recordsOpen,setRecordsOpen]=useState(false);
+  const [blockAction,setBlockAction]=useState(null);
+  const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const messageList=useRef(null);
   const composer=useRef(null);
   const request=useRef(null);
@@ -69,7 +73,8 @@ export default function Chat({session,onSignIn}) {
           const access=readActive(session?.user.id||null);
           if(access) {
             const history=await loadConversation(access,await sessionHeaders(),controller.signal);
-            if(!controller.signal.aborted)restore(history,access);
+            const preview=await waitingPreview(history,controller.signal);
+            if(!controller.signal.aborted)restore(history,access,preview);
           }
         }
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setBootError(failure.message);}
@@ -86,13 +91,20 @@ export default function Chat({session,onSignIn}) {
     return {Authorization:`Bearer ${data.session.access_token}`};
   }
 
-  function restore(history,access) {
+  // A reply waiting on a card-block decision is rebuilt from its saved checkpoint; without it, Actions still works.
+  async function waitingPreview(history,signal) {
+    if(history.workflow?.state!=='awaiting_confirmation')return null;
+    try {return (await loadWorkflowPreview(history.workflow.turn_id,await sessionHeaders(),signal)).preview;}
+    catch(failure) {if(failure.name==='AbortError')throw failure;return null;}
+  }
+
+  function restore(history,access,preview=null) {
     writeActive(session?.user.id||null,access);
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
-    setMessages(history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
+    setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
     setSummary(null);setArticle(null);setSharing(false);setSavedChats(false);setActionsOpen(false);setInboxOpen(false);setRecordsOpen(false);
-    setNotice(history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
+    setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
   }
 
   async function reopen(item) {
@@ -101,7 +113,8 @@ export default function Chat({session,onSignIn}) {
     const access={session_id:item.session_id,guest_token:conversation?.session_id===item.session_id?conversation.guest_token:null};
     try {
       const history=await loadConversation(access,await sessionHeaders(),controller.signal);
-      if(epoch===version.current)restore(history,access);
+      const preview=await waitingPreview(history,controller.signal);
+      if(epoch===version.current)restore(history,access,preview);
     } finally {if(epoch===version.current){setLoading(false);request.current=null;}}
   }
 
@@ -176,9 +189,11 @@ export default function Chat({session,onSignIn}) {
           setMessages([...visible,{role:'assistant',content:result.answer,...result}]);
         }
         if(type==='workflow_paused') {
-          const paused=parsePausedWorkflow(JSON.parse(data),thread.session_id);
+          const body=JSON.parse(data);
+          const paused=parsePausedWorkflow(body,thread.session_id);
           if(paused.turn_id!==stored.turn_id)throw new Error('The proposed actions do not match this reply. Reload the saved chat.');
-          setWorkflow(paused);setMessages(visible);setNotice('Review the proposed action in Actions to continue this saved reply.');setInboxOpen(false);setRecordsOpen(false);setActionsOpen(true);
+          const preview=parsePreview(body.preview,paused);
+          setWorkflow(paused);setMessages([...visible,{role:'assistant',content:preview.answer,...preview}]);setNotice('Your card-block decision is waiting in the urgent section.');
         }
       });
     } catch(err) {
@@ -197,7 +212,23 @@ export default function Chat({session,onSignIn}) {
   }
 
   function draft(question) { setInput(question);composer.current?.focus(); }
-  function prepareSummary() { setSummary(supportSummary(messages));setApproved(false);setCopied(false);setCopyError(''); }
+  function prepareSummary() { setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''}); }
+  async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
+    setHandoff({saving:true,outcome:null,error:''});
+    try {
+      const {data,error}=await supabase.auth.getSession();
+      if(error)throw error;
+      if(!data.session)throw new Error('Session expired. Please sign in again.');
+      const token=data.session.access_token;
+      const scope=await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},token);
+      const urgent=messages.some(m=>m.sections?.some(section=>section.priority==='P0'));
+      const saved=await proposeAction({command_id:crypto.randomUUID(),task_id:'handoff',case_id:scope.case_id,type:'handoff.create',
+        target:{reason:'general_support',priority:urgent?'P0':'P2',summary}},token);
+      if(saved.receipt?.outcome!=='succeeded')throw new Error('The support handoff could not be recorded. Please retry.');
+      setHandoff({saving:false,outcome:saved,error:''});
+      setNotice(`A support handoff is recorded (receipt ${saved.receipt.receipt_id}). This demo has no staffed queue, so no person will reply.`);
+    } catch(failure) {setHandoff({saving:false,outcome:null,error:failure.message});}
+  }
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of everyday banking.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
@@ -233,12 +264,12 @@ export default function Chat({session,onSignIn}) {
           {bootError&&<p className="chat-notice" role="alert">{bootError}</p>}
           {notice&&<p className="chat-notice" role="status">{notice}</p>}
           <div ref={messageList} className={`bank-chat-messages ${messages.length?'has-messages':''}`} aria-live="polite" aria-relevant="additions text">
-            {!messages.length&&<div className="bank-chat-welcome"><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p>Understand your accounts, cards and loans.<br/>Start with a question. We’ll take it from there.</p><div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
+            {!messages.length&&<div className="bank-chat-welcome"><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p>Understand your accounts, cards and loans.<br/>Start with a question. We’ll take it from there.</p><div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
             {messages.map((m,i)=><div key={i} data-testid={`chat-message-${m.role}`} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}>
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}</div>}
-                <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
+                <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
                 {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
               </div>
             </div>)}
@@ -252,13 +283,24 @@ export default function Chat({session,onSignIn}) {
         <footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>
       </main>
     </div>
-    {summary!==null&&<Panel label="Human support" closeLabel="Close summary" title="Prepare a support summary" onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
+    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" onClose={()=>setSummary(null)}>
+      <p>Approving sends this short summary to bank staff as a support handoff in this demo. The demo has no staffed queue, so no person will reply. For a real issue, use your bank’s official app or website.</p>
+      <p className="handoff-summary" data-testid="handoff-summary">{summary}</p>
+      {!handoff.outcome&&<div className="panel-actions"><button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to support</button><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button></div>}
+      {handoff.saving&&<p role="status">Recording the support handoff…</p>}
+      {handoff.error&&<p role="alert">{handoff.error}</p>}
+      {handoff.outcome&&<div role="status" data-testid="handoff-receipt"><p>{handoff.outcome.receipt.result.created?'A support handoff is recorded.':'Your open support handoff was reused.'} This demo has no staffed queue.</p><p>Receipt: <code>{handoff.outcome.receipt.receipt_id}</code></p></div>}
+    </Panel>}
+    {summary!==null&&!session&&<Panel label="Human support" closeLabel="Close summary" title="Prepare a support summary" onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
     {article&&<Panel label="Source details" closeLabel="Close source" title={article.title} onClose={()=>setArticle(null)}><p className="source-notice">{article.notice}</p><p>{article.content}</p><p className="source-publisher">Publisher: {article.publisher}</p>
       {article.reference_url&&<p><a href={article.reference_url} target="_blank" rel="noopener noreferrer">Read the original source <span aria-hidden="true">↗</span></a></p>}
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
     {sharing&&<SharingPanel onClose={()=>setSharing(false)} onReviewActions={()=>{setSharing(false);setActionsOpen(true);}}/>}
+    {blockAction&&<CardBlockDialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
+      if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
+    }}/>}
     {inboxOpen&&<NotificationsPanel onClose={()=>setInboxOpen(false)}/>}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
     {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={reopen}/>}

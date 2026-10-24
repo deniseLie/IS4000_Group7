@@ -13,7 +13,7 @@ def test_offline_evaluation_uses_publisher_metadata():
 
 def test_focused_dataset_excludes_deferred_cases():
     cases=json.loads(dataset_path(True,'focused').read_text())
-    assert {c['id'] for c in cases}=={'minimum-payment','unknown-product-fee','publisher-scope'}
+    assert {c['id'] for c in cases}=={'minimum-payment','unknown-product-fee','publisher-scope','workflow1-savings-fee','workflow1-app-lockout','workflow1-car-loan'}
     with pytest.raises(ValueError):dataset_path(False,'focused')
 
 def test_model_metadata_identifies_transport_without_credentials(monkeypatch,tmp_path):

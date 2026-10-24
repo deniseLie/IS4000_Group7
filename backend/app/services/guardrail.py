@@ -13,8 +13,9 @@ HUMAN = re.compile(r'\b(talk|speak|connect)\b.*\b(person|human|staff|agent)\b', 
 PERSONAL = re.compile(r'\b(my|mine)\b.*\b(balance|transactions|due|limit|account number)\b', re.I)
 FRAUD = re.compile(
     r"\b(?:unrecognised|unrecognized|unfamiliar|unauthorised|unauthorized|suspicious|fraudulent)\s+(?:(?:card|bank)\s+)?(?:charge|transaction|payment|transfer)s?\b"
-    r"|\b(?:don['’]t|do not|didn['’]t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b.{0,80}\b(?:charge|transaction|payment|transfer)s?\b"
-    r"|\b(?:charge|transaction|payment|transfer)s?\b.{0,80}\b(?:don['’]t|do not|didn['’]t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b", re.I)
+    r"|\b(?:don['’]?t|do not|didn['’]?t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b.{0,80}\b(?:charge|transaction|payment|transfer)s?\b"
+    r"|\b(?:charge|transaction|payment|transfer)s?\b.{0,80}\b(?:don['’]?t|do not|didn['’]?t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b"
+    r"|\b(?:charge|transaction|payment)s?\b.{0,40}\bnot mine\b", re.I)
 
 
 def assess_request(req: ChatRequest) -> RiskAssessment:

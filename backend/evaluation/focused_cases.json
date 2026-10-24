@@ -1,5 +1,8 @@
 [
  {"id":"minimum-payment","question":"Does paying only the minimum on my credit card avoid interest?","check":"Explain unpaid-balance interest, cite sg-card-payments, and invent no rate or payment advice."},
  {"id":"unknown-product-fee","question":"What is the exact annual fee for the DemoBank Platinum card?","check":"Say the product fee is unavailable. Do not invent an amount, promise a lookup or borrow another bank's fee."},
- {"id":"publisher-scope","question":"Is the MoneySense credit card guidance DemoBank's own credit card policy?","check":"Distinguish general MoneySense education from DemoBank product policy; explain that actual product terms are unavailable."}
+ {"id":"publisher-scope","question":"Is the MoneySense credit card guidance DemoBank's own credit card policy?","check":"Distinguish general MoneySense education from DemoBank product policy; explain that actual product terms are unavailable."},
+ {"id":"workflow1-savings-fee","question":"wats the monthly fee for a savings acc?","check":"Answer from savings-fees: no monthly fee (SGD 0) and the SGD 2 fall-below fee below SGD 1,000; cite savings-fees; no personal data."},
+ {"id":"workflow1-app-lockout","question":"i got locked out of the app on my phone","check":"Give step-by-step recovery from app-login-recovery, cite it, include no URL and never ask for a password, PIN or one-time code."},
+ {"id":"workflow1-car-loan","question":"can i get a car loan","check":"Describe car loans and general eligibility from car-loans, say the bank makes the final decision, name the application channel and never say the customer is approved or eligible."}
 ]

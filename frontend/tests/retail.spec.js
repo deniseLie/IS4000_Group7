@@ -11,7 +11,7 @@ test('real personal retail answer persists with owned evidence and responsive la
   await page.getByTestId('send-message').click();const response=await received;expect(response.status()).toBe(200);
   const section=page.getByTestId('answer-sections').locator('section[data-domain="retail"]');
   await expect(section).toHaveAttribute('data-response-origin','ai',{timeout:75000});
-  await expect(section).toHaveAttribute('data-prompt-version',/^v2\+/);
+  await expect(section).toHaveAttribute('data-prompt-version',/^v3\+/);
   await expect(section).toContainText(/SGD\s*5,?230\.45/);
   await section.getByTestId('answer-sources').locator('summary').click();
   await expect(section.getByTestId('answer-sources')).toContainText('Authenticated synthetic accounts');

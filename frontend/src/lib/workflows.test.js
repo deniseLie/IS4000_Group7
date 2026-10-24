@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseWorkflow,parsePausedWorkflow} from './workflows.js';
+import {parseWorkflow,parsePausedWorkflow,parsePreview} from './workflows.js';
 
 function waiting() {
   return {version:'v2-actions-v1',turn_id:'12345678-1234-1234-1234-123456789011',session_id:'12345678-1234-1234-1234-123456789012',
@@ -22,4 +22,17 @@ test('review SSE belongs to the current conversation and exact pending command s
   assert.throws(()=>parsePausedWorkflow(value,workflow.case_id));
   assert.throws(()=>parsePausedWorkflow({...value,actions:[]},workflow.session_id));
   assert.throws(()=>parsePausedWorkflow({...value,actions:[{...value.actions[0],command_id:workflow.turn_id}]},workflow.session_id));
+});
+test('paused preview shows every section and offers exactly the pending block on the urgent one',()=>{
+  const workflow=waiting(),action={command_id:workflow.pending_commands[0],type:'card.temporary_block',summary:'Review a temporary block for synthetic card ending 4821',expires_at:'2026-10-19T12:05:00Z'};
+  const section=(task_id,domain,priority,pending_action=null)=>({task_id,domain,priority,answer:`Answer ${task_id}`,sources:[],response_origin:'ai',pending_action});
+  const preview={answer:'x',disclaimer:'',source_check:'basic_checks_passed',response_origin:'ai',
+    sections:[section('t1','fraud','P0',action),section('t2','retail','P3'),section('t3','retail','P3')]};
+  assert.deepEqual(parsePreview(preview,workflow),preview);
+  assert.deepEqual(parsePausedWorkflow({workflow,actions:[action],preview},workflow.session_id),workflow);
+  assert.throws(()=>parsePreview({...preview,sections:[]},workflow));
+  assert.throws(()=>parsePreview({...preview,sections:[section('t1','fraud','P0'),preview.sections[1]]},workflow));
+  assert.throws(()=>parsePreview({...preview,sections:[section('t1','fraud','P0',{...action,command_id:workflow.turn_id}),preview.sections[1]]},workflow));
+  assert.throws(()=>parsePreview({...preview,sections:[preview.sections[0],section('t2','retail','P3',action)]},workflow));
+  assert.throws(()=>parsePreview({...preview,sections:[section('t1','retail','P3',action)]},workflow));
 });

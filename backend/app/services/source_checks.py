@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 # Ignore ordered-list labels, but not amounts, percentages or waiting periods.
 NUMBER = re.compile(r'(?<![\d.])\d+(?:,\d{3})*(?:\.\d+)?(?!\d)')
 CURRENCIES = 'SGD USD EUR GBP AUD CAD CHF CNY HKD INR JPY MYR NZD THB'.split()
+DOLLARS = frozenset({'SGD','USD','HKD','AUD','CAD','NZD'})
 UNIT = r'(?:'+'|'.join(CURRENCIES)+r'|S\$|US\$|HK\$|\$|€|£|%|percent\b|per cent\b)'
 VALUE = r'[+-]?\d+(?:,\d{3})*(?:\.\d+)?'
 UNIT_BEFORE = re.compile(r'(?<!\w)('+UNIT+r')\s*('+VALUE+r')(?!\d)',re.I)
@@ -23,6 +24,11 @@ def unit_values(text):
     def pair(unit,value):
         return aliases.get(unit.upper(),unit.upper()),Decimal(value.replace(',',''))
     return {pair(u,v) for u,v in UNIT_BEFORE.findall(text)} | {pair(u,v) for v,u in UNIT_AFTER.findall(text)}
+
+
+def unit_matches(claimed,recorded):
+    """A bare '$' names some dollar currency with the same signed value; other units must match exactly."""
+    return claimed==recorded or claimed[0]=='$' and recorded[0] in DOLLARS and claimed[1]==recorded[1]
 
 
 def record_units(text):
@@ -67,7 +73,7 @@ def check_sources(answer, ids, evidence):
         return 'unsupported_figure'
     supported=set()
     for i in ids:supported.update(unit_values(available[i]) | record_units(available[i]))
-    if not unit_values(answer) <= supported:return 'unsupported_unit'
+    if not all(any(unit_matches(claim,item) for item in supported) for claim in unit_values(answer)):return 'unsupported_unit'
     external=any(item['id'] in ids and item.get('publisher') in {'MoneySense','Association of Banks in Singapore'} for item in evidence)
     if external and POLICY_CLAIM.search(answer):return 'unsupported_attribution'
     return None

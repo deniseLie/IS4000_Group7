@@ -6,6 +6,12 @@ For the current presentation, use the [ordered demo walkthrough](#demo-walkthrou
 
 For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
 
+## Workflow 1 update — 24 October 2026
+
+[Workflow 1](docs/workflows/workflow-1-alex.md) (Alex: three problems in one message, the urgent one first) now runs end to end in personal v2 mode. Informal wording ("i dont recognise", "$2400") flags fraud and finds card 4821 before any model call; all three sections show at once and the urgent section offers an in-chat temporary block that runs only after **Confirm**, with a receipt. Declining keeps the card active and repeats the urgent steps. Signed-in "Talk to a person" records a support handoff (staff queue) from a summary of topic labels only; guests keep the copy-only draft. Migration `0054` adds fictional DemoBank articles for savings fees, app login recovery, car loans and unrecognised charges.
+
+Known limits: the seeded charge (2026-10-17) is readable until 2027-01-15 (90-day window). After a confirmed demo block, unblock card 4821 with the staff tool (`scripts/staff_support.py`, `card.unblock`) before the next run. Section order, planning and wording still come from the model and are checked only structurally. Apply `0054` to the hosted project before using `KNOWLEDGE_STORE=database` there. The native Data API and browser suites, including `tests/test_workflow1_browser.py`, need a pinned PostgREST binary, which `scripts.install_postgrest` provides for macOS/Linux only. The hosted run of `workflow1.spec.js` (`TEST_PERSONA_FIXTURE_FILE`, `TEST_HOSTED_AI=1`) uses real logins, declines the block and writes conversation, handoff and audit rows for Alex.
+
 ## Real AI update — 13 October 2026
 
 Local update — 14 October: [Codex subscription setup](docs/codex-local-provider.md)

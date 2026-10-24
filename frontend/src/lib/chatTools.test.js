@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {boundedHistory,redact,readEvents,supportSummary} from './chatTools.js';
+import {boundedHistory,handoffSummary,redact,readEvents,supportSummary} from './chatTools.js';
 
 for(const c of JSON.parse(fs.readFileSync(new URL('../../../tests/fixtures/privacy-cases.json',import.meta.url),'utf8'))) {
  test(`shared privacy case: ${c.text}`,()=>{
@@ -38,4 +38,19 @@ test('interrupted stream fails rather than pretending completion',async()=>{
 });
 test('support draft removes private details and does not claim a ticket was sent',()=>{
  const s=supportSummary([{role:'user',content:'My PIN is 1234'}]);assert.ok(!s.includes('1234'));assert.ok(s.includes('not sent'));
+});
+
+test('handoff summary uses topic labels and recorded outcomes only, never customer text',()=>{
+ const typed='theres a $2400 charge i dont recognise on card 4821, my OTP is 123456';
+ const messages=[{role:'user',content:typed},{role:'assistant',content:'x',sections:[
+  {task_id:'t1',domain:'fraud',priority:'P0',answer:'Card ending 4821 charge.',response_origin:'ai',decision:'Your card ending 4821 is temporarily blocked. More text.'},
+  {task_id:'t2',domain:'retail',priority:'P3',answer:'Transfer 1,800.00 pending.',response_origin:'ai'},
+  {task_id:'t3',domain:'retail',priority:'P3',answer:'Withheld.',response_origin:'validation'}]},
+  {role:'user',content:'whats my balance'},{role:'assistant',content:'error',error:true}];
+ const s=handoffSummary(messages);
+ assert.equal(s,'Customer asked for a person. Topics: Fraud & security (urgent), Everyday banking ×2. Card block: confirmed. Answers withheld: 1.');
+ for(const word of ['4821','2400','1,800','123456','landlord','recognise','balance'])assert.ok(!s.includes(word),word);
+ assert.ok(s.length<=1000);
+ assert.equal(handoffSummary([{role:'user',content:'hi'}]),'Customer asked for a person. Topics: General questions.');
+ assert.ok(handoffSummary([{role:'assistant',content:'x',sections:[{task_id:'t1',domain:'fraud',priority:'P0',answer:'a',response_origin:'ai',decision:'You chose not to block the card ending 4821; it stays active.'}]}]).includes('Card block: declined.'));
 });

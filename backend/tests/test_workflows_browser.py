@@ -19,7 +19,7 @@ class WorkflowFixture(NativeBrowserSession):
     command_id: UUID
 
 
-@pytest.mark.parametrize('decision',['confirmation','rejection','cancellation'])
+@pytest.mark.parametrize('decision',['confirmation','rejection','cancellation','dialog confirmation'])
 def test_durable_review_ui(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch,tmp_path: Path,decision: str) -> None:
     import psycopg
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
@@ -31,4 +31,4 @@ def test_durable_review_ui(local_data_api: NativeAPI,native_api_client: TestClie
     run_browser(native_api_client,case,'durable action workflow '+decision,tmp_path)
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute('select state from conversation.turns where turn_id=%s',(owned.turn.turn_id,)).fetchone()==('failed' if decision=='cancellation' else 'completed',)
-        assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('temporarily_blocked' if decision=='confirmation' else 'active',)
+        assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('temporarily_blocked' if decision.endswith('confirmation') else 'active',)

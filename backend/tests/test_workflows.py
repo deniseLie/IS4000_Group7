@@ -78,16 +78,34 @@ def test_review_resumes_persisted_graph_once(local_data_api: NativeAPI,native_ap
     assert history['active_turn'] is None and history['workflow'] is None
     answer=history['messages'][-1]['payload']
     assert answer['response_origin']=='safety' and all(section['response_origin']=='safety' for section in answer['sections'])
-    assert ('temporarily blocked the synthetic card' in answer['answer'])==(decision=='confirm')
-    assert ('You rejected' in answer['answer'])==(decision=='reject')
-    assert 'handoff is recorded' in answer['answer']
+    assert len(answer['sections'])==1 and answer['sections'][0]['task_id']=='t1' and answer['sections'][0]['pending_action'] is None
+    assert answer['sections'][0]['decision'].startswith('Your card ending 4821 is temporarily blocked.' if decision=='confirm' else 'You chose not to block the card ending 4821; it stays active.')
+    assert ('handoff for identity verification' in answer['answer'])==(decision=='confirm')
     again=native_api_client.post(f'/workflows/{owned.turn.turn_id}/resume',headers=headers(ctx))
     assert again.status_code==200 and again.json()['state']=='completed'
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from support.handoffs').fetchone()==(1,)
-        assert db.execute('select count(*) from actions.receipts').fetchone()==((2 if decision=='confirm' else 1),)
+        # Only a blocked card is handed to staff; declining leaves the card active and records no handoff.
+        assert db.execute('select count(*) from support.handoffs').fetchone()==((1 if decision=='confirm' else 0),)
+        assert db.execute('select count(*) from actions.receipts').fetchone()==((2 if decision=='confirm' else 0),)
+        assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==(('temporarily_blocked' if decision=='confirm' else 'active'),)
         assert db.execute('select count(*) from conversation.messages where role=\'assistant\'').fetchone()==(1,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+
+
+def test_waiting_reply_preview_is_owned_and_only_available_before_the_decision(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
+    ctx=context(local_data_api,1001)
+    owned,command=paused(local_data_api,ctx)
+    preview=native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(ctx))
+    assert preview.status_code==200,preview.text
+    body=preview.json()
+    assert body['workflow']['state']=='awaiting_confirmation' and body['workflow']['pending_commands']==[str(command)]
+    section=body['preview']['sections'][0]
+    assert section['task_id']=='t1' and section['pending_action']['command_id']==str(command) and section['decision'] is None
+    assert section['pending_action']['summary'].endswith('ending 4821')
+    foreign=context(local_data_api,1003)
+    assert native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(foreign)).status_code==404
+    assert native_api_client.post(f'/commands/{command}/reject',headers=headers(ctx)).status_code==200
+    assert native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(ctx)).status_code==409
 
 
 def test_cancel_rejects_pending_and_foreign_customer_cannot_resume(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
@@ -158,7 +176,7 @@ def test_review_must_be_saved_and_expiry_still_resumes_without_a_block(local_dat
     result=native_api_client.get(f'/commands/{command}',headers=headers(ctx)).json()
     assert result['command']['state']=='expired' and result['receipt'] is None and result['workflow']['state']=='completed'
     history=native_api_client.get(f'/conversations/{owned.access.session_id}',headers=headers(ctx)).json()
-    assert 'expired without execution' in history['messages'][-1]['redacted_text']
+    assert 'expired without changing your card' in history['messages'][-1]['redacted_text']
 
 
 def test_handoff_failure_preserves_confirmed_card_and_retry_deduplicates_effects(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
@@ -218,4 +236,4 @@ def test_real_model_proposal_pauses_and_confirms(local_data_api: NativeAPI,nativ
     assert confirmed.status_code==200 and confirmed.json()['workflow']['state']=='completed',confirmed.text
     history=native_api_client.get(f'/conversations/{sid}',headers=headers(ctx)).json()
     answer=history['messages'][-1]['payload']
-    assert answer['sections'][0]['response_origin']=='ai' and answer['sections'][-1]['response_origin']=='safety'
+    assert answer['sections'][0]['response_origin']=='ai' and answer['sections'][0]['decision'].startswith('Your card ending 4821 is temporarily blocked.')

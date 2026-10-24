@@ -32,8 +32,11 @@ def test_lost_card_works_without_model(monkeypatch):
     assert 'immediately' in r['answer'] and 'cannot block' in r['answer']
     assert r['sources'][0]['id']=='lost-card'
 
-def test_public_balance_needs_sign_in():
-    assert 'Sign in' in result(client.post('/chat',json=payload('What is my balance?')))['answer']
+@pytest.mark.parametrize('question',['What is my balance?','whats my balance'])
+def test_public_balance_needs_sign_in(question,monkeypatch):
+    monkeypatch.delenv('LLM_MODEL',raising=False)
+    r=result(client.post('/chat',json=payload(question)))
+    assert 'Sign in' in r['answer'] and r['response_origin']=='safety' and r['prompt_version'] is None
 
 def test_personal_requires_login():
     r=client.post('/chat',json=payload('balance',mode='personal'))

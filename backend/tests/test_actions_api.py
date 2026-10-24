@@ -152,6 +152,25 @@ def test_auto_handoff_is_real_redacted_and_deduplicated(local_data_api: NativeAP
         assert db.execute("select event_type,count(*) from events.outbox where command_id is not null group by event_type order by event_type").fetchall()==[('handoff.created',1),('handoff.reused',1)]
 
 
+def test_talk_to_a_person_records_a_separate_general_support_handoff(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    import psycopg
+    urgent=owned_case(local_data_api,context(local_data_api,1001))
+    propose(native_api_client,urgent,ActionCommand(type='handoff.create',idempotency_key=f'{urgent.case_id}:t1_handoff:handoff.create',
+        target={'reason':'card_verification','priority':'P0','summary':'Customer reported a suspicious synthetic card transaction.'}))
+    # The chat summary uses labels only; a fresh direct-form case keeps it apart from the card-verification case.
+    direct=owned_case(local_data_api,context(local_data_api,1001))
+    summary='Customer asked for a person. Topics: Fraud & security (urgent), Everyday banking ×2. Card block: confirmed.'
+    command=ActionCommand(type='handoff.create',idempotency_key=f'{direct.case_id}:handoff:handoff.create',
+        target={'reason':'general_support','priority':'P0','summary':summary})
+    saved=propose(native_api_client,direct,command)
+    assert saved.command.state=='succeeded' and saved.command.confirmed_at is None and saved.receipt.result.created
+    foreign=context(local_data_api,1003)
+    assert native_api_client.get(f'/commands/{saved.command.command_id}',headers=headers(foreign)).status_code==404
+    with psycopg.connect(local_data_api.database_uri) as db:
+        rows=db.execute('select reason,priority,summary from support.handoffs order by created_at').fetchall()
+        assert rows[0][:2]==('card_verification','P0') and rows[1]==('general_support','P0',summary) and len(rows)==2
+
+
 def test_changed_idempotency_parameters_and_direct_credential_writes_are_rejected(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     ctx=owned_case(local_data_api,context(local_data_api,1001))

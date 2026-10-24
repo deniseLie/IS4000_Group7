@@ -167,6 +167,19 @@ def test_queue_priority_age_limits_and_denial_audit(local_data_api: NativeAPI,na
         assert db.execute("select count(*) from audit.events where action='policy.decided' and outcome='denied' and details->>'tool'='handoff.queue'").fetchone()==(1,)
 
 
+def test_general_support_handoff_from_chat_is_queued_after_urgent_cases(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    handoff(local_data_api,native_api_client,'P0')
+    ctx=owned_case(local_data_api,context(local_data_api,1001))
+    propose(native_api_client,ctx,ActionCommand(type='handoff.create',idempotency_key=f'{ctx.case_id}:handoff:handoff.create',
+        target={'reason':'general_support','priority':'P2','summary':'Customer asked for a person. Topics: Everyday banking.'}))
+    user=staff_user(local_data_api)
+    with SyncPostgrestClient(local_data_api.url) as db:
+        db.auth(staff_token(local_data_api,user,'aal2',{'demobank_role':'support'}))
+        rows=asyncio.run(staff.queue(10,db))
+    assert [(row.reason,row.priority) for row in rows]==[('card_verification','P0'),('general_support','P2')]
+    assert rows[1].case_id==ctx.case_id and rows[1].summary.startswith('Customer asked for a person.')
+
+
 @pytest.mark.parametrize('failure',['audit','outbox'])
 def test_staff_change_and_receipt_roll_back_with_audit_or_outbox_failure(local_data_api: NativeAPI,native_api_client: TestClient,failure: str) -> None:
     import psycopg

@@ -24,7 +24,7 @@ for(const decision of ['confirmation','rejection'])test(`durable action workflow
   await expect(page.locator('#chat-composer')).toBeEnabled();
   const answer=page.getByTestId('chat-message-assistant');
   await expect(answer).toHaveAttribute('data-response-origin','safety');
-  await expect(answer).toContainText(decision==='confirmation'?'temporarily blocked the synthetic card':'You rejected the temporary block');
+  await expect(answer).toContainText(decision==='confirmation'?'Your card ending 4821 is temporarily blocked.':'You chose not to block the card ending 4821; it stays active.');
   await page.reload();
   await expect(answer).toHaveCount(1);
   await expect(page.getByTestId('review-pending-workflow')).toHaveCount(0);
@@ -33,6 +33,25 @@ for(const decision of ['confirmation','rejection'])test(`durable action workflow
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/workflow-${decision}-${width}.png`,fullPage:true});
   }
+});
+test('durable action workflow dialog confirmation updates the urgent section in place',async({page})=>{
+  await open(page);
+  const urgent=page.locator('section.answer-section[data-priority="P0"]');
+  await expect(urgent.getByTestId('block-card')).toBeVisible();
+  await urgent.getByTestId('block-card').click();
+  const dialog=page.getByTestId('card-block-dialog');
+  await expect(dialog).toContainText('ending 4821');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(urgent.getByTestId('block-card')).toBeVisible();
+  await urgent.getByTestId('block-card').click();
+  await page.getByTestId('confirm-card-block').click();
+  await expect(page.getByTestId('card-block-receipt')).toBeVisible();
+  await expect(page.getByTestId('card-block-outcome')).toContainText('Your card ending 4821 is temporarily blocked.');
+  await page.getByRole('button',{name:'Back to chat'}).click();
+  await expect(page.locator('#chat-composer')).toBeEnabled();
+  await expect(page.getByTestId('answer-decision')).toContainText('Your card ending 4821 is temporarily blocked.');
+  await expect(page.getByTestId('block-card')).toHaveCount(0);
 });
 test('durable action workflow cancellation rejects the pending proposal',async({page})=>{
   await open(page);

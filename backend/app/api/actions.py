@@ -13,7 +13,7 @@ from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.actions import ActionCase,ActionOutcome,CreateAction,CreateActionCase
 from app.schemas.contracts import ActionCommand,RequestContext
-from app.schemas.events import WorkflowStatus
+from app.schemas.events import WorkflowPreview,WorkflowStatus
 from app.services import actions,audit,workflows
 from app.services.checkpoint_codec import CheckpointIntegrityError
 from app.services.conversations import ConversationIntegrityError
@@ -107,3 +107,8 @@ async def reject(command_id: UUID,request: Request,ctx: RequestContext=Depends(g
 @router.post('/workflows/{turn_id}/resume',response_model=WorkflowStatus)
 async def resume(turn_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> WorkflowStatus:
     return await response_for(lambda:workflows.resume(turn_id,ctx),ctx,request)
+
+
+@router.get('/workflows/{turn_id}/preview',response_model=WorkflowPreview)
+async def preview(turn_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> WorkflowPreview:
+    return await response_for(lambda:workflows.preview(turn_id,ctx),ctx,request)

@@ -45,6 +45,19 @@ export async function readEvents(body, onEvent) {
   } finally { await reader.cancel().catch(() => {}); }
 }
 
+const TOPICS={retail:'Everyday banking',fraud:'Fraud & security',compliance:'Compliance review',document:'Document check',relationship:'Relationship manager',smalltalk:'General conversation'};
+// Staff handoff text: labels, counts and recorded outcomes only, so no customer wording or record values leave the chat.
+export function handoffSummary(messages) {
+  const sections=messages.filter(m=>m.role==='assistant'&&!m.error).flatMap(m=>m.sections||[]);
+  const counts=new Map();
+  for(const section of sections) {const label=(TOPICS[section.domain]||'Other')+(section.priority==='P0'?' (urgent)':'');counts.set(label,(counts.get(label)||0)+1);}
+  const topics=[...counts].map(([label,count])=>count>1?`${label} ×${count}`:label).join(', ')||'General questions';
+  const decision=sections.filter(section=>section.decision).at(-1)?.decision;
+  const block=decision===undefined?null:decision.includes('is temporarily blocked')?'confirmed':decision.startsWith('You chose not')?'declined':'not completed';
+  const withheld=sections.filter(section=>section.response_origin==='validation').length;
+  return ['Customer asked for a person.',`Topics: ${topics}.`,block&&`Card block: ${block}.`,withheld?`Answers withheld: ${withheld}.`:null].filter(Boolean).join(' ');
+}
+
 export function supportSummary(messages) {
   const questions=messages.filter(m => m.role==='user' && !m.error).slice(-5).map(m=>'- '+redact(m.content));
   return `Draft support summary — not sent\n\nRecent customer questions:\n${questions.join('\n') || '- No question entered yet.'}\n\nWhat still needs help:\n[Please describe the unresolved issue.]\n\nPlease review and remove any private details before sharing.`;

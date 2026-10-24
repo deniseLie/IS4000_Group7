@@ -49,7 +49,7 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(12,)
+    assert database.execute('select count(*) from kb.articles').fetchone()==(18,)
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:
@@ -144,3 +144,20 @@ def test_fact_values_are_typed_and_nonempty(database: 'Connection[SqlRow]', valu
     with pytest.raises(CheckViolation):
         with database.transaction():
             database.execute("insert into kb.facts(fact_id,value,unit,article_id,version,anchor) values ('fixture.invalid',%s::jsonb,'SGD','accounts',1,'main')",(value,))
+
+
+@pytest.mark.parametrize('query,expected',[('wats the monthly fee for a savings acc?','savings-fees'),
+ ('i got locked out of the app on my phone','app-login-recovery'),('can i get a car loan','car-loans'),
+ ('theres a $2400 charge i dont recognise','unrecognised-charge')])
+def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', query: str, expected: str) -> None:
+    database.execute('set local role anon')
+    rows=search(database,query,[],4)
+    assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
+
+
+def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connection[SqlRow]') -> None:
+    database.execute('set local role anon')
+    assert database.execute("select article_id,version from kb.articles where article_id in ('lost-card','support') and status='published' order by 1").fetchall()==[('lost-card',2),('support',2)]
+    assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={2}
+    assert database.execute("select article_id from public.kb_get_section('support',1,'main')").fetchall()==[('support',)]
+    assert database.execute("select * from public.kb_get_fact('savings.fall_below_fee')").fetchall()==[(2,'SGD','kb:savings-fees@v1#main')]

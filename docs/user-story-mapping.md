@@ -130,6 +130,8 @@ What the persona expects: *recognise all three issues, prioritise the potentiall
 | t2 Mobile app login failing | **P1 security** (account access) | Everyday Banking | EB6 (accessing online banking), F5 |
 | t3 Transfer still pending | **P3** | Everyday Banking | EB5 (pending) |
 
+Workflow 1 ([docs/workflows/workflow-1-alex.md](workflows/workflow-1-alex.md)) uses the wording "i got locked out of the app on my phone". That wording is ordinary app help (P3), so after the urgent charge the sections keep the customer's order: pending transfer, then app login. Wording that names a login failure or another security term (as above) still ranks the login issue P1.
+
 Also exercised: informal wording, typos and three intents in one message (F14 planning, F18 evaluation set), same-chat follow-ups (F7), never asking for the password (F5) and sources for the login and pending-transfer steps (F15).
 
 **Success criteria**

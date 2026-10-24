@@ -9,7 +9,7 @@ rules prioritise fraud, security, regulatory deadlines, then ordinary tasks, pre
 import asyncio
 import re
 from typing import TypedDict
-from uuid import uuid5
+from uuid import UUID,uuid5
 import httpx
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -25,6 +25,7 @@ from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
 from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan
 from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, Source,WorkflowPausedEvent
+from app.schemas.actions import ActionOutcome
 from app.schemas.fraud import FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery
@@ -34,7 +35,7 @@ from app.services.agents import compliance,fraud,retail
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
-from app.services.knowledge import source
+from app.services.knowledge import INDEX,source
 from app.services.guardrail import FRAUD
 from app.services.authorization import require_permission
 
@@ -175,7 +176,7 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
 def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     agent=AGENT_FOR[task.domain]
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
-    if task.domain in {'fraud','retail','compliance'}:return prompts.load(agent,'v2')['id']
+    if task.domain in {'fraud','retail','compliance'}:return prompts.load(agent,retail.PROMPT if task.domain=='retail' else 'v2')['id']
     return None
 
 
@@ -218,7 +219,8 @@ async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         fields={'task_id':task.task_id,'agent':agent,'error_type':type(error).__name__,'db_code':code}
         log_event('agent_failed',**fields)
         audit.add('agent','agent.failed','failed',details=fields)
-        return {'result':AgentResult(task_id=task.task_id,agent=agent,status='error',text=WITHHELD),'evidence':[],
+        text=fraud.URGENT+' '+WITHHELD if task.domain=='fraud' else WITHHELD
+        return {'result':AgentResult(task_id=task.task_id,agent=agent,status='error',text=text),'evidence':[],
             'proposal':None,'metadata':ResponseMeta(origin='validation',prompt_id=task_prompt_id(task,state['request']))}
 
 
@@ -271,45 +273,78 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
     for review in state['pending_reviews']:
         with data_api.connect(ctx) as db:outcome=await action_store.load(review.command_id,ctx,db)
         if outcome.command.state in ('proposed','confirmed'):raise ValueError('Cannot compose a reply before a recorded decision')
-        if outcome.receipt is not None and outcome.receipt.outcome=='succeeded':
-            message='Your confirmed command temporarily blocked the synthetic card ending '+outcome.command.target.last4+'. It did not reverse any transaction.'
-        elif outcome.command.state=='rejected':message='You rejected the temporary block. This proposal did not change the synthetic card.'
-        elif outcome.command.state=='expired':message='The temporary-block proposal expired without execution.'
-        else:message='The temporary block failed because the target changed. This command did not change the synthetic card.'
+        receipt=outcome.receipt.outcome if outcome.receipt is not None else None
         if owned is None:raise ValueError('Action settlement requires an owned turn')
-        task_id=review.task_id+'_handoff'
-        command=ActionCommand(command_id=uuid5(owned.turn.case_id,task_id+':handoff.create'),type='handoff.create',
-            target={'reason':'card_verification','priority':'P0','summary':'Customer reported a suspicious synthetic card transaction. Review the recorded card decision.'},
-            idempotency_key=f'{owned.turn.case_id}:{task_id}:handoff.create')
-        handoff=await actions.propose_for_workflow(command,task_id,owned,ctx.model_copy(update={'agent':'fraud'}))
-        if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
-        message+=' A support handoff is recorded in this demo. There is no staffed queue. Open Actions to inspect the recorded receipts.'
+        if receipt=='succeeded':
+            # Only a blocked card goes to staff for verification and permanent cancellation.
+            task_id=review.task_id+'_handoff'
+            command=ActionCommand(command_id=uuid5(owned.turn.case_id,task_id+':handoff.create'),type='handoff.create',
+                target={'reason':'card_verification','priority':'P0','summary':'Customer reported a suspicious synthetic card transaction. Review the recorded card decision.'},
+                idempotency_key=f'{owned.turn.case_id}:{task_id}:handoff.create')
+            handoff=await actions.propose_for_workflow(command,task_id,owned,ctx.model_copy(update={'agent':'fraud'}))
+            if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
         sections.append(AnswerSection(task_id=review.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',
-            answer=message,sources=[Source(id='action-receipt-'+review.task_id,title='Recorded synthetic action decisions',url=None,version='v1',publisher='DemoBank action ledger')],
+            answer=decision_text(outcome.command.state,receipt,outcome.command.target.last4),
+            sources=[Source(id='action-receipt-'+review.task_id,title='Recorded synthetic action decisions',url=None,version='v1',publisher='DemoBank action ledger'),
+                Source.model_validate(source(INDEX['unrecognised-charge']))],
             needs_human=True,response_origin='safety',prompt_version=None))
     return {'decision_sections':sections}
 
 
-def compose(state: Turn) -> ComposeUpdate:
+def decision_text(state: str,receipt: str | None,last4: str) -> str:
+    """Fixed wording for a recorded block outcome; "blocked" is said only with a succeeded receipt."""
+    if receipt=='succeeded':return ('Your card ending '+last4+' is temporarily blocked. This did not reverse any transaction. '
+        'Next steps: bank staff will verify your identity and decide on permanent cancellation; after cancellation the bank issues a '
+        'replacement card with a new number to your registered address. A support handoff for identity verification and permanent '
+        'cancellation is recorded with urgent priority. This demo has no staffed queue. Open Actions to inspect the recorded receipts.')
+    if state=='rejected':return ('You chose not to block the card ending '+last4+'; it stays active. Urgent steps: contact your bank now '
+        'through the official fraud line on the back of your card or its official app, check your other recent transactions, and never '
+        'share your PIN, password, one-time code or full card number. You can still use Talk to a person.')
+    if state=='expired':return 'The temporary-block proposal expired without changing your card.'
+    return 'The temporary block failed because the card changed. Your card was not changed.'
+
+
+def answer_for(state: Turn,pending: dict[str,ActionRequiredEvent]) -> AnswerEvent:
+    """Sections in priority order; a recorded decision is written into its own task's section."""
     tasks = state['plan'].by_priority()
+    decisions = {item.task_id.removesuffix('_decision'):item for item in state.get('decision_sections',[])}
     sections: list[AnswerSection] = []
     for task,result,evidence,meta in zip(tasks,state['results'],state['evidence'],state['metadata'],strict=True):
         sources = {item.id:item.source for item in evidence}
+        cited = [sources[c.source_id] for c in result.citations]
+        decision = decisions.pop(task.task_id,None)
+        if decision is not None:cited += [item for item in decision.sources if item.id not in {s.id for s in cited}]
         sections.append(AnswerSection(task_id=task.task_id, domain=task.domain, priority=task.priority,
-            answer_kind=result.answer_kind, answer=result.text,
-            sources=[sources[c.source_id] for c in result.citations],
-            needs_human=result.status in ('error','needs_human'), response_origin=meta.origin,
-            prompt_version=meta.prompt_id))
-    sections.extend(state['decision_sections'])
+            answer_kind=result.answer_kind, answer=result.text, sources=cited,
+            needs_human=result.status in ('error','needs_human') or decision is not None, response_origin=meta.origin,
+            prompt_version=meta.prompt_id, pending_action=pending.get(task.task_id),
+            decision=decision.answer if decision is not None else None))
+    sections.extend(decisions.values())
     unique = {s.id:s for section in sections for s in section.sources}
-    answer = AnswerEvent(answer='\n\n'.join(section.answer for section in sections), sources=list(unique.values()),
+    answer = AnswerEvent(answer='\n\n'.join(section.answer+('\n\n'+section.decision if section.decision else '') for section in sections), sources=list(unique.values()),
         privacy_warning=False, history_trimmed=len(state['history'])<state['history_count'],
-        disclaimer=NOTICE if any(section.answer_kind=='banking' for section in sections) else '',
+        disclaimer=NOTICE if any(section.answer_kind=='banking' or section.decision for section in sections) else '',
         needs_human=any(section.needs_human for section in sections),
         source_check='rejected' if any(section.response_origin=='validation' for section in sections) else 'basic_checks_passed',
         prompt_version=None,
         response_origin='ai' if any(section.response_origin=='ai' for section in sections) else 'validation' if any(section.response_origin=='validation' for section in sections) else 'safety', sections=sections)
-    return {'answer':answer}
+    return answer
+
+
+def compose(state: Turn) -> ComposeUpdate:
+    return {'answer':answer_for(state,{})}
+
+
+def preview_answer(state: Turn,pending: dict[str,ActionRequiredEvent]) -> AnswerEvent:
+    """Every section while a block decision is pending; the offer sits on its own task's section."""
+    return answer_for({**state,'decision_sections':[]},pending)
+
+
+def paused_preview(state: Turn,outcomes: list[ActionOutcome],pending_ids: list[UUID]) -> tuple[list[ActionRequiredEvent],AnswerEvent]:
+    pending={review.task_id:ActionRequiredEvent(command_id=item.command.command_id,type=item.command.type,
+        summary='Review a temporary block for synthetic card ending '+item.command.target.last4,expires_at=item.command.expires_at)
+        for review,item in zip(state['pending_reviews'],outcomes,strict=True) if item.command.command_id in pending_ids}
+    return list(pending.values()),preview_answer(state,pending)
 
 
 def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateGraph[Turn, PipelineContext, Turn, Turn]:
@@ -359,6 +394,5 @@ async def answer_personal(req: ChatRequest,risk: RiskAssessment,ctx: RequestCont
     with data_api.connect(ctx) as db:
         status=await workflow_store.waiting(owned.turn.turn_id,owned.turn.run_id,checkpoint_id,ctx,db)
         outcomes=[await action_store.load(item.command_id,ctx,db) for item in result['pending_reviews']]
-    return WorkflowPausedEvent(workflow=status,actions=[ActionRequiredEvent(command_id=item.command.command_id,
-        type=item.command.type,summary='Review a temporary block for synthetic card ending '+item.command.target.last4,
-        expires_at=item.command.expires_at) for item in outcomes if item.command.command_id in status.pending_commands])
+    pending,preview=paused_preview(result,outcomes,status.pending_commands)
+    return WorkflowPausedEvent(workflow=status,actions=pending,preview=preview)

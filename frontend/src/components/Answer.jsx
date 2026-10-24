@@ -5,11 +5,13 @@ function Sources({sources,onSource}) {
   return <details className="answer-sources" data-testid="answer-sources"><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{sources.map(s=><div key={s.id}>{s.url?<button className="source-link" data-source-id={s.id} onClick={()=>onSource(s)}>{s.title}</button>:<span>{s.title}</span>} <small>{s.version}</small></div>)}</details>;
 }
 
-export default function Answer({message,pendingText,onSource}) {
+export default function Answer({message,pendingText,onSource,onAction}) {
   if(message.sections?.length)return <div className="answer-sections" data-testid="answer-sections">{message.sections.map(section=><section className="answer-section" key={section.task_id} data-domain={section.domain} data-priority={section.priority} data-response-origin={section.response_origin} data-prompt-version={section.prompt_version}>
     <h3>{DOMAIN_LABELS[section.domain]}{section.priority==='P0'&&<small>Urgent</small>}</h3>
     <span className="answer-text">{section.answer}</span>
     {section.response_origin==='validation'&&<small className="answer-origin">Answer withheld</small>}
+    {section.decision&&<p className="answer-decision" data-testid="answer-decision">{section.decision}</p>}
+    {section.pending_action&&onAction&&<button className="primary-button block-card" data-testid="block-card" onClick={()=>onAction(section.pending_action)}>Block card temporarily…</button>}
     <Sources sources={section.sources} onSource={onSource}/>
   </section>)}</div>;
   return <><span className="answer-text">{message.content||pendingText}</span><Sources sources={message.sources} onSource={onSource}/></>;

@@ -17,7 +17,7 @@ class NativeBrowserSession(BaseModel):
     user_id: UUID
 
 
-def run_browser(client: TestClient,case: NativeBrowserSession,test_name: str,folder: Path) -> None:
+def run_browser(client: TestClient,case: NativeBrowserSession,test_name: str,folder: Path,timeout: int=120) -> None:
     node=shutil.which('node')
     if node is None:raise FileNotFoundError('Native browser checks require Node on PATH and frontend/npm ci dependencies')
     frontend=Path(__file__).parents[2]/'frontend'
@@ -40,7 +40,7 @@ def run_browser(client: TestClient,case: NativeBrowserSession,test_name: str,fol
         environment.update({'NATIVE_BROWSER_FIXTURE':str(fixture),'NATIVE_FRONTEND_PORT':str(available_port()),
             'NATIVE_BACKEND_PORT':str(port),'NATIVE_DATA_API_URL':case.data_api_url,'NATIVE_SCREENSHOT_DIR':str(folder)})
         result=subprocess.run([node,str(cli),'test','--config','playwright.native.config.js','--grep',test_name],
-            cwd=frontend,env=environment,capture_output=True,text=True,timeout=120)
+            cwd=frontend,env=environment,capture_output=True,text=True,timeout=timeout)
         assert result.returncode==0,f'{result.stdout}\n{result.stderr}'
     finally:
         server.should_exit=True

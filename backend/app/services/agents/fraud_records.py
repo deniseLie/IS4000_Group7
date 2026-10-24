@@ -7,7 +7,7 @@ from pydantic import TypeAdapter
 from app.schemas.fraud import FraudProposal,SecurityCard,SecurityRecords,SecurityTransaction
 from app.schemas.contracts import RequestContext
 from app.services import customer_data
-from app.services.source_checks import unit_values
+from app.services.source_checks import unit_matches,unit_values
 
 
 async def load(ctx: RequestContext) -> SecurityRecords:
@@ -32,7 +32,8 @@ def eligible_proposals(question: str,records: SecurityRecords) -> list[FraudProp
     if suffixes and not suffixes<={card.last4 for card in records.cards}:return []
     if ids:transactions=[item for item in transactions if item.txn_id in ids]
     if suffixes:transactions=[item for item in transactions if item.card_last4 in suffixes]
-    if amounts:transactions=[item for item in transactions if (item.currency,abs(Decimal(str(item.amount)))) in amounts or (item.currency,Decimal(str(item.amount))) in amounts]
+    if amounts:transactions=[item for item in transactions if any(unit_matches(amount,(item.currency,value)) for amount in amounts
+        for value in (abs(Decimal(str(item.amount))),Decimal(str(item.amount))))]
     active={card.card_id for card in records.cards if card.status=='active'}
     candidates=[FraudProposal(card_id=item.card_id,transaction_id=item.txn_id) for item in transactions if item.card_id in active]
     return candidates if len({item.card_id for item in candidates})==1 else []

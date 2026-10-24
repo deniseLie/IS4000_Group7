@@ -9,6 +9,8 @@ from app.services import llm_gateway,prompts
 from app.services.agents import retail_records
 from app.services.agents.answer import draft_schema,validate_draft
 
+PROMPT='v3'
+
 
 def evidence_for(records: RetailRecords) -> list[Evidence]:
     rows=[('profile','Authenticated synthetic profile',records.profile.model_dump_json()),
@@ -27,7 +29,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     if not isinstance(question,str):raise ValueError('Retail task question must be text')
     records=await retail_records.load(ctx)
     evidence=[*public_evidence,*evidence_for(records)]
-    pv=prompts.load('retail','v2')
+    pv=prompts.load('retail',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
