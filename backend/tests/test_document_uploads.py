@@ -31,6 +31,21 @@ def object_metadata(api: NativeAPI,cid: int,target: dict[str,str|int|None]) -> U
                 str(persona_id(cid)),Jsonb({'size':target['size_bytes'],'mimetype':target['mime_type']}))).fetchone()[0]
 
 
+def test_registration_accepts_storage_uuid_with_numeric_suffix(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    import psycopg
+    ctx=owned_case(local_data_api,context(local_data_api,1003))
+    target=upload_target(local_data_api,1003)
+    object_id=object_metadata(local_data_api,1003,target)
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute('update storage.objects set id=%s where id=%s',(UUID('12345678-1234-4234-8234-123456789012'),object_id))
+    command=ActionCommand(type='document.register',idempotency_key=f'{ctx.case_id}:numeric_uuid:document.register',target=target)
+    saved=propose(native_api_client,ctx,command)
+    assert saved.receipt is not None and saved.receipt.outcome=='succeeded'
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert db.execute('select document_id from compliance.documents').fetchone()==(UUID(target['document_id']),)
+        assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+
+
 @pytest.mark.parametrize('cid',[1001,1002,1003])
 def test_prepare_register_replay_location_and_notification(local_data_api: NativeAPI,native_api_client: TestClient,cid: int) -> None:
     import psycopg

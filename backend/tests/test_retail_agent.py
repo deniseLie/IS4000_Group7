@@ -62,7 +62,7 @@ def test_dataset_citations_reject_foreign_figures_and_currency(local_data_api: N
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
-def test_missing_provider_reports_validation_without_actions(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_provider_withholds_answer_and_records_support_handoff(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
     import psycopg
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-retail-checkpoint-key-with-at-least-32-characters')
@@ -73,7 +73,9 @@ def test_missing_provider_reports_validation_without_actions(local_data_api: Nat
         'conversation_id':str(sid),'turn_id':str(uuid4()),'revision':0})
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
+        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
+        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
+        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
         assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool' in "
             "('customer.get_profile','customer.get_accounts','customer.get_credit_cards','customer.get_loans','customer.get_transactions')").fetchone()==(5,)
 

@@ -66,7 +66,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     latest=history[-1].content if history and history[-1].role=='user' else ''
     if len(pairs)>1 and len(narrowed:=fraud_records.eligible_proposals(latest,records))==1:pairs=narrowed
     flagged=bool(FRAUD.search(question) or FRAUD.search(latest))
-    pv=prompts.load('fraud','v2')
+    pv=prompts.load('fraud','v3')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

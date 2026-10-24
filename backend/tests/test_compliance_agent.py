@@ -83,7 +83,9 @@ def test_missing_compliance_provider_preserves_case_and_checklist(local_data_api
         'conversation_id':str(sid),'turn_id':str(uuid4()),'revision':0})
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
+        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
+        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
+        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
         assert db.execute("select status from compliance.cases where customer_id=1002").fetchone()==('awaiting_client_documents',)
         assert db.execute("select count(*) from compliance.requested_items where customer_id=1002 and client_mark='not_prepared'").fetchone()==(4,)
         assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool'='compliance.get_case'").fetchone()==(1,)

@@ -58,7 +58,7 @@ function review(value) {
 function advisor(value) {
   if(value===null)return null;
   return {current:nullable(value?.current,assignment=>({rm_id:match(assignment?.rm_id,UUID),name:text(assignment?.name),role:text(assignment?.role),
-    team:text(assignment?.team),started_on:day(assignment?.started_on)})),previous:nullable(value?.previous,assignment=>({
+    team:text(assignment?.team),started_on:day(assignment?.started_on),contact:{email:nullable(assignment?.contact?.email,text),phone:nullable(assignment?.contact?.phone,text)}})),previous:nullable(value?.previous,assignment=>({
     rm_id:match(assignment?.rm_id,UUID),name:text(assignment?.name),ended_on:day(assignment?.ended_on)}))};
 }
 function documentRecord(value) {

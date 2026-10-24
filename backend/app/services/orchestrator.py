@@ -23,7 +23,7 @@ from app.core import data_api
 from app.core.observability import log_event,span
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
-from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan
+from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan,Receipt
 from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, Source,WorkflowPausedEvent
 from app.schemas.actions import ActionOutcome
 from app.schemas.fraud import FraudProposal
@@ -31,7 +31,8 @@ from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,Re
 from app.schemas.knowledge import KnowledgeQuery
 from app.services import actions,audit,customer_data,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
-from app.services.agents import compliance,fraud,retail
+from app.services.actions.store import ActionIntegrityError
+from app.services.agents import compliance,fraud,relationship,retail
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -176,7 +177,9 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
 def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     agent=AGENT_FOR[task.domain]
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
-    if task.domain in {'fraud','retail','compliance'}:return prompts.load(agent,retail.PROMPT if task.domain=='retail' else 'v2')['id']
+    if task.domain=='fraud':return prompts.load(agent,'v3')['id']
+    if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
+    if task.domain in {'compliance','relationship'}:return prompts.load(agent,'v2')['id']
     return None
 
 
@@ -196,8 +199,8 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         decision,evidence=await fraud.respond(task,state['history'],state['request'].language,
             ctx.model_copy(update={'agent':'fraud'}),evidence)
         result=decision.result;proposal=decision.proposal;prompt_id=decision.prompt_id
-    elif task.domain in {'retail','compliance'}:
-        responder=retail.respond if task.domain=='retail' else compliance.respond
+    elif task.domain in {'retail','compliance','relationship'}:
+        responder={'retail':retail.respond,'compliance':compliance.respond,'relationship':relationship.respond}[task.domain]
         result,evidence,prompt_id=await responder(task,state['history'],state['request'].language,
             ctx.model_copy(update={'agent':agent}),evidence)
     else:
@@ -304,6 +307,39 @@ def decision_text(state: str,receipt: str | None,last4: str) -> str:
     return 'The temporary block failed because the card changed. Your card was not changed.'
 
 
+async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
+    """Record one receipt-backed handoff for withheld sections in a linked customer's saved case.
+
+    No rejected model text or customer records enter the summary. Guests and unsaved public
+    chats have no customer-owned action case and keep the explicit official-support guidance.
+    The existing action ledger deduplicates retries and commits audit/outbox with the handoff.
+    """
+    ctx=runtime.context.request
+    failed=[task for task,result,meta in zip(state['plan'].by_priority(),state['results'],state['metadata'],strict=True)
+        if result.status=='error' and meta.origin=='validation']
+    sections=state['decision_sections']
+    if not failed or ctx.principal.kind!='customer' or ctx.case_id is None:return {'decision_sections':sections}
+    task=failed[0]
+    task_id='validation_handoff'
+    command=ActionCommand(command_id=uuid5(ctx.case_id,task_id+':handoff.create'),type='handoff.create',
+        target={'reason':'general_support','priority':task.priority,
+            'summary':'An assistant section was withheld because it could not be verified. Review the saved customer case; no rejected answer is included.'},
+        idempotency_key=f'{ctx.case_id}:{task_id}:handoff.create')
+    current=ctx.model_copy(update={'agent':None})
+    owned=runtime.context.workflow
+    if owned is not None:
+        outcome=await actions.propose_for_workflow(command,task_id,owned,current)
+        receipt=actions.receipt_for(outcome)
+    else:receipt=await actions.run_action(command,current,False)
+    if not isinstance(receipt,Receipt) or receipt.outcome!='succeeded':
+        raise ActionIntegrityError('Validation handoff did not return a successful receipt for the owned customer case')
+    section=AnswerSection(task_id=task_id,domain=task.domain,priority=task.priority,answer_kind='banking',
+        answer='A support handoff is recorded for the withheld part of this answer in this demo. There is no staffed queue. Open Actions to inspect its recorded receipt. Use your bank’s official support channel if you need assistance.',
+        sources=[Source(id='action-receipt-'+task_id,title='Recorded synthetic support handoff',url=None,version='v1',publisher='DemoBank action ledger')],
+        needs_human=True,response_origin='safety',prompt_version=None)
+    return {'decision_sections':[*sections,section]}
+
+
 def answer_for(state: Turn,pending: dict[str,ActionRequiredEvent]) -> AnswerEvent:
     """Sections in priority order; a recorded decision is written into its own task's section."""
     tasks = state['plan'].by_priority()
@@ -355,6 +391,7 @@ def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateG
     graph.add_node('propose_actions',propose_actions)
     graph.add_node('review_actions',review_actions)
     graph.add_node('settle_actions',settle_actions)
+    graph.add_node('escalate_validation',escalate_validation)
     graph.add_node('compose',compose)
     graph.add_edge(START,'plan')
     graph.add_edge('plan','prioritise')
@@ -362,7 +399,8 @@ def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateG
     graph.add_edge('dispatch','propose_actions')
     graph.add_edge('propose_actions','review_actions')
     graph.add_edge('review_actions','settle_actions')
-    graph.add_edge('settle_actions','compose')
+    graph.add_edge('settle_actions','escalate_validation')
+    graph.add_edge('escalate_validation','compose')
     graph.add_edge('compose',END)
     return graph.compile(checkpointer=checkpointer)
 

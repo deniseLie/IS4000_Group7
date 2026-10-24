@@ -128,10 +128,15 @@ async def get_rm_assignment(ctx: RequestContext) -> ToolResult:
     return _result(await _read('rm.get_assignment','customer_read_assignment',{},ASSIGNMENT,ctx))
 
 
-async def get_requests(ctx: RequestContext) -> ToolResult:
+async def get_request_records(ctx: RequestContext) -> CustomerEnvelope[list[RelationshipRequest]]:
     envelope=await _read('requests.list','customer_read_requests',{},REQUESTS,ctx)
     if any(row.customer_id!=envelope.customer_id for row in envelope.data):
         raise CustomerDataIntegrityError('Relationship requests contain records outside the authenticated customer scope')
+    return envelope
+
+
+async def get_requests(ctx: RequestContext) -> ToolResult:
+    envelope=await get_request_records(ctx)
     return ToolResult(data=[row.model_dump(mode='json',exclude={'customer_id'}) for row in envelope.data],
         call_id=envelope.call_id,as_of=envelope.as_of)
 
@@ -149,11 +154,16 @@ async def get_agendas(ctx: RequestContext) -> ToolResult:
     return _result(await _read('agenda.list','customer_read_agendas',{},AGENDAS,ctx))
 
 
-async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
+async def get_available_slot_records(query: SlotsQuery,ctx: RequestContext) -> CustomerEnvelope[list[AvailableSlot]]:
     """Suggestions only; booking must recheck conflicts atomically."""
     envelope=await _read('appointments.find_slots','customer_read_slots',{'p_from':query.from_date.isoformat(),
         'p_to':query.to_date.isoformat(),'p_limit':query.limit},SLOTS,ctx)
     if len(envelope.data)>query.limit or any(row.customer_id!=envelope.customer_id for row in envelope.data):
         raise CustomerDataIntegrityError('Appointment suggestions exceed their requested limit or customer scope')
+    return envelope
+
+
+async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
+    envelope=await get_available_slot_records(query,ctx)
     return ToolResult(data=[row.model_dump(mode='json',exclude={'customer_id'}) for row in envelope.data],
         call_id=envelope.call_id,as_of=envelope.as_of)

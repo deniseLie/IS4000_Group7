@@ -1,11 +1,17 @@
 """Direct validator cases; these sample drafts do not replace the real AI client."""
 from datetime import datetime,timezone
+import asyncio
+import os
 import pytest
+from fastapi.testclient import TestClient
 from app.schemas.contracts import Task
 from app.schemas.fraud import FraudProposal,SecurityRecords
+from app.services.agents import fraud
 from app.services.agents.fraud import decision_for,evidence_for
 from app.services.agents.fraud_records import eligible_proposals
 from app.services.llm_gateway import LLMBadOutput
+from tests.data_api_support import NativeAPI
+from tests.test_actions_api import context
 
 
 def records() -> SecurityRecords:
@@ -43,3 +49,14 @@ def test_invalid_grounding_or_foreign_target_cannot_propose() -> None:
     assert decision_for(task,json.dumps(invalid),evidence,pairs,'test').proposal is None
     foreign={**draft,'proposals':[{'card_id':'card_10031','transaction_id':'txn_100311'}]}
     with pytest.raises(LLMBadOutput):decision_for(task,json.dumps(foreign),evidence,pairs,'test')
+
+
+@pytest.mark.skipif(os.getenv('TEST_FRAUD_LIVE')!='1',reason='Opt in to real personal-fraud provider acceptance')
+def test_real_fraud_provider_returns_owned_grounded_proposal(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    task=Task(task_id='live1',domain='fraud',intent='answer_question',priority='P0',entities={
+        'question':'This txn_100111 is an unfamiliar charge on my card ending 4821. Please propose a temporary block for review.'})
+    decision,evidence=asyncio.run(fraud.respond(task,[],'English',context(local_data_api,1001).model_copy(update={'agent':'fraud'}),[]))
+    assert decision.result.status=='needs_human',decision.result.model_dump_json()
+    assert decision.proposal==FraudProposal(card_id='card_10011',transaction_id='txn_100111')
+    assert {item.source_id for item in decision.result.citations}=={'customer-records'}
+    assert decision.prompt_id.startswith('v3+') and len(evidence)==1

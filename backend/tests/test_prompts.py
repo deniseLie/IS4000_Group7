@@ -21,7 +21,8 @@ def test_v2_is_separate_and_fixed_guidance_has_no_prompt():
 RELEASED={('answer','v1'):'v1+855ee8ff',('answer','v2'):'v2+88f886d0'}
 RELEASED.update({('domain_common','v1'):'v1+18c3cd30',('planner','v1'):'v1+5ef4e2b9',('retail','v1'):'v1+6bfcff22',
     ('retail','v2'):'v2+224affe7',('fraud','v1'):'v1+26e57492',('fraud','v2'):'v2+f78df743',('compliance','v1'):'v1+92455942',('compliance','v2'):'v2+88098141',
-    ('document','v1'):'v1+754f2c43',('planner','v2'):'v2+6389a2e1',('retail','v3'):'v3+1b376761',('relationship','v1'):'v1+6c756adf'})
+    ('document','v1'):'v1+754f2c43',('planner','v2'):'v2+6389a2e1',('retail','v3'):'v3+1b376761',('relationship','v1'):'v1+6c756adf',('relationship','v2'):'v2+6ed24a45'})
+RELEASED[('fraud','v3')]='v3+75382468'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

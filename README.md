@@ -8,9 +8,9 @@ For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private envir
 
 ## Workflow 1 update — 24 October 2026
 
-[Workflow 1](docs/workflows/workflow-1-alex.md) (Alex: three problems in one message, the urgent one first) now runs end to end in personal v2 mode. Informal wording ("i dont recognise", "$2400") flags fraud and finds card 4821 before any model call; all three sections show at once and the urgent section offers an in-chat temporary block that runs only after **Confirm**, with a receipt. Declining keeps the card active and repeats the urgent steps. Signed-in "Talk to a person" records a support handoff (staff queue) from a summary of topic labels only; guests keep the copy-only draft. Migration `0054` adds fictional DemoBank articles for savings fees, app login recovery, car loans and unrecognised charges.
+[Workflow 1](docs/workflows/workflow-1-alex.md) (Alex: three problems in one message, the urgent one first) now runs end to end in personal v2 mode. Informal wording ("i dont recognise", "$2400") flags fraud and finds card 4821 before any model call; all three sections show at once and the urgent section offers an in-chat temporary block that runs only after **Confirm**, with a receipt. Declining keeps the card active and repeats the urgent steps. Signed-in "Talk to a person" records a support handoff (staff queue) from a summary of topic labels only; guests keep the copy-only draft. Migration `0055` adds fictional DemoBank articles for savings fees, app login recovery, car loans and unrecognised charges.
 
-Known limits: the seeded charge (2026-10-17) is readable until 2027-01-15 (90-day window). After a confirmed demo block, unblock card 4821 with the staff tool (`scripts/staff_support.py`, `card.unblock`) before the next run. Section order, planning and wording still come from the model and are checked only structurally. Apply `0054` to the hosted project before using `KNOWLEDGE_STORE=database` there. The native Data API and browser suites, including `tests/test_workflow1_browser.py`, need a pinned PostgREST binary, which `scripts.install_postgrest` provides for macOS/Linux only. The hosted run of `workflow1.spec.js` (`TEST_PERSONA_FIXTURE_FILE`, `TEST_HOSTED_AI=1`) uses real logins, declines the block and writes conversation, handoff and audit rows for Alex.
+Known limits: the seeded charge (2026-10-17) is readable until 2027-01-15 (90-day window). After a confirmed demo block, unblock card 4821 with the staff tool (`scripts/staff_support.py`, `card.unblock`) before the next run. Section order, planning and wording still come from the model and are checked only structurally. Apply `0055` to the hosted project before using `KNOWLEDGE_STORE=database` there. The native Data API and browser suites, including `tests/test_workflow1_browser.py`, need a pinned PostgREST binary, which `scripts.install_postgrest` provides for macOS/Linux only. The hosted run of `workflow1.spec.js` (`TEST_PERSONA_FIXTURE_FILE`, `TEST_HOSTED_AI=1`) uses real logins, declines the block and writes conversation, handoff and audit rows for Alex.
 
 ## Real AI update — 13 October 2026
 
@@ -216,8 +216,11 @@ missing; do not present unsupported product advice as implemented.
 8. To show revocation, select **Review revocation** for that grant and confirm in
    Actions. Refresh its status. Revocation does not erase an earlier shared copy.
 
-These are working forms and recorded actions. AI agenda drafting and a complete
-personal Relationship AI workflow are not part of the verified demonstration.
+For the read-only Relationship AI demonstration, select **My records** and ask
+"Who is my relationship manager?" Show the recorded-assignment source and reload
+the saved answer. Requests and appointment suggestions use their own sources.
+AI agenda drafting and conversational changes remain pending; use the reviewed
+forms for booking, intake, consent and sharing.
 
 ### 6. David: appointment review and relationship-request intake
 
@@ -240,10 +243,11 @@ personal Relationship AI workflow are not part of the verified demonstration.
 
 The v2 orchestrator implements planning, priority ordering, bounded concurrent
 agents, section composition and durable action review. Personal fraud can propose
-a demo card block and pause for confirmation, but live proposal accuracy still
-needs verification. Do not use the fixed lost-card response as proof of this flow.
-Combined real-provider acceptance, automatic handoff on general validation failure,
-full follow-up evaluation and latency/report checks remain outstanding. Docker
+a demo card block and pause for confirmation. Focused real-provider and UI checks
+pass with the explicit Dots model documented below; broader accuracy remains
+unverified. Do not use the fixed lost-card response as proof of this flow.
+Combined real-provider acceptance, full follow-up evaluation and latency/report
+checks remain outstanding. Docker
 startup is deferred. The five public agent entries do not mean all five personal
 agent workflows are complete.
 
@@ -259,9 +263,9 @@ run from `backend/` with the configured private environment:
 The checker prints counts/hashes and its result, not customer conversations.
 Tracing configuration is described under [Tracing](#tracing). Private document
 checks, record forms, receipts and inbox delivery can be demonstrated independently
-of model availability. Last recorded live Relationship attempts failed with a
-routing error and quota exhaustion; current provider availability requires a new
-live check and is not established by this walkthrough.
+of model availability. Focused Relationship checks passed against real OpenRouter
+on 21 October 2026, including the hosted Computer Use walkthrough. These samples
+do not establish broader answer accuracy or continuing provider availability.
 
 ## Foundation pipeline
 
@@ -452,20 +456,72 @@ not reverse previously executed commands. Resume leases exclude competing worker
 Failed continuation preserves its receipts and exposes **Resume saved reply** in Actions.
 The local native API/browser tests exercise these mechanics without replacing a model:
 their fixtures start after dispatch and use safety-origin text. Real-provider fraud
-proposal accuracy remains unverified (the configured provider returned HTTP 429).
+proposal checks pass with the explicit real OpenRouter model
+`dots-studio/dots-3-note-preview:free` and released personal prompt `fraud/v3`.
+The focused direct call, saved-chat API review and normal browser check selected the
+owned card/transaction pair, paused before confirmation, recorded two receipts and
+reopened the saved answer. Computer Use verified the same flow on disposable local
+records. One additional manual answer was withheld by source validation; free-router
+checks also returned timeouts or invalid structured output. These checks do not prove
+general fraud accuracy or reliability of `openrouter/free`. No private provider
+setting is changed by these tests. Reproduce the live browser check from `backend/`:
+
+```bash
+TEST_DATABASE_LOCAL=1 TEST_DATA_API_LOCAL=1 TEST_BROWSER_LOCAL=1 TEST_FRAUD_LIVE=1 \
+LLM_MODEL=dots-studio/dots-3-note-preview:free \
+../.venv/bin/python -m pytest -q tests/test_fraud_agent_browser.py
+```
+
+This sends masked fictional card/transaction evidence to OpenRouter and changes only
+disposable local records. For a manual preview, follow `tests/preview_fraud.py`.
+
+V2 withheld sections create one automatic `general_support` handoff per saved,
+linked customer case. Its fixed summary contains no rejected model text or customer
+records. The existing action service commits the handoff, receipt, audit and outbox
+together, and idempotent replay reuses the receipt. The reply preserves every withheld
+section and any valid sections; a separate receipt-backed notice directs the customer
+to Actions and explains that there is no staffed queue. A failed handoff transaction
+fails the reply explicitly. Guests and unsaved public chats retain official-support
+guidance because they have no customer-owned action case. V1 is unchanged.
+Native graph/API tests cover mixed sections, priority, replay, ownership, rejected-text
+exclusion, outbox rollback and retry. Normal browser checks exercise missing real
+provider configuration for a saved customer and guest, reload and subsequent safety
+messages. Computer Use also verified a personal unavailable-provider reply, automatic
+receipt and saved reload on disposable local records. These are failure-path checks,
+not AI accuracy evidence.
+
 The personal retail agent reads the caller's real profile, masked accounts/cards,
 loans and last 90 days of transactions through permission-first JWT/RLS readers.
 Its released personal prompt is `retail/v2`; the public retail prompt stays at v1.
 Separate dataset citations retain the captured timestamp. Card and loan currencies
 are unrecorded and must not be borrowed from another record. Collections are bounded
 to 200 rows and are separate reads, not an atomic statement. The agent is read-only;
-provider/validation failures withhold the section and never create an action.
+provider/validation failures withhold the section. In a saved linked customer case,
+the orchestrator records the separate support handoff described above.
 Native checks cover all three personas, failed reads, wrong currencies/citations and
 action claims. Real OpenRouter account checks pass for all three personas; a real
 native browser check verifies saved answers at four viewport widths. Computer Use
 also verified David's hosted account answer and saved-chat reload. These focused
-checks do not establish broad semantic accuracy. Relationship and document personal
-agents remain unavailable; public agents and v1 keep their existing behaviour.
+checks do not establish broad semantic accuracy. The personal document agent remains
+unavailable; public agents and v1 keep their existing behaviour.
+
+The personal Relationship implementation connects the existing owned advisor assignment,
+requests, appointments and available-time readers. It provides separate cited snapshots,
+up to 20 suggestions in a runtime 14-day Singapore-date window, and no action execution.
+Advisor emails stay outside model/checkpoint evidence; recorded contact details are
+shown directly in Records. The current/previous advisor distinction, empty collections,
+request statuses and reservation states are preserved. Booking, intake, consent and
+sharing still use the reviewed forms/Actions flow; AI agenda drafting is pending.
+Native integration, source/bounds/privacy validation, checkpoint round trips and explicit
+reader/provider failure checks pass. Four focused real OpenRouter checks cover all
+three personas' advisor results and David's recorded request status. A separate real-model
+browser check verifies citations, saved-chat reload and four viewport widths. Computer Use
+also verified David's hosted advisor answer against its source and saved-chat reload.
+The current stage passes 645 backend tests (50 opt-in skips), 46 frontend tests, the
+production build and three hosted persona smoke checks. These checks do not prove
+broad semantic accuracy, multilingual quality or availability of the free provider.
+Run the opt-in `TEST_RELATIONSHIP_LIVE=1` direct and browser modules separately,
+as described in `tests/test_relationship_agent.py`.
 
 The personal compliance agent uses one audited latest-case snapshot and the separate
 case, checklist, history and information-request citations. It excludes internal
@@ -544,7 +600,7 @@ Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_
 
 ## Audit log
 
-`audit.events` (migrations `0005`, `0006`) is the append-only, hash-chained record of who did what (`docs/system-architecture.md` §6). Rows are written only by `audit.record()`; app roles cannot update, delete or truncate it, and each row's `hash` covers the previous row's hash. A generic trigger records insert/update/delete on the business tables in the same transaction (changed column names; values only for enum-like columns). `POST /chat` collects its events in `app/services/audit.py` and writes them in one `public.audit_record_batch` call before the `answer` event; if that write fails the client gets `error` and no answer. Events hold ids, enums and counts only; both the Python helper and the database reject free text.
+`audit.events` (migrations `0005`, `0006`) is the append-only, hash-chained record of who did what (`docs/system-architecture.md` §6). Rows are written only by `audit.record()`; app roles cannot update, delete or truncate it, and each row's `hash` covers the previous row's hash. A generic trigger records insert/update/delete on the business tables in the same transaction (changed column names; values only for enum-like columns). `POST /chat` collects its events in `app/services/audit.py` and writes them in one `public.audit_record_batch` call before the `answer` event; if that write fails the client gets `error` and no answer. Events hold ids, enums and counts only; both the Python helper and the database reject free text. Migration `0054` preserves canonical UUID identifiers even when their suffix contains twelve digits; other long-number strings remain rejected. It is applied and verified in the hosted project. The native registration regression covers the numeric-suffix Storage object id and verifies the audit chain.
 
 Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and migration `0005` applied, and a missing configuration or failed write fails the chat request. The only off switch is `AUDIT_STORE=0`, which the unit and browser test runners set so they never add rows to the append-only table; do not set it elsewhere. Check the chain with `python -m scripts.verify_audit` from `backend/` (signs in with `TEST_PERSONA_FIXTURE_FILE`); `--record` saves the head to `docs/evidence/audit-anchor.json`, and later runs fail if older rows were rewritten or the newest removed. Known limits: the table owner can disable the triggers and rewrite the chain (caught only against a recorded anchor); the structural check cannot prove a short token is not personal data; guest events share a 20,000-per-day cap because the anon key is public; every audited write is serialised by one lock.
 

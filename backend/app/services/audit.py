@@ -1,4 +1,4 @@
-"""Audit Log Service client (system-architecture.md §6.5, F3, migration 0005). Events are collected per request and written
+"""Audit Log Service client (system-architecture.md §6.5, F3, migrations 0005/0054). Events are collected per request and written
 in one public.audit_record_batch call before the answer is sent; if that write fails, the request fails (AuditWriteError)
 instead of continuing unaudited. State changes do not use this: they write their audit row in their own transaction
 (audit.record() and the row triggers in 0006).
@@ -20,6 +20,7 @@ from app.schemas.contracts import AuditEvent
 TOKEN=re.compile(r'[A-Za-z0-9_.:#/+-]{1,80}')
 CITE=re.compile(r'[a-z0-9_-]{1,60}@v[0-9]+(#[a-z0-9_-]{1,40})?')
 KEY=re.compile(r'[a-z][a-z0-9_]{0,39}')
+UUID_TOKEN=re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',re.I)
 MAX_EVENTS=50
 current_batch=ContextVar('current_batch',default=None)
 _anon=None
@@ -31,9 +32,9 @@ def enabled():
     return os.getenv('AUDIT_STORE')!='0'  # test runners only
 
 def is_safe(v,depth=0):
-    """Numbers, booleans, null, short tokens (enums, ids, cite ids) and one level of lists/dicts of those. No spaces, no card-length digit runs."""
+    """Bounded ids/enums/counts, including canonical UUIDs. Other strings reject spaces and card-length digit runs."""
     if v is None or isinstance(v,(bool,int,float)):return True
-    if isinstance(v,str):return not re.search(r'[0-9]{12,}',v) and bool(TOKEN.fullmatch(v) or CITE.fullmatch(v))
+    if isinstance(v,str):return bool(UUID_TOKEN.fullmatch(v)) or not re.search(r'[0-9]{12,}',v) and bool(TOKEN.fullmatch(v) or CITE.fullmatch(v))
     if isinstance(v,(list,tuple)):return depth<2 and len(v)<=20 and all(is_safe(x,depth+1) for x in v)
     if isinstance(v,dict):return depth<2 and len(v)<=20 and all(isinstance(k,str) and KEY.fullmatch(k) and is_safe(x,depth+1) for k,x in v.items())
     return False
