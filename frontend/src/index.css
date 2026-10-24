@@ -352,7 +352,7 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .initials.large { width: 72px; height: 72px; font-size: 22px; font-weight: 400; }
 .panel-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .access-card .bank-chat-logout, .advisor-card .bank-chat-logout, .transition-card .bank-chat-logout, .transition-card .primary-button, .page-section .page-header-actions .bank-chat-logout { min-height: 32px; padding: 6px 12px; }
-.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); color: var(--muted); font-size: 11px; font-weight: 500; text-transform: capitalize; white-space: nowrap; }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); color: var(--muted); font-size: 11px; font-weight: 500; white-space: nowrap; }
 .status-badge .dot, .scope-card .dot, .live-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status-badge.active { color: #1f6b3a; background: #edf6ef; border-color: #cfe6d5; }
 .status-badge.revoked { color: var(--red); background: var(--tint); border-color: #f0d3cd; }
@@ -452,3 +452,20 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .security-note svg { width: 14px; height: 14px; }
 .panel-footer .panel-actions .bank-chat-logout, .panel-footer .primary-button { min-height: 32px; padding: 6px 14px; }
 @media (max-width:1000px) { .compliance-grid, .case-card { grid-template-columns: 1fr; } }
+
+.requirement-card .relationship-details label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.requirement-card select, .documents-card select { padding: 5px 8px; border: 1px solid #d4d4cb; border-radius: 6px; background: #fff; color: var(--ink); font-size: 12px; }
+.requirement-card .relationship-details .bank-chat-logout { min-height: 30px; padding: 5px 12px; font-size: 11px; }
+.documents-card { font-size: 12px; }
+.documents-card > section > h3 { margin: 0 0 4px; font-size: 15px; }
+.documents-card h4 { margin: 0 0 4px; font-size: 13px; overflow-wrap: anywhere; }
+.documents-card article { padding: 12px 0; border-top: 1px solid var(--line); }
+.documents-card article p { margin: 0 0 6px; color: var(--muted); }
+.documents-card dl { grid-template-columns: auto minmax(0,1fr); gap: 3px 12px; margin: 6px 0 10px; font-size: 11px; }
+.documents-card dt { font-weight: 400; color: var(--muted); }
+.documents-card .records-filters { margin: 10px 0; }
+.documents-card .records-filters label { flex-basis: 100%; font-size: 11px; }
+.documents-card .records-filters input[type="file"] { padding: 6px; font-size: 11px; }
+.documents-card .bank-chat-logout { min-height: 30px; padding: 5px 10px; font-size: 11px; }
+.documents-card .relationship-details { margin-top: 8px; padding-top: 8px; }
+.documents-card .relationship-details h4 { font-size: 12px; }

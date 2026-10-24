@@ -6,7 +6,7 @@ import DocumentRecords from './DocumentRecords';
 import {supabase} from '../lib/supabase';
 import {loadSections} from '../lib/customerData';
 
-function label(value) {return value.replaceAll('_',' ');}
+function label(value) {const text=value.replaceAll('_',' ');return text[0].toUpperCase()+text.slice(1);}
 const NEEDS_ACTION=['not_submitted','rejected','unknown'];
 const BADGES={accepted:'active',rejected:'revoked',not_submitted:'warning',unknown:'warning'};
 
@@ -53,7 +53,7 @@ export default function CompliancePage({onSupport,onAsk}) {
             <div className="requirement-head"><span className="transition-icon"><Icon name="document"/></span><div>
               <h3>{item.label} <span className={`status-badge ${BADGES[item.submission_status]||''}`}>{action&&item.submission_status!=='rejected'?'Action required':label(item.submission_status)}</span></h3>
               {item.instructions&&<p>{item.instructions}</p>}
-              <p className="requirement-meta">Your mark: {label(item.client_mark)}{item.client_marked_at&&<> · Marked <time dateTime={item.client_marked_at}>{new Date(item.client_marked_at).toLocaleDateString()}</time></>}</p>
+              <p className="requirement-meta">Your mark: {label(item.client_mark).toLowerCase()}{item.client_marked_at&&<> · Marked <time dateTime={item.client_marked_at}>{new Date(item.client_marked_at).toLocaleDateString()}</time></>}</p>
             </div></div>
             {action&&<Stub title="Plain-language guidance (AI)"><dl className="guidance-list"><dt>What is this?</dt><dd>—</dd><dt>Why was this flagged?</dt><dd>—</dd><dt>What to do next</dt><dd>—</dd></dl></Stub>}
             <ChecklistPreparation review={review} item={item}/>
@@ -61,7 +61,7 @@ export default function CompliancePage({onSupport,onAsk}) {
           <div className="info-card"><Icon name="info"/><div><strong>Data integrity & review trail</strong><p>Each section on this page is a separate audited read, recorded as of <time dateTime={records.compliance.as_of}>{new Date(records.compliance.as_of).toLocaleString()}</time>. Reload the page for current status.</p></div></div>
         </div>
         <div className="relationship-column">
-          <div className="advisor-card"><DocumentRecords snapshot={records.documents} review={review}/></div>
+          <div className="advisor-card documents-card"><DocumentRecords snapshot={records.documents} review={review}/></div>
           <Stub title="AI document checker"><p>The design shows an instant pre-check of uploaded documents against bank requirements. Only the counts-only technical check under each document is connected; it does not judge bank requirements.</p></Stub>
           <section className="advisor-card faq-card" aria-label="Plain English FAQ"><h2 className="section-title">Plain English FAQ</h2>
             <details><summary>What does “prepared” mean?</summary><p>It is your own note that an item is ready. It does not upload or submit anything, and it does not change the bank’s review status.</p></details>
