@@ -15,6 +15,8 @@ from app.services.agents import relationship_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.privacy import redact
 
+PROMPT='v3'
+
 ACTION_CLAIM=re.compile(r"\b(?:I|we)(?:['’]ve)?\s+(?:(?:have|will|just|successfully|already)\s+){0,3}(?:book(?:ed)?|reserv(?:e|ed)|schedul(?:e|ed)|cancel(?:led|ed)?|sent|send|submit(?:ted)?|shar(?:e|ed)|sav(?:e|ed)|grant(?:ed)?|revok(?:e|ed)|contact(?:ed)?)\b",re.I)
 
 
@@ -28,7 +30,9 @@ def advisor_name(advisor_id: UUID | None,assignment: RelationshipAssignment | No
 def evidence_for(records: RelationshipRecords) -> list[Evidence]:
     assignment=records.assignment.data
     requests: list[JsonValue]=[{**row.model_dump(mode='json',exclude={'customer_id','request_id','advisor_id'}),
-        'who':redact(row.who)[0],'what':redact(row.what)[0],'advisor_name':advisor_name(row.advisor_id,assignment)} for row in records.requests.data]
+        'who':redact(row.who)[0],'what':redact(row.what)[0],'customer_action':redact(row.customer_action)[0] if row.customer_action else None,
+        'advisor_name':advisor_name(row.advisor_id,assignment),'recorded_with_current_advisor':bool(assignment and assignment.current and row.advisor_id==assignment.current.rm_id)}
+        for row in records.requests.data]
     appointments: list[JsonValue]=[{**row.model_dump(mode='json',exclude={'appointment_id','advisor_id','case_id'}),
         'advisor_name':advisor_name(row.advisor_id,assignment)} for row in records.appointments.data]
     rows: list[tuple[str,str,JsonValue,str]]=[
@@ -40,10 +44,25 @@ def evidence_for(records: RelationshipRecords) -> list[Evidence]:
         ('slots','Available appointment suggestions',{'search':records.search.model_dump(mode='json'),'slots':[
             {**row.model_dump(mode='json',exclude={'customer_id','advisor_id'}),'advisor_name':advisor_name(row.advisor_id,assignment)}
             for row in records.slots.data]},records.slots.as_of.isoformat())]
-    return [Evidence(id='relationship-'+key,text=json.dumps({'records':data},ensure_ascii=False),publisher='DemoBank demo records',
+    evidence=[Evidence(id='relationship-'+key,text=json.dumps({'records':data},ensure_ascii=False),publisher='DemoBank demo records',
         scope='Own-customer audited snapshot. Separate reads, not one atomic statement. Latest 200 requests/appointments; at most 20 suggestions within the recorded 14-day Singapore-date search. No consent, sharing, booking or financial execution.',
         source=Source(id='relationship-'+key,title=title,url=None,version=as_of,publisher='DemoBank demo records'))
         for key,title,data,as_of in rows]
+    return evidence+transition_evidence(records)
+
+
+def transition_evidence(records: RelationshipRecords) -> list[Evidence]:
+    """Approved DemoBank change wording selected in SQL from the recorded reason; the reason code itself is withheld."""
+    intro=records.introduction
+    if intro is None or not intro.data.notice:return []
+    first=intro.data.notice[0]
+    data={'previous_advisor':intro.data.previous.name if intro.data.previous else None,
+        'current_advisor':intro.data.current.name if intro.data.current else None,
+        'approved_wording':[{'heading':item.heading,'text':item.body} for item in intro.data.notice]}
+    return [Evidence(id='relationship-transition',text=json.dumps({'records':data},ensure_ascii=False),publisher=first.publisher,
+        scope='Approved DemoBank wording for this recorded relationship-manager change. The only permitted explanation of the change; no other reason is recorded.',
+        source=Source(id='relationship-transition',title=first.title,url=f'/knowledge/sections/{first.article_id}/{first.version}/{first.anchor}',
+            version=f'v{first.version}',publisher=first.publisher))]
 
 
 def validate_result(task: Task,raw: str,evidence: list[Evidence]) -> AgentResult:
@@ -58,7 +77,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Relationship task question must be text')
     evidence=[*public_evidence,*evidence_for(await relationship_records.load(ctx))]
-    pv=prompts.load('relationship','v2')
+    pv=prompts.load('relationship',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

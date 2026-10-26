@@ -49,7 +49,7 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(18,)
+    assert database.execute('select count(*) from kb.articles').fetchone()==(19,)
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:

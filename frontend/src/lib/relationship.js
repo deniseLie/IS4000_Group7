@@ -22,7 +22,8 @@ export function parseRequests(value) {
   const data=value.data.map(item=>{
     if(!item||!['sent','seen','answered','closed'].includes(item.status)||!['low','normal','high'].includes(item.urgency))throw invalid();
     if(item.deadline!==null&&(typeof item.deadline!=='string'||!/^\d{4}-\d\d-\d\d$/.test(item.deadline)||!Number.isFinite(Date.parse(item.deadline))))throw invalid();
-    return {request_id:id(item.request_id),who:text(item.who),what:text(item.what),status:item.status,urgency:item.urgency,deadline:item.deadline,country:code(item.country,/^[A-Z]{2}$/),currency:code(item.currency,/^[A-Z]{3}$/)};
+    const customer_action=item.customer_action===undefined||item.customer_action===null?null:text(item.customer_action);
+    return {request_id:id(item.request_id),advisor_id:item.advisor_id===undefined||item.advisor_id===null?null:id(item.advisor_id),who:text(item.who),what:text(item.what),status:item.status,urgency:item.urgency,deadline:item.deadline,country:code(item.country,/^[A-Z]{2}$/),currency:code(item.currency,/^[A-Z]{3}$/),customer_action};
   });
   return {...metadata,data};
 }

@@ -47,8 +47,12 @@ TOPICS: dict[Domain, re.Pattern[str]] = {
     'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode)\b',re.I),
     'compliance':re.compile(r'\b(?:compliance|review|checklist|notice)\b|\bletter\b[^.!?]{0,100}\b(?:update|provide|send)\b[^.!?]{0,80}\b(?:info(?:rmation)?|documents?|details)\b',re.I),
     'document':re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b',re.I),
-    'relationship':re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b',re.I),
+    'relationship':re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b|\bRMs?\b|\bmeet (?:her|him|them|my)\b'
+        r'|\b(?:old|previous|former|new)\s+(?:guy|lady|person|rm|banker|manager|advisor|adviser)\b|\bmy (?:open |pending )?requests?\b',re.I),
 }
+# Asking a person at the bank to do something is relationship intake even when it names a retail word such as "statement".
+RM_REQUEST=re.compile(r'\b(?:can|could|would)\s+(?:someone|somebody|my (?:rm|relationship manager|advisor|adviser|banker))\s+(?:please\s+)?'
+    r'(?:send|arrange|prepare|get|call|email|post)\b',re.I)
 
 
 class Turn(TypedDict):
@@ -105,6 +109,7 @@ class ComposeUpdate(TypedDict):
 def topic_domain(question: str) -> Domain | None:
     """Rules own clear domain assignments, including questions extracted by the planner."""
     if FRAUD.search(question):return 'fraud'
+    if RM_REQUEST.search(question):return 'relationship'
     domains = [domain for domain,pattern in TOPICS.items() if pattern.search(question)]
     return domains[0] if len(domains)==1 else None
 
@@ -182,7 +187,8 @@ def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     if task.domain=='fraud':return prompts.load(agent,'v3')['id']
     if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
     if task.domain=='document':return prompts.load('document','v3')['id']
-    if task.domain in {'compliance','relationship'}:return prompts.load(agent,'v2')['id']
+    if task.domain=='relationship':return prompts.load(agent,relationship.PROMPT)['id']
+    if task.domain=='compliance':return prompts.load(agent,'v2')['id']
     return None
 
 

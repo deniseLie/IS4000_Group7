@@ -16,6 +16,7 @@ from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuer
 from app.schemas.appointments import AppointmentRecord
 from app.schemas.consent_actions import ConsentRegistry
 from app.schemas.agendas import AgendaRegistry
+from app.schemas.relationship_intro import Introduction,MeetingOption
 from app.schemas.documents import DocumentRecord
 from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
 from app.schemas.document_inspection import DocumentObject
@@ -35,6 +36,8 @@ SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_lengt
 APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
 CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
 AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
+INTRODUCTION=TypeAdapter(CustomerEnvelope[Introduction])
+MEETING_OPTIONS=TypeAdapter(CustomerEnvelope[Annotated[list[MeetingOption],Field(max_length=3)]])
 DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_length=200)]])
 DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
 DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
@@ -65,8 +68,12 @@ def _result(envelope: CustomerEnvelope[T]) -> ToolResult:
     return ToolResult(data=envelope.model_dump(mode='json')['data'],call_id=envelope.call_id,as_of=envelope.as_of)
 
 
+async def get_profile_record(ctx: RequestContext) -> CustomerEnvelope[CustomerProfile]:
+    return await _read('customer.get_profile','customer_read_profile',{},PROFILE,ctx)
+
+
 async def get_profile(ctx: RequestContext) -> ToolResult:
-    return _result(await _read('customer.get_profile','customer_read_profile',{},PROFILE,ctx))
+    return _result(await get_profile_record(ctx))
 
 
 async def get_accounts(ctx: RequestContext) -> ToolResult:
@@ -126,6 +133,23 @@ async def get_document_object(document_id: UUID,ctx: RequestContext) -> Customer
 async def get_rm_assignment(ctx: RequestContext) -> ToolResult:
     """Current and most recent previous relationship manager, restricted by assignment RLS."""
     return _result(await _read('rm.get_assignment','customer_read_assignment',{},ASSIGNMENT,ctx))
+
+
+async def get_introduction_record(ctx: RequestContext) -> CustomerEnvelope[Introduction]:
+    """Current advisor and approved change wording selected in SQL by the recorded reason; the code is never returned."""
+    return await _read('rm.get_introduction','customer_read_introduction',{},INTRODUCTION,ctx)
+
+
+async def get_introduction(ctx: RequestContext) -> ToolResult:
+    return _result(await get_introduction_record(ctx))
+
+
+async def get_meeting_options(ctx: RequestContext) -> ToolResult:
+    """Recorded joining details for the current advisor's meeting formats."""
+    envelope=await _read('appointments.meeting_options','customer_read_meeting_options',{},MEETING_OPTIONS,ctx)
+    if len({row.format for row in envelope.data})!=len(envelope.data) or len({row.advisor_id for row in envelope.data})>1:
+        raise CustomerDataIntegrityError('Meeting options must belong to one current advisor with one entry per format')
+    return _result(envelope)
 
 
 async def get_request_records(ctx: RequestContext) -> CustomerEnvelope[list[RelationshipRequest]]:

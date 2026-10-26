@@ -28,5 +28,7 @@ def test_rejected_request_ui(local_data_api: NativeAPI,native_api_client: TestCl
 
 
 def test_unassigned_request_ui(local_data_api: NativeAPI,native_api_client: TestClient,tmp_path: Path) -> None:
+    import psycopg
+    with psycopg.connect(local_data_api.database_uri) as db:db.execute('delete from rm.assignments where customer_id=1001')  # remove Alex's 0063 advisor for this case
     case=NativeBrowserSession(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,1001,'aal1',uuid4()),user_id=persona_id(1001))
     run_browser(native_api_client,case,'unassigned customers cannot prepare',tmp_path)

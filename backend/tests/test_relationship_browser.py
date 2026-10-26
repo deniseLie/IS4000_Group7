@@ -22,7 +22,7 @@ def test_real_relationship_ui(local_data_api: NativeAPI,native_api_client: TestC
     with psycopg.connect(local_data_api.database_uri) as db:
         count=db.execute('select count(*) from rm.requests where customer_id=%s',(cid,)).fetchone()[0]
     case=RelationshipFixture(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,cid,'aal1',uuid4()),
-        user_id=persona_id(cid),request_count=count,expects_slots=cid==1003)
+        user_id=persona_id(cid),request_count=count,expects_slots=True)  # 0063: every persona has a current advisor with working hours
     run_browser(native_api_client,case,'relationship records use real',tmp_path)
 
 

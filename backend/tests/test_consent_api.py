@@ -61,6 +61,7 @@ def test_relationship_view_uses_current_assignment_and_profile_scope(local_data_
     assert response.status_code==200
     result=RelationshipConsent.model_validate(response.json())
     assert result.recipient.rm_id==advisor and result.consent.granted and result.categories==['profile']
+    with psycopg.connect(local_data_api.database_uri) as db:db.execute("delete from rm.assignments where customer_id=1001")  # a customer without any advisor
     alex=mint_token(local_data_api,1001,'aal1',uuid4())
     missing=native_api_client.get('/consent/rm',headers={'Authorization':'Bearer '+alex})
     assert missing.status_code==200

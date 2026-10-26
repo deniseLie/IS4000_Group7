@@ -37,7 +37,7 @@ def test_requests_and_slots_are_scoped_and_audited(local_data_api: NativeAPI,nat
     assert all('customer_id' not in row for row in requests.json()['data'])
     slots=native_api_client.post('/relationship/slots',headers=auth,json=query(monday()))
     assert slots.status_code==200 and slots.json()['call_id']!=requests.json()['call_id']
-    assert bool(slots.json()['data'])==(cid==1003)
+    assert slots.json()['data']  # 0063: every persona has a current advisor with working hours
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select count(*) from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchone()[0]==2
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)

@@ -5,12 +5,16 @@ import Answer from './components/Answer';
 import SharingPage from './components/SharingPage';
 import RelationshipPage from './components/RelationshipPage';
 import CompliancePage from './components/CompliancePage';
+import OverviewPage,{displayName} from './components/OverviewPage';
+import {loadSections} from './lib/customerData';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
 import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
+import {RelationshipIntro} from './components/RelationshipWorkspace';
+import {loadIntroduction,recentChange,relationshipIntent} from './lib/relationshipWorkflow';
 import {prepareComplianceSupport} from './lib/compliance';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
@@ -32,7 +36,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable. Select General help to continue.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat','inbox','sharing','relationship','compliance'];
+const PAGES=['chat','overview','inbox','sharing','relationship','compliance'];
 const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Relationship manager']];
 function pageFromHash() {const page=location.hash.slice(1);return PAGES.includes(page)?page:'chat';}
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
@@ -63,6 +67,7 @@ export default function Chat({session,onSignIn}) {
   const [complianceReceipt,setComplianceReceipt]=useState(null);
   const [complianceReview,setComplianceReview]=useState(null),[supportScope,setSupportScope]=useState(null);
   const [blockAction,setBlockAction]=useState(null);
+  const [rmIntro,setRmIntro]=useState(null),[rmIntroError,setRmIntroError]=useState(''),[rmOpen,setRmOpen]=useState(false),[rmFocus,setRmFocus]=useState(null),[rmMode,setRmMode]=useState('guided'),[profileName,setProfileName]=useState('');
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const [helpTopic,setHelpTopic]=useState('general');
   const [view,setView]=useState(()=>session?pageFromHash():'chat');
@@ -100,6 +105,21 @@ export default function Chat({session,onSignIn}) {
     }
     open();return ()=>controller.abort();
   },[]);
+
+  useEffect(()=>{  // Workflow 3: the bot introduces a newly assigned relationship manager from the bank's records
+    if(!session||mode!=='personal'){setRmIntro(null);return;}
+    const controller=new AbortController();setRmIntroError('');
+    (async()=>{try{const headers=await sessionHeaders();const intro=await loadIntroduction(headers.Authorization.replace(/^Bearer /,''),controller.signal);if(!controller.signal.aborted)setRmIntro(intro);}
+      catch(failure){if(failure.name!=='AbortError'&&!controller.signal.aborted){setRmIntro(null);setRmIntroError(failure.message);}}})();
+    return ()=>controller.abort();
+  },[session?.user.id,mode]);
+
+  useEffect(()=>{  // the signed-in customer's own name labels the account area
+    if(!session){setProfileName('');return;}
+    const controller=new AbortController();
+    (async()=>{try{const headers=await sessionHeaders();const {profile}=await loadSections(headers.Authorization.replace(/^Bearer /,''),['profile'],controller.signal);if(!controller.signal.aborted)setProfileName(displayName(profile.data.name));}catch{}})();
+    return ()=>controller.abort();
+  },[session?.user.id]);
 
   async function sessionHeaders() {
     if(!session)return {};
@@ -154,7 +174,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);setRmFocus(null);setRmOpen(false);if(store!==null)setBootError('');
     return true;
   }
 
@@ -216,7 +236,9 @@ export default function Chat({session,onSignIn}) {
       });
     } catch(err) {
       if(err.name!=='AbortError'&&epoch===version.current)setMessages([...visible,{role:'assistant',content:err.message,error:true}]);
-    } finally { if(epoch===version.current){setLoading(false);request.current=null;} }
+    } finally {
+      if(epoch===version.current){setLoading(false);request.current=null;}
+    }
   }
 
   async function showSource(source) {
@@ -265,6 +287,18 @@ export default function Chat({session,onSignIn}) {
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
+  const showIntro=view==='chat'&&session&&mode==='personal'&&(rmIntroError&&rmOpen||rmIntro&&(rmOpen||recentChange(rmIntro)));
+  function openRm(step,question=null) {setRmMode('guided');setRmFocus({step,question,key:Date.now()});navigate('relationship');}
+  // Hybrid hand-off: a relationship reply ends with one button that opens the matching step on the task page.
+  const NEXT={request:['Send this request to','request'],status:['See your requests','status'],meeting:['Book a time with','meeting'],note:['Prepare your handover note','note'],change:['Meet','meet'],intro:['Meet','meet']};
+  function nextStep(message,index) {
+    if(message.role!=='assistant'||!message.content||mode!=='personal'||!rmIntro?.current)return null;
+    const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';const intent=relationshipIntent(asked);
+    if(!intent||!['request','status','meeting','note'].includes(intent)&&(message.error||!message.sections?.some(section=>section.domain==='relationship')))return null;
+    const [label,step]=NEXT[intent],name=rmIntro.current.name.replace(/\s*\(DEMO\)\s*$/,'').split(' ')[0];
+    return <button className="primary-button rm-handoff" data-testid="rm-handoff" data-step={step} onClick={()=>openRm(step,['request','meeting'].includes(intent)?asked:null)}>
+      {['status','note'].includes(intent)?label:`${label} ${name}`}<Icon name="arrow"/></button>;
+  }
   const showCompliance=complianceOpen??messages.some(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
   const footer=<footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
   function openActions() {closeOverlays();setActionsOpen(true);}
@@ -272,19 +306,21 @@ export default function Chat({session,onSignIn}) {
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
-    {testid:'menu-open-chat',icon:'chat',label:'Banking assistant',mobile:true,onSelect:()=>navigate('chat')},
+    {testid:'menu-open-overview',icon:'account',label:'Overview',mobile:true,onSelect:()=>{closeOverlays();navigate('overview');}},
+    {testid:'menu-open-chat',icon:'chat',label:'Assistant',mobile:true,onSelect:()=>navigate('chat')},
     {testid:'menu-open-compliance',icon:'document',label:'Compliance review',mobile:true,onSelect:()=>{closeOverlays();navigate('compliance');}},
-    {testid:'menu-open-relationship',icon:'people',label:'Relationship & advisory',mobile:true,onSelect:()=>{closeOverlays();navigate('relationship');}},
+    {testid:'menu-open-relationship',icon:'people',label:'My relationship manager',mobile:true,onSelect:()=>{closeOverlays();navigate('relationship');}},
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
     {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
     ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();setSavedChats(true);}}]:[]),
-    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:openActions},
+    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Activity',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
   const pages=[
-    {view:'chat',testid:'open-chat',icon:'chat',label:'Banking assistant'},
+    {view:'overview',testid:'open-overview',icon:'account',label:'Overview',onSelect:session?null:onSignIn},
+    {view:'chat',testid:'open-chat',icon:'chat',label:'Assistant'},
     {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',onSelect:session?null:onSignIn},
-    {view:'relationship',testid:'open-relationship',icon:'people',label:'Relationship & advisory',onSelect:session?null:onSignIn},
+    {view:'relationship',testid:'open-relationship',icon:'people',label:'My relationship manager',onSelect:session?null:onSignIn},
   ];
 
   return <div className="bank-chat-page">
@@ -292,24 +328,29 @@ export default function Chat({session,onSignIn}) {
     <TopBar session={session} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
       inbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
-      <Sidebar session={session} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}}/>
+      <Sidebar session={session} name={profileName} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}} onSignOut={signOut}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-settings"><label>Information <select aria-label="Information" disabled={booting} value={mode} onChange={e=>{if(reset())setMode(e.target.value);}}><option value="public">General help</option>{session&&<option value="personal">My records</option>}</select></label>
           <label>Answer language <select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select></label></div>
-        <p className="language-note">The language choice applies to AI answers. Menus, safety guidance and notices remain in English. Translation quality is still being tested.</p>
-        {session&&mode==='personal'&&<button className="bank-chat-logout" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>Your compliance review</button>}
+        <p className="language-note">Language applies to AI answers only.</p>
+        {session&&mode==='personal'&&<div className="workspace-toggles"><button className="bank-chat-logout" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>Your compliance review</button></div>}
         {store==='database'&&conversation&&<div className="saved-chat-controls"><button className="bank-chat-logout" data-testid="reload-saved-chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Reload saved chat</button>{pending&&<><span role="status">{workflow?'Review the action workflow to continue.':'A reply is pending.'}</span>{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}<button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel pending reply</button></>}</div>}
         <section className="bank-chat-window" aria-label="Banking conversation">
           {booting&&<p className="chat-notice" role="status">Opening chat…</p>}
           {bootError&&<p className="chat-notice" role="alert">{bootError}</p>}
           {notice&&<p className="chat-notice" role="status">{notice}</p>}
           <div ref={messageList} className={`bank-chat-messages ${messages.length?'has-messages':''}`} aria-live="polite" aria-relevant="additions text">
-            {!messages.length&&<div className="bank-chat-welcome"><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p>Understand your accounts, cards and loans.<br/>Start with a question. We’ll take it from there.</p><div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
+            {!messages.length&&showIntro&&<p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p>}
+            {showIntro&&<RelationshipIntro intro={rmIntro} error={rmIntroError} busy={loading||booting||!!pending} onSource={showSource} onSupport={prepareSummary}
+              onAsk={question=>send(null,question)} onStep={step=>openRm(step==='status'?'status':step)}/>}
+            {!messages.length&&!showIntro&&<div className="bank-chat-welcome"><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p>{session?<><h1 className="welcome-signed-in">{profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p>Ask about your accounts, cards and loans, your relationship manager or your compliance review.</p></>
+              :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p>Understand your accounts, cards and loans.<br/>Start with a question. We’ll take it from there.</p></>}<div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
             {messages.map((m,i)=><div key={i} data-testid={`chat-message-${m.role}`} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}>
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}</div>}
                 <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
+                {nextStep(m,i)}
                 {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
               </div>
             </div>)}
@@ -324,10 +365,12 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>
       {view!=='chat'&&<main className="app-page">
+        {view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}}/>}
         {view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:review,Appointments:relationship,Requests:relationship,Relationship:relationship,Compliance:compliance,Documents:compliance,'Data sharing':{label:'Open data sharing',onSelect:()=>navigate('sharing')}}}/>}
-        {view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions} onRelationship={()=>navigate('relationship')}/>}
-        {view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
-        {view==='relationship'&&<RelationshipPage key={pageKey} onReviewActions={openActions} onSharing={()=>navigate('sharing')} onSupport={prepareSummary}/>}
+        {view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions} onRelationship={()=>{setRmMode('all');navigate('relationship');}}/>}
+        {view==='compliance'&&<CompliancePage key={pageKey} onBack={()=>navigate('chat')} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
+        {view==='relationship'&&<RelationshipPage key={pageKey} intro={rmIntro} introError={rmIntroError} focus={rmFocus} onFocus={setRmFocus} mode={rmMode} onMode={setRmMode}
+          onBack={()=>navigate('chat')} onAsk={question=>{navigate('chat');send(null,question);}} onSource={showSource} onReviewActions={openActions} onSharing={()=>navigate('sharing')} onSupport={prepareSummary}/>}
         {footer}
       </main>}
     </div>

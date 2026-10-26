@@ -76,3 +76,13 @@ Profile `1003`, `demo.david@example.com`, employed, `SGD 12,000 - 20,000 / month
 | `notify.templates` | `card.blocked`, `compliance.deadline_reminder`, `rm.assignment_changed`, `consent.requested` (v1, `en`, in-app) |
 
 Empty at seed time on purpose (filled by the running system): `conversation.*`, `actions.*`, `support.handoffs`, `consent.*`, `notify.inbox`, `rm.appointments`, `rm.agendas`, `rm.shared_summaries`, `compliance.documents`.
+
+## 6. Additions in migration 0063 (every persona has complete data)
+
+| Persona | Added | Why |
+|---|---|---|
+| Alex (1001) | Current RM **Priya Nair (DEMO)**, Relationship Manager, Personal Banking Team C, `+65 6000 0002`, since 2023-06-01; Mon–Fri 09:00–17:00; video/phone/branch joining details | No "no relationship manager" state; Workflow 1 records unchanged |
+| Michelle (1002) | Current RM **Daniel Tan (DEMO)**, Senior RM, Private Clients Team A, `+65 6000 0003`, since 2022-02-14; same hours/options; two everyday transactions | Complete overview and RM page |
+| David (1003) | Four everyday transactions (salary, bill, premium, investment transfer) | Overview shows recent activity; his RM change is unchanged |
+
+Alex and David have no compliance case on purpose: the app shows "No review needed — nothing for you to do right now".

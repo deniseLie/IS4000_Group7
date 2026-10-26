@@ -16,7 +16,8 @@ async def load(ctx: RequestContext) -> RelationshipRecords:
     requests=await customer_data.get_request_records(ctx)
     appointments=await customer_data.get_appointments(ctx)
     slots=await customer_data.get_available_slot_records(search,ctx)
+    introduction=await customer_data.get_introduction_record(ctx)
     return RelationshipRecords(assignment=CustomerEnvelope[RelationshipAssignment | None](customer_id=ctx.principal.customer_id,
         call_id=assignment.call_id,as_of=assignment.as_of,data=assignment.data),requests=requests,
         appointments=CustomerEnvelope[list[AppointmentRecord]](customer_id=ctx.principal.customer_id,
-            call_id=appointments.call_id,as_of=appointments.as_of,data=appointments.data),slots=slots,search=search)
+            call_id=appointments.call_id,as_of=appointments.as_of,data=appointments.data),slots=slots,search=search,introduction=introduction)

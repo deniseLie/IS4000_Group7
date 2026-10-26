@@ -81,6 +81,7 @@ def test_overlapping_holds_are_excluded_across_customers_and_constraint_is_real(
     from psycopg.errors import ExclusionViolation
     api=local_data_api; client=native_api_client; slot=available_slot(client,api)
     with psycopg.connect(api.database_uri) as db:
+        db.execute("delete from rm.assignments where customer_id=1001")  # Alex's own seeded advisor (0063) is replaced for this cross-customer check
         db.execute('insert into rm.assignments(customer_id,advisor_id,started_on) values(1001,%s,current_date)',(slot['advisor_id'],))
     def reserve(cid: int) -> ActionOutcome:
         response=client.post('/relationship/holds',headers=headers(context(api,cid)),json={

@@ -246,6 +246,12 @@ forms for booking, intake, consent and sharing.
    `sent` means recorded demo intake, not fulfilment or delivery to a real advisor.
 7. For a second proposal, choose **Reject** to show that it executes nothing.
 
+### 6b. David: Workflow 3 in the chat
+
+Apply migration `0062` first. Sign in as David and open the chat: the new-RM introduction appears from his records.
+Follow [the Workflow 3 guide](docs/workflows/workflow-3-david.md): ask about the change, send a request, check request
+status, prepare and share a handover note, then book a meeting – each step is confirmed in an in-chat dialog.
+
 ### 7. Explain the remaining workflows without claiming completion
 
 The v2 orchestrator implements planning, priority ordering, bounded concurrent

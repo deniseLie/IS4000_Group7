@@ -37,7 +37,7 @@ def test_relationship_snapshots_are_dynamic_owned_bounded_and_checkpoint_safe(lo
     import psycopg
     ctx=context(local_data_api,cid).model_copy(update={'agent':'relationship'})
     records=asyncio.run(relationship_records.load(ctx));evidence=relationship.evidence_for(records)
-    assert records.assignment.customer_id==cid and len(evidence)==4
+    assert records.assignment.customer_id==cid and len(evidence)==(5 if cid==1003 else 4)
     assert records.search.to_date-records.search.from_date==timedelta(days=13)
     assert CheckpointCodec().loads_typed(CheckpointCodec().dumps_typed(evidence))==evidence
     body=json.dumps([item.model_dump() for item in evidence])
@@ -49,13 +49,14 @@ def test_relationship_snapshots_are_dynamic_owned_bounded_and_checkpoint_safe(lo
         assert json.loads(evidence[1].text)['records'][0]['advisor_name']=='Rachel Goh (DEMO)'
         with psycopg.connect(local_data_api.database_uri) as db:db.execute("update rm.requests set status='answered' where customer_id=1003")
         assert asyncio.run(relationship_records.load(ctx)).requests.data[0].status=='answered'
-    else:
-        assert records.assignment.data is None or records.assignment.data.current is None
-        assert records.requests.data==[] and records.appointments.data==[] and records.slots.data==[]
+    else:  # 0063: Alex and Michelle have one long-standing advisor and no change, so no transition wording
+        assert records.assignment.data.current.name==('Priya Nair (DEMO)' if cid==1001 else 'Daniel Tan (DEMO)') and records.assignment.data.previous is None
+        assert records.requests.data==[] and records.appointments.data==[] and records.slots.data
+        assert evidence[-1].id=='relationship-transition' if records.introduction.data.notice else len(evidence)==4
     with pytest.raises(PolicyDenied):asyncio.run(relationship_records.load(ctx.model_copy(update={'agent':'retail'})))
     with psycopg.connect(local_data_api.database_uri) as db:
         tools={row[0] for row in db.execute("select details->>'tool' from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()}
-        assert {'rm.get_assignment','requests.list','appointments.list','appointments.find_slots'}<=tools
+        assert {'rm.get_assignment','rm.get_introduction','requests.list','appointments.list','appointments.find_slots'}<=tools
         assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
@@ -103,7 +104,7 @@ def test_missing_relationship_provider_withholds_answer_and_records_support_hand
     response=native_api_client.post('/chat',headers=headers(ctx),json={'mode':'personal','messages':[{'role':'user','content':'Who is my relationship manager?'}],
         'conversation_id':str(sid),'turn_id':str(uuid4()),'revision':0})
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
-    assert 'v2+6ed24a45' in response.text
+    assert 'v3+536e3f12' in response.text
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
         assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)

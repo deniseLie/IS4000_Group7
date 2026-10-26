@@ -1,5 +1,6 @@
 """Audited relationship reads and owned appointment holds; booking decisions use the Action Service."""
 from collections.abc import Awaitable,Callable
+from typing import TypeVar
 import httpx
 from fastapi import APIRouter,Depends,Request
 from postgrest.exceptions import APIError
@@ -16,17 +17,24 @@ from app.schemas.appointments import HoldAppointment
 from app.core import data_api
 from app.api.actions import response_for
 from app.services.actions.store import ActionIntegrityError,checked
-from app.services import audit,customer_data
+from app.services import audit,customer_data,handover
+from app.schemas.relationship_intro import HandoverDraft
 from app.services.authorization import PolicyDenied,require_permission
 
 router=APIRouter()
 
 
-async def read_result(operation: Callable[[],Awaitable[ToolResult]],request: Request,ctx: RequestContext,tool: str) -> ToolResult:
+R=TypeVar('R',ToolResult,HandoverDraft)
+
+
+async def read_result(operation: Callable[[],Awaitable[R]],request: Request,ctx: RequestContext,tool: str) -> R:
     if ctx.principal.kind!='customer':raise ApiError(401,'auth_required','Please sign in to view relationship support.')
     if ctx.principal.customer_id is None:raise ApiError(403,'profile_missing','No demo customer profile is linked to this login.')
     batch=audit.start_batch(request.state.db,session_id=ctx.session_id)
     try:result=await operation()
+    except handover.NoAdvisorError as error:
+        await flush(batch)
+        raise ApiError(409,'advisor_missing','No current relationship manager is recorded. Use Talk to a person for help.') from error
     except (PolicyDenied,PermissionError) as error:
         await flush(batch)
         raise ApiError(403,'relationship_forbidden','This session cannot read these relationship records.') from error
@@ -55,6 +63,22 @@ async def slots(query: SlotsQuery,request: Request,ctx: RequestContext=Depends(g
 @router.get('/relationship/appointments',response_model=ToolResult)
 async def appointments(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     return await read_result(lambda:customer_data.get_appointments(ctx),request,ctx,'appointments.list')
+
+
+@router.get('/relationship/introduction',response_model=ToolResult)
+async def introduction(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_introduction(ctx),request,ctx,'rm.get_introduction')
+
+
+@router.get('/relationship/meeting-options',response_model=ToolResult)
+async def meeting_options(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_meeting_options(ctx),request,ctx,'appointments.meeting_options')
+
+
+@router.get('/relationship/handover-draft',response_model=HandoverDraft)
+async def handover_draft(request: Request,ctx: RequestContext=Depends(get_ctx)) -> HandoverDraft:
+    """Suggestions only. Nothing is saved or shared until the customer reviews separate actions."""
+    return await read_result(lambda:handover.draft(ctx),request,ctx,'rm.handover_draft')
 
 
 @router.get('/relationship/agendas',response_model=ToolResult)

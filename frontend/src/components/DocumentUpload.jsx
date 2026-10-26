@@ -50,8 +50,8 @@ export default function DocumentUpload({review,itemId=null,onRegistered=null,dis
   }
   if(!review||['completed','closed'].includes(review.status))return <p data-testid="document-upload-unavailable">Uploading requires an open review case.</p>;
   return <div className="relationship-details" data-testid="document-upload">
-    <h4>Upload a document</h4>
-    <p>Use demo files only; do not upload real personal documents. PDF, DOCX, JPEG or PNG, up to 10 MiB. Uploading records a file; bank acceptance, preliminary checks and checklist submission status are separate.</p>
+    {!onRegistered&&<><h4>Upload a document</h4>
+    <p>Use demo files only; do not upload real personal documents. PDF, DOCX, JPEG or PNG, up to 10 MiB. Uploading records a file; bank acceptance, preliminary checks and checklist submission status are separate.</p></>}
     <form className="records-filters" onSubmit={submit}>
       {!itemId&&<label>Requested item <select data-testid="document-upload-item" value={item} disabled={busy||!!pending||!!outcome} onChange={event=>setItem(event.target.value)}>
         <option value="">General evidence for this review</option>{review.requested_items.map(row=><option key={row.item_id} value={row.item_id}>{row.label}</option>)}</select></label>}

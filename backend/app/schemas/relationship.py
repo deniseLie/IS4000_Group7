@@ -19,6 +19,7 @@ class RelationshipRequest(BaseModel):
     country: Annotated[str,StringConstraints(strict=True,pattern=r'^[A-Z]{2}$')] | None
     currency: Annotated[str,StringConstraints(strict=True,pattern=r'^[A-Z]{3}$')] | None
     status: Literal['sent','seen','answered','closed']
+    customer_action: Annotated[str,StringConstraints(strict=True,min_length=1,max_length=300,pattern=r'\S')] | None=None
     created_at: AwareDatetime
     updated_at: AwareDatetime
 

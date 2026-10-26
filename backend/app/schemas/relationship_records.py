@@ -5,6 +5,7 @@ from pydantic import BaseModel,ConfigDict,Field,model_validator
 from app.schemas.appointments import AppointmentRecord
 from app.schemas.customer_data import CustomerEnvelope,RelationshipAssignment
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
+from app.schemas.relationship_intro import Introduction
 
 
 class RelationshipRecords(BaseModel):
@@ -14,11 +15,12 @@ class RelationshipRecords(BaseModel):
     appointments: CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]]
     slots: CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_length=20)]]
     search: SlotsQuery
+    introduction: CustomerEnvelope[Introduction] | None=None
 
     @model_validator(mode='after')
     def consistent_scope(self) -> Self:
         cid=self.assignment.customer_id
-        if any(snapshot.customer_id!=cid for snapshot in [self.requests,self.appointments,self.slots]):
+        if any(snapshot.customer_id!=cid for snapshot in [self.requests,self.appointments,self.slots,*([self.introduction] if self.introduction else [])]):
             raise ValueError('Relationship snapshots must belong to one authenticated customer')
         if any(row.customer_id!=cid for row in [*self.requests.data,*self.slots.data]):
             raise ValueError('Relationship rows do not match their customer snapshot')
