@@ -33,7 +33,7 @@ export default function CardBlockDialog({action,onClose,onDecided}) {
         <div className="panel-actions"><button className="primary-button" data-testid="confirm-card-block" disabled={busy} onClick={()=>decide(confirmAction)}>Confirm</button>
           <button className="bank-chat-logout" data-testid="decline-card-block" disabled={busy} onClick={()=>decide(rejectAction)}>Decline</button></div>
       </>}
-      {busy&&<p role="status">Recording your decision…</p>}
+      {busy&&<p className="loading" role="status">Recording your decision…</p>}
       {error&&<p role="alert">{error} Reload the saved chat to check the recorded status.</p>}
       {outcome&&<div data-testid="card-block-outcome" role="status">
         <p>{result}</p>

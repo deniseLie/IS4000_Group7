@@ -35,7 +35,7 @@ export default function AgendaSharing({agenda,registry,consentBusy,onReviewActio
     <p>Recipient: <strong>{agenda.recipient_name}</strong>. Saved revision: {agenda.revision}. Purpose: relationship-manager briefing.</p>
     <p>Data included: {consentCategoryText(agenda.categories)}. Later draft edits do not change a previously shared snapshot.</p>
     <pre className="agenda-content" data-testid="agenda-sharing-preview">{agenda.content}</pre>
-    {consentBusy&&<p role="status">Checking recorded consent…</p>}
+    {consentBusy&&<p className="loading" role="status">Checking recorded consent…</p>}
     {!consentBusy&&registry&&grants.length===0&&<p data-testid="agenda-sharing-no-consent">Record and confirm one consent request above covering all these categories for this recipient, then reopen this view.</p>}
     <form onSubmit={propose}>
       <label>Consent grant <select data-testid="agenda-sharing-grant" value={grantId} disabled={busy||consentBusy||!registry||!!error||!!outcome} onChange={event=>setGrantId(event.target.value)}>
@@ -44,7 +44,7 @@ export default function AgendaSharing({agenda,registry,consentBusy,onReviewActio
       {selected&&<p>Selected grant: <code>{selected.grant_id}</code>. The server rechecks its scope, expiry and revocation when you confirm.</p>}
       <button className="primary-button" data-testid="propose-agenda-sharing" disabled={busy||consentBusy||!selected||!!error||!!outcome}>Prepare sharing proposal</button>
     </form>
-    {busy&&<p role="status">Saving the proposal… Closing this panel does not cancel a submitted proposal. Check Actions for its recorded status.</p>}
+    {busy&&<p className="loading" role="status">Saving the proposal… Closing this panel does not cancel a submitted proposal. Check Actions for its recorded status.</p>}
     {error&&<p role="alert" data-testid="agenda-sharing-error">{error} Reopen this view and check Actions before retrying.</p>}
     {outcome&&<div data-testid="agenda-sharing-outcome"><p>The sharing proposal is recorded. Review its saved content and confirm in Actions to share this snapshot.</p>
       <button className="primary-button" data-testid="review-agenda-sharing" onClick={onReviewActions}>Review in Actions</button></div>}

@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
+import Icon from './Icon';
 import {createActionCase,proposeAction} from '../lib/actions';
 import {DOCUMENT_TYPES,fileDescriptor} from '../lib/documentUploadData';
 import {prepareUpload,uploadFile} from '../lib/documentStorage';
@@ -52,13 +53,14 @@ export default function DocumentUpload({review,itemId=null,onRegistered=null,dis
   return <div className="relationship-details" data-testid="document-upload">
     {!onRegistered&&<><h4>Upload a document</h4>
     <p>Use demo files only; do not upload real personal documents. PDF, DOCX, JPEG or PNG, up to 10 MiB. Uploading records a file; bank acceptance, preliminary checks and checklist submission status are separate.</p></>}
-    <form className="records-filters" onSubmit={submit}>
+    <form className="records-filters file-row" onSubmit={submit}>
       {!itemId&&<label>Requested item <select data-testid="document-upload-item" value={item} disabled={busy||!!pending||!!outcome} onChange={event=>setItem(event.target.value)}>
         <option value="">General evidence for this review</option>{review.requested_items.map(row=><option key={row.item_id} value={row.item_id}>{row.label}</option>)}</select></label>}
-      <label>Document <input data-testid="document-upload-file" type="file" accept={Object.keys(DOCUMENT_TYPES).join(',')} disabled={disabled||busy||!!pending||!!outcome} onChange={event=>{setFile(event.target.files[0]||null);setError('');}}/></label>
-      <button className="bank-chat-logout" data-testid="document-upload-submit" disabled={disabled||!file||busy||!!pending||!!outcome}>{onRegistered?'Upload, check and submit':'Upload and record file'}</button>
+      <label className="file-pick"><span className="file-pick-button"><Icon name="clip"/>Choose file</span><input data-testid="document-upload-file" aria-label="Document" type="file" accept={Object.keys(DOCUMENT_TYPES).join(',')} disabled={disabled||busy||!!pending||!!outcome} onChange={event=>{setFile(event.target.files[0]||null);setError('');}}/>
+        <span className={`file-pick-name ${file?'chosen':''}`}>{file?file.name:'No file chosen'}</span></label>
+      <button className="primary-button" data-testid="document-upload-submit" disabled={disabled||!file||busy||!!pending||!!outcome}><Icon name="upload"/>{onRegistered?'Upload, check and submit':'Upload and record file'}</button>
     </form>
-    {busy&&<p role="status" data-testid="document-upload-busy">Uploading or recording… Keep this page open. Closing this panel does not cancel submitted writes.</p>}
+    {busy&&<p className="loading" role="status" data-testid="document-upload-busy">Uploading or recording… Keep this page open. Closing this panel does not cancel submitted writes.</p>}
     {error&&<p role="alert" data-testid="document-upload-error">{error}</p>}
     {pending&&!outcome&&!busy&&<div><p>Storage may have received the file. Recording checks that the exact owned file exists; it does not upload a second copy. Keep this panel open to retry. Closing the page can leave a private file without a record.</p>
       <button className="bank-chat-logout" data-testid="document-upload-retry" onClick={retry}>Record uploaded file</button></div>}

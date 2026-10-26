@@ -17,7 +17,7 @@ test('saved customer chats reopen with real stored replies and sources',async({p
     await page.setViewportSize({width,height:900});
     await page.goto('/');
     await page.getByTestId('new-chat').click();
-    await page.getByLabel('Information',{exact:true}).selectOption('public');
+    await page.getByRole('radiogroup',{name:'Information'}).getByRole('radio',{name:'General help'}).click();
     const created=page.waitForResponse(response=>response.url().endsWith('/conversations')&&response.request().method()==='POST');
     await askSafety(page,'I lost my card');
     const saved=await (await created).json();
@@ -29,10 +29,10 @@ test('saved customer chats reopen with real stored replies and sources',async({p
     await openMenuItem(page,'open-saved-chats');
     const entry=page.locator(`[data-conversation-id="${saved.session_id}"]`);
     await expect(entry).toBeVisible();
-    expect(await page.locator('dialog[aria-label="Saved chats"]').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+    expect(await page.locator('aside[aria-label="Saved chats"]').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/saved-chats-${width}.png`,fullPage:true});
     await entry.click();
-    await expect(page.locator('dialog[aria-label="Saved chats"]')).toHaveCount(0);
+    await expect(page.locator('aside[aria-label="Saved chats"]')).toHaveCount(0);
     await expect(page.getByTestId('chat-message-user')).toHaveCount(1);
     await page.getByTestId('answer-sources').first().locator('summary').click();
     await page.locator('[data-source-id="lost-card"]').click();
@@ -88,7 +88,7 @@ test('expired guest chat requires an explicit new chat before sending',async({pa
 async function unavailableChat(page) {
   await page.setViewportSize({width:390,height:900});
   await page.goto('/');
-  await page.getByLabel('Information',{exact:true}).selectOption('public');
+  await page.getByRole('radiogroup',{name:'Information'}).getByRole('radio',{name:'General help'}).click();
   await page.getByLabel('Your message',{exact:true}).fill('Hello!');
   await page.getByTestId('send-message').click();
   await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');

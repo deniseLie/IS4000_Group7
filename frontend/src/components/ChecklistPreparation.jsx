@@ -29,12 +29,12 @@ export default function ChecklistPreparation({review,item,onSaved}) {
   }
   return <div className="relationship-details" data-testid="checklist-preparation">
     {['completed','closed'].includes(review.status)?<p>This recorded review is closed to preparation changes.</p>:<form onSubmit={save}>
-      <label>Your preparation mark <select data-testid="checklist-mark" value={mark} disabled={busy||!!error||!!outcome} onChange={event=>setMark(event.target.value)}>
+      <label className="cw-mark">Your preparation mark <select data-testid="checklist-mark" value={mark} disabled={busy||!!error||!!outcome} onChange={event=>setMark(event.target.value)}>
         <option value="not_prepared">Not prepared</option><option value="prepared">Prepared</option></select></label>
-      <p>Saving changes only your preparation mark for <strong>{item.label}</strong>. It does not upload or submit a document, change its bank review status, or complete this case.</p>
-      <button className="bank-chat-logout" data-testid="save-checklist-mark" disabled={busy||!!error||!!outcome||mark===item.client_mark}>Save preparation mark</button>
+      <p className="cw-mark-note">Saving changes only your preparation mark for <strong>{item.label}</strong>. It does not upload or submit a document, change its bank review status, or complete this case.</p>
+      <button className="bank-chat-logout" data-testid="save-checklist-mark" aria-label="Save preparation mark" disabled={busy||!!error||!!outcome||mark===item.client_mark}>Save</button>
     </form>}
-    {busy&&<p role="status">Saving preparation… Closing this panel does not cancel a submitted change. Check Actions for its receipt.</p>}
+    {busy&&<p className="loading" role="status">Saving preparation… Closing this panel does not cancel a submitted change. Check Actions for its receipt.</p>}
     {error&&<p role="alert" data-testid="checklist-error">{error} Reload records and check Actions before retrying.</p>}
     {outcome&&<div data-testid="checklist-outcome"><p>{outcome.receipt.outcome==='succeeded'?`Recorded preparation: ${outcome.receipt.result.client_mark.replaceAll('_',' ')}.`:'The preparation mark was not saved because the checklist changed.'} Reload records for its current state.</p>
       <p>Receipt: <code>{outcome.receipt.receipt_id}</code></p></div>}

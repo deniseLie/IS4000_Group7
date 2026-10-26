@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import Panel from './Panel';
+import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
 import {resumeWorkflow} from '../lib/workflows';
@@ -52,6 +53,65 @@ function receiptText(item) {
   throw new Error('This action type has no verified receipt description.');
 }
 
+const GROUPS=['Cards','Compliance','Data sharing','Appointments','Requests','Support'];
+function groupOf(command) {
+  const kind=command.type.split('.')[0];
+  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm'].includes(kind)?'Data sharing':kind==='appointment'?'Appointments':kind==='requests'?'Requests':'Support';
+}
+function statusPill(item) {
+  const state=item.command.state;
+  if(state==='proposed')return ['Ready for review','wait'];
+  if(state==='confirmed')return ['Confirmed · running','wait'];
+  if(state==='succeeded')return ['Recorded','ok'];
+  if(state==='failed')return ['Not executed','bad'];
+  return [state==='rejected'?'Rejected':'Expired','muted'];
+}
+// Plain-language card heading and summary; the exact recorded fields stay one click away under "Full details".
+function plainTitle(command) {
+  const t=command.target;
+  switch(command.type) {
+    case 'card.temporary_block':return `Freeze card ending ${t.last4}`;
+    case 'card.unblock':return `Card ending ${t.last4} reactivated`;
+    case 'card.cancel_permanently':return `Card ending ${t.last4} cancelled`;
+    case 'compliance.update_checklist_item':return t.item_label;
+    case 'document.register':return t.item_label||'Document upload';
+    case 'document.submit':return t.item_label;
+    case 'requests.create':return `Request to ${t.recipient_name}`;
+    case 'agenda.save':return 'Handover note draft';
+    case 'rm.share_summary':return `Handover note shared with ${t.recipient_name}`;
+    case 'consent.request':case 'consent.grant':return 'Relationship manager data sharing';
+    case 'consent.revoke':return 'Withdraw data-sharing consent';
+    case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `Meeting on ${appointmentTime(t.starts_at)}`;
+    default:return command.type.startsWith('handoff.')?'Support handoff':commandTitle(command);
+  }
+}
+function plainSummary(command) {
+  const t=command.target,mark=value=>value.replaceAll('_',' ');
+  switch(command.type) {
+    case 'card.temporary_block':return 'Temporarily blocks this card so no new payments go through. It can be reactivated by support.';
+    case 'compliance.update_checklist_item':return `Your preparation mark changes from ${mark(t.expected_client_mark)} to ${mark(t.client_mark)} for ${t.case_title}. The bank status stays ${mark(t.submission_status)}.`;
+    case 'document.register':return `${t.file_name} (${(t.size_bytes/1048576).toFixed(2)} MB) stored privately for ${t.case_title}.`;
+    case 'document.submit':return `${t.file_name} sent to the bank for review.`;
+    case 'requests.create':return `“${t.what}” · ${t.urgency} urgency${t.deadline?` · requested by ${t.deadline}`:''}.`;
+    case 'agenda.save':return `Private draft for ${t.recipient_name} (revision ${t.expected_revision+1}). Nothing is shared.`;
+    case 'rm.share_summary':return `Shares your saved note (revision ${t.agenda_revision}) with ${t.recipient_name}: ${consentCategoryText(t.categories)}.`;
+    case 'consent.request':return `Ask to let ${t.recipient_name||t.recipient} see ${consentCategoryText(t.categories)} for ${t.duration_days} days.`;
+    case 'consent.grant':return `Lets ${t.recipient_name||t.recipient} see ${consentCategoryText(t.categories)}${t.expires_at?` until ${new Date(t.expires_at).toLocaleDateString('en-SG')}`:''}. Other records stay restricted.`;
+    case 'consent.revoke':return `Stops ${t.recipient_name||t.recipient} seeing ${consentCategoryText(t.categories)} from now on.`;
+    case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `${appointmentTime(t.starts_at)} – ${appointmentTime(t.ends_at)} (Singapore time) · ${mark(t.format)}.`;
+    case 'handoff.create':return t.summary;
+    default:return '';
+  }
+}
+function shortDate(value) {return new Date(value).toLocaleString('en-SG',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+// Exports only what this panel already loaded: one row per recorded action and its receipt.
+function exportCsv(items) {
+  const quote=value=>`"${String(value??'').replaceAll('"','""')}"`;
+  const rows=[['command_id','action','group','state','proposed_at','receipt_id','receipt_outcome','receipt_created_at'],...items.map(({command,receipt})=>[command.command_id,commandTitle(command),groupOf(command),command.state,command.proposed_at,receipt?.receipt_id,receipt?.outcome,receipt?.created_at])];
+  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([rows.map(row=>row.map(quote).join(',')).join('\n')],{type:'text/csv'}));
+  link.download='demobank-action-receipts.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+}
+
 export default function ActionsPanel({onClose,onWorkflowChange}) {
   const [items,setItems]=useState(null);
   const [selected,setSelected]=useState(null);
@@ -102,18 +162,38 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
-  return <Panel label="Actions" title="Review proposed actions" closeLabel="Close actions" onClose={onClose}>
-    <p>Review proposed changes before approving them. These actions affect fictional demo records only; no real bank card is affected.</p>
-    <button data-testid="reload-actions" className="bank-chat-logout" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}>Reload recorded status</button>
-    {busy&&<p role="status">Checking the recorded result… Closing this panel does not cancel a submitted decision. Reopen Actions to check its status.</p>}
+  const [tab,setTab]=useState('all'),[group,setGroup]=useState('All'),[query,setQuery]=useState('');
+  const all=items||[];
+  const pending=all.filter(item=>item.command.state==='proposed'),history=all.filter(item=>item.command.state!=='proposed');
+  const scoped=tab==='pending'?pending:tab==='receipts'?history:all;
+  const groups=['All',...GROUPS.filter(name=>scoped.some(item=>groupOf(item.command)===name))];
+  const needle=query.trim().toLowerCase();
+  const visible=[...scoped].sort((a,b)=>(a.command.state==='proposed'?0:1)-(b.command.state==='proposed'?0:1)||Date.parse(b.command.proposed_at)-Date.parse(a.command.proposed_at))
+    .filter(item=>(group==='All'||groupOf(item.command)===group)&&(!needle||[commandTitle(item.command),item.receipt?.receipt_id||'',item.command.type,shortDate(item.command.proposed_at)].join(' ').toLowerCase().includes(needle)));
+  return <Panel label="Actions" size="drawer" eyebrow="Actions" title={<><span className="act-dot" aria-hidden="true"/>Pending approvals &amp; receipts</>} closeLabel="Close actions" onClose={onClose}
+    subtitle="Review synthetic demo actions before you confirm them, and see receipts for what was recorded. These affect demo records only."
+    footer={<><button className="bank-chat-logout" disabled={!all.length} onClick={()=>exportCsv(all)}><Icon name="download"/>Export receipts (.csv)</button>
+      <button data-testid="reload-actions" className="primary-button" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/>Reload recorded status</button></>}>
+    <div className="act-tabs" role="tablist" aria-label="Filter actions">{[['all','All',all.length],['pending','Pending approvals',pending.length],['receipts','Receipts & history',history.length]].map(([key,label,count])=>
+      <button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>{setTab(key);setGroup('All');}}>{label}<span className="count">{count}</span></button>)}</div>
+    {all.length>0&&<div className="act-filters"><label className="act-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Filter by receipt ID, action or date…" value={query} onChange={event=>setQuery(event.target.value)}/></label>
+      <div className="act-chips">{groups.map(name=><button key={name} className={group===name?'active':''} aria-pressed={group===name} onClick={()=>setGroup(name)}>{name} ({name==='All'?scoped.length:scoped.filter(item=>groupOf(item.command)===name).length})</button>)}</div></div>}
+    {busy&&<p className="loading" role="status">Checking the recorded result… Closing this panel does not cancel a submitted decision. Reopen Actions to check its status.</p>}
     {error&&<p role="alert" data-testid="actions-error">{error} Reload the recorded status before making another decision.</p>}
-    {items?.length===0&&<p data-testid="actions-empty">No actions have been proposed for your demo profile.</p>}
-    <ul className="command-list" data-testid="commands-list">{items?.map(item=>{
-      const command=item.command,receipt=item.receipt,chosen=selected===command.command_id;
-      return <li key={command.command_id} data-command-id={command.command_id}>
-        <h3>{commandTitle(command)}</h3>
+    {items?.length===0&&<p className="act-empty" data-testid="actions-empty">No actions have been proposed for your demo profile.</p>}
+    {items?.length>0&&visible.length===0&&<p className="act-empty">No actions match this view.</p>}
+    <ul className="command-list act-list" data-testid="commands-list">{visible.map(item=>{
+      const command=item.command,receipt=item.receipt,chosen=selected===command.command_id,[pill,tone]=statusPill(item);
+      return <li key={command.command_id} data-command-id={command.command_id} className={`act-card ${tone}`}>
+        <div className="act-top"><span className="act-tag">{groupOf(command)}</span><span className={`act-pill ${tone}`}><span className="dot"/>{pill}</span></div>
+        <div className="act-title"><h3>{plainTitle(command)}</h3><time dateTime={receipt?.created_at||command.proposed_at}>{shortDate(receipt?.created_at||command.proposed_at)}</time></div>
+        <p className="act-kind">{commandTitle(command)}</p>
+        {plainSummary(command)&&<p className="act-summary" data-testid={command.type==='compliance.update_checklist_item'?'command-checklist':command.type.startsWith('consent.')?'command-consent-scope':undefined}>{plainSummary(command)}</p>}
+        <details className="act-more"><summary>Full details</summary>
+        <p className="act-meta">Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
+        <div className="act-detail">
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
-        {command.type==='compliance.update_checklist_item'&&<div data-testid="command-checklist"><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
+        {command.type==='compliance.update_checklist_item'&&<div><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
         {command.type==='requests.create'&&<div data-testid="command-request"><p>For: {command.target.who}. Recipient: {command.target.recipient_name}.</p><p>{command.target.what}</p><p>Urgency: {command.target.urgency}. Requested deadline: {command.target.deadline||'None'}. Country reference: {command.target.country||'None'}. Currency reference: {command.target.currency||'None'}.</p>{receipt?.outcome==='succeeded'&&<p>Request: <code>{receipt.result.request_id}</code>.</p>}</div>}
         {command.type==='document.register'&&<p data-testid="command-document">{command.target.file_name} · {command.target.size_bytes.toLocaleString('en-SG')} bytes · {command.target.case_title}{command.target.item_label&&` · ${command.target.item_label}`}</p>}
         {command.type==='document.submit'&&<p>{command.target.item_label} · {command.target.file_name}</p>}
@@ -123,27 +203,28 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
           <p>Consent grant: <code>{command.target.consent_grant_id}</code>. Grant covers: {consentCategoryText(command.target.consent_categories)}. {command.target.grant_expires_at?`Expires ${new Date(command.target.grant_expires_at).toLocaleString()}.`:'This grant has no expiry.'}</p>
           <pre className="agenda-content">{command.target.content}</pre>{receipt?.outcome==='succeeded'&&<p>Shared at {new Date(receipt.result.shared_at).toLocaleString()}. Snapshot: <code>{receipt.result.summary_id}</code>.</p>}</div>}
         {command.type.startsWith('appointment.')&&<p data-testid="command-appointment">{appointmentTime(command.target.starts_at)} – {appointmentTime(command.target.ends_at)} (Singapore time). Format: {command.target.format.replaceAll('_',' ')}.</p>}
-        {command.type.startsWith('consent.')&&<div data-testid="command-consent-scope"><p>Recipient: {command.target.recipient_name||command.target.recipient}</p><p>Purpose: {command.target.purpose}. Data categories: {consentCategoryText(command.target.categories)}.</p><p>{command.type==='consent.request'?`Requested duration: ${command.target.duration_days} days.`:command.target.expires_at?`Grant expires: ${new Date(command.target.expires_at).toLocaleString()}.`:'This recorded grant has no expiry.'}</p></div>}
-        <p>Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
-        {item.workflow&&<div data-testid="command-workflow">
+        {command.type.startsWith('consent.')&&<div><p>Recipient: {command.target.recipient_name||command.target.recipient}</p><p>Purpose: {command.target.purpose}. Data categories: {consentCategoryText(command.target.categories)}.</p><p>{command.type==='consent.request'?`Requested duration: ${command.target.duration_days} days.`:command.target.expires_at?`Grant expires: ${new Date(command.target.expires_at).toLocaleString()}.`:'This recorded grant has no expiry.'}</p></div>}
+        </div>
+        </details>
+        {item.workflow&&<div data-testid="command-workflow" className="act-note">
           <p>Saved reply: {item.workflow.state.replaceAll('_',' ')}. {item.workflow.state==='completed'?'Close Actions to read the saved reply.':item.workflow.state==='failed'?'The action decision is recorded, but the reply could not resume. Retry the saved reply.':!item.workflow.ready?'The review is still being saved. Reload its recorded status before deciding.':''}</p>
           {item.workflow.can_resume&&<button className="bank-chat-logout" data-testid="resume-workflow" disabled={busy||!!error} onClick={()=>retry(item.workflow.turn_id)}>Resume saved reply</button>}
         </div>}
         {command.state==='proposed'&&<>
-          <p>Proposal expires: <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
-          {!chosen&&<button className="bank-chat-logout" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}>Review proposal</button>}
-          {chosen&&<div className="command-review" data-testid="command-review">
+          <p className="act-meta">Proposal expires <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
+          {!chosen&&<div className="act-actions"><button className="primary-button" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}><Icon name="check"/>Approve &amp; confirm</button></div>}
+          {chosen&&<div className="command-review act-review" data-testid="command-review">
             <p>{command.type==='requests.create'?'Confirming records these exact request details for the displayed recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.':command.type==='rm.share_summary'?'Confirming shares exactly this saved snapshot with the displayed recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.':command.type==='consent.grant'?'Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.':command.type==='consent.revoke'?'Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.':command.type==='appointment.confirm'?'Confirming books this time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this appointment and releases its time.':'Confirming temporarily blocks this card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>
-            <label><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type==='requests.create'?'relationship request':command.type==='rm.share_summary'?'saved agenda snapshot and consent':command.type.startsWith('consent.')?'data-sharing scope':command.type.startsWith('appointment.')?'appointment':'card'} and the proposed change.</label>
-            <div className="panel-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}>{command.type==='requests.create'?'Submit reviewed request':command.type==='rm.share_summary'?'Confirm sharing':command.type==='consent.grant'?'Confirm consent grant':command.type==='consent.revoke'?'Confirm revocation':command.type==='appointment.confirm'?'Confirm booking':command.type==='appointment.cancel'?'Confirm cancellation':'Confirm temporary block'}</button>
-            <button className="bank-chat-logout" data-testid="reject-command" disabled={busy||!!error} onClick={()=>submit(rejectAction,command.command_id)}>Reject proposal</button></div>
+            <label className="act-ack"><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have reviewed this {command.type==='requests.create'?'relationship request':command.type==='rm.share_summary'?'saved agenda snapshot and consent':command.type.startsWith('consent.')?'data-sharing scope':command.type.startsWith('appointment.')?'appointment':'card'} and the proposed change.</label>
+            <div className="act-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged} onClick={()=>submit(confirmAction,command.command_id)}><Icon name="check"/>{command.type==='requests.create'?'Submit reviewed request':command.type==='rm.share_summary'?'Confirm sharing':command.type==='consent.grant'?'Confirm consent grant':command.type==='consent.revoke'?'Confirm revocation':command.type==='appointment.confirm'?'Confirm booking':command.type==='appointment.cancel'?'Confirm cancellation':'Confirm temporary block'}</button>
+            <button className="bank-chat-logout" data-testid="reject-command" disabled={busy||!!error} onClick={()=>submit(rejectAction,command.command_id)}>Cancel request</button></div>
           </div>}
         </>}
-        {command.state==='rejected'&&<p>This proposal was rejected. No proposed change was executed.</p>}
-        {command.state==='expired'&&<p>This proposal expired without execution. A new proposal is required.</p>}
-        {receipt&&<div data-testid="command-receipt">
-          <p>{receiptText(item)}</p>
-          <p>Receipt: <code>{receipt.receipt_id}</code></p>
+        {command.state==='rejected'&&<p className="act-note">This proposal was rejected. No proposed change was executed.</p>}
+        {command.state==='expired'&&<p className="act-note">This proposal expired without execution. A new proposal is required.</p>}
+        {receipt&&<div data-testid="command-receipt" className="act-receipt">
+          <div className="act-code"><code title={receipt.receipt_id}><span className="sr-only">Receipt: </span>#{receipt.receipt_id.slice(0,13)}<span className="act-code-rest">{receipt.receipt_id.slice(13)}</span></code><span className={`dot ${receipt.outcome}`} aria-hidden="true"/></div>
+          <details className="act-more"><summary>What this receipt means</summary><p>{receiptText(item)}</p><p className="act-meta">Full receipt ID: <code>{receipt.receipt_id}</code></p></details>
         </div>}
       </li>;
     })}</ul>

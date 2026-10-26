@@ -9,7 +9,7 @@ import {consentCategoryText} from '../lib/consentData';
 
 export function initials(name) {return name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('');}
 
-export default function SharingPage({onReviewActions,onRelationship}) {
+export default function SharingPage({embedded=false,onReviewActions,onRelationship}) {
   const [status,setStatus]=useState(null);
   const [registry,setRegistry]=useState(null);
   const [busy,setBusy]=useState(false);
@@ -31,10 +31,10 @@ export default function SharingPage({onReviewActions,onRelationship}) {
   }
   const recipient=status?.recipient,granted=status?.consent?.granted;
   const history=registry?[...registry.grants].sort((a,b)=>Date.parse(b.granted_at)-Date.parse(a.granted_at)):[];
-  return <section className="app-page-body sharing-page" aria-label="Data sharing" data-testid="sharing-page">
-    <nav className="breadcrumb" aria-label="Breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span aria-current="page">Data sharing</span></nav>
-    <div className="page-header"><div><h1>Data sharing</h1><p>Control who can see your information, and for how long. Checking this status does not share data or change your consent.</p></div></div>
-    {busy&&<p role="status">Checking data-sharing consent…</p>}
+  return <section className={`${embedded?'sharing-embedded':'app-page-body'} sharing-page`} aria-label="Data sharing" data-testid="sharing-page">
+    {!embedded&&<nav className="breadcrumb" aria-label="Breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span aria-current="page">Data sharing</span></nav>}
+    <div className="page-header"><div>{embedded?<><span className="eyebrow">Data sharing</span><h2>Data sharing &amp; permissions</h2></>:<h1>Data sharing</h1>}<p>Control who can see your information, and for how long. Checking this status does not share data or change your consent.</p></div></div>
+    {busy&&<p className="loading" role="status">Checking data-sharing consent…</p>}
     {error&&<p role="alert" data-testid="sharing-error">{error}</p>}
     <section className="page-section"><h2 className="section-label">Who has access</h2>
       {recipient&&<div className="access-card" data-testid="sharing-details">
@@ -57,7 +57,7 @@ export default function SharingPage({onReviewActions,onRelationship}) {
         <tbody>{history.map(item=>{const state=item.revoked_at?'revoked':item.active?'active':'inactive';return <tr key={item.grant_id}><td><time dateTime={item.granted_at}>{new Date(item.granted_at).toLocaleDateString()}</time></td><td>{consentCategoryText(item.categories)}<small>{item.recipient_name||item.recipient}</small></td><td><span className={`status-badge ${state}`}>{state[0].toUpperCase()+state.slice(1)}</span></td></tr>;})}</tbody></table></div>
         :<p className="page-empty">No grants are recorded yet.</p>}
       <p className="page-note">You can change or withdraw your consent at any time.</p></section>}
-    <section className="page-section" ref={manage}><ConsentControls registry={registry} recipient={recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/></section>
+    <section className="page-section consent-card" ref={manage}><ConsentControls registry={registry} recipient={recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/></section>
     <button className="bank-chat-logout" data-testid="open-relationship-details" onClick={onRelationship}><Icon name="calendar"/>View requests and appointment times</button>
   </section>;
 }

@@ -121,7 +121,7 @@ test('real unlinked synthetic login cannot access banking records',async({page})
  await expect(page.getByRole('button',{name:'Sign out'})).toBeVisible({timeout:20000});
  await page.getByRole('textbox',{name:'Your message'}).fill('What is my balance?');await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.locator('.bank-chat-bubble.error')).toContainText('No demo customer profile',{timeout:30000});
- await page.getByLabel('Information',{exact:true}).selectOption('public');
+ await page.getByRole('radiogroup',{name:'Information'}).getByRole('radio',{name:'General help'}).click();
  await page.getByRole('textbox',{name:'Your message'}).fill('I lost my card');await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.locator('.bank-chat-message.assistant')).toContainText('immediately',{timeout:30000});
  await page.getByRole('button',{name:'Sign out'}).click();await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();

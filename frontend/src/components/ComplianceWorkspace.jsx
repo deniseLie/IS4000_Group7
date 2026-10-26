@@ -5,6 +5,8 @@ import ChecklistPreparation from './ChecklistPreparation';
 import Icon from './Icon';
 import DocumentUpload from './DocumentUpload';
 
+const sentence=value=>{const text=value.replaceAll('_',' ');return text[0].toUpperCase()+text.slice(1);};
+
 export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,onBusyChange,onSupport,onReviewLoaded,submissionReceipt=null,onSubmitted}){
  const [workspace,setWorkspace]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[now,setNow]=useState(Date.now());
  const mounted=useRef(false),active=useRef(null),serverClock=useRef(null);
@@ -39,33 +41,54 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
  const DONE=['accepted','submitted_awaiting_review'];
  const tone=item=>item.submission_status==='accepted'?'ok':item.submission_status==='submitted_awaiting_review'?'wait':item.submission_status==='rejected'?'bad':'todo';
  const items=review?.requested_items||[],finished=items.filter(item=>DONE.includes(item.submission_status)).length;
- return <section className="compliance-workspace cw" data-testid="compliance-workspace" aria-label="Your compliance review">
-  <div className="panel-heading"><h3>{onPage?'Review progress':'Your compliance review'}</h3><button className="bank-chat-logout" disabled={busy} onClick={refresh}>Reload review</button></div>
-  {busy&&<p role="status">Checking recorded progress…</p>}
+ const pending=items.filter(item=>!DONE.includes(item.submission_status)),withBank=items.filter(item=>DONE.includes(item.submission_status));
+ const markTone=item=>item.submission_status==='rejected'?'bad':item.client_mark==='prepared'?'ok':'todo';
+ const icon=item=>/address/i.test(item.label)?'pin':/statement/i.test(item.label)?'document':/tax/i.test(item.label)?'bank':'card';
+ const help=selection=>onSupport&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onSupport(selection)}><Icon name="support"/>{selection.request_id?'Get help with this request':selection.item_id?'Get help with this document':'Get help with this review'}</button>;
+ return <section className={`compliance-workspace cw ${onPage?'cw-page':''}`} data-testid="compliance-workspace" aria-label="Your compliance review">
+  <div className="cw-top"><div className="cw-tags">{review?<><span className="cw-notice-tag"><span className="dot"/>Formal compliance notice</span><code>Case ref: #{review.case_id.replaceAll('-','').slice(-8).toUpperCase()}</code></>:onPage?null:<h3>Your compliance review</h3>}</div>
+   <button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Reload review</button></div>
+  {onPage&&<header className="cw-title"><h1>Your compliance review</h1><p>Upload what the bank asked for. Each file gets a preliminary check before it is submitted.</p></header>}
+  {!onPage&&review&&<h3 className="cw-chat-title">Your compliance review</h3>}
+  {busy&&<p className="cw-busy loading" role="status">Checking recorded progress…</p>}
+  {busy&&!workspace&&<div className="loading-list" aria-hidden="true"><span className="skeleton-block tall"/><span className="skeleton-card large"/><span className="skeleton-card large"/></div>}
   {error&&<p role="alert" data-testid="compliance-workspace-error">{error}</p>}
   {workspace&&!review&&<div className="cw-none" data-testid="compliance-none"><span><Icon name="check"/></span><div><h4>No review needed</h4><p>There is nothing for you to do right now. If the bank needs documents or information, you will see it here and in your Inbox.</p></div></div>}
   {review&&<>
-   <div className="cw-summary">
-    <div><h4>{review.title}</h4><p className="cw-meta"><span className={`cw-pill ${closed?'ok':'wait'}`}>{review.status.replaceAll('_',' ')}</span>
-     {review.due_date&&<span>Due <strong>{review.due_date}</strong></span>}<span>Updated <time dateTime={review.status_updated_at}>{new Date(review.status_updated_at).toLocaleDateString()}</time></span></p></div>
-    <div className="cw-progress" aria-label={`${finished} of ${items.length} documents with the bank`}><strong>{finished} of {items.length}</strong><span>documents with the bank</span>
-     <div className="cw-bar"><span style={{width:`${items.length?finished/items.length*100:0}%`}}/></div></div>
-   </div>
-   <details className="cw-notice"><summary>Read your notice</summary><p>{review.notice_text}</p></details>
-   {stale&&<p className="cw-warn" data-testid="compliance-stale">This status is more than {workspace.policy.status_stale_days} days old. Reload or contact support to confirm progress.</p>}
-   <div className="compliance-progress"><section><h4>Your action</h4>
-    <ul>{items.filter(item=>!DONE.includes(item.submission_status)).map(item=><li key={item.item_id}>{item.label}: {primaryStatus(item)}{review.due_date&&` · Case deadline ${review.due_date}`}</li>)}</ul>
-    {review.info_requests.filter(item=>item.status==='open').map(item=><article key={item.request_id} className="cw-alert"><span className="eyebrow">The bank asked you</span><p><strong>{item.question}</strong></p><p>{item.instructions||'Submission instructions are not recorded; contact support.'}</p><p className="rm-small">Request deadline: {item.due_date||'Not recorded'}.</p>
-     <div className="panel-actions">{onAsk&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onAsk('Please explain the selected recorded request for additional information and where I should respond.',{kind:'information_request',case_id:review.case_id,request_id:item.request_id})}>Explain this request</button>}
-     {onSupport&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onSupport({review_case_id:review.case_id,request_id:item.request_id})}>Get help with this request</button>}</div></article>)}
-   </section><section><h4>With the bank</h4><ul>{items.filter(item=>DONE.includes(item.submission_status)).map(item=><li key={item.item_id}>{item.label}: {primaryStatus(item)}</li>)}</ul><p className="rm-small">Only recorded bank decisions are shown. A preliminary check never approves the review.</p></section></div>
-   <div className="cw-head"><h4>Documents to upload</h4>{onSupport&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onSupport({review_case_id:review.case_id})}>Get help with this review</button>}</div>
-   <p className="rm-small">Fictional files only (PDF, DOCX, PNG or JPEG). Each upload is checked against your notice; a passing check submits it for bank review.</p>
+   <article className="cw-card cw-overview">
+    <div className="cw-card-head"><h3>Review progress <span className={`cw-pill ${closed?'ok':'wait'}`}>{closed?'Closed':'In progress'}</span></h3><span className="cw-asof">Retrieved {new Date(workspace.as_of).toLocaleString('en-SG')}</span></div>
+    <div className="cw-summary">
+     <div><h4>{review.title}</h4><p className="cw-meta"><span className="cw-chip">{sentence(review.status)}</span>
+      {review.due_date&&<span><Icon name="calendar"/>Due <strong>{review.due_date}</strong></span>}<span>· Updated <time dateTime={review.status_updated_at}>{new Date(review.status_updated_at).toLocaleString('en-SG',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})} SGT</time></span></p></div>
+     <div className="cw-progress" aria-label={`${finished} of ${items.length} documents with the bank`}><span>Documents with bank</span><strong>{finished} of {items.length}</strong>
+      <div className="cw-bar"><span style={{width:`${items.length?finished/items.length*100:0}%`}}/></div></div>
+    </div>
+    <details className="cw-notice"><summary>Read official notice text</summary><p>{review.notice_text}</p></details>
+    {stale&&<p className="cw-warn" data-testid="compliance-stale">This status is more than {workspace.policy.status_stale_days} days old. Reload or contact support to confirm progress.</p>}
+    <div className="cw-split compliance-progress">
+     <section><h4 className="cw-label"><Icon name="document"/>Your required actions</h4>
+      {pending.length?<ul className="cw-actions">{pending.map((item,index)=><li key={item.item_id} className={index===0?'current':''}><span className="dot"/><div><strong>{item.label}</strong><small>{review.due_date?`Case deadline ${review.due_date}`:'No case deadline recorded'}</small></div><span className={`cw-pill ${markTone(item)}`}>{primaryStatus(item)}</span></li>)}</ul>
+       :<p className="cw-ok"><Icon name="check"/>Every requested document is with the bank.</p>}
+     </section>
+     <section className="cw-bank"><h4 className="cw-label"><Icon name="bank"/>With the bank</h4>
+      <p>Only recorded bank decisions are shown. A preliminary automated check validates your file against the notice, but never approves the review on its own.</p>
+      {withBank.length>0&&<ul className="cw-actions">{withBank.map(item=><li key={item.item_id}><span className="dot ok"/><div><strong>{item.label}</strong></div><span className={`cw-pill ${tone(item)}`}>{primaryStatus(item)}</span></li>)}</ul>}
+      <div className="cw-bank-foot"><span><span className="dot"/>{withBank.length?`${withBank.length} awaiting or decided by the bank`:'Nothing submitted yet'}</span><code>{pending.length} still to send</code></div>
+     </section>
+    </div>
+   </article>
+   {review.info_requests.filter(item=>item.status==='open').map(item=><article key={item.request_id} className="cw-alert">
+    <span className="cw-alert-icon" aria-hidden="true">!</span>
+    <div className="cw-alert-body"><div className="cw-alert-head"><span className="eyebrow">The bank asked you</span><span className="cw-deadline">Request deadline: {item.due_date||'Not recorded'}</span></div>
+     <p><strong>{item.question}</strong></p><p>{item.instructions||'Submission instructions are not recorded; contact support.'}</p>
+     <div className="panel-actions">{onAsk&&<button className="primary-button" disabled={busy||chatBusy} onClick={()=>onAsk('Please explain the selected recorded request for additional information and where I should respond.',{kind:'information_request',case_id:review.case_id,request_id:item.request_id})}>Explain this request<Icon name="arrow"/></button>}
+      {help({review_case_id:review.case_id,request_id:item.request_id})}</div></div></article>)}
+   <div className="cw-head"><div><h4>Documents to upload</h4><p className="rm-small">Fictional files only (PDF, DOCX, PNG or JPEG). Each upload is checked against your notice; a passing check submits it for bank review.</p></div>{help({review_case_id:review.case_id})}</div>
    <ul className="compliance-items">{items.map(item=>{
     const current=workspace.current_documents[item.item_id],report=workspace.checks.find(report=>report.document_id===current),fresh=report&&checkIsFresh(report,now),rule=workspace.rules[item.item_id];
     const open=!closed&&item.submission_status!=='accepted';
     return <li key={item.item_id} data-testid="compliance-item" data-item-id={item.item_id} className={`cw-item ${tone(item)}`}>
-     <div className="cw-item-head"><h4>{item.label}</h4><p data-testid="compliance-item-status" className={`cw-pill ${tone(item)}`}><strong>{primaryStatus(item)}</strong></p></div>
+     <div className="cw-item-head"><h4>{item.label}</h4><p data-testid="compliance-item-status" className={`cw-pill ${DONE.includes(item.submission_status)?tone(item):markTone(item)}`}><strong>{primaryStatus(item)}</strong></p><span className="cw-item-icon"><Icon name={icon(item)}/></span></div>
      <p className="cw-instructions">{item.instructions||'Instructions unavailable. Contact support rather than guessing.'}</p>
      {rule?<details className="cw-more"><summary>Requirements from your notice</summary><p>{item.instructions||item.label}</p>{item.check_guidance&&<p>Approved checking guidance: {item.check_guidance}</p>}<p>Results stay valid for {workspace.policy.validity_hours} hours; period coverage uses {workspace.policy.statement_period_mode.replaceAll('_',' ')}.</p><p>Text from your file is read by the configured AI provider for this preliminary check. Authenticity, identity and signatures are not verified.</p></details>:<p>No assessment rules are configured. Contact support.</p>}
      {report&&<div data-testid="precheck-result" data-precheck-status={fresh?report.status:'expired'} className={`cw-check ${fresh?report.status:'expired'}`}>
@@ -77,14 +100,13 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
      {open&&(DONE.includes(item.submission_status)?<details className="cw-more"><summary>Upload a replacement</summary><DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/></details>
       :<DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/>)}
      <div className="cw-item-foot">
-      {!closed&&!DONE.includes(item.submission_status)&&<ChecklistPreparation key={`${item.item_id}:${item.client_marked_at}`} review={review} item={item} onSaved={refresh}/>}
-      <div className="panel-actions">{current&&open&&<button className="bank-chat-logout" data-testid="check-current-upload" disabled={busy||chatBusy||!rule} onClick={()=>checkAndSubmit(current,true)}>Check and submit current upload</button>}
-      {onSupport&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onSupport({review_case_id:review.case_id,item_id:item.item_id})}>Get help with this document</button>}</div>
+      {!closed&&!DONE.includes(item.submission_status)?<ChecklistPreparation key={`${item.item_id}:${item.client_marked_at}`} review={review} item={item} onSaved={refresh}/>:<span/>}
+      <div className="panel-actions">{current&&open&&<button className="cw-subtle" data-testid="check-current-upload" disabled={busy||chatBusy||!rule} onClick={()=>checkAndSubmit(current,true)}>Check and submit current upload</button>}
+      {help({review_case_id:review.case_id,item_id:item.item_id})}</div>
      </div>
     </li>;
    })}</ul>
    {displayedReceipt&&<p role="status" data-testid="submission-receipt" className="cw-receipt">Submitted – awaiting review. Receipt: <code>{displayedReceipt}</code>. This is not bank acceptance.</p>}
-   <p className="rm-small">Retrieved {new Date(workspace.as_of).toLocaleString()}. Case deadline: {review.due_date||'Not recorded'}.</p>
   </>}
  </section>;
 }

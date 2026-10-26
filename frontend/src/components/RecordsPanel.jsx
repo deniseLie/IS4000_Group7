@@ -46,7 +46,7 @@ export default function RecordsPanel({onClose}) {
       <label>Status<select data-testid="records-status" value={status} onChange={event=>setStatus(event.target.value)}><option value="">All</option>{['posted','pending','failed'].map(value=><option key={value}>{value}</option>)}</select></label>
       <button className="bank-chat-logout" data-testid="reload-records" disabled={loading}>Reload records</button>
     </form>
-    {loading&&<p role="status" data-testid="records-loading">Loading recorded data…</p>}
+    {loading&&<p className="loading" role="status" data-testid="records-loading">Loading recorded data…</p>}
     {error&&<p role="alert" data-testid="records-error">{error}</p>}
     {records&&<div data-testid="records-content" className="customer-records">
       <section className="records-profile"><h3 data-testid="records-name">{records.profile.data.name}</h3><p>{label(records.profile.data.employment_status)} · Preferred language: {records.profile.data.preferred_language}</p></section>

@@ -29,7 +29,7 @@ export default function ConsentControls({registry,recipient,busy,onRefresh,onRev
   return <section aria-label="Manage consent" className="relationship-details">
     <h3>Manage data-sharing consent</h3>
     <p>Record a request, then review the exact recipient, purpose, categories and expiry in Actions. Consent changes do not themselves share data.</p>
-    {saving&&<p role="status">Saving the recorded consent action… Closing this panel does not cancel it. Reopen Actions to verify its result.</p>}
+    {saving&&<p className="loading" role="status">Saving the recorded consent action… Closing this panel does not cancel it. Reopen Actions to verify its result.</p>}
     {error&&<p role="alert" data-testid="consent-action-error">{error} Refresh recorded status before submitting another decision.</p>}
     {outcome&&<div className="command-review" data-testid="consent-action-outcome">
       <p>{pending?'The proposal is saved and still needs your confirmation in Actions.':outcome.receipt?.outcome==='succeeded'?'The consent request is recorded. Consent has not been granted.':'This request could not be recorded because its recipient changed. Refresh the recorded status before trying again.'}</p>

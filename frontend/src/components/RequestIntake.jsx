@@ -39,7 +39,7 @@ export default function RequestIntake({recipient,recipientBusy,onReviewActions})
       <p>A requested deadline or urgency is not a service commitment. Review the saved, redacted details in Actions before confirming submission.</p>
       <button className="primary-button" data-testid="prepare-request" disabled={disabled||!what.trim()}>Prepare request for review</button>
     </form>
-    {busy&&<p role="status">Recording a proposal… Closing this panel does not cancel it. Check Actions before retrying.</p>}
+    {busy&&<p className="loading" role="status">Recording a proposal… Closing this panel does not cancel it. Check Actions before retrying.</p>}
     {error&&<p role="alert" data-testid="request-intake-error">{error} Reopen this view and check Actions before retrying.</p>}
     {outcome&&<div data-testid="request-proposal"><p>The proposal is recorded. Confirm or reject its exact details in Actions. No request has been submitted yet.</p><button className="primary-button" data-testid="review-request-actions" onClick={onReviewActions}>Review in Actions</button></div>}
   </section>;

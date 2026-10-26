@@ -20,6 +20,14 @@ const paths = {
   people: <><circle cx="9" cy="8" r="3.5"/><path d="M2 21v-1a7 7 0 0 1 14 0v1M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 4 6v1"/></>,
   document: <><path d="M14 2H6v20h12V6l-4-4Zm0 0v4h4M9 13h6m-6 4h4"/></>,
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-9.5v.5"/></>,
+  search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+  download: <path d="M12 4v11m-5-5 5 5 5-5M4 20h16"/>,
+  upload: <path d="M12 16V5m-5 5 5-5 5 5M4 20h16"/>,
+  clip: <path d="m20 11-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/>,
+  refresh: <><path d="M20 11a8 8 0 0 0-14-5L4 8M4 4v4h4M4 13a8 8 0 0 0 14 5l2-2m0 4v-4h-4"/></>,
+  alert: <><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3.5v.5"/></>,
+  bank: <><path d="m3 9 9-5 9 5H3Zm2 0v9m4.7-9v9m4.6-9v9M19 9v9M3 21h18"/></>,
+  pin: <><path d="M12 21s-7-6-7-12a7 7 0 0 1 14 0c0 6-7 12-7 12Z"/><circle cx="12" cy="9" r="2.5"/></>,
   logout: <><path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/></>,
 };
 

@@ -74,7 +74,7 @@ export default function RelationshipDetails({recipient,recipientBusy,onReviewAct
       <label>Through<input type="date" aria-label="Appointment search end" data-testid="slots-to" required value={query.to_date} onChange={event=>setQuery({...query,to_date:event.target.value})}/></label>
       <button className="primary-button" data-testid="refresh-relationship" disabled={busy} type="submit">Refresh recorded status</button>
     </form>
-    {busy&&<p role="status">Checking relationship records… Closing this panel does not cancel a submitted action. Reopen it to check the recorded result.</p>}
+    {busy&&<p className="loading" role="status">Checking relationship records… Closing this panel does not cancel a submitted action. Reopen it to check the recorded result.</p>}
     {error&&<p role="alert" data-testid="relationship-error">{error} Refresh the recorded status before submitting another action.</p>}
     {outcome&&<div data-testid="booking-outcome" className="command-review">
       <p>{outcome.command.state==='proposed'?'The proposal is saved. Review its date, time and format in Actions before confirming.':outcome.receipt?.outcome==='succeeded'?'A ten-minute hold was recorded. Review the current appointment below before booking.':'The slot could not be held because its availability changed. Refresh and select an available time.'}</p>

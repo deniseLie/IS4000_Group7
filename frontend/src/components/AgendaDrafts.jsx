@@ -62,7 +62,7 @@ export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onRe
     <h3>Prepare a meeting agenda</h3>
     <p>Save topics for your relationship manager. Choose any basic profile fields to include. Saving creates a private draft and does not share data.</p>
     <button className="bank-chat-logout" data-testid="reload-agendas" disabled={busy} onClick={refresh}>Reload saved drafts</button>
-    {busy&&<p role="status">Checking the saved agenda… Closing this panel does not cancel a submitted save. Reopen it or Actions to verify the result.</p>}
+    {busy&&<p className="loading" role="status">Checking the saved agenda… Closing this panel does not cancel a submitted save. Reopen it or Actions to verify the result.</p>}
     {error&&<p role="alert" data-testid="agenda-error">{error} Reload saved drafts before editing again.</p>}
     {registry&&<>
       <p data-testid="agenda-count">Showing {registry.agendas.length} of {registry.agendas_total} saved drafts.</p>

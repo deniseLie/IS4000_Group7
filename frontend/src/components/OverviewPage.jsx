@@ -28,7 +28,9 @@ export default function OverviewPage({onNavigate,onAsk}) {
     return ()=>controller.abort();
   },[]);
   if(error)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p></section>;
-  if(!records)return <section className="app-page-body ov" data-testid="overview-page"><p role="status">Loading your accounts…</p></section>;
+  if(!records)return <section className="app-page-body ov" data-testid="overview-page"><p className="loading" role="status">Loading your accounts…</p>
+    <div className="skeleton-page" aria-hidden="true"><span className="skeleton-line wide"/><span className="skeleton-block tall"/>
+      <div className="ov-grid"><div className="ov-main"><span className="skeleton-block"/><span className="skeleton-block"/></div><div className="ov-side"><span className="skeleton-block"/><span className="skeleton-block"/></div></div></div></section>;
   const name=displayName(records.profile.data.name).split(' ')[0];
   const accounts=records.accounts.data.filter(row=>row.status!=='closed'),cards=records.cards.data,loans=records.loans.data.filter(row=>row.status==='active');
   const sgd=accounts.filter(row=>row.currency==='SGD').reduce((sum,row)=>sum+row.balance,0);
@@ -37,8 +39,7 @@ export default function OverviewPage({onNavigate,onAsk}) {
   return <section className="app-page-body ov" aria-label="Overview" data-testid="overview-page">
     <header className="ov-head"><div><p className="ov-date">{new Date().toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'})}</p>
       <h1>{greeting()}, {name}</h1></div>
-      <div className="ov-quick"><button className="primary-button" onClick={()=>onNavigate('chat')}><Icon name="chat"/>Ask the assistant</button>
-        <button className="bank-chat-logout" onClick={()=>onNavigate('inbox')}><Icon name="bell"/>Inbox</button></div></header>
+</header>
     <div className="ov-balance"><span>Total balance in SGD accounts</span><strong data-testid="overview-total">{money(sgd)}</strong><small>Synthetic demo data · as of {new Date(records.accounts.as_of).toLocaleString('en-SG')}</small></div>
     <div className="ov-grid">
       <div className="ov-main">

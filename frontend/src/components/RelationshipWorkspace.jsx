@@ -97,7 +97,7 @@ function StatusStep({intro,refreshKey,onSupport,onRequest}) {
   const names=useMemo(()=>({[intro.current.rm_id]:intro.current.name}),[intro]);
   return <section className="rm-step" data-testid="rm-step-status" aria-label="Your requests">
     <div className="rm-step-head"><p className="rm-bot">Here is the latest recorded status of each request.</p><button className="bank-chat-logout" disabled={busy} onClick={load}>Refresh</button></div>
-    {busy&&<p role="status">Checking your requests…</p>}
+    {busy&&<p className="loading" role="status">Checking your requests…</p>}
     {error&&<Fallback intro={intro} onSupport={onSupport}>Request status is unavailable right now.</Fallback>}
     {requests&&!requests.data.length&&<p data-testid="rm-requests-empty">No requests are recorded. <button className="source-link" onClick={onRequest}>Send a request</button></p>}
     {requests&&<ol className="rm-requests" data-testid="rm-requests">{requests.data.map(item=>{
@@ -135,7 +135,7 @@ function NoteStep({intro,onSupport,onShared}) {
   const note=saved?.receipt.result,{agenda}=lines?splitNote(lines):{agenda:[]};
   return <section className="rm-step" data-testid="rm-step-note" aria-label="Handover note">
     <p className="rm-bot">I drafted a short note for {intro.current.name} from your recorded profile and open requests. Add the topics you want to discuss, and edit anything before saving.</p>
-    {busy&&!lines&&<p role="status">Drafting your note from your records…</p>}
+    {busy&&!lines&&<p className="loading" role="status">Drafting your note from your records…</p>}
     {error&&<Fallback intro={intro} onSupport={onSupport}>{error}</Fallback>}
     {lines&&<>
       {editing?<label className="form-field">Edit the whole note (one line per item, up to 12)<textarea data-testid="rm-note-editor" rows={Math.min(12,lines.length+2)} value={lines.join('\n')} onChange={event=>{setLines(event.target.value.split('\n'));setSaved(null);setShared(null);}}/></label>

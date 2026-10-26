@@ -7,6 +7,8 @@ import RelationshipPage from './components/RelationshipPage';
 import CompliancePage from './components/CompliancePage';
 import OverviewPage,{displayName} from './components/OverviewPage';
 import {loadSections} from './lib/customerData';
+import {loadInbox} from './lib/notifications';
+import {initials} from './components/SharingPage';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
@@ -20,7 +22,7 @@ import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
-import {capabilities,clearActive,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
+import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
 import {loadWorkflowPreview,parsePausedWorkflow,parsePreview} from './lib/workflows';
 import {createActionCase,proposeAction} from './lib/actions';
 
@@ -47,7 +49,9 @@ export default function Chat({session,onSignIn}) {
   const [loading,setLoading]=useState(false);
   const [mode,setMode]=useState(session ? 'personal':'public');
   const [language,setLanguage]=useState('English');
-  const [notice,setNotice]=useState('');
+  const [notice,setNoticeText]=useState(''),[noticeKey,setNoticeKey]=useState(0),[noticeToast,setNoticeToast]=useState(false);
+  // Routine confirmations show as a small pill that folds away; anything else stays until dismissed.
+  const setNotice=(text,toast=false)=>{setNoticeText(text);setNoticeToast(toast);setNoticeKey(key=>key+1);};
   const [summary,setSummary]=useState(null);
   const [approved,setApproved]=useState(false);
   const [copied,setCopied]=useState(false);
@@ -59,7 +63,15 @@ export default function Chat({session,onSignIn}) {
   const [conversation,setConversation]=useState(null);
   const [pending,setPending]=useState(null);
   const [workflow,setWorkflow]=useState(null);
-  const [savedChats,setSavedChats]=useState(false);
+  const [savedChats,setSavedChats]=useState(false),[historyClosing,setHistoryClosing]=useState(false);
+  const historyTimer=useRef(null);
+  // The history column narrows to nothing before it unmounts, so the chat widens at the same pace.
+  function closeHistory() {
+    if(!savedChats||historyTimer.current)return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){setSavedChats(false);return;}
+    setHistoryClosing(true);
+    historyTimer.current=setTimeout(()=>{historyTimer.current=null;setHistoryClosing(false);setSavedChats(false);},260);
+  }
   const [actionsOpen,setActionsOpen]=useState(false);
   const [recordsOpen,setRecordsOpen]=useState(false);
   const [complianceOpen,setComplianceOpen]=useState(null);
@@ -69,7 +81,8 @@ export default function Chat({session,onSignIn}) {
   const [blockAction,setBlockAction]=useState(null);
   const [rmIntro,setRmIntro]=useState(null),[rmIntroError,setRmIntroError]=useState(''),[rmOpen,setRmOpen]=useState(false),[rmFocus,setRmFocus]=useState(null),[rmMode,setRmMode]=useState('guided'),[profileName,setProfileName]=useState('');
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
-  const [helpTopic,setHelpTopic]=useState('general');
+  const [helpTopic,setHelpTopic]=useState('general'),[supportTarget,setSupportTarget]=useState('support'),[attachSummary,setAttachSummary]=useState(true);
+  const [unread,setUnread]=useState(0),[chatCount,setChatCount]=useState(null);
   const [view,setView]=useState(()=>session?pageFromHash():'chat');
   const [pageKey,setPageKey]=useState(0);
   const messageList=useRef(null);
@@ -81,6 +94,7 @@ export default function Chat({session,onSignIn}) {
     if(messages.length&&list)list.scrollTo({top:list.scrollHeight,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
   },[messages]);
   useEffect(()=>()=>request.current?.abort(),[]);
+
   useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
     const sync=()=>setView(session?pageFromHash():'chat');
     window.addEventListener('hashchange',sync);return ()=>window.removeEventListener('hashchange',sync);
@@ -121,6 +135,20 @@ export default function Chat({session,onSignIn}) {
     return ()=>controller.abort();
   },[session?.user.id]);
 
+  useEffect(()=>{  // the Inbox button carries a dot while recorded notifications are unread
+    if(!session){setUnread(0);return;}
+    const controller=new AbortController();
+    (async()=>{try{const headers=await sessionHeaders();const inbox=await loadInbox(headers.Authorization.replace(/^Bearer /,''),controller.signal);if(!controller.signal.aborted)setUnread(inbox.items.filter(item=>!item.read_at).length);}catch{}})();
+    return ()=>controller.abort();
+  },[session?.user.id,view,pageKey]);
+
+  useEffect(()=>{  // count shown on the Recent chats button
+    if(!session||store!=='database'){setChatCount(null);return;}
+    const controller=new AbortController();
+    (async()=>{try{const list=await listConversations(await sessionHeaders(),controller.signal);if(!controller.signal.aborted)setChatCount(list.length);}catch{}})();
+    return ()=>controller.abort();
+  },[session?.user.id,store,conversation?.session_id]);
+
   async function sessionHeaders() {
     if(!session)return {};
     const {data,error}=await supabase.auth.getSession();
@@ -141,8 +169,8 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);
-    setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.');
+    setSummary(null);setArticle(null);closeHistory();setActionsOpen(false);setRecordsOpen(false);
+    setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!preview&&!history.workflow&&!history.history_trimmed);
   }
 
   async function reopen(item) {
@@ -172,7 +200,7 @@ export default function Chat({session,onSignIn}) {
       catch(failure) {setBootError(failure.message);return false;}
     }
     version.current++;request.current?.abort();request.current=null;
-    setMessages([]);setInput('');setLoading(false);setNotice('New chat started. Previous context has been cleared.');
+    setMessages([]);setInput('');setLoading(false);setNotice('New chat started.',true);
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
     setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);setRmFocus(null);setRmOpen(false);if(store!==null)setBootError('');
     return true;
@@ -258,12 +286,12 @@ export default function Chat({session,onSignIn}) {
   }
   function draft(question) { setInput(question);requestAnimationFrame(()=>composer.current?.focus()); }
   async function prepareReviewSupport(selection){
-    setSupportScope(null);setHelpTopic('compliance');setHandoff({saving:true,outcome:null,error:''});
+    setSupportScope(null);setSupportTarget('support');setAttachSummary(true);setHelpTopic('compliance');setHandoff({saving:true,outcome:null,error:''});
     try{const headers=await sessionHeaders();const token=headers.Authorization?.replace(/^Bearer /,'');
       const prepared=await prepareComplianceSupport(selection,token);setSupportScope(prepared.case_id);setSummary(prepared.summary);setHandoff({saving:false,outcome:null,error:''});
     }catch(error){setNotice(error.message);setHandoff({saving:false,outcome:null,error:error.message});}
   }
-  function prepareSummary() { if(session&&(view==='compliance'||view==='chat'&&showCompliance)&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;} setSupportScope(null);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic('general'); }
+  function prepareSummary() { if(session&&(view==='compliance'||view==='chat'&&showCompliance)&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;} setSupportScope(null);setSupportTarget('support');setAttachSummary(true);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic('general'); }
   async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
     setHandoff({saving:true,outcome:null,error:''});
     try {
@@ -280,7 +308,8 @@ export default function Chat({session,onSignIn}) {
       setNotice(`A support handoff is recorded (receipt ${saved.receipt.receipt_id}). This demo has no staffed queue, so no person will reply.`);
     } catch(failure) {setHandoff({saving:false,outcome:null,error:failure.message});}
   }
-  const handoffText=summary===null?null:supportScope?summary:`${summary} Requested help: ${HELP_TOPICS.find(entry=>entry[0]===helpTopic)[1]}.`;  // fixed labels only
+  const topicLabel=HELP_TOPICS.find(entry=>entry[0]===helpTopic)[1];
+  const handoffText=summary===null?null:supportScope?summary:`${attachSummary?summary:'Customer asked for a person.'} Requested help: ${topicLabel}.`;  // fixed labels only
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of everyday banking.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
@@ -299,8 +328,15 @@ export default function Chat({session,onSignIn}) {
     return <button className="primary-button rm-handoff" data-testid="rm-handoff" data-step={step} onClick={()=>openRm(step,['request','meeting'].includes(intent)?asked:null)}>
       {['status','note'].includes(intent)?label:`${label} ${name}`}<Icon name="arrow"/></button>;
   }
+  // Compliance replies end with a hand-off to the review page, plus a toggle for the in-chat review panel under the latest one.
+  const lastCompliance=messages.findLastIndex(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
+  function complianceStep(message,index) {
+    if(index!==lastCompliance||!session||mode!=='personal')return null;
+    return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Open compliance review<Icon name="arrow"/></button>
+      <button className="bank-chat-logout rm-handoff" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>{showCompliance?'Hide review here':'Show review here'}</button></div>;
+  }
   const showCompliance=complianceOpen??messages.some(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
-  const footer=<footer className="bank-chat-footer"><span>{session?'Signed in':'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
+  const footer=<footer className="bank-chat-footer"><span>{session?<><span className="footer-dot" aria-hidden="true"/>{profileName?`Signed in as ${profileName}`:'Signed in'}</>:'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
   function openActions() {closeOverlays();setActionsOpen(true);}
   const review={label:'Review in Actions',onSelect:openActions},relationship={label:'Open relationship page',onSelect:()=>navigate('relationship')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
@@ -312,7 +348,7 @@ export default function Chat({session,onSignIn}) {
     {testid:'menu-open-relationship',icon:'people',label:'My relationship manager',mobile:true,onSelect:()=>{closeOverlays();navigate('relationship');}},
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
     {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
-    ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();setSavedChats(true);}}]:[]),
+    ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
     {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Activity',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
@@ -325,20 +361,29 @@ export default function Chat({session,onSignIn}) {
 
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
-    <TopBar session={session} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
+    <TopBar session={session} unread={unread} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
       inbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
-      <Sidebar session={session} name={profileName} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}} onSignOut={signOut}/>
+      <Sidebar session={session} name={profileName} menu={menu} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}} onSignOut={signOut}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
-        <div className="chat-settings"><label>Information <select aria-label="Information" disabled={booting} value={mode} onChange={e=>{if(reset())setMode(e.target.value);}}><option value="public">General help</option>{session&&<option value="personal">My records</option>}</select></label>
-          <label>Answer language <select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select></label></div>
-        <p className="language-note">Language applies to AI answers only.</p>
-        {session&&mode==='personal'&&<div className="workspace-toggles"><button className="bank-chat-logout" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>Your compliance review</button></div>}
-        {store==='database'&&conversation&&<div className="saved-chat-controls"><button className="bank-chat-logout" data-testid="reload-saved-chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Reload saved chat</button>{pending&&<><span role="status">{workflow?'Review the action workflow to continue.':'A reply is pending.'}</span>{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}<button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel pending reply</button></>}</div>}
+        <div className="chat-toolbar">
+          <div className="scope-switch" role="radiogroup" aria-label="Information">{[...(session?[['personal','My records']]:[]),['public','General help']].map(([value,label])=>
+            <button key={value} type="button" role="radio" aria-checked={mode===value} className={mode===value?'on':''} disabled={booting} onClick={()=>{if(mode!==value&&reset())setMode(value);}}>{label}</button>)}</div>
+          <label className="pill-select"><Icon name="info"/><select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select><Icon name="chevron"/></label>
+          <span className="toolbar-spacer"/>
+          {store==='database'&&conversation&&<button className="icon-tool" data-testid="reload-saved-chat" aria-label="Refresh this chat" title="Refresh this chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}><Icon name="refresh"/></button>}
+          {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
+        </div>
+        <p className="language-note chat-note"><Icon name="info"/>Language applies to AI answers only. {mode==='personal'?'Answers are informational and use your records.':'Answers are general information.'}</p>
+        {store==='database'&&conversation&&pending&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
+          <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}
+          <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
+          <button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel reply</button></span></div>}
         <section className="bank-chat-window" aria-label="Banking conversation">
-          {booting&&<p className="chat-notice" role="status">Opening chat…</p>}
+          {booting&&<p className="chat-notice loading" role="status">Opening chat…</p>}
           {bootError&&<p className="chat-notice" role="alert">{bootError}</p>}
-          {notice&&<p className="chat-notice" role="status">{notice}</p>}
+          {notice&&(noticeToast?<p key={noticeKey} className="chat-toast" role="status"><Icon name="check"/>{notice}</p>
+            :<p key={noticeKey} className="chat-notice-bar" role="status"><Icon name="info"/><span>{notice}</span><button className="icon-button" aria-label="Dismiss message" onClick={()=>setNoticeText('')}><Icon name="close"/></button></p>)}
           <div ref={messageList} className={`bank-chat-messages ${messages.length?'has-messages':''}`} aria-live="polite" aria-relevant="additions text">
             {!messages.length&&showIntro&&<p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p>}
             {showIntro&&<RelationshipIntro intro={rmIntro} error={rmIntroError} busy={loading||booting||!!pending} onSource={showSource} onSupport={prepareSummary}
@@ -350,7 +395,7 @@ export default function Chat({session,onSignIn}) {
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}</div>}
                 <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
-                {nextStep(m,i)}
+                {nextStep(m,i)}{complianceStep(m,i)}
                 {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
               </div>
             </div>)}
@@ -364,6 +409,7 @@ export default function Chat({session,onSignIn}) {
         </section>
         {footer}
       </main>
+      {view==='chat'&&savedChats&&<SavedChats closing={historyClosing} current={conversation?.session_id} onLoaded={setChatCount} onClose={closeHistory} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
       {view!=='chat'&&<main className="app-page">
         {view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}}/>}
         {view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:review,Appointments:relationship,Requests:relationship,Relationship:relationship,Compliance:compliance,Documents:compliance,'Data sharing':{label:'Open data sharing',onSelect:()=>navigate('sharing')}}}/>}
@@ -374,12 +420,23 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>}
     </div>
-    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle="Send a short, label-only summary to bank staff as a support handoff in this demo." onClose={()=>setSummary(null)}
-      footer={<><span>No staffed queue · no person will reply</span>{handoff.outcome?<button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button><button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to support</button></div>}</>}>
+    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={supportScope?'Send a short, label-only summary of this review to bank staff as a support handoff in this demo.':'Reach your relationship manager or the DemoBank support team in this demo.'} onClose={()=>setSummary(null)}
+      footer={<><span>IS4000 · Coursework demo · No real banking services</span>{handoff.outcome?<button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button>
+        {supportTarget==='rm'&&!supportScope?<button className="primary-button" data-testid="handoff-to-rm" onClick={()=>{setSummary(null);openRm('request',`I would like to talk to you about: ${topicLabel}.`);}}>Continue to request<Icon name="arrow"/></button>
+          :<button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to support<Icon name="arrow"/></button>}</div>}</>}>
+      {!supportScope&&!handoff.outcome&&<fieldset className="sp-options"><legend>Choose who to contact</legend>
+        {rmIntro?.current&&<label className={`sp-option ${supportTarget==='rm'?'selected':''}`}><input type="radio" name="support-target" value="rm" checked={supportTarget==='rm'} onChange={()=>setSupportTarget('rm')}/>
+          <span className="initials" aria-hidden="true">{initials(rmIntro.current.name)}</span><span className="sp-text"><strong>{displayName(rmIntro.current.name)}</strong><small>Your relationship manager · For portfolio and advisory queries. You review the request before it is sent.</small></span><span className="sp-radio" aria-hidden="true"><Icon name="check"/></span></label>}
+        <label className={`sp-option ${supportTarget==='support'?'selected':''}`}><input type="radio" name="support-target" value="support" checked={supportTarget==='support'} onChange={()=>setSupportTarget('support')}/>
+          <span className="sp-icon" aria-hidden="true"><Icon name="support"/></span><span className="sp-text"><strong>DemoBank support team <em>Demo handoff · no staffed queue</em></strong><small>For card problems, fraud or anything urgent</small></span><span className="sp-radio" aria-hidden="true"><Icon name="check"/></span></label>
+      </fieldset>}
       <label className="form-field">What do you need help with?<select data-testid="handoff-topic" value={helpTopic} disabled={handoff.saving||!!handoff.outcome||!!supportScope} onChange={e=>setHelpTopic(e.target.value)}>{HELP_TOPICS.map(([value,text])=><option key={value} value={value}>{text}</option>)}</select></label>
-      <div className="form-field"><span>Summary staff will see</span><p className="handoff-summary" data-testid="handoff-summary">{handoffText}</p></div>
+      {(supportTarget==='support'||supportScope)&&<>
+        {!supportScope&&<label className="sp-attach"><input type="checkbox" checked={attachSummary} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setAttachSummary(e.target.checked)}/><span><strong>Attach a redacted conversation summary</strong><small>Topic labels only. Passwords, OTPs and card numbers are never included.</small></span></label>}
+        <div className="form-field"><span>Summary staff will see</span><p className="handoff-summary" data-testid="handoff-summary">{handoffText}</p></div></>}
+      {supportTarget==='rm'&&!supportScope&&<p className="sp-note">Opens <strong>Send a request</strong> on your relationship manager page with this topic filled in. Nothing is sent until you review and confirm it.</p>}
       <p className="security-note"><Icon name="shield"/>Never share your PIN, password or OTP. For a real issue, use your bank’s official app or website.</p>
-      {handoff.saving&&<p role="status">Recording the support handoff…</p>}
+      {handoff.saving&&<p className="loading" role="status">Recording the support handoff…</p>}
       {handoff.error&&<p role="alert">{handoff.error}</p>}
       {handoff.outcome&&<div role="status" data-testid="handoff-receipt"><p>{handoff.outcome.receipt.result.created?'A support handoff is recorded.':'Your open support handoff was reused.'} This demo has no staffed queue.</p><p>Receipt: <code>{handoff.outcome.receipt.receipt_id}</code></p></div>}
     </Panel>}
@@ -393,7 +450,6 @@ export default function Chat({session,onSignIn}) {
       if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
     }}/>}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
-    {savedChats&&<SavedChats onClose={()=>setSavedChats(false)} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
     {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
       setActionsOpen(false);
       if(workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
