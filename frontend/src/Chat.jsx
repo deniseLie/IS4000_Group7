@@ -344,7 +344,7 @@ export default function Chat({session,onSignIn}) {
       <button className="bank-chat-logout rm-handoff" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>{showCompliance?'Hide review here':'Show review here'}</button></div>;
   }
   const showCompliance=complianceOpen??messages.some(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
-  const footer=<footer className="bank-chat-footer"><span>{session?<><span className="footer-dot" aria-hidden="true"/>{profileName?`Signed in as ${profileName}`:'Signed in'}</>:'Guest access — general information only'}</span><span>IS4000 · Coursework demo · No real banking services</span></footer>;
+  const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · No real banking services</span></footer>;  // who is signed in is shown by the sidebar profile
   function openActions() {closeOverlays();setActionsOpen(true);}
   const review={label:'Review in Actions',onSelect:openActions},relationship={label:'Open relationship page',onSelect:()=>navigate('relationship')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}

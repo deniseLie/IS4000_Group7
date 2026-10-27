@@ -1256,3 +1256,4 @@ small{font-size:max(12px,.83em)}
 .skeleton-text{display:block;width:120px;height:14px;border-radius:6px;background:linear-gradient(90deg,#F3F4F6 0,#E9EAEC 40%,#F3F4F6 80%) #F3F4F6;background-size:800px 100%;animation:shimmer 1.3s linear infinite}
 .skeleton-text.short{width:84px;height:10px;margin-top:6px}
 .skeleton-text.heading{width:min(340px,80%);height:.9em;margin:.1em 0}
+.bank-chat-footer{justify-content:center}  /* only the coursework line remains; the sidebar shows who is signed in */
