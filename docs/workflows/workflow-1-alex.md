@@ -1,7 +1,7 @@
 # Workflow 1 – Alex: something's wrong with my money (three linked problems, the urgent one first)
 
 **Persona:** Alex (synthetic customer 1001, see `docs/synthetic-data-spec.md`)
-**Outcome:** Alex knows the $2,400 charge and the two small charges before it may be a card-testing pattern, his card is protected, a dispute draft and one case summary are with staff, and he knows not to resend the rent transfer and to reset his password in the official app first.
+**Outcome:** Alex knows the card was used in Singapore and then in Los Angeles about 2 hours later, which cannot both be Alex, so the two US charges (including the SGD 86.40 one Alex did not mention) are flagged; the card is protected, a dispute draft for both and one case summary are with staff, and Alex knows not to resend the rent transfer, that the app lock is protective, to reset the password only in the official app and never to share the one-time code.
 
 ## How to read this
 
@@ -26,11 +26,11 @@ flowchart TD
     s5[BOT asks Alex to log in first<br/>guests never see personal data]:::bot
     s6[ALEX logs in<br/>wrong password first, then the correct one]:::user
     s7[WEBSITE shows a login error, then opens the Chat page signed in as Alex]:::bot
-    s8[ALEX sends ONE message with THREE linked problems<br/>'there's a $2,400 charge i don't recognise and i think there were smaller weird ones before it. my rent transfer still says pending and rent's due friday, will it make it? also locked out of the app, is that related??']:::user
-    s9[BOT splits the message into THREE answer sections:<br/>urgent charge, then the lockout as a security step, then the transfer]:::bot
+    s8[ALEX sends ONE message with THREE linked problems<br/>'eh why is there a $2,400 charge?? i was in singapore the whole night. my rent transfer still says pending, will it reach by friday? also i got a weird OTP last night and now my app is locked']:::user
+    s9[BOT splits the message into THREE answer sections:<br/>urgent charge, then the OTP and locked app as a security step, then the transfer]:::bot
 
-    sec1[SECTION 1 – URGENT: $2,400 charge plus two small earlier charges from the same merchant<br/>possible card-testing pattern, not a fraud decision]:::urgent
-    sec2[SECTION 2: locked out of the app, linked to the reported charge<br/>reset the password in the official app first]:::bot
+    sec1[SECTION 1 – URGENT: card used in Singapore 7:15 pm, then in the US 9:42 pm and 9:58 pm<br/>impossible travel flagged by a rule, not a fraud decision; both US charges named]:::urgent
+    sec2[SECTION 2: weird OTP, then app locked<br/>likely someone else tried to sign in; the lock protects you; reset only in the official app; never share the OTP]:::bot
     sec3[SECTION 3: rent transfer pending since 17 Oct, rent due Friday<br/>don't resend; fall-below check]:::bot
 
     d1{Does Alex want to block the card temporarily?}:::decision
@@ -88,28 +88,30 @@ flowchart TD
 
 | # | Actor | Step | Stories |
 |---|---|---|---|
-| 8 | Alex | Sends **one** message containing **three** problems that may be linked:<br/>1. a $2,400 charge he does not recognise, and smaller odd charges before it<br/>2. his rent transfer still says "pending" and rent is due Friday<br/>3. he is locked out of the app and asks whether that is related<br/>He types: *"there's a $2,400 charge i don't recognise and i think there were smaller weird ones before it. my rent transfer still says pending and rent's due friday, will it make it? also locked out of the app, is that related??"* | F5, F14 |
-| 9 | Bot | Splits the message into **three** answer sections in priority order:<br/>Section 1 (P0, urgent): the charge and the earlier small charges<br/>Section 2 (P1, security): the app lockout, linked to the reported charge by a rule<br/>Section 3 (P3): the pending rent transfer and the Friday due date | F14, F15 |
+| 8 | Alex | Sends **one** message containing **three** problems that may be linked:<br/>1. a $2,400 charge; Alex was in Singapore the whole night<br/>2. the rent transfer still says "pending" and rent is due Friday<br/>3. an OTP Alex never asked for arrived last night, and now the app is locked<br/>Alex types: *"eh why is there a $2,400 charge?? i was in singapore the whole night. my rent transfer still says pending, will it reach by friday? also i got a weird OTP last night and now my app is locked"* | F5, F14 |
+| 9 | Bot | Splits the message into **three** answer sections in priority order:<br/>Section 1 (P0, urgent): the charge, with the travel rule's flags<br/>Section 2 (P1, security): the OTP and locked app, linked to the reported charge by a rule<br/>Section 3 (P3): the pending rent transfer and the Friday due date | F14, F15 |
 
-#### Section 1 – URGENT: a possible card-testing pattern on card ending 4821 (red)
+#### Section 1 – URGENT: card 4821 used in two countries too close in time (red)
 
-A rule over Alex's records finds the two small charges from `ONLINE MERCHANT 8831` (SGD −1.00 on 12 Oct, SGD −4.99 on 14 Oct) in the 60 days before the SGD −2,400.00 charge on 17 Oct. The answer calls this a **possible** card-testing pattern found by a rule check, never confirmed fraud, and cites `fraud-pattern`. Urgent steps and the official fraud contact come first. Two offers wait in the section, both drawn from records, never from model text. — *EB8 · F10*
+Card 4821 on Fri 17 Oct (SGT): **7:15 pm** `Hawker Delight, Tanjong Pagar` (SG) SGD −12.50, Alex's own; **9:42 pm** `SUNSET GRILL LA` (US) SGD −86.40; **9:58 pm** `TECHVAULT ELECTRONICS` (US) SGD −2,400.00. A deterministic rule (`fraud_records.travel_flags`) flags a card charge made in another country less than 4 hours after a charge on the same card: both US charges are flagged against the Singapore one (2 h 27 min and 2 h 43 min later). The rule decides the pattern; the AI only explains it from `travel-check` evidence: the card was used in Singapore and then in Los Angeles about 2 hours later, which cannot both be Alex in person, and, since Alex says they were in Singapore all night, the US charges are the ones that do not fit. The answer also names the SGD 86.40 charge Alex did not mention. It never calls either charge confirmed fraud.
+
+The travel flag on the reported charge is enough to treat it as a fraud report even though Alex never says "I don't recognise it" (the guardrail also reads "i was in singapore the whole night" after a charge as disowning it). Urgent steps and the official fraud contact come first. Two offers wait in the section, both drawn from records, never from model text. — *EB8 · F10*
 
 **Decision 1: Does Alex want to block the card temporarily?**
 
 - **No** → Card stays active; the bot repeats the urgent steps and the official fraud contact. — *EB8*
 - **Yes** → **Confirm dialog** (red): the card is blocked only after he confirms; the chat says *"Your card ending 4821 is temporarily blocked"* (backed by a receipt). — *EB8 · F11, F12, F15*
 
-**Decision 2: Does Alex send the dispute draft?** The dialog lists all three charges with dates, merchant and amounts and asks the only thing the records cannot know: **"Do you still have the card?"** (yes / no, lost or stolen / not sure).
+**Decision 2: Does Alex send the dispute draft?** The dialog lists both flagged US charges (SGD −86.40 and SGD −2,400.00) with dates, merchants and amounts, never the Singapore charge, and asks the only thing the records cannot know: **"Do you still have the card?"** (yes / no, lost or stolen / not sure).
 
 - **Send** → The dispute draft and his answer are recorded for bank staff review (receipt, audit, in-app notice). Staff decide any refund or cancellation; nothing is refunded. — *EB8 · F11, F12*
 - **Decline** → Nothing is sent; the official fraud line still applies.
 
-When the block or the dispute is confirmed, **one case summary** goes to staff with an urgent handoff (`card_dispute` when the dispute was sent, otherwise `card_verification`). It is built by code from records and recorded decisions, never from model text: masked card, reported charge, the pattern charges (labelled a pattern flag), both decisions, the card answer, the pending transfer and its stated due date, the linked lockout, and Alex's own first words. — *F12 · Common criteria*
+When the block or the dispute is confirmed, **one case summary** goes to staff with an urgent handoff (`card_dispute` when the dispute was sent, otherwise `card_verification`). It is built by code from records and recorded decisions, never from model text: masked card, reported charge, the other charges the travel rule flagged (labelled a flag, not a fraud decision), both decisions, the card answer, the pending transfer and its stated due date, the linked sign-in problem, and Alex's own first words. — *F12 · Common criteria*
 
-#### Section 2 – Locked out of the app (security step)
+#### Section 2 – A weird OTP, then the app is locked (security step)
 
-Because the same message reports a possibly compromised card, the lockout is answered as a security step: the records cannot show whether the two are linked; reset the password **in the official app first**, never through a link, then check devices and contact details, and keep the card blocked until the bank checks it. Cites `account-security-after-fraud`; never asks for his password or OTP. — *EB6 · F5, F8*
+At about 9:40 pm Alex got an OTP by SMS they never requested; next morning the app says "account locked for your security". Because the same message reports a card charge, a rule links this task to it (`linked: card_fraud`) and it gets the `app-login-recovery` v2 *A one-time code you did not ask for* section by id. The answer says someone else may have tried to sign in with Alex's details, that this is likely linked to the US charges (from what Alex describes, not from records), and that the lock is protecting the account, not a penalty. Next steps: reset the password **only inside the official app** with Forgot password, never through a link in an SMS, email or chat; never share the OTP with anyone, **including this chat**. The assistant has no sign-in, device, location or OTP records, so it must never say anything like "our systems detected a login from LA" (retail v5 and fraud v5 forbid it; the browser check looks for it). A pasted code such as "my OTP is 482913" still gets the fixed privacy reply without any model call. — *EB6 · F5, F8*
 
 #### Section 3 – Rent transfer pending, due Friday
 
@@ -122,13 +124,13 @@ All three branches rejoin: **all three problems answered and both decisions reco
 | # | Actor | Step | Stories |
 |---|---|---|---|
 | 10 | Alex | Asks about his credit card: *"whats my credit card due date and min payment"* | |
-| 11 | Bot | Asks which card if he has more than one, then shows due date, minimum payment, outstanding balance (2,470.19 with the seeded charges) and credit limit from his record. | EB4 · F10 |
+| 11 | Bot | Asks which card if he has more than one, then shows due date, minimum payment, outstanding balance (2,563.10 with the seeded charges) and credit limit from his record. | EB4 · F10 |
 | 12 | Alex | Asks about a loan: *"can i get a car loan"* | |
 | 13 | Bot | Explains loan products and eligibility; says the **bank** makes the final decision; links to the application channel; adds the disclaimer. | EB3 · F14 |
 | 14 | Alex | Clicks "Talk to a person". | |
 | 15 | Bot | Hands over to a staff member with a short case summary (no sensitive details). | Common criteria · F12 |
 | 16 | Alex | Logs out → personal data needs login again. | EB1 |
-| End | | **Success:** the pattern is flagged (not judged), the card is protected, the dispute draft and one case summary are with staff, and Alex has clear next steps for the transfer and the app login. | |
+| End | | **Success:** the impossible travel is flagged by a rule (not judged), both US charges are in the dispute draft, the card is protected, one case summary is with staff, and Alex has clear next steps for the transfer and the locked app. | |
 
 ## Stories covered
 
@@ -166,15 +168,33 @@ Cancelling shows an "This cannot be undone" warning before the proposal and agai
 
 ## Limits
 
-- The pattern rule is bounded: same merchant and card, at most SGD 10.00 each, in the 60 days before the reported charge. It flags a pattern; it is not a fraud classifier.
+- The travel rule is bounded: another country less than 4 hours after a charge on the same card, using the recorded merchant country and time. It flags a pattern; it is not a fraud classifier, it cannot tell where the cardholder was, and neighbouring countries (Singapore and Malaysia) can trip it.
+- The guardrail's alibi wording is a bounded English rule ("I was in … the whole night", "I wasn't even there" after a charge).
 - The due-day reader is a bounded English rule; business days ignore public holidays; the fall-below comparison uses balances on one day, not the monthly average.
-- The link between the lockout and the charge is a rule (both raised in one message), not a finding.
+- The link between the OTP/locked app and the charges comes from Alex's description and the rule that both were raised in one message, not from sign-in records; there are none. The ban on claiming detected sign-ins is a prompt rule plus a browser check, not a validator.
+- Only labelled codes ("OTP 482913", "one-time code: …") are caught by the privacy filter; an unlabelled six-digit number is not.
 - Staff decide refunds outside this demo; the customer can cancel the card themselves, and staff can still cancel it through the staff tool. There is no staffed queue and no real card network.
 - A customer unblock can reverse a fraud block, including from a stolen session (accepted trade-off, above).
 - Seed dates are fixed around October 2026; the 90-day record window and the 120-day dispute window must still include them.
 - Free-router model answers vary; a section that fails validation is withheld and escalated, and its offers still come from records.
 
-## Live checks (27 October 2026)
+## Live checks (27 October 2026, impossible travel)
+
+Agent-level only, as below: the real planner, fraud and retail agents, validators and OpenRouter (`openrouter/free`), in-memory knowledge, with Alex's post-`0070` records (`tests/test_fraud.alex_records`, `tests/test_workflow1.alex_retail`) passed in place of the Data API read. Not a UI, database or end-to-end run; each line is one sample. The real-provider browser run (`test_workflow1_browser.py`) still needs the Mac setup.
+
+| Run | Planner | Fraud (P0) | OTP / locked app (P1, linked) | Transfer (P3) |
+|---|---|---|---|---|
+| 1 | 3 issues, OTP routed to retail and linked | Passed: Singapore 7:15 pm then US 9:42 pm / 9:58 pm, too soon to travel; named the SGD 86.40 charge; "a rule flag, not proof of fraud"; cites `travel-check`; block offer and a dispute of `txn_100111` + `txn_100116` | Passed validation, but listed generic lockout steps and did not say "likely linked" (retail v5 wording tightened before release) | Passed: pending 7 business days, due 30 Oct, don't resend |
+| 2 | 3 issues, linked | Withheld after an agent error (no offers in that sample; cause not captured) | Passed: someone else may have tried to sign in, likely linked to the reported charges, lock is protective, reset only in the official app, never share the OTP, "this chat cannot see sign-in attempts" | Passed |
+| 3 | 3 issues, linked | Passed: both US charges, both offers | Passed validation; said the lock is protective but omitted "likely linked" and "reset only in the app" | Passed |
+| 4 | 3 issues, linked | Withheld: `ValidationError` after a successful model call, no offers | Passed | Passed |
+
+Direct fraud-agent runs (same records, four samples) all kept both offers, including two whose drafts failed validation. The runs that withheld the fraud section without offers led to a fix: the customer's own message now narrows the target whenever the planner's question names no single charge, including a question that matches charges on several cards (`fraud_records.scoped_proposals`; the test records include a second card). Whether that was the cause of runs 2 and 4 is not confirmed: the free tier's daily limit (50 requests) was reached before another sample. No answer claimed that DemoBank detected a sign-in or location.
+
+## Live checks (27 October 2026, earlier card-testing scenario)
+
+These runs used the earlier Part B (two small `ONLINE MERCHANT 8831` charges before the $2,400 charge, and a plain lockout), before migration `0070`.
+
 
 Agent-level only: the real planner, fraud and retail agents, validators and OpenRouter, with Alex's post-`0064` records passed in place of the Data API read (native PostgREST is unavailable on Windows). Not a UI, database or end-to-end run; each line is one sample.
 

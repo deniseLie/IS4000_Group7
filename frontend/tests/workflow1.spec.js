@@ -8,7 +8,9 @@ import fs from 'node:fs';
 // Assertions are structural and record-based, never exact model wording. Provider failures fail the run.
 const native=!!process.env.NATIVE_BROWSER_FIXTURE;
 const hosted=!native&&!!process.env.TEST_PERSONA_FIXTURE_FILE&&process.env.TEST_HOSTED_AI==='1';
-const MESSAGE="there's a $2,400 charge i don't recognise and i think there were smaller weird ones before it. my rent transfer still says pending and rent's due friday, will it make it? also locked out of the app, is that related??";
+const MESSAGE='eh why is there a $2,400 charge?? i was in singapore the whole night. my rent transfer still says pending, will it reach by friday? also i got a weird OTP last night and now my app is locked';
+// The assistant has no sign-in or one-time-code records, so it must never claim to have detected a sign-in.
+const DETECTED=/\b(?:we|our systems?|DemoBank|the bank)\b[^.]{0,30}\b(?:detected|saw|noticed|recorded|logged)\b[^.]{0,40}\b(?:log\s*in|login|sign[- ]?in|device|location)/i;
 const ASKS_SECRET=/\b(?:enter|share|send|provide|type|tell me|give me)\s+(?:me\s+)?(?:your|the)\s+(?:password|pin|otp|one-time code|cvv)/i;
 const MODEL_WAIT=170000;
 
@@ -61,8 +63,8 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   expect(personalReads).toEqual([]);
   await signIn(page);
 
-  // Part B: one message, three linked problems. Urgent first, the lockout next as a security step, then the transfer;
-  // all sections show before the two decisions (block, then dispute draft with the card question).
+  // Part B: one message, three linked problems. Urgent first (the travel rule flags the US charges), the unrequested OTP and
+  // locked app next as a security step, then the transfer; all sections show before the two decisions (block, then dispute draft).
   const reply=await ask(page,MESSAGE);
   const sections=reply.locator('section.answer-section');
   await expect(sections).toHaveCount(3);
@@ -71,11 +73,12 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   await expect(urgent.locator('h3')).toContainText('Urgent');
   await expect(urgent.getByTestId('block-card')).toBeVisible();
   await expect(urgent.getByTestId('review-dispute')).toBeVisible();
-  await expect(urgent.locator('[data-source-id="fraud-pattern"]')).toHaveCount(1);
+  await expect(urgent.locator('[data-source-id="travel-check"]')).toHaveCount(1);
   await expect(urgent.locator('.answer-text')).not.toContainText(/\btxn_|\bcard_1/);
   await expect(urgent).not.toContainText(/\b(?:I|we) (?:have|'ve) (?:reversed|refunded|investigated|disputed|blocked)\b/i);
-  await expect(app.locator('[data-source-id*="account-security-after-fraud"]')).toHaveCount(1);
+  await expect(app.locator('[data-source-id*="app-login-recovery"]')).toHaveCount(1);
   await expect(app.locator('.answer-text')).not.toContainText(/https?:\/\//);
+  for(const section of [urgent,app])await expect(section.locator('.answer-text')).not.toContainText(DETECTED);
   await expect(transfer.locator('[data-source-id="retail-checks"]')).toHaveCount(1);
   await expect(transfer).toContainText(/1,?800(?:\.00)?/);
   await expect(transfer).not.toContainText(/\bwill (?:arrive|reach|go through|make it)\b/i);
@@ -98,8 +101,10 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   await expect(waiting.getByTestId('block-card')).toHaveCount(0,{timeout:60000});
   await waiting.getByTestId('review-dispute').click();
   const dialog=page.getByTestId('dispute-dialog');
-  await expect(dialog.getByTestId('dispute-charges').locator('li')).toHaveCount(3,{timeout:60000});
-  for(const amount of [/-1\.00/,/-4\.99/,/-2,400\.00/])await expect(dialog.getByTestId('dispute-charges')).toContainText(amount);
+  // Both US charges from the travel rule, including the SGD 86.40 one Alex did not mention; never the Singapore charge.
+  await expect(dialog.getByTestId('dispute-charges').locator('li')).toHaveCount(2,{timeout:60000});
+  for(const text of ['SUNSET GRILL LA',/-86\.40/,'TECHVAULT ELECTRONICS',/-2,400\.00/])await expect(dialog.getByTestId('dispute-charges')).toContainText(text);
+  await expect(dialog.getByTestId('dispute-charges')).not.toContainText('Hawker Delight');
   await expect(page.getByTestId('confirm-dispute')).toBeDisabled();
   if(decision==='confirm') {
     await page.getByTestId('dispute-answer-yes').check();
@@ -115,7 +120,7 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   const settled=page.getByTestId('chat-message-assistant').last();
   const recorded=settled.getByTestId('answer-decision');
   await expect(recorded).toContainText(decision==='confirm'?'Your card ending 4821 is temporarily blocked.':'official fraud line');
-  await expect(recorded).toContainText(decision==='confirm'?'Your dispute draft for 3 charges on the card ending 4821 is recorded':'You chose not to send the dispute draft');
+  await expect(recorded).toContainText(decision==='confirm'?'Your dispute draft for 2 charges on the card ending 4821 is recorded':'You chose not to send the dispute draft');
   await expect(settled.locator('section.answer-section')).toHaveCount(3);
   await expect(settled.getByTestId('block-card')).toHaveCount(0);
   await expect(settled.getByTestId('review-dispute')).toHaveCount(0);
@@ -125,13 +130,21 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   await expect(card.locator('section.answer-section')).toHaveCount(1);
   await expect(card).toContainText(/2026-11-05|5 Nov(?:ember)? 2026|Nov(?:ember)? 5,? 2026/);
   await expect(card).toContainText(/\b50(?:\.00)?\b/);
-  await expect(card).toContainText(/2,?470\.19/);
+  await expect(card).toContainText(/2,?563\.10/);
   await expect(card).toContainText(/8,?000(?:\.00)?/);
   const loan=await ask(page,'can i get a car loan');
   await expect(loan.locator('[data-source-id*="car-loans"]')).toHaveCount(1);
   await expect(loan).toContainText(/final decision|bank (?:makes|will make) the (?:final )?decision|bank decides/i);
   await expect(loan.locator('.answer-disclaimer')).toBeVisible();
   await expect(loan).not.toContainText(/\byou (?:are|'re) (?:approved|eligible|pre-approved)\b/i);
+
+  // A pasted one-time code gets the fixed privacy reply before any request; no model call is made.
+  let chats=0;
+  page.on('request',request=>{if(request.url().endsWith('/chat')&&request.method()==='POST')chats++;});
+  await page.locator('#chat-composer').fill('the OTP from last night was 482913');
+  await page.getByTestId('send-message').click();
+  await expect(page.getByRole('status')).toContainText('Private details were removed');
+  expect(chats).toBe(0);
 
   // Talk to a person: cancel records nothing; approve records a handoff with a receipt.
   const proposals=[];
@@ -142,7 +155,7 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   await page.getByTestId('cancel-handoff').click();
   expect(proposals).toEqual([]);
   await page.getByRole('button',{name:'Talk to a person'}).click();
-  for(const word of ['4821','2400','landlord','recognise','locked'])await expect(summary).not.toContainText(word);
+  for(const word of ['4821','2400','landlord','singapore','OTP','482913','locked'])await expect(summary).not.toContainText(word);
   await page.getByTestId('approve-handoff').click();
   await expect(page.getByTestId('handoff-receipt')).toContainText('no staffed queue',{timeout:30000});
   expect(proposals).toHaveLength(1);
