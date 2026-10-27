@@ -1215,3 +1215,6 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
   .bank-chat-layout{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   .locked-page{margin:24px 16px;padding:24px 20px}
 }
+
+/* 4. Plain wording: "Demo · fictional data" said once, under the product name */
+.brand-caption .demo-badge{justify-self:start;display:inline-flex;align-items:center;padding:1px 8px;border:1px solid var(--line);border-radius:999px;background:var(--chalk);font-size:11px;font-weight:600;line-height:18px;letter-spacing:.02em;color:var(--ink-2)}

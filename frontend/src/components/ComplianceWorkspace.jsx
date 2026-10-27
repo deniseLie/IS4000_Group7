@@ -48,7 +48,7 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
  const help=selection=>onSupport&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onSupport(selection)}><Icon name="support"/>{selection.request_id?'Get help with this request':selection.item_id?'Get help with this document':'Get help with this review'}</button>;
  return <section className={`compliance-workspace cw ${onPage?'cw-page':''}`} data-testid="compliance-workspace" aria-label="Your compliance review">
   <div className="cw-top"><div className="cw-tags">{review?<><span className="cw-notice-tag"><span className="dot"/>Formal compliance notice</span><code>Case ref: #{review.case_id.replaceAll('-','').slice(-8).toUpperCase()}</code></>:onPage?null:<h3>Your compliance review</h3>}</div>
-   <button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Reload review</button></div>
+   <button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Refresh</button></div>
   {onPage&&<header className="cw-title"><h1>Your compliance review</h1><p>Upload what the bank asked for. Each file gets a preliminary check before it is submitted.</p></header>}
   {!onPage&&review&&<h3 className="cw-chat-title">Your compliance review</h3>}
   {busy&&<p className="cw-busy loading" role="status">Checking recorded progress…</p>}

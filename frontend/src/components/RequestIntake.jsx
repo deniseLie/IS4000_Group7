@@ -35,8 +35,8 @@ export default function RequestIntake({recipient,recipientBusy,onReviewActions})
       <label className="request-details-field">Request details <textarea data-testid="request-details" required maxLength={1000} value={what} disabled={disabled} onChange={event=>setWhat(event.target.value)}/></label>
       <label>Urgency <select data-testid="request-urgency" value={urgency} disabled={disabled} onChange={event=>setUrgency(event.target.value)}>{['low','normal','high'].map(value=><option key={value}>{value}</option>)}</select></label>
       <label>Requested deadline (optional) <input data-testid="request-deadline" type="date" value={deadline} disabled={disabled} onChange={event=>setDeadline(event.target.value)}/></label>
-      <label>Country reference code (optional, two uppercase letters) <input data-testid="request-country" pattern="[A-Z]{2}" maxLength={2} value={country} disabled={disabled} onChange={event=>setCountry(event.target.value)}/></label>
-      <label>Currency reference code (optional, three uppercase letters) <input data-testid="request-currency" pattern="[A-Z]{3}" maxLength={3} value={currency} disabled={disabled} onChange={event=>setCurrency(event.target.value)}/></label>
+      <label>Country (optional) <input data-testid="request-country" placeholder="SG" title="Two-letter country code, for example SG" pattern="[A-Z]{2}" maxLength={2} value={country} disabled={disabled} onChange={event=>setCountry(event.target.value)}/></label>
+      <label>Currency (optional) <input data-testid="request-currency" placeholder="SGD" title="Three-letter currency code, for example SGD" pattern="[A-Z]{3}" maxLength={3} value={currency} disabled={disabled} onChange={event=>setCurrency(event.target.value)}/></label>
       <p>A requested deadline or urgency is not a service commitment. Review the saved, redacted details in Actions before confirming submission.</p>
       <button className="primary-button" data-testid="prepare-request" disabled={disabled||!what.trim()}>Prepare request for review</button>
     </form>

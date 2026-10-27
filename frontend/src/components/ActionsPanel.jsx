@@ -171,16 +171,16 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
   const needle=query.trim().toLowerCase();
   const visible=[...scoped].sort((a,b)=>(a.command.state==='proposed'?0:1)-(b.command.state==='proposed'?0:1)||Date.parse(b.command.proposed_at)-Date.parse(a.command.proposed_at))
     .filter(item=>(group==='All'||groupOf(item.command)===group)&&(!needle||[commandTitle(item.command),item.receipt?.receipt_id||'',item.command.type,shortDate(item.command.proposed_at)].join(' ').toLowerCase().includes(needle)));
-  return <Panel label="Actions" size="drawer" eyebrow="Actions" title={<><span className="act-dot" aria-hidden="true"/>Pending approvals &amp; receipts</>} closeLabel="Close actions" onClose={onClose}
+  return <Panel label="Actions" size="drawer" eyebrow="Approvals and receipts" title={<><span className="act-dot" aria-hidden="true"/>Actions</>} closeLabel="Close actions" onClose={onClose}
     subtitle="Review synthetic demo actions before you confirm them, and see receipts for what was recorded. These affect demo records only."
     footer={<><button className="bank-chat-logout" disabled={!all.length} onClick={()=>exportCsv(all)}><Icon name="download"/>Export receipts (.csv)</button>
-      <button data-testid="reload-actions" className="primary-button" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/>Reload recorded status</button></>}>
-    <div className="act-tabs" role="tablist" aria-label="Filter actions">{[['all','All',all.length],['pending','Pending approvals',pending.length],['receipts','Receipts & history',history.length]].map(([key,label,count])=>
+      <button data-testid="reload-actions" className="primary-button" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/>Refresh</button></>}>
+    <div className="act-tabs" role="tablist" aria-label="Filter actions">{[['all','All',all.length],['pending','Needs approval',pending.length],['receipts','History',history.length]].map(([key,label,count])=>
       <button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>{setTab(key);setGroup('All');}}>{label}<span className="count">{count}</span></button>)}</div>
     {all.length>0&&<div className="act-filters"><label className="act-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Filter by receipt ID, action or date…" value={query} onChange={event=>setQuery(event.target.value)}/></label>
       <div className="act-chips">{groups.map(name=><button key={name} className={group===name?'active':''} aria-pressed={group===name} onClick={()=>setGroup(name)}>{name} ({name==='All'?scoped.length:scoped.filter(item=>groupOf(item.command)===name).length})</button>)}</div></div>}
     {busy&&<p className="loading" role="status">Checking the recorded result… Closing this panel does not cancel a submitted decision. Reopen Actions to check its status.</p>}
-    {error&&<p role="alert" data-testid="actions-error">{error} Reload the recorded status before making another decision.</p>}
+    {error&&<p role="alert" data-testid="actions-error">{error} Refresh, then try again.</p>}
     {items?.length===0&&<p className="act-empty" data-testid="actions-empty">No actions have been proposed for your demo profile.</p>}
     {items?.length>0&&visible.length===0&&<p className="act-empty">No actions match this view.</p>}
     <ul className="command-list act-list" data-testid="commands-list">{visible.map(item=>{
@@ -191,7 +191,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         <p className="act-kind">{commandTitle(command)}</p>
         {plainSummary(command)&&<p className="act-summary" data-testid={command.type==='compliance.update_checklist_item'?'command-checklist':command.type.startsWith('consent.')?'command-consent-scope':undefined}>{plainSummary(command)}</p>}
         <details className="act-more"><summary>Full details</summary>
-        <p className="act-meta">Recorded status: <strong data-testid="command-state">{command.state}</strong></p>
+        <p className="act-meta">Status: <strong data-testid="command-state">{command.state}</strong></p>
         <div className="act-detail">
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
         {command.type==='compliance.update_checklist_item'&&<div><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
@@ -208,7 +208,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         </div>
         </details>
         {item.workflow&&<div data-testid="command-workflow" className="act-note">
-          <p>Saved reply: {item.workflow.state.replaceAll('_',' ')}. {item.workflow.state==='completed'?'Close Actions to read the saved reply.':item.workflow.state==='failed'?'The action decision is recorded, but the reply could not resume. Retry the saved reply.':!item.workflow.ready?'The review is still being saved. Reload its recorded status before deciding.':''}</p>
+          <p>Saved reply: {item.workflow.state.replaceAll('_',' ')}. {item.workflow.state==='completed'?'Close Actions to read the saved reply.':item.workflow.state==='failed'?'The action decision is recorded, but the reply could not resume. Retry the saved reply.':!item.workflow.ready?'The review is still being saved. Refresh before deciding.':''}</p>
           {item.workflow.can_resume&&<button className="bank-chat-logout" data-testid="resume-workflow" disabled={busy||!!error} onClick={()=>retry(item.workflow.turn_id)}>Resume saved reply</button>}
         </div>}
         {command.state==='proposed'&&<>

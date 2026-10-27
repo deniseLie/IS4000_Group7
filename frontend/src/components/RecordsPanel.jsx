@@ -38,14 +38,14 @@ export default function RecordsPanel({onClose}) {
     event.preventDefault();
     setQuery({from_date:from||null,to_date:to||null,filters:status?{status}:null});setRevision(value=>value+1);
   }
-  const footer=<><span>{records?<>Recorded as of <time dateTime={records.profile.as_of}>{formatDateTime(records.profile.as_of)}</time>. Each section is a separate audited read.</>:'Synthetic records · read only'}</span><button className="bank-chat-logout" onClick={onClose}>Close</button></>;
-  return <Panel label="Customer records" eyebrow="Synthetic records · Read only" title="Your records" closeLabel="Close records" onClose={onClose} size="wide" footer={footer}>
+  const footer=<><span>{records?<>Recorded as of <time dateTime={records.profile.as_of}>{formatDateTime(records.profile.as_of)}</time>. Read only.</>:'Read only'}</span><button className="bank-chat-logout" onClick={onClose}>Close</button></>;
+  return <Panel label="Customer records" eyebrow="Read only" title="Your records" closeLabel="Close records" onClose={onClose} size="wide" footer={footer}>
     <p className="panel-notice">Read the synthetic records linked to your sign-in. This view does not change your data. Checklist preparation marks can be saved separately below.</p>
     <form className="records-filters records-filter-bar" onSubmit={refresh}>
       <label>Transactions from<input data-testid="records-from" type="date" value={from} onChange={event=>setFrom(event.target.value)}/></label>
       <label>Transactions to<input data-testid="records-to" type="date" value={to} onChange={event=>setTo(event.target.value)}/></label>
       <label>Status<select data-testid="records-status" value={status} onChange={event=>setStatus(event.target.value)}><option value="">All</option>{['posted','pending','failed'].map(value=><option key={value}>{value}</option>)}</select></label>
-      <button className="bank-chat-logout" data-testid="reload-records" disabled={loading}>Reload records</button>
+      <button className="bank-chat-logout" data-testid="reload-records" disabled={loading}>Refresh</button>
     </form>
     {loading&&<p className="loading" role="status" data-testid="records-loading">Loading recorded data…</p>}
     {error&&<p role="alert" data-testid="records-error">{error}</p>}

@@ -31,14 +31,14 @@ export default function ConsentControls({registry,recipient,busy,onRefresh,onRev
     <h3>Manage data-sharing consent</h3>
     <p>Record a request, then review the exact recipient, purpose, categories and expiry in Actions. Consent changes do not themselves share data.</p>
     {saving&&<p className="loading" role="status">Saving the recorded consent action… Closing this panel does not cancel it. Reopen Actions to verify its result.</p>}
-    {error&&<p role="alert" data-testid="consent-action-error">{error} Refresh recorded status before submitting another decision.</p>}
+    {error&&<p role="alert" data-testid="consent-action-error">{error} Refresh, then try again.</p>}
     {outcome&&<div className="command-review" data-testid="consent-action-outcome">
-      <p>{pending?'The proposal is saved and still needs your confirmation in Actions.':outcome.receipt?.outcome==='succeeded'?'The consent request is recorded. Consent has not been granted.':'This request could not be recorded because its recipient changed. Refresh the recorded status before trying again.'}</p>
+      <p>{pending?'The proposal is saved and still needs your confirmation in Actions.':outcome.receipt?.outcome==='succeeded'?'The consent request is recorded. Consent has not been granted.':'This request could not be saved because your relationship manager changed. Refresh, then try again.'}</p>
       {outcome.receipt&&<p>Receipt: <code>{outcome.receipt.receipt_id}</code></p>}
       {pending&&<button className="primary-button" data-testid="review-consent-actions" disabled={busy||saving} onClick={onReviewActions}>Review in Actions</button>}
     </div>}
     {recipient&&<form onSubmit={event=>{event.preventDefault();submit({type:'consent.request',target:{purpose:'rm_brief',recipient:recipient.rm_id,categories,duration_days:days}});}}>
-      <p>Recipient: <strong>{displayName(recipient.name)}</strong>. Purpose: relationship-manager briefing (<code>rm_brief</code>).</p>
+      <p>Recipient: <strong>{displayName(recipient.name)}</strong>. Purpose: relationship-manager briefing.</p>
       <fieldset disabled={disabled}><legend>Data categories for this request</legend>{Object.entries(CONSENT_CATEGORIES).map(([code,label])=><label className="review-summary" key={code}><input type="checkbox" data-testid={`consent-category-${code}`} checked={categories.includes(code)} onChange={event=>setCategories(previous=>event.target.checked?[...previous,code]:previous.filter(item=>item!==code))}/>{label}</label>)}</fieldset>
       <label>Requested duration <select data-testid="consent-duration" disabled={disabled} value={days} onChange={event=>setDays(Number(event.target.value))}>{[1,7,30,90,365].map(value=><option key={value} value={value}>{value} {value===1?'day':'days'}</option>)}</select></label>
       <p>The grant expiry is fixed when the request is recorded. Confirming later does not extend it.</p>
@@ -65,6 +65,6 @@ export default function ConsentControls({registry,recipient,busy,onRefresh,onRev
       </li>)}</ul>
       <p className="source-notice">Revoking one grant does not revoke other grants or erase records that were already shared.</p>
     </>}
-    <button className="bank-chat-logout" data-testid="refresh-consent-records" disabled={busy||saving} onClick={()=>{setError('');setOutcome(null);onRefresh();}}>Refresh recorded consent status</button>
+    <button className="bank-chat-logout" data-testid="refresh-consent-records" disabled={busy||saving} onClick={()=>{setError('');setOutcome(null);onRefresh();}}>Refresh</button>
   </section>;
 }

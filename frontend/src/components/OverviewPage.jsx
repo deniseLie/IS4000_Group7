@@ -39,7 +39,7 @@ export default function OverviewPage({onNavigate,onAsk}) {
     <header className="ov-head"><div><p className="ov-date">{new Date().toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'})}</p>
       <h1>{greeting()}, {name}</h1></div>
 </header>
-    <div className="ov-balance"><span>Total balance in SGD accounts</span><strong data-testid="overview-total">{money(sgd)}</strong><small>Synthetic demo data · as of {formatDateTime(records.accounts.as_of)}</small></div>
+    <div className="ov-balance"><span>Total balance in SGD accounts</span><strong data-testid="overview-total">{money(sgd)}</strong><small>As of {formatDateTime(records.accounts.as_of)}</small></div>
     <div className="ov-grid">
       <div className="ov-main">
         <article className="ov-card"><h2>Accounts</h2>

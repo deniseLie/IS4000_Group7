@@ -47,7 +47,7 @@ export default function InboxPage({links={},onActions}) {
       if(!mounted.current||subscription.current!==channel)return;
       if(status==='SUBSCRIBED'){setLive('Live inbox updates connected.');refresh();}
       if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)) {
-        setLive(`Live inbox updates are unavailable (${status}). Use Reload notifications to check recorded messages.`);
+        setLive(`Live inbox updates are unavailable (${status}). Use Refresh to check for new messages.`);
         subscription.current=null;
         supabase.removeChannel(channel).then(result=>{if(result!=='ok'&&mounted.current)setLive('Live inbox disconnect could not be confirmed. Leave this page and reopen Inbox to reconnect.');});
       }
@@ -77,7 +77,7 @@ export default function InboxPage({links={},onActions}) {
   const connected=live==='Live inbox updates connected.';
   return <section className="app-page-body inbox-page ib" aria-label="Notifications" data-testid="inbox-page">
     <div className="page-header"><div><p className="ib-eyebrow"><span>Notifications</span><span className={`ib-live ${connected?'on':''}`} data-testid="inbox-live-status" role="status"><span className="dot"/>{live}</span></p><h1>Inbox</h1><p>Updates for your account in this demo. These messages do not change a real bank account.</p></div>
-      <div className="page-header-actions"><button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}><Icon name="refresh"/>Reload notifications</button>{onActions&&<button className="bank-chat-logout" onClick={onActions}><Icon name="document"/>Actions</button>}</div></div>
+      <div className="page-header-actions"><button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}><Icon name="refresh"/>Refresh</button>{onActions&&<button className="bank-chat-logout" onClick={onActions}><Icon name="document"/>Actions</button>}</div></div>
     <div className="ib-tabs" role="tablist" aria-label="Filter notifications">{TABS.map(([key,label,match])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>setTab(key)}>{label} ({items.filter(match).length})</button>)}</div>
     {busy&&<p className="ib-busy loading" role="status">Checking recorded notifications…</p>}
     {busy&&!inbox&&<div className="loading-list" aria-hidden="true">{[0,1,2].map(key=><span key={key} className="skeleton-card large"/>)}</div>}

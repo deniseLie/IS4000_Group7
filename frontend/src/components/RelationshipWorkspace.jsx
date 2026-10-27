@@ -97,7 +97,7 @@ function StatusStep({intro,refreshKey,onSupport,onRequest}) {
   useEffect(()=>{load();},[refreshKey]);
   const names=useMemo(()=>({[intro.current.rm_id]:intro.current.name}),[intro]);
   return <section className="rm-step" data-testid="rm-step-status" aria-label="Your requests">
-    <div className="rm-step-head"><p className="rm-bot">Here is the latest recorded status of each request.</p><button className="bank-chat-logout" disabled={busy} onClick={load}>Refresh</button></div>
+    <div className="rm-step-head"><p className="rm-bot">Here is the latest status of each request.</p><button className="bank-chat-logout" disabled={busy} onClick={load}>Refresh</button></div>
     {busy&&<p className="loading" role="status">Checking your requests…</p>}
     {error&&<Fallback intro={intro} onSupport={onSupport}>Request status is unavailable right now.</Fallback>}
     {requests&&!requests.data.length&&<p data-testid="rm-requests-empty">No requests are recorded. <button className="source-link" onClick={onRequest}>Send a request</button></p>}

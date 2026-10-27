@@ -45,7 +45,7 @@ export default function AgendaSharing({agenda,registry,consentBusy,onReviewActio
       {selected&&<p>Selected grant: <code>{selected.grant_id}</code>. The server rechecks its scope, expiry and revocation when you confirm.</p>}
       <button className="primary-button" data-testid="propose-agenda-sharing" disabled={busy||consentBusy||!selected||!!error||!!outcome}>Prepare sharing proposal</button>
     </form>
-    {busy&&<p className="loading" role="status">Saving the proposal… Closing this panel does not cancel a submitted proposal. Check Actions for its recorded status.</p>}
+    {busy&&<p className="loading" role="status">Saving the proposal… Closing this panel does not cancel a submitted proposal. Check Actions to see what happened.</p>}
     {error&&<p role="alert" data-testid="agenda-sharing-error">{error} Reopen this view and check Actions before retrying.</p>}
     {outcome&&<div data-testid="agenda-sharing-outcome"><p>The sharing proposal is recorded. Review its saved content and confirm in Actions to share this snapshot.</p>
       <button className="primary-button" data-testid="review-agenda-sharing" onClick={onReviewActions}>Review in Actions</button></div>}
