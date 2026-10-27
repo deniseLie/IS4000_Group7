@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from app.schemas.contracts import Task
 from app.schemas.fraud import DisputeProposal,FraudProposal,SecurityRecords
 from app.services.agents import fraud
-from app.services.agents.fraud import decision_for,evidence_for,pattern_evidence
-from app.services.agents.fraud_records import dispute_for,eligible_proposals,related_charges
+from app.services.agents.fraud import decision_for,evidence_for,travel_evidence
+from app.services.agents.fraud_records import dispute_for,eligible_proposals,travel_flags
 from app.services.llm_gateway import LLMBadOutput
 from app.services.source_checks import check_sources
 from tests.data_api_support import NativeAPI
@@ -53,49 +53,56 @@ def test_invalid_grounding_or_foreign_target_cannot_propose() -> None:
 
 
 def alex_records() -> SecurityRecords:
-    """Alex's card history after migration 0064, plus edge rows the pattern rule must leave out."""
-    rows=[('txn_100111','card_10011','2026-10-17','ONLINE MERCHANT 8831',-2400.0,'SGD','posted'),
-        ('txn_100113','card_10011','2026-10-15','Demo Supermarket',-64.2,'SGD','posted'),
-        ('txn_100115','card_10011','2026-10-12','ONLINE MERCHANT 8831',-1.0,'SGD','posted'),
-        ('txn_100116','card_10011','2026-10-14','online merchant  8831',-4.99,'SGD','posted'),
-        ('txn_100117','card_10011','2026-08-17','ONLINE MERCHANT 8831',-2.0,'SGD','posted'),
-        ('txn_100118','card_10011','2026-10-16','ONLINE MERCHANT 8831',-10.01,'SGD','posted'),
-        ('txn_100119','card_10011','2026-10-18','ONLINE MERCHANT 8831',-1.0,'SGD','posted'),
-        ('txn_100120','card_10011','2026-10-16','ONLINE MERCHANT 8831',-3.0,'USD','posted'),
-        ('txn_100121','card_10011','2026-10-16','ONLINE MERCHANT 8831',-3.0,'SGD','pending'),
-        ('txn_100122','card_10011','2026-10-16','ONLINE MERCHANT 8831',3.0,'SGD','posted'),
-        ('txn_100123','card_10012','2026-10-16','ONLINE MERCHANT 8831',-3.0,'SGD','posted'),
-        ('txn_100124','card_10011','2026-08-18','ONLINE MERCHANT 8831',-10.0,'SGD','posted')]
+    """Alex's card history after migration 0070 (times in SGT), plus edge rows the travel rule must leave out."""
+    rows=[('txn_100115','card_10011','2026-10-17 19:15','Hawker Delight, Tanjong Pagar',-12.5,'SGD','posted','SG'),
+        ('txn_100116','card_10011','2026-10-17 21:42','SUNSET GRILL LA',-86.4,'SGD','posted','US'),
+        ('txn_100111','card_10011','2026-10-17 21:58','TECHVAULT ELECTRONICS',-2400.0,'SGD','posted','US'),
+        ('txn_100113','card_10011','2026-10-15 18:30','Demo Supermarket',-64.2,'SGD','posted','SG'),
+        # Left out: a refund, a failed charge, another card, a charge with no recorded country, and a country change 4 hours or more later.
+        ('txn_100117','card_10011','2026-10-17 21:50','Refund (DEMO)',20.0,'SGD','posted','US'),
+        ('txn_100118','card_10011','2026-10-17 21:51','Declined (DEMO)',-5.0,'SGD','failed','JP'),
+        ('txn_100119','card_10012','2026-10-17 20:00','Other card shop',-9.0,'SGD','posted','MY'),
+        ('txn_100120','card_10011','2026-10-17 21:55','No country (DEMO)',-1.0,'SGD','posted',None),
+        ('txn_100121','card_10011','2026-10-15 22:30','Night market (DEMO)',-3.0,'SGD','posted','MY')]
+    def at(value: str) -> str:return value.replace(' ','T')+':00+08:00'
     return SecurityRecords.model_validate({'captured_at':datetime.now(timezone.utc),'cards':[
         {'card_id':'card_10011','last4':'4821','status':'active'},{'card_id':'card_10012','last4':'9876','status':'active'}],
-        'transactions':[{'txn_id':txn,'card_id':card,'card_last4':'4821' if card=='card_10011' else '9876','date':day,'description':name,
-            'amount':amount,'currency':currency,'status':status} for txn,card,day,name,amount,currency,status in rows]})
+        'transactions':[{'txn_id':txn,'card_id':card,'card_last4':'4821' if card=='card_10011' else '9876','date':when[:10],'txn_at':at(when),
+            'description':name,'amount':amount,'currency':currency,'status':status,'merchant_country':country}
+            for txn,card,when,name,amount,currency,status,country in rows]})
 
 
-def test_pattern_rule_groups_only_small_earlier_charges_from_the_same_merchant_and_card() -> None:
+def test_travel_rule_flags_later_charges_in_another_country_too_soon_after_one_on_the_same_card() -> None:
     value=alex_records()
-    # Kept: 60 days earlier at most, up to SGD 10.00, posted debits in the same currency. Merchant case and spacing are ignored.
-    assert [item.txn_id for item in related_charges(value,'txn_100111')]==['txn_100124','txn_100115','txn_100116']
-    assert related_charges(value,'txn_100113')==[] and related_charges(value,'txn_999999')==[]
+    flags=travel_flags(value)
+    assert [(flag.anchor.txn_id,flag.charge.txn_id,flag.gap.total_seconds()/60) for flag in flags]==[
+        ('txn_100115','txn_100116',147.0),('txn_100115','txn_100111',163.0)]
+    # The reported charge brings every charge flagged with it into the dispute, including the one the customer did not name.
     assert dispute_for(value,FraudProposal(card_id='card_10011',transaction_id='txn_100111'))==DisputeProposal(card_id='card_10011',
-        transaction_ids=['txn_100111','txn_100115','txn_100116','txn_100124'])
-    with pytest.raises(ValueError):DisputeProposal(card_id='card_10011',transaction_ids=['txn_100115','txn_100111'])
+        transaction_ids=['txn_100111','txn_100116'])
+    # An unflagged report (the customer's own Singapore charge) disputes only itself.
+    assert dispute_for(value,FraudProposal(card_id='card_10011',transaction_id='txn_100115'))==DisputeProposal(card_id='card_10011',
+        transaction_ids=['txn_100115'])
+    later=value.model_copy(update={'transactions':[item.model_copy(update={'txn_at':item.txn_at.replace(hour=23,minute=15)})
+        if item.txn_id=='txn_100116' else item for item in value.transactions if item.txn_id!='txn_100111']})
+    assert travel_flags(later)==[]
+    with pytest.raises(ValueError):DisputeProposal(card_id='card_10011',transaction_ids=['txn_100116','txn_100111'])
 
 
-def test_pattern_evidence_supports_the_grouped_figures_but_not_new_ones() -> None:
-    value=alex_records().model_copy(update={'transactions':[item for item in alex_records().transactions if item.txn_id in {'txn_100111','txn_100113','txn_100115','txn_100116'}]})
-    pattern=pattern_evidence(value,'txn_100111')
-    assert pattern is not None and pattern.id=='fraud-pattern' and 'not a fraud decision' in pattern.text and 'txn_' not in pattern.text
-    assert pattern_evidence(value,'txn_100113') is None
-    evidence=[{'id':item.id,'text':item.text} for item in (evidence_for(value),pattern)]
-    grouped=('Two smaller charges from ONLINE MERCHANT 8831, SGD -1.00 on 2026-10-12 and SGD -4.99 on 2026-10-14, came before the '
-        'SGD -2,400.00 charge on 2026-10-17. A DemoBank rule check says this can match a card-testing pattern; it is not proof of fraud.')
-    assert check_sources(grouped,['fraud-pattern'],evidence) is None
-    echoed='The $2,400 charge came after two smaller charges of $1.00 and $4.99 from ONLINE MERCHANT 8831, a possible card-testing pattern.'
-    assert check_sources(echoed,['fraud-pattern'],evidence) is None
-    assert check_sources(echoed.replace('$4.99','$5.99'),['fraud-pattern'],evidence)=='unsupported_figure'
-    assert check_sources(grouped.replace('-4.99','-5.99'),['fraud-pattern'],evidence)=='unsupported_figure'
-    assert check_sources(grouped+' The total is SGD -2,405.99.',['fraud-pattern'],evidence)=='unsupported_figure'
+def test_travel_evidence_supports_the_flagged_times_and_figures_but_not_new_ones() -> None:
+    value=alex_records()
+    travel=travel_evidence(value,'txn_100111')
+    assert travel is not None and travel.id=='travel-check' and 'not a fraud decision' in travel.text and 'txn_' not in travel.text
+    assert 'Flagged with the reported charge as well: SUNSET GRILL LA.' in travel.text and 'cannot tell which place the cardholder was in' in travel.text
+    assert travel_evidence(value,'txn_100113') is None and travel_evidence(value,'txn_100115') is None
+    evidence=[{'id':item.id,'text':item.text} for item in (evidence_for(value),travel)]
+    answer=('Your card ending 4821 was used at Hawker Delight, Tanjong Pagar in Singapore at 7:15 pm on 17 Oct, then in the United States '
+        'at SUNSET GRILL LA ($86.40, 9:42 pm) and TECHVAULT ELECTRONICS ($2,400.00, 21:58), about 2 hours later. That is too soon to travel, '
+        'so a DemoBank rule check flagged both US charges; you were in Singapore, so they do not fit. It is not proof of fraud.')
+    assert check_sources(answer,['travel-check'],evidence) is None
+    assert check_sources(answer.replace('$86.40','$68.40'),['travel-check'],evidence)=='unsupported_figure'
+    assert check_sources(answer.replace('9:42 pm','9:52 pm'),['travel-check'],evidence)=='unsupported_figure'
+    assert check_sources(answer+' Together they total $2,486.40.',['travel-check'],evidence)=='unsupported_figure'
 
 
 @pytest.mark.skipif(os.getenv('TEST_FRAUD_LIVE')!='1',reason='Opt in to real personal-fraud provider acceptance')
@@ -105,6 +112,6 @@ def test_real_fraud_provider_returns_owned_grounded_proposal(local_data_api: Nat
     decision,evidence=asyncio.run(fraud.respond(task,[],'English',context(local_data_api,1001).model_copy(update={'agent':'fraud'}),[]))
     assert decision.result.status=='needs_human',decision.result.model_dump_json()
     assert decision.proposal==FraudProposal(card_id='card_10011',transaction_id='txn_100111')
-    assert {item.source_id for item in decision.result.citations}<={'customer-records','fraud-pattern','unrecognised-charge'}
-    assert decision.prompt_id.startswith('v4+') and [item.id for item in evidence]==['customer-records','fraud-pattern']
-    assert decision.dispute==DisputeProposal(card_id='card_10011',transaction_ids=['txn_100111','txn_100115','txn_100116'])
+    assert {item.source_id for item in decision.result.citations}<={'customer-records','travel-check','unrecognised-charge'}
+    assert decision.prompt_id.startswith('v5+') and [item.id for item in evidence]==['customer-records','travel-check']
+    assert decision.dispute==DisputeProposal(card_id='card_10011',transaction_ids=['txn_100111','txn_100116'])

@@ -6,13 +6,13 @@ from app.schemas.agents import AgentDraft,Evidence
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
-from app.schemas.fraud import FraudDecision,FraudDraft,FraudProposal,SecurityRecords
+from app.schemas.fraud import FraudDecision,FraudDraft,FraudProposal,SecurityRecords,SecurityTransaction
 from app.services import audit,llm_gateway,prompts
 from app.services.agents import fraud_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
-PROMPT='v4'
+PROMPT='v5'
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
 URGENT='If you do not recognise a charge, contact your bank now through the official fraud line on the back of your card or its official app. Never share your PIN, password, one-time code or full card number.'
 
@@ -24,23 +24,40 @@ def evidence_for(records: SecurityRecords) -> Evidence:
         publisher='DemoBank synthetic records'))
 
 
-def pattern_evidence(records: SecurityRecords,txn_id: str) -> Evidence | None:
-    """Rule-related small charges for the reported one; prose first so the trailing JSON stays readable to unit checks."""
-    related=fraud_records.related_charges(records,txn_id)
-    if not related:return None
-    reported=next(item for item in records.transactions if item.txn_id==txn_id)
-    fields={'date','description','amount','currency','card_last4'}
-    rows=[*({'role':'earlier small charge',**item.model_dump(mode='json',include=fields)} for item in related),
-        {'role':'reported charge',**reported.model_dump(mode='json',include=fields)}]
+COUNTRIES={'SG':'Singapore','US':'the United States'}
+
+
+def when(item: SecurityTransaction) -> str:
+    """Both clock styles, so an answer saying 9:42 pm or 21:42 is supported by the rule evidence."""
+    local=item.txn_at.astimezone(fraud_records.SGT)
+    return f'{local:%Y-%m-%d} {local:%H:%M} SGT ({local.hour%12 or 12}:{local:%M} {"am" if local.hour<12 else "pm"})'
+
+
+def travel_evidence(records: SecurityRecords,txn_id: str) -> Evidence | None:
+    """The travel rule's flags for the reported charge; prose first so the trailing JSON stays readable to unit checks."""
+    flags=fraud_records.flagged_with(records,txn_id)
+    if not flags:return None
+    anchor=flags[0].anchor
+    def place(item: SecurityTransaction) -> str:return f'{item.merchant_country} ({COUNTRIES.get(item.merchant_country,item.merchant_country)})'
     # Charged amounts are listed unsigned as well, so an answer that echoes "a $2,400 charge" is supported without a sign flip.
-    charged='; '.join(f'{item.date.isoformat()} {item.description}: {item.currency} {abs(item.amount):.2f} charged (recorded {item.currency} {item.amount:.2f})'
-        for item in [*related,reported])
-    text=(f'DemoBank rule check, not a fraud decision: {len(related)} smaller charges from the same merchant on the same card '
-        f'in the {fraud_records.PATTERN_DAYS} days before the reported charge. Small charges like these before a larger one can match '
-        f'a card-testing pattern. Charges: {charged}. '+json.dumps({'records':rows}))
-    return Evidence(id='fraud-pattern',text=text,publisher='DemoBank rule check',
-        scope='Deterministic rule over authenticated customer records; a pattern flag, not a fraud decision.',source=Source(id='fraud-pattern',
-        title='Rule check: smaller charges from the same merchant',url=None,version=records.captured_at.isoformat(),publisher='DemoBank rule check'))
+    def charge(item: SecurityTransaction) -> str:
+        return f'{when(item)} {item.description} in {place(item)}: {item.currency} {abs(item.amount):.2f} charged (recorded {item.currency} {item.amount:.2f})'
+    def gap(flag: fraud_records.TravelFlag) -> str:
+        hours,minutes=divmod(int(flag.gap.total_seconds())//60,60)
+        return f'{hours} hours {minutes} minutes after the {anchor.merchant_country} charge (about {hours} hours)'
+    other=[flag for flag in flags if flag.charge.txn_id!=txn_id]
+    fields={'description','amount','currency','card_last4','merchant_country'}
+    rows=[{'role':role,'time':when(item),**item.model_dump(mode='json',include=fields)}
+        for role,item in [('earlier charge in another country',anchor),*(('flagged charge',flag.charge) for flag in flags)]]
+    text=(f'DemoBank rule check, not a fraud decision: the card ending {anchor.card_last4} was used in {place(anchor)} and then in another '
+        f'country less than {fraud_records.TRAVEL_HOURS} hours later, too soon to travel between them, so the charges in both places '
+        'cannot all have been made in person by one cardholder. The rule cannot tell which place the cardholder was in. '
+        f'Earlier charge: {charge(anchor)}. Flagged: '+'; '.join(f'{charge(flag.charge)}, {gap(flag)}' for flag in flags)+'. '
+        +('Flagged with the reported charge as well: '+', '.join(flag.charge.description for flag in other)+'. ' if other else '')
+        +json.dumps({'records':rows}))
+    return Evidence(id='travel-check',text=text,publisher='DemoBank rule check',
+        scope='Deterministic rule over authenticated customer records; an impossible-travel flag, not a fraud decision.',source=Source(id='travel-check',
+        title='Rule check: card used in two countries too close in time',url=None,version=records.captured_at.isoformat(),publisher='DemoBank rule check'))
 
 
 def schema_for(evidence: list[Evidence]) -> dict[str,JsonValue]:
@@ -82,12 +99,12 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     if not isinstance(question,str):raise ValueError('Fraud task question must be text')
     records=await fraud_records.load(ctx)
     evidence=[*public_evidence,evidence_for(records)]
-    pairs=fraud_records.eligible_proposals(question,records)
     latest=history[-1].content if history and history[-1].role=='user' else ''
-    if len(pairs)>1 and len(narrowed:=fraud_records.eligible_proposals(latest,records))==1:pairs=narrowed
-    flagged=bool(FRAUD.search(question) or FRAUD.search(latest))
-    pattern=pattern_evidence(records,pairs[0].transaction_id) if len(pairs)==1 else None
-    if pattern is not None:evidence.append(pattern)
+    pairs=fraud_records.scoped_proposals(question,latest,records)
+    travel=travel_evidence(records,pairs[0].transaction_id) if len(pairs)==1 else None
+    if travel is not None:evidence.append(travel)
+    # The travel rule over records flags a reported charge as firmly as the customer's own unrecognised-charge wording.
+    flagged=bool(FRAUD.search(question) or FRAUD.search(latest) or travel is not None)
     pv=prompts.load('fraud',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
     if flagged and len(pairs)==1:system+='\nRecords-derived offers for review: temporary card block and dispute draft'

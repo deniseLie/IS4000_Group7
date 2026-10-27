@@ -15,7 +15,10 @@ FRAUD = re.compile(
     r"\b(?:unrecognised|unrecognized|unfamiliar|unauthorised|unauthorized|suspicious|fraudulent)\s+(?:(?:card|bank)\s+)?(?:charge|transaction|payment|transfer)s?\b"
     r"|\b(?:don['’]?t|do not|didn['’]?t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b.{0,80}\b(?:charge|transaction|payment|transfer)s?\b"
     r"|\b(?:charge|transaction|payment|transfer)s?\b.{0,80}\b(?:don['’]?t|do not|didn['’]?t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b"
-    r"|\b(?:charge|transaction|payment)s?\b.{0,40}\bnot mine\b", re.I)
+    r"|\b(?:charge|transaction|payment)s?\b.{0,40}\bnot mine\b"
+    # An alibi after a charge ("why is there a $2,400 charge?? i was in singapore the whole night") disowns it too.
+    r"|\b(?:charge|transaction|payment)s?\b.{0,80}\bi\s+(?:was\s+(?:in|at)\b[^.!?]{0,40}\b(?:whole|all)\s+(?:night|day|evening|weekend)"
+    r"|wasn['’]?t\s+(?:even\s+)?(?:there|overseas|abroad))\b", re.I)
 
 
 def assess_request(req: ChatRequest) -> RiskAssessment:

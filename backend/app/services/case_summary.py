@@ -34,7 +34,7 @@ def build(*,last4: str,reported_id: str,items: list[DisputeItem],block: str | No
     parts=[f'Card ending {last4}.']
     parts.append(f'Reported charge: {charge(reported)}.' if reported else 'Reported charge: see the recorded card decision.')
     if related:
-        parts.append(f'Rule check (a pattern flag, not a fraud decision): {len(related)} smaller earlier charges from the same merchant: '
+        parts.append(f'Also flagged by the travel rule (card used in two countries too close in time; a flag, not a fraud decision): '
             +'; '.join(charge(item) for item in related)+'.')
     if block:parts.append(f'Temporary block: {STATES[block]}.')
     if dispute:
@@ -42,7 +42,7 @@ def build(*,last4: str,reported_id: str,items: list[DisputeItem],block: str | No
             +(f'; card in possession: {possession}.' if dispute=='succeeded' and possession else '.'))
     also=[f'pending transfer {row.description} {money(row.currency,row.amount)} since {row.date.isoformat()}'
         +(f', customer-stated due date {due.isoformat()}' if due else '') for row in transfers]
-    if lockout:also.append('app lockout, answered as a security step')
+    if lockout:also.append('app sign-in problem (locked app or unrequested one-time code), answered as a security step')
     if also:parts.append('Also raised: '+'; '.join(also)+'.')
     tail='Staff decide refunds and cancellation.'
     quoted=words(customer_words)

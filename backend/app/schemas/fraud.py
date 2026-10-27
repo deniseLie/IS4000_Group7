@@ -28,6 +28,8 @@ class SecurityTransaction(BaseModel):
     status: Text
     card_id: CardId | None
     card_last4: Last4 | None
+    txn_at: AwareDatetime | None=None
+    merchant_country: Annotated[str,StringConstraints(strict=True,pattern=r'^[A-Z]{2}$')] | None=None
 
 
 class SecurityRecords(BaseModel):

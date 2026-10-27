@@ -45,7 +45,7 @@ async def pause(db: SyncPostgrestClient,ctx: RequestContext,dispute: bool=False)
         'results':[AgentResult(task_id='t1',agent='fraud',status='needs_human',text='Review the synthetic card action you selected.',answer_kind='conversation')],
         'evidence':[[]],'metadata':[ResponseMeta(origin='safety',prompt_id=None)],
         'proposals':[FraudProposal(card_id='card_10011',transaction_id='txn_100111')],
-        'disputes':[DisputeProposal(card_id='card_10011',transaction_ids=['txn_100111','txn_100115','txn_100116']) if dispute else None]},as_node='dispatch')
+        'disputes':[DisputeProposal(card_id='card_10011',transaction_ids=['txn_100111','txn_100116']) if dispute else None]},as_node='dispatch')
     result=await graph.ainvoke(None,config,context=PipelineContext(request=current,workflow=owned),durability='sync')
     assert result['__interrupt__'] and 'answer' not in result
     snapshot=await graph.aget_state(config)
@@ -102,7 +102,7 @@ def test_block_and_dispute_are_two_decisions_in_one_paused_turn_with_one_case_su
     preview=native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(ctx)).json()
     offers=preview['preview']['sections'][0]['pending_actions']
     assert [item['type'] for item in offers]==['card.temporary_block','card.dispute'] and offers[0]['command_id']==str(block_id)
-    assert offers[1]['summary']=='Review a dispute draft of 3 charges on synthetic card ending 4821'
+    assert offers[1]['summary']=='Review a dispute draft of 2 charges on synthetic card ending 4821'
     dispute_id=offers[1]['command_id']
     assert native_api_client.post(f'/commands/{dispute_id}/confirm',headers=headers(ctx)).status_code==422
     assert native_api_client.post(f'/commands/{block_id}/{block}',headers=headers(ctx)).json()['workflow']['state']=='awaiting_confirmation'
@@ -112,12 +112,12 @@ def test_block_and_dispute_are_two_decisions_in_one_paused_turn_with_one_case_su
     answer=native_api_client.get(f'/conversations/{owned.access.session_id}',headers=headers(ctx)).json()['messages'][-1]['payload']
     decision=answer['sections'][0]['decision']
     assert len(answer['sections'])==1 and decision.startswith('Your card ending 4821 is temporarily blocked.' if block=='confirm' else 'You chose not to block')
-    assert ('Your dispute draft for 3 charges on the card ending 4821 is recorded' in decision)==(dispute=='confirm')
+    assert ('Your dispute draft for 2 charges on the card ending 4821 is recorded' in decision)==(dispute=='confirm')
     with psycopg.connect(local_data_api.database_uri) as db:
         handoffs=db.execute('select reason,priority,summary from support.handoffs').fetchall()
         assert [(reason,priority) for reason,priority,_ in handoffs]==[('card_dispute' if dispute=='confirm' else 'card_verification','P0')]
         summary=handoffs[0][2]
-        assert 'Card ending 4821.' in summary and 'Reported charge: 2026-10-17 ONLINE MERCHANT 8831 SGD -2400.00.' in summary
+        assert 'Card ending 4821.' in summary and 'Reported charge: 2026-10-17 TECHVAULT ELECTRONICS SGD -2400.00.' in summary
         assert ('card in possession: yes' in summary)==(dispute=='confirm') and summary.endswith('Staff decide refunds and cancellation.')
         assert db.execute("select card_in_possession from (select result->>'card_in_possession' card_in_possession from actions.receipts r join actions.commands c using(command_id) where c.type='card.dispute') d").fetchall()==([('yes',)] if dispute=='confirm' else [])
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
