@@ -6,6 +6,12 @@ For the current presentation, use the [ordered demo walkthrough](#demo-walkthrou
 
 For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
 
+## Card self-service update — 27 October 2026
+
+A signed-in customer can now unblock their own temporarily blocked card or cancel it permanently from **Records**, then review and confirm the change in **Actions** (migrations `0068`–`0069`). Both are confirmed actions with a receipt, audit event and in-app notice; cancelled is terminal and the cancel flow warns twice that it cannot be undone. The chat assistant cannot propose or run either change. When an open card verification or dispute handoff exists for the card, the change is noted on it for staff (the handoff stays open). Staff unblock/cancel through `scripts/staff_support.py` is unchanged.
+
+Known limits: unblocking is allowed even after a fraud block, so anyone holding a stolen signed-in session could reverse that block; the demo accepts this trade-off for customer convenience and records it in the staff note and audit trail. Apply `0068`–`0069` to the hosted project before using it there. The browser check (`tests/test_card_changes_browser.py`) needs native PostgREST, like the other native browser suites.
+
 ## Workflow 1 Part B update — 27 October 2026
 
 [Workflow 1](docs/workflows/workflow-1-alex.md) Part B is now Alex's "something's wrong with my money" message: an unrecognised $2,400 charge with smaller odd charges before it, a pending rent transfer due Friday, and an app lockout he asks about. A rule finds the SGD 1.00 and 4.99 charges from the same merchant (migration `0064`) and the answer calls it a possible card-testing pattern, not fraud. The urgent section offers two decisions in the same paused reply: the temporary block, and a dispute draft listing all three charges that asks only "Do you still have the card?" (migrations `0066`–`0067`). One case summary built from records and the recorded decisions goes to staff with an urgent handoff. The transfer answer repeats code-computed dates (pending since 17 Oct, due 30 Oct) and says not to resend; the fall-below check notes that the card charge does not touch the savings balance. The lockout is answered as a security step: reset the password in the official app first (migration `0065`).

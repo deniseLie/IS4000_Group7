@@ -150,12 +150,27 @@ All three branches rejoin: **all three problems answered and both decisions reco
 | F15 | 3, 9, confirm dialog |
 | Common criteria | 15 |
 
+## Follow-up: Alex manages the card himself
+
+After the urgent section, Alex can open **Records** and use the card's controls (migrations `0068`–`0069`). Each change is only proposed there; it runs after he reviews and confirms it in **Actions**, with a receipt and an in-app notice. The chat assistant never proposes or runs these changes.
+
+| Card status | Offered | Result after confirmation |
+|---|---|---|
+| Temporarily blocked | Unblock card; Cancel card permanently | active; cancelled |
+| Active | Cancel card permanently | cancelled |
+| Cancelled | Nothing (terminal) | — |
+
+Cancelling shows an "This cannot be undone" warning before the proposal and again in the Actions review. If the card has an open verification or dispute handoff, the change is added to it as a note for staff; the handoff stays open and staff still decide refunds.
+
+**Trade-off:** unblocking is allowed even after a fraud block (decision: full customer unblock). A stolen signed-in session could therefore reverse the block. The review text warns the customer, and the change is visible to staff on the open handoff and in the audit trail.
+
 ## Limits
 
 - The pattern rule is bounded: same merchant and card, at most SGD 10.00 each, in the 60 days before the reported charge. It flags a pattern; it is not a fraud classifier.
 - The due-day reader is a bounded English rule; business days ignore public holidays; the fall-below comparison uses balances on one day, not the monthly average.
 - The link between the lockout and the charge is a rule (both raised in one message), not a finding.
-- Staff decide refunds and cancellation outside this demo; there is no staffed queue and no real card network.
+- Staff decide refunds outside this demo; the customer can cancel the card themselves, and staff can still cancel it through the staff tool. There is no staffed queue and no real card network.
+- A customer unblock can reverse a fraud block, including from a stolen session (accepted trade-off, above).
 - Seed dates are fixed around October 2026; the 90-day record window and the 120-day dispute window must still include them.
 - Free-router model answers vary; a section that fails validation is withheld and escalated, and its offers still come from records.
 
