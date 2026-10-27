@@ -13,14 +13,16 @@ function clip(text,size) {const line=(text||'').replace(/\s+/g,' ').trim();retur
 export default function SavedChats({current,closing=false,onClose,onOpen,onLoaded}) {
   const [sessions,setSessions]=useState(null),[previews,setPreviews]=useState({});
   const [error,setError]=useState(''),[opening,setOpening]=useState(false);
-  const heading=useRef(null),trigger=useRef(document.activeElement);
+  const heading=useRef(null),column=useRef(null),trigger=useRef(document.activeElement);
   const close=()=>onClose();  // the parent plays the closing motion
   useEffect(()=>{
     heading.current?.focus();
     const escape=event=>{if(event.key==='Escape')close();};
-    document.addEventListener('keydown',escape);
+    // A press anywhere outside the column closes it too; its own Recent chats button and open dialogs keep their behaviour.
+    const away=event=>{if(!column.current?.contains(event.target)&&!event.target.closest?.('[data-testid="open-recent-chats"],dialog'))close();};
+    document.addEventListener('keydown',escape);document.addEventListener('pointerdown',away);
     const previous=trigger.current;
-    return ()=>{document.removeEventListener('keydown',escape);if(previous?.isConnected)previous.focus();};
+    return ()=>{document.removeEventListener('keydown',escape);document.removeEventListener('pointerdown',away);if(previous?.isConnected)previous.focus();};
   },[]);
   useEffect(()=>{
     const controller=new AbortController();
@@ -53,7 +55,7 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
       <span className="saved-chat-title">{preview?.title||mode}</span>
       <span className="saved-chat-sub">{preview?.detail||`${mode} · ${item.language}`}{item.active_turn_id?' · Reply pending':''}</span></button></li>;
   };
-  return <div className={`chat-history-track ${closing?'closing':''}`}><aside className={`chat-history ${closing?'closing':''}`} aria-label="Saved chats" data-testid="saved-chats-panel">
+  return <div ref={column} className={`chat-history-track ${closing?'closing':''}`}><aside className={`chat-history ${closing?'closing':''}`} aria-label="Saved chats" data-testid="saved-chats-panel">
     <div className="chat-history-head"><h2 ref={heading} tabIndex={-1}><Icon name="history"/>Past conversations</h2>
       <button className="icon-button" aria-label="Close saved chats" onClick={close}><Icon name="close"/></button></div>
     <div className="chat-history-body">
