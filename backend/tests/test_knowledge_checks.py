@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 import json
+import re
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -30,6 +31,12 @@ def test_workflow_one_questions_retrieve_demo_guidance(question,expected):
     assert knowledge.search(question)[0].id==expected
     article=knowledge.INDEX[expected]
     assert article.reference_url is None and not answers.URL.search(article.content)
+
+def test_part_b_guidance_has_no_invented_times_and_names_the_dispute_draft():
+    assert 'transfer-timing' in [a.id for a in knowledge.search("my rent transfer still says pending, will it make it")]
+    for key in ('transfer-timing','account-security-after-fraud'):
+        assert not re.search(r'[0-9]',knowledge.INDEX[key].content)
+    assert 'dispute draft' in knowledge.INDEX['unrecognised-charge'].content and 'not proof of fraud' in knowledge.INDEX['unrecognised-charge'].content
 
 def test_revised_guidance_describes_confirmed_block_and_recorded_handoff():
     assert 'only after you confirm' in knowledge.INDEX['lost-card'].content and 'cannot block a card from this reply' in knowledge.INDEX['lost-card'].content
