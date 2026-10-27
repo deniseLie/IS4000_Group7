@@ -5,8 +5,9 @@ import os
 
 import jwt
 from fastapi import HTTPException
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 
+from app.core import data_api
 from app.core.config import settings
 from app.core.errors import ApiError
 
@@ -48,12 +49,20 @@ def verify_token(token: str) -> dict:
 def user_db(token: str) -> Client:
     """Public anon key plus the customer's JWT, so every query runs under their RLS policies."""
     try:
-        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"],
+                           options=ClientOptions(httpx_client=data_api.http_client()))
     except Exception:
         logger.warning("Supabase initialisation failed")
         raise ApiError(503, "unavailable", "Banking service unavailable")
     sb.postgrest.auth(token)
     return sb
+
+
+def close_db(db: Client) -> None:
+    """Release the request's connections once its response has been sent."""
+    client = getattr(getattr(db, "options", None), "httpx_client", None)
+    if client is not None:
+        client.close()
 
 
 def resolve_customer_id(db: Client, user_id: str) -> int | None:

@@ -3,7 +3,7 @@
 auth.session_started the first time a signed-in session_id is seen. No domain logic.
 customer_id comes only from the verified token's sub (through the customer's own RLS-scoped profile row), never from
 the request body. A bad token is a 401, never downgraded to guest. Routes read the context with get_ctx() and the
-customer's database client from request.state.db.
+customer's database client from request.state.db; its connections close once the response has been sent.
 Limit: tokens are checked locally, so a token revoked by sign-out stays usable until it expires."""
 import asyncio
 import logging
@@ -112,7 +112,9 @@ class GatewayMiddleware:
             return message
         token=current_ctx.set(ctx)
         try:await self.app(scope,limited_receive,send)
-        finally:current_ctx.reset(token)
+        finally:
+            current_ctx.reset(token)
+            if db is not None:auth.close_db(db)
 
 
 def get_ctx(request:Request)->RequestContext:
