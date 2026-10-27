@@ -1235,3 +1235,19 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 .ib-list li.unread h3{font-weight:700}
 .ib-link.strong{color:var(--ink);font-weight:600}.ib-link:hover{color:var(--ink);text-decoration:underline}
 .page-tabs button[aria-selected="true"] .count{background:var(--ink);color:#fff}
+
+/* 6. Readability: no text under 12px (rules that forced 11px with !important are matched the same way) */
+.eyebrow,.ib-eyebrow,.section-label,.saved-group,.cw-label,.rm-stage-title,.sp-options legend,.ov-balance span,.requirement-meta,.security-note,.sidebar-who small,.chat-history .saved-chat-sub{font-size:12px!important}
+.sidebar-session small,.chat-settings label,.language-note,.chat-note,.chat-subbar .language-note,.bank-chat-suggestions button>span:not(.topic-arrow),.quick-help,.quick-help button,
+.answer-section h3 small,.answer-section[data-priority="P0"] h3 small,.answer-origin,.answer-sources p,.session-note,.support-panel small,.login-footer,.login-brand>small,.panel-footer,
+.records-filter-bar label,.page-status,.page-tabs .count,.notification-head time,.notification-foot,.category-badge,.breadcrumb,.status-badge,.live-pill,.column-label,.slot-grid .bank-chat-logout,
+.case-meta,.progress-label,.requirement-card .relationship-details p,.guidance-list dt,.guidance-card small,.documents-card dl,.documents-card .records-filters label,.documents-card .bank-chat-logout,
+.app-page-body .relationship-details legend,.rm-progress li,.rm-check-text small,.rm-page-rm small,.cw-progress span,.cw-pill,.ov-balance small,.act-tabs .count,.act-tag,.act-pill,.act-code code,
+.saved-chat-when em,.chat-history .saved-chat-when em,.recent-chats .count,.ib-foot code,.cw-actions small,.cw-bank-foot code,.sp-text em,.chat-history-foot,.nav-badge,.tab-icon>.nav-badge,.brand-caption .demo-badge{font-size:12px}
+.category-badge,.act-tag{letter-spacing:.04em}
+small{font-size:max(12px,.83em)}
+.answer-sources small{font-size:12px}
+/* Loading placeholders hold the place of a name or heading instead of generic text that later changes */
+.skeleton-text{display:block;width:120px;height:14px;border-radius:6px;background:linear-gradient(90deg,#F3F4F6 0,#E9EAEC 40%,#F3F4F6 80%) #F3F4F6;background-size:800px 100%;animation:shimmer 1.3s linear infinite}
+.skeleton-text.short{width:84px;height:10px;margin-top:6px}
+.skeleton-text.heading{width:min(340px,80%);height:.9em;margin:.1em 0}

@@ -82,7 +82,7 @@ export default function Chat({session,onSignIn}) {
   const [complianceReceipt,setComplianceReceipt]=useState(null);
   const [complianceReview,setComplianceReview]=useState(null),[supportScope,setSupportScope]=useState(null);
   const [blockAction,setBlockAction]=useState(null);
-  const [rmIntro,setRmIntro]=useState(null),[rmIntroError,setRmIntroError]=useState(''),[rmOpen,setRmOpen]=useState(false),[rmFocus,setRmFocus]=useState(null),[rmMode,setRmMode]=useState('guided'),[profileName,setProfileName]=useState('');
+  const [rmIntro,setRmIntro]=useState(null),[rmIntroError,setRmIntroError]=useState(''),[rmOpen,setRmOpen]=useState(false),[rmFocus,setRmFocus]=useState(null),[rmMode,setRmMode]=useState('guided'),[profileName,setProfileName]=useState(session?null:'');  // null while the name is loading
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const [helpTopic,setHelpTopic]=useState('general'),[supportTarget,setSupportTarget]=useState('support'),[attachSummary,setAttachSummary]=useState(true);
   const [unread,setUnread]=useState(0),[chatCount,setChatCount]=useState(null);
@@ -138,7 +138,7 @@ export default function Chat({session,onSignIn}) {
   useEffect(()=>{  // the signed-in customer's own name labels the account area
     if(!session){setProfileName('');return;}
     const controller=new AbortController();
-    (async()=>{try{const headers=await sessionHeaders();const {profile}=await loadSections(headers.Authorization.replace(/^Bearer /,''),['profile'],controller.signal);if(!controller.signal.aborted)setProfileName(displayName(profile.data.name));}catch{}})();
+    (async()=>{try{const headers=await sessionHeaders();const {profile}=await loadSections(headers.Authorization.replace(/^Bearer /,''),['profile'],controller.signal);if(!controller.signal.aborted)setProfileName(displayName(profile.data.name));}catch{if(!controller.signal.aborted)setProfileName('');}})();
     return ()=>controller.abort();
   },[session?.user.id]);
 
@@ -396,7 +396,7 @@ export default function Chat({session,onSignIn}) {
             {!messages.length&&showIntro&&<p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p>}
             {showIntro&&<RelationshipIntro intro={rmIntro} error={rmIntroError} busy={loading||booting||!!pending} onSource={showSource} onSupport={prepareSummary}
               onAsk={question=>send(null,question)} onStep={step=>openRm(step==='status'?'status':step)}/>}
-            {!messages.length&&!showIntro&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in">{profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Ask about your accounts, cards and loans, your relationship manager or your compliance review.</p></>
+            {!messages.length&&!showIntro&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in" aria-busy={profileName===null}>{profileName===null?<><span className="skeleton-text heading" aria-hidden="true"/><span className="sr-only">How can I help today?</span></>:profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Ask about your accounts, cards and loans, your relationship manager or your compliance review.</p></>
               :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Understand your accounts, cards and loans. Start with a question.</p></>}<div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
             {messages.map((m,i)=><div key={i} data-testid={`chat-message-${m.role}`} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}>
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}

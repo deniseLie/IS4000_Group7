@@ -8,8 +8,10 @@ function marker(page) {return page.locked?<span className="nav-lock"><Icon name=
 
 // The profile at the bottom opens the account menu (records, data sharing, saved chats, Actions, sign out).
 export default function Sidebar({session,name,current,pages,menu,onSignOut}) {
+  // name is null while it loads: a placeholder holds its place instead of generic text that later changes
   const profile=<>{session&&name?<span className="session-avatar initials" aria-hidden="true">{initials(name)}</span>:<span className="session-avatar"><Icon name="user"/></span>}
-    <span className="sidebar-who"><span>{session?(name||'Signed in'):'Guest session'}</span><small>{session?'Demo client · signed in':'No account connected'}</small></span></>;
+    <span className="sidebar-who">{session&&name===null?<><span className="skeleton-text" aria-hidden="true"/><small className="skeleton-text short" aria-hidden="true"/><span className="sr-only">Loading your profile</span></>
+      :<><span>{session?(name||'Signed in'):'Guest session'}</span><small>{session?'Demo client · signed in':'No account connected'}</small></>}</span></>;
   return <aside className="bank-sidebar" aria-label="DemoBank">
     <nav className="sidebar-group" aria-label="Pages"><span className="eyebrow">DemoBank</span>
       {pages.map(page=><button key={page.view} data-testid={page.testid} aria-label={label(page)} aria-current={page.view===current?'page':undefined} className={page.view===current?'sidebar-current':''} onClick={page.onSelect}>
