@@ -120,13 +120,13 @@ export default function Chat({session,onSignIn}) {
     open();return ()=>controller.abort();
   },[]);
 
-  useEffect(()=>{  // Workflow 3: the bot introduces a newly assigned relationship manager from the bank's records
-    if(!session||mode!=='personal'){setRmIntro(null);return;}
+  useEffect(()=>{  // Workflow 3: the relationship manager from the bank's records (chat intro, RM page, Talk to a person), whatever the chat scope
+    if(!session){setRmIntro(null);return;}
     const controller=new AbortController();setRmIntroError('');
     (async()=>{try{const headers=await sessionHeaders();const intro=await loadIntroduction(headers.Authorization.replace(/^Bearer /,''),controller.signal);if(!controller.signal.aborted)setRmIntro(intro);}
       catch(failure){if(failure.name!=='AbortError'&&!controller.signal.aborted){setRmIntro(null);setRmIntroError(failure.message);}}})();
     return ()=>controller.abort();
-  },[session?.user.id,mode]);
+  },[session?.user.id]);
 
   useEffect(()=>{  // the signed-in customer's own name labels the account area
     if(!session){setProfileName('');return;}
@@ -374,7 +374,7 @@ export default function Chat({session,onSignIn}) {
           {store==='database'&&conversation&&<button className="icon-tool" data-testid="reload-saved-chat" aria-label="Refresh this chat" title="Refresh this chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}><Icon name="refresh"/></button>}
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
-        <p className="language-note chat-note"><Icon name="info"/>Language applies to AI answers only. {mode==='personal'?'Answers are informational and use your records.':'Answers are general information.'}</p>
+        <p className="language-note chat-note"><Icon name="info"/>Language applies to AI answers only. {mode==='personal'?'Answers are informational and use your records.':session?<>General help doesn’t use your records, so the assistant can’t see your accounts, relationship manager or review. Switch to <button className="note-link" onClick={()=>{if(reset())setMode('personal');}}>My records</button> for those.</>:'Answers are general information.'}</p>
         {store==='database'&&conversation&&pending&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
           <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}
           <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
