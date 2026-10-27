@@ -1,5 +1,6 @@
 import {parseStoredUpload,parseUploadResult,uploadTargetMatches} from './documentUploadData.js';
 import {parseRequestTarget,parseRequestResult,requestTargetMatches} from './requestData.js';
+import {disputeTargetMatches,parseDisputeAnswers,parseDisputeResult,parseDisputeTarget} from './disputeData.js';
 import {parseChecklistTarget,parseChecklistResult,checklistTargetMatches} from './checklistData.js';
 import {parseWorkflow} from './workflows.js';
 import {parseAppointmentResult,parseAppointmentTarget,parseSlotTarget} from './appointmentData.js';
@@ -23,13 +24,16 @@ function timestamp(value) {
 
 export function parseAction(value) {
   const command=value?.command,receipt=value?.receipt;
-  if(!command||!['card.temporary_block','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
+  if(!command||!['card.temporary_block','card.dispute','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
   const command_id=id(command.command_id),case_id=id(command.case_id);
   if(typeof command.idempotency_key!=='string'||!command.idempotency_key.startsWith(`${case_id}:`)||!command.idempotency_key.endsWith(`:${command.type}`)||!/^[A-Za-z0-9_-]{1,40}$/.test(command.idempotency_key.split(':')[1])||command.idempotency_key.split(':').length!==3)throw invalid();
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
   const confirmed_at=command.confirmed_at===null?null:timestamp(command.confirmed_at);
   if(Date.parse(expires_at)<=Date.parse(proposed_at))throw invalid();
   if(STAFF.includes(command.type)&&(!['succeeded','failed'].includes(command.state)||confirmed_at===null))throw invalid();
+  // Only a decided dispute records the customer's answer about the card.
+  const answers=command.confirmation_input===null||command.confirmation_input===undefined?null:parseDisputeAnswers(command.confirmation_input);
+  if(answers&&(command.type!=='card.dispute'||command.state==='proposed'))throw invalid();
   const target=command.target;
   let canonical;
   if(['card.temporary_block','card.unblock','card.cancel_permanently'].includes(command.type)) {
@@ -37,9 +41,10 @@ export function parseAction(value) {
     canonical={card_id:target.card_id,last4:target.last4};
     if(STAFF.includes(command.type))canonical={...canonical,handoff_id:id(target.handoff_id)};
   } else if(command.type==='handoff.create') {
-    if(!target||!['card_verification','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
+    if(!target||!['card_verification','card_dispute','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
     canonical={reason:target.reason,priority:target.priority,summary:target.summary};
-  } else if(command.type==='appointment.hold')canonical=parseSlotTarget(target);
+  } else if(command.type==='card.dispute')canonical=parseDisputeTarget(target);
+  else if(command.type==='appointment.hold')canonical=parseSlotTarget(target);
   else if(APPOINTMENTS.includes(command.type))canonical=parseAppointmentTarget(target);
   else if(command.type==='consent.request')canonical=parseConsentRequestTarget(target);
   else if(command.type==='consent.grant')canonical=parseConsentGrantTarget(target);
@@ -65,6 +70,9 @@ export function parseAction(value) {
     } else if(command.type==='card.temporary_block') {
       if(confirmed_at===null||receipt.result?.card_id!==canonical.card_id||receipt.result?.status!=='temporarily_blocked')throw invalid();
       result={card_id:canonical.card_id,status:'temporarily_blocked'};
+    } else if(command.type==='card.dispute') {
+      result=parseDisputeResult(receipt.result);
+      if(confirmed_at===null||!answers||result.card_in_possession!==answers.card_in_possession||!disputeTargetMatches(canonical,result))throw invalid();
     } else if(command.type==='handoff.create') {
       if(!receipt.result||!PRIORITIES.includes(receipt.result.priority)||!['open','claimed'].includes(receipt.result.status)||typeof receipt.result.created!=='boolean')throw invalid();
       result={handoff_id:id(receipt.result.handoff_id),priority:receipt.result.priority,status:receipt.result.status,created:receipt.result.created};
@@ -109,7 +117,7 @@ export function parseAction(value) {
   }
   const workflow=value.workflow===null||value.workflow===undefined?null:parseWorkflow(value.workflow);
   if(workflow&&(workflow.case_id!==case_id||workflow.customer_id!==command.customer_id))throw invalid();
-  return {command:{command_id,case_id,type:command.type,target:canonical,state:command.state,proposed_at,expires_at,confirmed_at},receipt:saved,workflow};
+  return {command:{command_id,case_id,type:command.type,target:canonical,state:command.state,proposed_at,expires_at,confirmed_at,answers},receipt:saved,workflow};
 }
 
 export function parseActions(value) {
@@ -131,8 +139,16 @@ export async function loadActions(token,signal) {
   const response=await fetch(`${API_URL}/commands`,{headers:{Authorization:`Bearer ${token}`},signal});
   return parseActions(await responseBody(response));
 }
-export async function confirmAction(commandId,token,signal) {
-  const response=await fetch(`${API_URL}/commands/${id(commandId)}/confirm`,{method:'POST',headers:{Authorization:`Bearer ${token}`},signal});
+export async function loadAction(commandId,token,signal) {
+  const saved=parseAction(await responseBody(await fetch(`${API_URL}/commands/${id(commandId)}`,{headers:{Authorization:`Bearer ${token}`},signal})));
+  if(saved.command.command_id!==commandId)throw invalid();
+  return saved;
+}
+// A dispute draft is confirmed with the customer's answer about the card; other actions send no body.
+export async function confirmAction(commandId,token,signal,answers=null) {
+  const response=await fetch(`${API_URL}/commands/${id(commandId)}/confirm`,{method:'POST',signal,
+    headers:answers?{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}:{Authorization:`Bearer ${token}`},
+    ...(answers?{body:JSON.stringify({answers:parseDisputeAnswers(answers)})}:{})});
   const saved=parseAction(await responseBody(response));
   if(saved.command.command_id!==commandId)throw invalid();
   return saved;

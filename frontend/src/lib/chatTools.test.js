@@ -53,4 +53,9 @@ test('handoff summary uses topic labels and recorded outcomes only, never custom
  assert.ok(s.length<=1000);
  assert.equal(handoffSummary([{role:'user',content:'hi'}]),'Customer asked for a person. Topics: General questions.');
  assert.ok(handoffSummary([{role:'assistant',content:'x',sections:[{task_id:'t1',domain:'fraud',priority:'P0',answer:'a',response_origin:'ai',decision:'You chose not to block the card ending 4821; it stays active.'}]}]).includes('Card block: declined.'));
+ const urgent=decision=>handoffSummary([{role:'assistant',content:'x',sections:[{task_id:'t1',domain:'fraud',priority:'P0',answer:'a',response_origin:'ai',decision}]}]);
+ const sent='Your dispute draft for 3 charges on the card ending 4821 is recorded for bank staff review. Staff decide any refund or cancellation.';
+ assert.equal(urgent('You chose not to block the card ending 4821; it stays active. '+sent),'Customer asked for a person. Topics: Fraud & security (urgent). Card block: declined. Dispute draft: sent to staff.');
+ assert.ok(urgent('Your card ending 4821 is temporarily blocked. You chose not to send the dispute draft.').endsWith('Card block: confirmed. Dispute draft: declined.'));
+ assert.ok(!urgent(sent).includes('4821'));
 });

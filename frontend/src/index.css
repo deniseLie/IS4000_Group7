@@ -1257,3 +1257,7 @@ small{font-size:max(12px,.83em)}
 .skeleton-text.short{width:84px;height:10px;margin-top:6px}
 .skeleton-text.heading{width:min(340px,80%);height:.9em;margin:.1em 0}
 .bank-chat-footer{justify-content:center}  /* only the coursework line remains; the sidebar shows who is signed in */
+/* Dispute draft review: the one question the records cannot answer. */
+.dispute-answer{border:0;padding:0;margin:12px 0;display:grid;gap:8px}
+.dispute-answer legend{font-weight:600;margin-bottom:6px}
+.dispute-answer label{display:flex;gap:8px;align-items:center}

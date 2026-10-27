@@ -46,3 +46,30 @@ test('failed, expired and rejected commands retain their actual outcome',()=>{
   assert.throws(()=>parseAction({...failed,receipt:{...failed.receipt,result:{card_id:'card_10011',status:'temporarily_blocked'}}}));
   for(const state of ['expired','rejected'])assert.equal(parseAction({command:{...proposal().command,state},receipt:null}).command.state,state);
 });
+
+function dispute(state='succeeded',answers={card_in_possession:'yes'}) {
+  const command_id='12345678-1234-1234-1234-123456789022',case_id='12345678-1234-1234-1234-123456789013';
+  const items=[{transaction_id:'txn_100115',date:'2026-10-12',merchant:'ONLINE MERCHANT 8831',amount:-1,currency:'SGD'},
+    {transaction_id:'txn_100111',date:'2026-10-17',merchant:'ONLINE MERCHANT 8831',amount:-2400,currency:'SGD'}];
+  const target={card_id:'card_10011',transaction_ids:['txn_100111','txn_100115'],last4:'4821',items};
+  return {command:{command_id,case_id,customer_id:1001,type:'card.dispute',target,idempotency_key:`${case_id}:t1_dispute:card.dispute`,state,
+    proposed_at:'2026-10-19T12:00:00Z',expires_at:'2026-10-19T12:05:00Z',confirmed_at:state==='proposed'?null:'2026-10-19T12:01:00Z',confirmation_input:state==='proposed'?null:answers},
+    receipt:state!=='succeeded'?null:{receipt_id:`rcpt_${command_id.replaceAll('-','')}`,command_id,customer_id:1001,outcome:'succeeded',
+      result:{...target,card_in_possession:answers.card_in_possession,status:'submitted_for_review'},audit_event_id:52,created_at:'2026-10-19T12:01:00Z'}};
+}
+
+test('a dispute draft keeps its exact charges and the customer answer about the card',()=>{
+  const recorded=parseAction(dispute());
+  assert.deepEqual(recorded.command.answers,{card_in_possession:'yes'});
+  assert.deepEqual(recorded.command.target.items.map(item=>item.amount),[-1,-2400]);
+  assert.equal(parseAction(dispute('proposed')).command.answers,null);
+  const value=dispute();
+  for(const changed of [
+    {...value,receipt:{...value.receipt,result:{...value.receipt.result,card_in_possession:'no'}}},
+    {...value,receipt:{...value.receipt,result:{...value.receipt.result,items:value.receipt.result.items.slice(0,1),transaction_ids:['txn_100115']}}},
+    {...value,command:{...value.command,confirmation_input:null}},
+    {...value,command:{...value.command,confirmation_input:{card_in_possession:'maybe'}}},
+    {...value,command:{...value.command,target:{...value.command.target,items:[{...value.command.target.items[0],amount:1},value.command.target.items[1]]}}},
+    {...proposal(),command:{...proposal().command,confirmation_input:{card_in_possession:'yes'}}},
+  ])assert.throws(()=>parseAction(changed));
+});

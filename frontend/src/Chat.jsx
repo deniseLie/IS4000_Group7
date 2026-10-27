@@ -16,6 +16,7 @@ import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
 import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
+import DisputeDialog from './components/DisputeDialog';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
 import {RelationshipIntro} from './components/RelationshipWorkspace';
 import {loadIntroduction,recentChange,relationshipIntent} from './lib/relationshipWorkflow';
@@ -167,7 +168,7 @@ export default function Chat({session,onSignIn}) {
     return {Authorization:`Bearer ${data.session.access_token}`};
   }
 
-  // A reply waiting on a card-block decision is rebuilt from its saved checkpoint; without it, Actions still works.
+  // A reply waiting on card decisions is rebuilt from its saved checkpoint; without it, Actions still works.
   async function waitingPreview(history,signal) {
     if(history.workflow?.state!=='awaiting_confirmation')return null;
     try {return (await loadWorkflowPreview(history.workflow.turn_id,await sessionHeaders(),signal)).preview;}
@@ -180,7 +181,7 @@ export default function Chat({session,onSignIn}) {
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
     setSummary(null);setArticle(null);closeHistory();setActionsOpen(false);setRecordsOpen(false);
-    setNotice(preview?'This saved reply is waiting for your card-block decision in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!preview&&!history.workflow&&!history.history_trimmed);
+    setNotice(preview?'This saved reply is waiting for your card decisions in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!preview&&!history.workflow&&!history.history_trimmed);
   }
 
   async function reopen(item) {
@@ -269,7 +270,7 @@ export default function Chat({session,onSignIn}) {
           const paused=parsePausedWorkflow(body,thread.session_id);
           if(paused.turn_id!==stored.turn_id)throw new Error('The proposed actions do not match this reply. Reload the saved chat.');
           const preview=parsePreview(body.preview,paused);
-          setWorkflow(paused);setMessages([...visible,{role:'assistant',content:preview.answer,...preview}]);setNotice('Your card-block decision is waiting in the urgent section.');
+          setWorkflow(paused);setMessages([...visible,{role:'assistant',content:preview.answer,...preview}]);setNotice('Your card decisions are waiting in the urgent section.');
         }
       });
     } catch(err) {
@@ -459,9 +460,12 @@ export default function Chat({session,onSignIn}) {
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
-    {blockAction&&<CardBlockDialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
-      if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
-    }}/>}
+    {blockAction&&(()=>{
+      const Dialog=blockAction.type==='card.dispute'?DisputeDialog:CardBlockDialog;
+      return <Dialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
+        if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
+      }}/>;
+    })()}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
     {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
       setActionsOpen(false);

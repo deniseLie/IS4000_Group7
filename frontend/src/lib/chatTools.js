@@ -53,9 +53,12 @@ export function handoffSummary(messages) {
   for(const section of sections) {const label=(TOPICS[section.domain]||'Other')+(section.priority==='P0'?' (urgent)':'');counts.set(label,(counts.get(label)||0)+1);}
   const topics=[...counts].map(([label,count])=>count>1?`${label} ×${count}`:label).join(', ')||'General questions';
   const decision=sections.filter(section=>section.decision).at(-1)?.decision;
-  const block=decision===undefined?null:decision.includes('is temporarily blocked')?'confirmed':decision.startsWith('You chose not')?'declined':'not completed';
+  // The urgent section's decision joins the block outcome and, when offered, the dispute draft outcome (fixed server wording).
+  const block=decision===undefined?null:decision.includes('is temporarily blocked')?'confirmed':decision.includes('You chose not to block')?'declined':'not completed';
+  const dispute=!decision?.includes('dispute draft')?null:/Your dispute draft for \d+ charges .*is recorded/.test(decision)?'sent to staff'
+    :decision.includes('You chose not to send the dispute draft')?'declined':'not completed';
   const withheld=sections.filter(section=>section.response_origin==='validation').length;
-  return ['Customer asked for a person.',`Topics: ${topics}.`,block&&`Card block: ${block}.`,withheld?`Answers withheld: ${withheld}.`:null].filter(Boolean).join(' ');
+  return ['Customer asked for a person.',`Topics: ${topics}.`,block&&`Card block: ${block}.`,dispute&&`Dispute draft: ${dispute}.`,withheld?`Answers withheld: ${withheld}.`:null].filter(Boolean).join(' ');
 }
 
 export function supportSummary(messages) {

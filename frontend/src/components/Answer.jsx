@@ -11,7 +11,9 @@ export default function Answer({message,pendingText,onSource,onAction}) {
     <span className="answer-text">{section.answer}</span>
     {section.response_origin==='validation'&&<small className="answer-origin">Answer withheld</small>}
     {section.decision&&<p className="answer-decision" data-testid="answer-decision">{section.decision}</p>}
-    {section.pending_action&&onAction&&<button className="primary-button block-card" data-testid="block-card" onClick={()=>onAction(section.pending_action)}>Block card temporarily…</button>}
+    {onAction&&section.pending_actions?.map(action=>action.type==='card.dispute'
+      ?<button key={action.command_id} className="primary-button block-card" data-testid="review-dispute" onClick={()=>onAction(action)}>Review dispute draft…</button>
+      :<button key={action.command_id} className="primary-button block-card" data-testid="block-card" onClick={()=>onAction(action)}>Block card temporarily…</button>)}
     <Sources sources={section.sources} onSource={onSource}/>
   </section>)}</div>;
   return <>{message.content?<span className="answer-text">{message.content}</span>:pendingText?<span className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{pendingText}</span>:<span className="answer-text"/>}<Sources sources={message.sources} onSource={onSource}/></>;
