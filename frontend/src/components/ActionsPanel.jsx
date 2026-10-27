@@ -13,8 +13,8 @@ import {cacheOwner,cached,remember} from '../lib/cache';
 function commandTitle(command) {
   if(command.type==='card.temporary_block')return `Temporarily block card ending ${command.target.last4}`;
   if(command.type==='card.dispute')return `Dispute draft for card ending ${command.target.last4}`;
-  if(command.type==='card.unblock')return `Staff reactivation of card ending ${command.target.last4}`;
-  if(command.type==='card.cancel_permanently')return `Staff cancellation of card ending ${command.target.last4}`;
+  if(command.type==='card.unblock')return command.staff?`Staff reactivation of card ending ${command.target.last4}`:`Unblock card ending ${command.target.last4}`;
+  if(command.type==='card.cancel_permanently')return command.staff?`Staff cancellation of card ending ${command.target.last4}`:`Permanently cancel card ending ${command.target.last4}`;
   if(command.type==='handoff.claim')return 'Staff claimed a demo support handoff';
   if(command.type==='handoff.close')return 'Staff closed a demo support handoff';
   if(command.type==='handoff.create')return 'Record a demo support handoff';
@@ -38,8 +38,9 @@ function receiptText(item) {
   if(item.receipt.outcome==='failed')return 'This command did not change the target. Its state changed before execution.';
   if(item.command.type==='card.temporary_block')return 'This command temporarily blocked the card.';
   if(item.command.type==='card.dispute')return 'This command recorded the reviewed dispute draft and your answer about the card for bank staff review. Staff decide any refund or cancellation; nothing has been refunded.';
-  if(item.command.type==='card.unblock')return 'A verified demo support session reactivated this card.';
-  if(item.command.type==='card.cancel_permanently')return 'A verified demo support session permanently cancelled this card.';
+  const noted=item.receipt.result.handoffs_noted?.length?' Bank staff reviewing a case for this card can see this change.':'';
+  if(item.command.type==='card.unblock')return item.command.staff?'A verified demo support session reactivated this card.':'You unblocked this card; new card payments can go through again.'+noted;
+  if(item.command.type==='card.cancel_permanently')return item.command.staff?'A verified demo support session permanently cancelled this card.':'You permanently cancelled this card. It cannot be reactivated.'+noted;
   if(item.command.type==='handoff.claim')return 'A verified demo support session claimed this support case.';
   if(item.command.type==='handoff.close')return 'A verified demo support session closed this support case. This does not change a card or reverse a transaction.';
   if(item.command.type==='handoff.create')return 'A support handoff is recorded in the demo. There is no staffed support queue.';
@@ -77,8 +78,8 @@ function plainTitle(command) {
   switch(command.type) {
     case 'card.temporary_block':return `Freeze card ending ${t.last4}`;
     case 'card.dispute':return `Dispute ${t.items.length} charges on card ending ${t.last4}`;
-    case 'card.unblock':return `Card ending ${t.last4} reactivated`;
-    case 'card.cancel_permanently':return `Card ending ${t.last4} cancelled`;
+    case 'card.unblock':return command.staff?`Card ending ${t.last4} reactivated`:`Unblock card ending ${t.last4}`;
+    case 'card.cancel_permanently':return command.staff?`Card ending ${t.last4} cancelled`:`Cancel card ending ${t.last4} permanently`;
     case 'compliance.update_checklist_item':return t.item_label;
     case 'document.register':return t.item_label||'Document upload';
     case 'document.submit':return t.item_label;
@@ -96,6 +97,8 @@ function plainSummary(command) {
   switch(command.type) {
     case 'card.temporary_block':return 'Temporarily blocks this card so no new payments go through. It can be reactivated by support.';
     case 'card.dispute':return `Sends these charges to bank staff for review: ${t.items.map(charge).join('; ')}. Staff decide any refund.`;
+    case 'card.unblock':return command.staff?'':'Reactivates this card so new payments go through again. If it was blocked for a suspicious charge, unblock it only if you are sure the card is safe.';
+    case 'card.cancel_permanently':return command.staff?'':'Permanently cancels this card. This cannot be undone: the card can never be reactivated.';
     case 'compliance.update_checklist_item':return `Your preparation mark changes from ${mark(t.expected_client_mark)} to ${mark(t.client_mark)} for ${t.case_title}. The bank status stays ${mark(t.submission_status)}.`;
     case 'document.register':return `${t.file_name} (${(t.size_bytes/1048576).toFixed(2)} MB) stored privately for ${t.case_title}.`;
     case 'document.submit':return `${t.file_name} sent to the bank for review.`;
@@ -114,6 +117,8 @@ const shortDate=formatDateTime;
 const charge=item=>`${formatDate(item.date)} ${item.merchant} ${formatMoney(item.amount,item.currency)}`;
 // Review wording per type; an unknown type gets neutral wording rather than another action's.
 const REVIEW={'card.temporary_block':['Confirming temporarily blocks this card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.','card','Confirm temporary block'],
+  'card.unblock':['Confirming reactivates this card so new payments can go through. If it was blocked because of a suspicious charge, anyone using this signed-in session could do the same, so confirm only if you are sure the card is safe. Rejecting leaves it blocked.','card','Unblock card'],
+  'card.cancel_permanently':['Confirming permanently cancels this card. This cannot be undone: it can never be reactivated, and a replacement card is a separate request to the bank. Rejecting leaves the card unchanged.','permanent card cancellation','Cancel card permanently'],
   'card.dispute':['Confirming sends this dispute draft and your answer about the card to bank staff, who decide any refund or cancellation. Nothing is refunded now. Rejecting sends nothing.','dispute draft','Send dispute draft'],
   'requests.create':['Confirming records these exact request details for the displayed recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.','relationship request','Submit reviewed request'],
   'rm.share_summary':['Confirming shares exactly this saved snapshot with the displayed recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.','saved agenda snapshot and consent','Confirm sharing'],
@@ -215,6 +220,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         <p className="act-meta">Status: <strong data-testid="command-state">{command.state}</strong></p>
         <div className="act-detail">
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
+        {['card.unblock','card.cancel_permanently'].includes(command.type)&&!command.staff&&<p data-testid="command-card-change">Card ending {command.target.last4}. Status when proposed: {command.target.from_status.replaceAll('_',' ')}. After confirmation: {command.type==='card.unblock'?'active':'cancelled (permanent)'}.</p>}
         {command.type==='card.dispute'&&<div data-testid="command-dispute"><p>Card ending {command.target.last4}. Charges:</p><ul>{command.target.items.map(item=><li key={item.transaction_id}>{charge(item)}</li>)}</ul>{command.answers&&<p>Do you still have the card? {possessionLabel(command.answers.card_in_possession)}.</p>}</div>}
         {command.type==='compliance.update_checklist_item'&&<div><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
         {command.type==='requests.create'&&<div data-testid="command-request"><p>For: {command.target.who}. Recipient: {command.target.recipient_name}.</p><p>{command.target.what}</p><p>Urgency: {command.target.urgency}. Requested deadline: {command.target.deadline?formatDate(command.target.deadline):'None'}. Country reference: {command.target.country||'None'}. Currency reference: {command.target.currency||'None'}.</p>{receipt?.outcome==='succeeded'&&<p>Request: <code>{receipt.result.request_id}</code>.</p>}</div>}

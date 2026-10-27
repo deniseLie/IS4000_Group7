@@ -1261,3 +1261,9 @@ small{font-size:max(12px,.83em)}
 .dispute-answer{border:0;padding:0;margin:12px 0;display:grid;gap:8px}
 .dispute-answer legend{font-weight:600;margin-bottom:6px}
 .dispute-answer label{display:flex;gap:8px;align-items:center}
+
+/* Customer card changes in Records: proposed here, confirmed in Actions. */
+.card-manage{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.card-manage .source-notice{flex-basis:100%;margin:0}
+.card-cancel-warning{margin-top:10px;padding:12px;border:1px solid var(--red);border-radius:8px;background:var(--tint)}
+.card-cancel{color:var(--red)}

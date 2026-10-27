@@ -73,3 +73,22 @@ test('a dispute draft keeps its exact charges and the customer answer about the 
     {...proposal(),command:{...proposal().command,confirmation_input:{card_in_possession:'yes'}}},
   ])assert.throws(()=>parseAction(changed));
 });
+
+test('a customer card change is told apart from the staff operation of the same type',()=>{
+  const command_id='12345678-1234-1234-1234-123456789031',case_id='12345678-1234-1234-1234-123456789013';
+  const base={command_id,case_id,customer_id:1001,type:'card.unblock',target:{card_id:'card_10011',last4:'4821',from_status:'temporarily_blocked'},
+    idempotency_key:`${case_id}:manage_card:card.unblock`,state:'proposed',proposed_at:'2026-10-19T12:00:00Z',expires_at:'2026-10-19T12:05:00Z',confirmed_at:null};
+  const proposed=parseAction({command:base,receipt:null});
+  assert.equal(proposed.command.staff,false);
+  assert.equal(proposed.command.target.from_status,'temporarily_blocked');
+  const done={command:{...base,state:'succeeded',confirmed_at:'2026-10-19T12:01:00Z'},receipt:{receipt_id:`rcpt_${command_id.replaceAll('-','')}`,command_id,customer_id:1001,
+    outcome:'succeeded',result:{card_id:'card_10011',last4:'4821',status:'active',from_status:'temporarily_blocked',handoffs_noted:['12345678-1234-1234-1234-123456789099']},audit_event_id:61,created_at:'2026-10-19T12:01:00Z'}};
+  assert.deepEqual(parseAction(done).receipt.result.handoffs_noted,['12345678-1234-1234-1234-123456789099']);
+  for(const changed of [
+    {...done,command:{...done.command,confirmed_at:null}},
+    {...done,receipt:{...done.receipt,result:{...done.receipt.result,from_status:'active'}}},
+    {...done,receipt:{...done.receipt,result:{...done.receipt.result,handoffs_noted:['not-a-uuid']}}},
+    {command:{...base,target:{...base.target,from_status:'active'}},receipt:null},
+    {command:{...base,target:{...base.target,handoff_id:'12345678-1234-1234-1234-123456789099'}},receipt:null},
+  ])assert.throws(()=>parseAction(changed));
+});

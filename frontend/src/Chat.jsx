@@ -466,7 +466,7 @@ export default function Chat({session,onSignIn}) {
         if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
       }}/>;
     })()}
-    {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)}/>}
+    {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)} onReviewActions={openActions}/>}
     {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
       setActionsOpen(false);
       if(workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});

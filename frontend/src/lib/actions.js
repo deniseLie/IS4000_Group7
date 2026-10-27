@@ -12,6 +12,8 @@ const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const STATES=['proposed','confirmed','succeeded','failed','expired','rejected'];
 const PRIORITIES=['P0','P1','P2','P3'];
 const STAFF=['card.unblock','card.cancel_permanently','handoff.claim','handoff.close'];
+// The customer's own card changes share these two types with staff; only the staff target names a handoff.
+export const CARD_CHANGES=['card.unblock','card.cancel_permanently'];
 const APPOINTMENTS=['appointment.hold','appointment.confirm','appointment.cancel'];
 const CONSENTS=['consent.request','consent.grant','consent.revoke'];
 
@@ -30,7 +32,8 @@ export function parseAction(value) {
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
   const confirmed_at=command.confirmed_at===null?null:timestamp(command.confirmed_at);
   if(Date.parse(expires_at)<=Date.parse(proposed_at))throw invalid();
-  if(STAFF.includes(command.type)&&(!['succeeded','failed'].includes(command.state)||confirmed_at===null))throw invalid();
+  const staff=STAFF.includes(command.type)&&!(CARD_CHANGES.includes(command.type)&&command.target?.handoff_id===undefined);
+  if(staff&&(!['succeeded','failed'].includes(command.state)||confirmed_at===null))throw invalid();
   // Only a decided dispute records the customer's answer about the card.
   const answers=command.confirmation_input===null||command.confirmation_input===undefined?null:parseDisputeAnswers(command.confirmation_input);
   if(answers&&(command.type!=='card.dispute'||command.state==='proposed'))throw invalid();
@@ -39,7 +42,11 @@ export function parseAction(value) {
   if(['card.temporary_block','card.unblock','card.cancel_permanently'].includes(command.type)) {
     if(!target||typeof target.card_id!=='string'||!CARD.test(target.card_id)||typeof target.last4!=='string'||!/^\d{4}$/.test(target.last4))throw invalid();
     canonical={card_id:target.card_id,last4:target.last4};
-    if(STAFF.includes(command.type))canonical={...canonical,handoff_id:id(target.handoff_id)};
+    if(staff)canonical={...canonical,handoff_id:id(target.handoff_id)};
+    else if(CARD_CHANGES.includes(command.type)) {
+      if(!['active','temporarily_blocked'].includes(target.from_status)||command.type==='card.unblock'&&target.from_status!=='temporarily_blocked')throw invalid();
+      canonical={...canonical,from_status:target.from_status};
+    }
   } else if(command.type==='handoff.create') {
     if(!target||!['card_verification','card_dispute','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
     canonical={reason:target.reason,priority:target.priority,summary:target.summary};
@@ -76,10 +83,15 @@ export function parseAction(value) {
     } else if(command.type==='handoff.create') {
       if(!receipt.result||!PRIORITIES.includes(receipt.result.priority)||!['open','claimed'].includes(receipt.result.status)||typeof receipt.result.created!=='boolean')throw invalid();
       result={handoff_id:id(receipt.result.handoff_id),priority:receipt.result.priority,status:receipt.result.status,created:receipt.result.created};
-    } else if(['card.unblock','card.cancel_permanently'].includes(command.type)) {
+    } else if(CARD_CHANGES.includes(command.type)) {
       const status=command.type==='card.unblock'?'active':'cancelled';
       if(receipt.result?.card_id!==canonical.card_id||receipt.result?.status!==status)throw invalid();
       result={card_id:canonical.card_id,status};
+      if(!staff) {
+        const noted=receipt.result.handoffs_noted;
+        if(confirmed_at===null||receipt.result.last4!==canonical.last4||receipt.result.from_status!==canonical.from_status||!Array.isArray(noted)||noted.length>50)throw invalid();
+        result={...result,last4:canonical.last4,from_status:canonical.from_status,handoffs_noted:noted.map(id)};
+      }
     } else if(APPOINTMENTS.includes(command.type)) {
       result=parseAppointmentResult(receipt.result);
       const status={'appointment.hold':'held','appointment.confirm':'confirmed','appointment.cancel':'cancelled'}[command.type];
@@ -117,7 +129,7 @@ export function parseAction(value) {
   }
   const workflow=value.workflow===null||value.workflow===undefined?null:parseWorkflow(value.workflow);
   if(workflow&&(workflow.case_id!==case_id||workflow.customer_id!==command.customer_id))throw invalid();
-  return {command:{command_id,case_id,type:command.type,target:canonical,state:command.state,proposed_at,expires_at,confirmed_at,answers},receipt:saved,workflow};
+  return {command:{command_id,case_id,type:command.type,target:canonical,state:command.state,proposed_at,expires_at,confirmed_at,answers,staff},receipt:saved,workflow};
 }
 
 export function parseActions(value) {
