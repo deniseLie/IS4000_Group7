@@ -6,6 +6,12 @@ For the current presentation, use the [ordered demo walkthrough](#demo-walkthrou
 
 For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
 
+## Workflow 1 Part B update — 27 October 2026
+
+[Workflow 1](docs/workflows/workflow-1-alex.md) Part B is now Alex's "something's wrong with my money" message: an unrecognised $2,400 charge with smaller odd charges before it, a pending rent transfer due Friday, and an app lockout he asks about. A rule finds the SGD 1.00 and 4.99 charges from the same merchant (migration `0064`) and the answer calls it a possible card-testing pattern, not fraud. The urgent section offers two decisions in the same paused reply: the temporary block, and a dispute draft listing all three charges that asks only "Do you still have the card?" (migrations `0066`–`0067`). One case summary built from records and the recorded decisions goes to staff with an urgent handoff. The transfer answer repeats code-computed dates (pending since 17 Oct, due 30 Oct) and says not to resend; the fall-below check notes that the card charge does not touch the savings balance. The lockout is answered as a security step: reset the password in the official app first (migration `0065`).
+
+Known limits: the pattern, due-day and lockout-link rules are bounded English rules, not classifiers. Staff decide refunds and cancellation outside the demo. Free-router answers vary; a section that fails validation is withheld and escalated, while both offers still come from records. Apply `0064`–`0067` to the hosted project before running Part B there. The native Data API and browser suites (`test_workflows.py`, `test_workflow1_browser.py`) need PostgREST, which `scripts.install_postgrest` provides for macOS/Linux only.
+
 ## Workflow 1 update — 24 October 2026
 
 [Workflow 1](docs/workflows/workflow-1-alex.md) (Alex: three problems in one message, the urgent one first) now runs end to end in personal v2 mode. Informal wording ("i dont recognise", "$2400") flags fraud and finds card 4821 before any model call; all three sections show at once and the urgent section offers an in-chat temporary block that runs only after **Confirm**, with a receipt. Declining keeps the card active and repeats the urgent steps. Signed-in "Talk to a person" records a support handoff (staff queue) from a summary of topic labels only; guests keep the copy-only draft. Migration `0055` adds fictional DemoBank articles for savings fees, app login recovery, car loans and unrecognised charges.

@@ -196,6 +196,15 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 
+def focused_history(state: Turn,task: Task) -> list[Message]:
+    """With several issues in one message, the retail agent sees its own planned issue in place of that message,
+    so it does not answer (and misquote figures from) issues that other sections answer."""
+    history=state['history']
+    question=task.entities.get('question')
+    if task.domain!='retail' or len(state['plan'].tasks)<2 or not history or history[-1].role!='user' or not isinstance(question,str):return history
+    return [*history[:-1],history[-1].model_copy(update={'content':question})]
+
+
 async def linked_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     """Approved security guidance for a sign-in task linked to a reported charge, fetched by id rather than by keyword."""
     if task.entities.get('linked')!='card_fraud':return []
@@ -243,7 +252,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         from app.services.compliance_selection import selection
         token=selection.set(state['request'].record_context)
         try:
-            result,evidence,prompt_id=await responder(task,state['history'],state['request'].language,
+            result,evidence,prompt_id=await responder(task,focused_history(state,task),state['request'].language,
                 ctx.model_copy(update={'agent':agent}),evidence)
         finally:selection.reset(token)
     else:

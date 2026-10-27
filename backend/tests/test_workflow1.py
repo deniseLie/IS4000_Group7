@@ -288,6 +288,17 @@ def test_part_b_lockout_is_linked_security_help_not_a_second_fraud_task() -> Non
     assert route_issues([PlannedIssue(domain='retail',question='an unrecognised charge appeared after I changed my password')])[0].domain=='fraud'
 
 
+def test_retail_sees_only_its_own_issue_when_one_message_has_several() -> None:
+    from app.services.orchestrator import focused_history
+    request=personal(PART_B)
+    tasks=[Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',entities={'question':'the charge'}),
+        Task(task_id='t2',domain='retail',intent='answer_question',priority='P3',entities={'question':'Will my pending rent transfer arrive by Friday?'})]
+    state={'request':request,'history':request.messages,'plan':TaskPlan(tasks=tasks)}
+    assert [m.content for m in focused_history(state,tasks[1])]==['Will my pending rent transfer arrive by Friday?']
+    assert focused_history(state,tasks[0])==request.messages
+    assert focused_history({**state,'plan':TaskPlan(tasks=tasks[1:])},tasks[1])==request.messages
+
+
 def test_linked_lockout_gets_the_security_guidance_by_id() -> None:
     from app.services.orchestrator import linked_evidence
     task=Task(task_id='t2',domain='retail',intent='answer_question',priority='P1',entities={'question':'locked out','linked':'card_fraud'})

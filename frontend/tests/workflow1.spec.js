@@ -8,7 +8,7 @@ import fs from 'node:fs';
 // Assertions are structural and record-based, never exact model wording. Provider failures fail the run.
 const native=!!process.env.NATIVE_BROWSER_FIXTURE;
 const hosted=!native&&!!process.env.TEST_PERSONA_FIXTURE_FILE&&process.env.TEST_HOSTED_AI==='1';
-const MESSAGE='theres a $2400 charge i dont recognise, my transfer to my landlord still says pending, and i got locked out of the app on my phone';
+const MESSAGE="there's a $2,400 charge i don't recognise and i think there were smaller weird ones before it. my rent transfer still says pending and rent's due friday, will it make it? also locked out of the app, is that related??";
 const ASKS_SECRET=/\b(?:enter|share|send|provide|type|tell me|give me)\s+(?:me\s+)?(?:your|the)\s+(?:password|pin|otp|one-time code|cvv)/i;
 const MODEL_WAIT=170000;
 
@@ -41,7 +41,7 @@ async function signIn(page) {
   await expect(page.getByTestId('open-account-menu')).toBeVisible({timeout:30000});
 }
 
-for(const decision of ['confirm','decline'])test(`workflow one ${decision}: guest, three problems, follow-ups, handover and logout`,async({page})=>{
+for(const decision of ['confirm','decline'])test(`workflow one ${decision}: guest, three linked problems, block and dispute, follow-ups, handover and logout`,async({page})=>{
   test.skip(!native&&!hosted,'Run through test_workflow1_browser.py or the hosted config with TEST_HOSTED_AI=1');
   test.skip(hosted&&decision==='confirm','The hosted run never blocks the shared demo card');
   test.setTimeout(900000);
@@ -61,19 +61,24 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   expect(personalReads).toEqual([]);
   await signIn(page);
 
-  // Part B: one message, three problems, urgent first; all sections show before the decision.
+  // Part B: one message, three linked problems. Urgent first, the lockout next as a security step, then the transfer;
+  // all sections show before the two decisions (block, then dispute draft with the card question).
   const reply=await ask(page,MESSAGE);
   const sections=reply.locator('section.answer-section');
   await expect(sections).toHaveCount(3);
-  expect(await sections.evaluateAll(nodes=>nodes.map(node=>[node.dataset.domain,node.dataset.priority]))).toEqual([['fraud','P0'],['retail','P3'],['retail','P3']]);
-  const urgent=sections.nth(0),transfer=sections.nth(1),app=sections.nth(2);
+  expect(await sections.evaluateAll(nodes=>nodes.map(node=>[node.dataset.domain,node.dataset.priority]))).toEqual([['fraud','P0'],['retail','P1'],['retail','P3']]);
+  const urgent=sections.nth(0),app=sections.nth(1),transfer=sections.nth(2);
   await expect(urgent.locator('h3')).toContainText('Urgent');
   await expect(urgent.getByTestId('block-card')).toBeVisible();
-  await expect(urgent).not.toContainText(/\b(?:I|we) (?:have|'ve) (?:reversed|refunded|investigated|disputed)\b/i);
-  await expect(transfer).toContainText(/1,?800(?:\.00)?/);
-  await expect(transfer).toContainText(/pending/i);
-  await expect(app.locator('[data-source-id*="app-login-recovery"]')).toHaveCount(1);
+  await expect(urgent.getByTestId('review-dispute')).toBeVisible();
+  await expect(urgent.locator('[data-source-id="fraud-pattern"]')).toHaveCount(1);
+  await expect(urgent.locator('.answer-text')).not.toContainText(/\btxn_|\bcard_1/);
+  await expect(urgent).not.toContainText(/\b(?:I|we) (?:have|'ve) (?:reversed|refunded|investigated|disputed|blocked)\b/i);
+  await expect(app.locator('[data-source-id*="account-security-after-fraud"]')).toHaveCount(1);
   await expect(app.locator('.answer-text')).not.toContainText(/https?:\/\//);
+  await expect(transfer.locator('[data-source-id="retail-checks"]')).toHaveCount(1);
+  await expect(transfer).toContainText(/1,?800(?:\.00)?/);
+  await expect(transfer).not.toContainText(/\bwill (?:arrive|reach|go through|make it)\b/i);
   await expect(page.locator('#chat-composer')).toBeDisabled();
 
   await urgent.getByTestId('block-card').click();
@@ -82,25 +87,45 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   await expect(page.getByTestId('card-block-dialog')).toHaveCount(0);
   await urgent.getByTestId('block-card').click();
   await page.getByTestId(decision==='confirm'?'confirm-card-block':'decline-card-block').click();
-  const outcome=page.getByTestId('card-block-outcome');
   if(decision==='confirm') {
     await expect(page.getByTestId('card-block-receipt')).toBeVisible({timeout:60000});
-    await expect(outcome).toContainText('Your card ending 4821 is temporarily blocked.');
-  } else await expect(outcome).toContainText('it stays active',{timeout:60000});
+    await expect(page.getByTestId('card-block-outcome')).toContainText('Your card ending 4821 is temporarily blocked.');
+  } else await expect(page.getByTestId('card-block-outcome')).toContainText('it stays active',{timeout:60000});
+  await page.getByRole('button',{name:'Back to chat'}).click();
+  await expect(page.locator('#chat-composer')).toBeDisabled();
+
+  const waiting=page.getByTestId('chat-message-assistant').last();
+  await expect(waiting.getByTestId('block-card')).toHaveCount(0,{timeout:60000});
+  await waiting.getByTestId('review-dispute').click();
+  const dialog=page.getByTestId('dispute-dialog');
+  await expect(dialog.getByTestId('dispute-charges').locator('li')).toHaveCount(3,{timeout:60000});
+  for(const amount of [/-1\.00/,/-4\.99/,/-2,400\.00/])await expect(dialog.getByTestId('dispute-charges')).toContainText(amount);
+  await expect(page.getByTestId('confirm-dispute')).toBeDisabled();
+  if(decision==='confirm') {
+    await page.getByTestId('dispute-answer-yes').check();
+    await page.getByTestId('confirm-dispute').click();
+    await expect(page.getByTestId('dispute-receipt')).toBeVisible({timeout:60000});
+    await expect(page.getByTestId('dispute-outcome')).toContainText('recorded for bank staff review');
+  } else {
+    await page.getByTestId('decline-dispute').click();
+    await expect(page.getByTestId('dispute-outcome')).toContainText('Nothing was sent',{timeout:60000});
+  }
   await page.getByRole('button',{name:'Back to chat'}).click();
   await expect(page.locator('#chat-composer')).toBeEnabled({timeout:60000});
   const settled=page.getByTestId('chat-message-assistant').last();
-  await expect(settled.getByTestId('answer-decision')).toContainText(decision==='confirm'?'Your card ending 4821 is temporarily blocked.':'official fraud line');
-  if(decision==='confirm')await expect(settled.getByTestId('answer-decision')).toContainText('replacement card');
+  const recorded=settled.getByTestId('answer-decision');
+  await expect(recorded).toContainText(decision==='confirm'?'Your card ending 4821 is temporarily blocked.':'official fraud line');
+  await expect(recorded).toContainText(decision==='confirm'?'Your dispute draft for 3 charges on the card ending 4821 is recorded':'You chose not to send the dispute draft');
   await expect(settled.locator('section.answer-section')).toHaveCount(3);
   await expect(settled.getByTestId('block-card')).toHaveCount(0);
+  await expect(settled.getByTestId('review-dispute')).toHaveCount(0);
 
   // Part C: follow-ups from Alex's records and approved articles.
   const card=await ask(page,'whats my credit card due date and min payment');
   await expect(card.locator('section.answer-section')).toHaveCount(1);
   await expect(card).toContainText(/2026-11-05|5 Nov(?:ember)? 2026|Nov(?:ember)? 5,? 2026/);
   await expect(card).toContainText(/\b50(?:\.00)?\b/);
-  await expect(card).toContainText(/2,?464\.20/);
+  await expect(card).toContainText(/2,?470\.19/);
   await expect(card).toContainText(/8,?000(?:\.00)?/);
   const loan=await ask(page,'can i get a car loan');
   await expect(loan.locator('[data-source-id*="car-loans"]')).toHaveCount(1);

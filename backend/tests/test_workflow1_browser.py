@@ -1,4 +1,4 @@
-"""Workflow 1 end to end: normal UI, personal v2 with the real planner and agents, native JWT/RLS data.
+"""Workflow 1 end to end (Part B: block and dispute decisions with one staff case summary): normal UI, personal v2 with the real planner and agents, native JWT/RLS data.
 
 Run from backend/: TEST_BROWSER_LOCAL=1 TEST_WORKFLOW1_LIVE=1 ../.venv/bin/python -m pytest tests/test_workflow1_browser.py -q
 Needs the native Data API (see test_data_api_local.py), frontend npm dependencies and a configured provider.
@@ -29,9 +29,14 @@ def test_workflow_one(local_data_api: NativeAPI,native_api_client: TestClient,mo
     with psycopg.connect(local_data_api.database_uri) as db:
         blocked=decision=='confirm'
         assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==(('temporarily_blocked' if blocked else 'active'),)
-        assert db.execute("select state from actions.commands where type='card.temporary_block'").fetchall()==[(('succeeded' if blocked else 'rejected'),)]
-        handoffs=db.execute('select reason,priority from support.handoffs order by created_at').fetchall()
-        # Confirmed: staff verify the blocked card; Talk to a person adds its own urgent general handoff in a separate case.
-        assert handoffs==([('card_verification','P0'),('general_support','P0')] if blocked else [('general_support','P0')])
+        decided='succeeded' if blocked else 'rejected'
+        assert db.execute("select type,state from actions.commands where type in ('card.temporary_block','card.dispute') order by type").fetchall()==[
+            ('card.dispute',decided),('card.temporary_block',decided)]
+        handoffs=db.execute('select reason,priority,summary from support.handoffs order by created_at').fetchall()
+        # Confirmed: one case summary for staff under the dispute; Talk to a person adds its own urgent general handoff in a separate case.
+        assert [(reason,priority) for reason,priority,_ in handoffs]==([('card_dispute','P0'),('general_support','P0')] if blocked else [('general_support','P0')])
+        if blocked:
+            summary=handoffs[0][2]
+            for fact in ['Card ending 4821.','SGD -2400.00','SGD -1.00','SGD -4.99','card in possession: yes','Transfer to landlord','app lockout']:assert fact in summary
         assert db.execute("select count(*) from conversation.turns where state='completed'").fetchone()[0]>=5
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
