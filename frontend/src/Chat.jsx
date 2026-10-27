@@ -19,7 +19,8 @@ import {RelationshipIntro} from './components/RelationshipWorkspace';
 import {loadIntroduction,recentChange,relationshipIntent} from './lib/relationshipWorkflow';
 import {prepareComplianceSupport} from './lib/compliance';
 import TopBar from './components/TopBar';
-import Sidebar from './components/Sidebar';
+import Sidebar,{TabBar} from './components/Sidebar';
+import LockedPage from './components/LockedPage';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
@@ -40,7 +41,8 @@ const ERRORS = {
 };
 const PAGES=['chat','overview','inbox','sharing','relationship','compliance'];
 const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Relationship manager']];
-function pageFromHash() {const page=location.hash.slice(1);return PAGES.includes(page)?page:'chat';}
+// Guests can open every page's address too; they see a sign-in prompt instead of records (Actions is a drawer once signed in).
+function pageFromHash(session) {const page=location.hash.slice(1);return PAGES.includes(page)||!session&&page==='actions'?page:'chat';}
 const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
 
 export default function Chat({session,onSignIn}) {
@@ -83,7 +85,7 @@ export default function Chat({session,onSignIn}) {
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const [helpTopic,setHelpTopic]=useState('general'),[supportTarget,setSupportTarget]=useState('support'),[attachSummary,setAttachSummary]=useState(true);
   const [unread,setUnread]=useState(0),[chatCount,setChatCount]=useState(null);
-  const [view,setView]=useState(()=>session?pageFromHash():'chat');
+  const [view,setView]=useState(()=>pageFromHash(session));
   const [pageKey,setPageKey]=useState(0);
   const messageList=useRef(null);
   const composer=useRef(null);
@@ -100,7 +102,7 @@ export default function Chat({session,onSignIn}) {
   },[input]);
 
   useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
-    const sync=()=>setView(session?pageFromHash():'chat');
+    const sync=()=>setView(pageFromHash(session));
     window.addEventListener('hashchange',sync);return ()=>window.removeEventListener('hashchange',sync);
   },[]);
   useEffect(()=>{
@@ -344,37 +346,38 @@ export default function Chat({session,onSignIn}) {
   function openActions() {closeOverlays();setActionsOpen(true);}
   const review={label:'Review in Actions',onSelect:openActions},relationship={label:'Open relationship page',onSelect:()=>navigate('relationship')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
-  async function signOut() {request.current?.abort();await endSession();try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
+  async function signOut() {request.current?.abort();await endSession();history.replaceState(null,'',location.pathname+location.search);try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
-    {testid:'menu-open-overview',icon:'account',label:'Overview',mobile:true,onSelect:()=>{closeOverlays();navigate('overview');}},
-    {testid:'menu-open-chat',icon:'chat',label:'Assistant',mobile:true,onSelect:()=>navigate('chat')},
-    {testid:'menu-open-compliance',icon:'document',label:'Compliance review',mobile:true,onSelect:()=>{closeOverlays();navigate('compliance');}},
-    {testid:'menu-open-relationship',icon:'people',label:'My relationship manager',mobile:true,onSelect:()=>{closeOverlays();navigate('relationship');}},
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
     {testid:'open-data-sharing',ariaLabel:'Review data-sharing consent',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
     ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
-    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Activity',onSelect:openActions},
+    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
+  // The sidebar and the mobile tab bar list the same pages; for guests every page but the assistant is a sign-in prompt.
   const pages=[
-    {view:'overview',testid:'open-overview',icon:'account',label:'Overview',onSelect:session?null:onSignIn},
-    {view:'chat',testid:'open-chat',icon:'chat',label:'Assistant'},
-    {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',onSelect:session?null:onSignIn},
-    {view:'relationship',testid:'open-relationship',icon:'people',label:'My relationship manager',onSelect:session?null:onSignIn},
-  ];
+    {view:'overview',testid:'open-overview',icon:'account',label:'Overview',short:'Home'},
+    {view:'chat',testid:'open-chat',icon:'chat',label:'Assistant',short:'Assistant'},
+    {view:'inbox',testid:session?'open-notifications':'nav-inbox',icon:'bell',label:'Inbox',short:'Inbox',badge:unread},
+    {view:'actions',testid:'nav-actions',icon:'card',label:'Actions',short:'Actions',onSelect:session?openActions:null},
+    {view:'relationship',testid:'open-relationship',icon:'people',label:'Relationship manager',short:'My RM'},
+    {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',short:'Review'},
+  ].map(page=>({...page,locked:!session&&page.view!=='chat',onSelect:page.onSelect||(()=>{if(page.view!=='chat')closeOverlays();navigate(page.view);})}));
+  const current=view==='sharing'?'relationship':view;
 
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
-    <TopBar session={session} unread={unread} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
-      inbox={()=>{closeOverlays();navigate('inbox');}}/>
+    <TopBar session={session} onSupport={prepareSummary} onSignIn={onSignIn}/>
     <div className="bank-chat-layout">
-      <Sidebar session={session} name={profileName} menu={menu} view={view} pages={pages} onNavigate={navigate} onSignOut={signOut}/>
+      <Sidebar session={session} name={profileName} menu={menu} current={current} pages={pages} onSignOut={signOut}/>
+      <TabBar current={current} pages={pages.filter(page=>page.view!=='actions')}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-toolbar">
           <div className="scope-switch" role="radiogroup" aria-label="Information">{[...(session?[['personal','My records']]:[]),['public','General help']].map(([value,label])=>
             <button key={value} type="button" role="radio" aria-checked={mode===value} className={mode===value?'on':''} disabled={booting} onClick={()=>{if(mode!==value&&reset())setMode(value);}}>{label}</button>)}</div>
           <label className="pill-select"><Icon name="info"/><select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select><Icon name="chevron"/></label>
           <span className="toolbar-spacer"/>
+          <button className="bank-chat-logout new-chat" data-testid="new-chat" disabled={booting} onClick={()=>{if(reset())navigate('chat');}}><Icon name="plus"/>New chat</button>
           {store==='database'&&conversation&&<button className="icon-tool" data-testid="reload-saved-chat" aria-label="Refresh this chat" title="Refresh this chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}><Icon name="refresh"/></button>}
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
@@ -416,11 +419,12 @@ export default function Chat({session,onSignIn}) {
       </main>
       {view==='chat'&&savedChats&&<SavedChats closing={historyClosing} current={conversation?.session_id} onLoaded={setChatCount} onClose={closeHistory} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
       {view!=='chat'&&<main className="app-page">
-        {view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}}/>}
-        {view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:review,Appointments:relationship,Requests:relationship,Relationship:relationship,Compliance:compliance,Documents:compliance,'Data sharing':{label:'Open data sharing',onSelect:()=>navigate('sharing')}}}/>}
-        {view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions} onRelationship={()=>{setRmMode('all');navigate('relationship');}}/>}
-        {view==='compliance'&&<CompliancePage key={pageKey} onBack={()=>navigate('chat')} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
-        {view==='relationship'&&<RelationshipPage key={pageKey} intro={rmIntro} introError={rmIntroError} focus={rmFocus} onFocus={setRmFocus} mode={rmMode} onMode={setRmMode}
+        {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
+        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}}/>}
+        {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:review,Appointments:relationship,Requests:relationship,Relationship:relationship,Compliance:compliance,Documents:compliance,'Data sharing':{label:'Open data sharing',onSelect:()=>navigate('sharing')}}}/>}
+        {session&&view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions} onRelationship={()=>{setRmMode('all');navigate('relationship');}}/>}
+        {session&&view==='compliance'&&<CompliancePage key={pageKey} onBack={()=>navigate('chat')} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
+        {session&&view==='relationship'&&<RelationshipPage key={pageKey} intro={rmIntro} introError={rmIntroError} focus={rmFocus} onFocus={setRmFocus} mode={rmMode} onMode={setRmMode}
           onBack={()=>navigate('chat')} onAsk={question=>{navigate('chat');send(null,question);}} onSource={showSource} onReviewActions={openActions} onSharing={()=>navigate('sharing')} onSupport={prepareSummary}/>}
         {footer}
       </main>}

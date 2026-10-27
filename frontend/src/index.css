@@ -1188,3 +1188,30 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 .answer-disclaimer summary svg{width:14px;height:14px}
 .answer-disclaimer summary:hover{color:var(--ink);background:var(--chalk)}
 .answer-disclaimer p{max-width:520px;margin:6px 10px 0;line-height:1.6}
+
+/* 2. Navigation: one page list (sidebar on wide screens, bottom tab bar on narrow ones); guests see locks, not a redirect */
+.sidebar-group button .nav-label{flex:1;min-width:0}
+.nav-badge{display:grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;line-height:1}
+.nav-lock{display:grid;place-items:center}.sidebar-group button .nav-lock svg,.tab-bar .nav-lock svg{width:14px;height:14px;color:var(--faint)}
+.chat-toolbar .new-chat{min-height:32px;padding:6px 12px;font-size:12px}
+.chat-toolbar .new-chat svg{width:14px;height:14px}
+.locked-page{max-width:520px;margin:56px auto;padding:32px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:center;animation:rise-in .24s ease-out}
+.locked-icon{display:inline-grid;place-items:center;width:48px;height:48px;border-radius:50%;background:var(--canvas);color:var(--ink-2)}
+.locked-icon svg{width:22px;height:22px}
+.locked-page h1{margin:16px 0 8px;font-size:22px;line-height:1.3;font-weight:700}
+.locked-page p{margin:0 0 20px;color:var(--muted)}
+.locked-page .panel-actions{justify-content:center}
+.tab-bar{display:none}
+@media(max-width:760px){
+  .tab-bar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:4px 4px calc(4px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line);box-shadow:0 -4px 16px #0f172a0d}
+  .tab-bar button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:52px;padding:6px 2px;border:0;border-radius:8px;background:none;font-size:12px;font-weight:500;line-height:1.2;color:var(--muted)}
+  .tab-bar button>span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tab-bar button[aria-current="page"]{color:var(--ink);font-weight:600}
+  .tab-bar button[aria-current="page"] .tab-icon>svg{color:var(--red)}
+  .tab-icon{position:relative;display:grid;place-items:center}
+  .tab-icon>svg{width:22px;height:22px}
+  .tab-icon>.nav-badge{position:absolute;top:-6px;left:14px;min-width:18px;height:18px;font-size:10px;padding:0 5px}
+  .tab-icon>.nav-lock{position:absolute;top:-4px;left:14px;background:#fff;border-radius:50%}
+  .bank-chat-layout{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  .locked-page{margin:24px 16px;padding:24px 20px}
+}
