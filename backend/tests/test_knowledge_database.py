@@ -49,7 +49,7 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(23,)
+    assert database.execute('select count(*) from kb.articles').fetchone()==(24,)
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:
@@ -161,6 +161,16 @@ def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connect
     assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={2}
     assert database.execute("select article_id from public.kb_get_section('support',1,'main')").fetchall()==[('support',)]
     assert database.execute("select * from public.kb_get_fact('savings.fall_below_fee')").fetchall()==[(2,'SGD','kb:savings-fees@v1#main')]
+
+
+def test_unexpected_code_guidance_publishes_login_recovery_v2(database: 'Connection[SqlRow]') -> None:
+    database.execute('set local role anon')
+    assert database.execute("select version,status from kb.articles where article_id='app-login-recovery' order by 1").fetchall()==[(1,'retired'),(2,'published')]
+    rows=search(database,'also i got a weird OTP last night and now my app is locked',[],4)
+    assert rows and rows[0][1]=='app-login-recovery' and rows[0][2]==2
+    body=database.execute("select body from public.kb_get_section('app-login-recovery',2,'unexpected-code')").fetchone()[0]
+    assert 'the lock is protecting you' in body and 'including callers, bank staff and this chat' in body and 'cannot see sign-in attempts' in body
+    assert database.execute("select article_id from public.kb_get_section('app-login-recovery',1,'steps')").fetchall()==[('app-login-recovery',)]
 
 
 def test_workflow_one_part_b_guidance_is_published(database: 'Connection[SqlRow]') -> None:

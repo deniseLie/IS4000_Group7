@@ -6,9 +6,9 @@ from pydantic import ValidationError
 from app.schemas.actions import ActionOutcome
 from app.schemas.disputes import DisputeTarget
 
-ITEMS=[{'transaction_id':'txn_100115','date':'2026-10-12','merchant':'ONLINE MERCHANT 8831','amount':-1.0,'currency':'SGD'},
-    {'transaction_id':'txn_100111','date':'2026-10-17','merchant':'ONLINE MERCHANT 8831','amount':-2400.0,'currency':'SGD'}]
-TARGET={'card_id':'card_10011','transaction_ids':['txn_100111','txn_100115'],'last4':'4821','items':ITEMS}
+ITEMS=[{'transaction_id':'txn_100116','date':'2026-10-17','merchant':'SUNSET GRILL LA','amount':-86.4,'currency':'SGD'},
+    {'transaction_id':'txn_100111','date':'2026-10-17','merchant':'TECHVAULT ELECTRONICS','amount':-2400.0,'currency':'SGD'}]
+TARGET={'card_id':'card_10011','transaction_ids':['txn_100111','txn_100116'],'last4':'4821','items':ITEMS}
 
 
 def outcome(state: str='succeeded',answer: str | None='yes',result: dict | None=None) -> dict:

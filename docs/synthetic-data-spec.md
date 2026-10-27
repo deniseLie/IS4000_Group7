@@ -24,17 +24,19 @@ Profile `1001`, `demo.alex@example.com`, employed, `SGD 5,000 - 8,000 / month`, 
 | Record | Values | Used by |
 |---|---|---|
 | Savings account `10011` | `****6012`, balance 5,230.45 | EB2 My Account Information |
-| Credit card `10011` | Rewards Card, Visa, last4 **4821**, limit 8,000, outstanding 2,470.19 (2,464.20 before `0064`), minimum 50.00, due 2026-11-05, `active` | EB4, EB8 (block → `temporarily_blocked`) |
-| Transaction `100115` | 2026-10-12, `ONLINE MERCHANT 8831`, −1.00, card 4821, `posted`, overseas (migration `0064`) | EB8: small earlier charge; card-testing pattern rule |
-| Transaction `100116` | 2026-10-14, `ONLINE MERCHANT 8831`, −4.99, card 4821, `posted`, overseas (migration `0064`) | EB8: small earlier charge; card-testing pattern rule |
-| Transaction `100111` | 2026-10-17, `ONLINE MERCHANT 8831`, **−2,400.00**, card 4821, `posted`, overseas | EB8: the unrecognised charge (P0) |
+| Credit card `10011` | Rewards Card, Visa, last4 **4821**, limit 8,000, outstanding 2,563.10 (2,464.20 before `0064`, 2,470.19 after it), minimum 50.00, due 2026-11-05, `active` | EB4, EB8 (block → `temporarily_blocked`) |
+| Transaction `100115` | Fri 2026-10-17 **19:15 SGT**, `Hawker Delight, Tanjong Pagar`, −12.50, card 4821, `posted`, merchant country `SG` (migration `0070`; was a `0064` small charge) | EB8: Alex's own charge in Singapore; the travel rule's earlier charge |
+| Transaction `100116` | Fri 2026-10-17 **21:42 SGT**, `SUNSET GRILL LA`, −86.40, card 4821, `posted`, overseas, merchant country `US` (migration `0070`) | EB8: flagged by the travel rule; Alex does not mention it, the dispute draft includes it |
+| Transaction `100111` | Fri 2026-10-17 **21:58 SGT**, `TECHVAULT ELECTRONICS`, **−2,400.00**, card 4821, `posted`, overseas, merchant country `US` (migration `0070`) | EB8: the charge Alex asks about (P0); flagged by the travel rule |
 | Transaction `100112` | 2026-10-17, `Transfer to landlord`, **−1,800.00**, account 6012, `pending` | EB5: the pending transfer |
-| Transaction `100113` | 2026-10-15, `Demo Supermarket`, −64.20, card 4821, `posted` | Normal history around the charge |
+| Transaction `100113` | 2026-10-15, `Demo Supermarket`, −64.20, card 4821, `posted`, merchant country `SG` | Normal history around the charge |
 | Transaction `100114` | 2026-10-01, `Employer Pte Ltd (DEMO)` salary, +5,600.00, account 6012, `posted` | Account history |
 | Loan `10011` | Personal, original 10,000, outstanding 6,200, monthly 320, next due 2026-11-01 | EB3 loan questions |
 | Notification preferences | in-app, quiet hours 22:00–07:00 | Card-blocked notice (service message, always sent) |
 
-The failing app login has no data; it is answered from approved articles.
+The locked app and the one-time code Alex did not request have no data: there are no sign-in, device, location or OTP records, so the assistant links them to the US charges only from what Alex says, and answers from the approved `app-login-recovery` v2 article.
+
+`0070` adds `banking.transactions.merchant_country` (ISO two-letter code, nullable; only card charges have one) and the customer transaction reader returns `txn_at` (the charge time) and `merchant_country`. The travel rule (`fraud_records.travel_flags`) flags a card charge made in another country less than 4 hours after a charge on the same card. Seeded times are fixed around October 2026; the 90-day record window and the 120-day dispute window must still include them.
 
 ## 3. Michelle Ng — compliance review (CR1, CR2, CR4, CR6, CR7)
 
