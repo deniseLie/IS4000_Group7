@@ -72,7 +72,7 @@ export default function RelationshipDetails({recipient,recipientBusy,onReviewAct
     <form className="relationship-range" onSubmit={event=>{event.preventDefault();setRange({...query});}}>
       <label>From<input type="date" aria-label="Appointment search start" data-testid="slots-from" required value={query.from_date} onChange={event=>setQuery({...query,from_date:event.target.value})}/></label>
       <label>Through<input type="date" aria-label="Appointment search end" data-testid="slots-to" required value={query.to_date} onChange={event=>setQuery({...query,to_date:event.target.value})}/></label>
-      <button className="primary-button" data-testid="refresh-relationship" disabled={busy} type="submit">Refresh</button>
+      <button className="bank-chat-logout" data-testid="refresh-relationship" disabled={busy} type="submit">Refresh</button>
     </form>
     {busy&&<p className="loading" role="status">Checking relationship records… Closing this panel does not cancel a submitted action. Reopen it to check the recorded result.</p>}
     {error&&<p role="alert" data-testid="relationship-error">{error} Refresh, then try again.</p>}

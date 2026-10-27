@@ -1218,3 +1218,20 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 
 /* 4. Plain wording: "Demo · fictional data" said once, under the product name */
 .brand-caption .demo-badge{justify-self:start;display:inline-flex;align-items:center;padding:1px 8px;border:1px solid var(--line);border-radius:999px;background:var(--chalk);font-size:11px;font-weight:600;line-height:18px;letter-spacing:.02em;color:var(--ink-2)}
+
+/* 5. Red is kept for the one main button on a screen and for real alerts (urgent answers, blocked cards, open reviews) */
+:focus-visible{outline-color:var(--ink);outline-offset:2px}
+.sidebar-group .sidebar-current,.sidebar-group .sidebar-current:hover{background:var(--canvas);color:var(--ink);border-left-width:3px;padding-left:9px}
+.sidebar-group .sidebar-current svg{color:var(--ink)}
+.recent-chats{background:#fff;border-color:var(--line);color:var(--ink-2)}
+.recent-chats svg{color:var(--muted)}.recent-chats .count{background:var(--canvas);color:var(--ink-2)}
+.recent-chats:hover,.recent-chats.active{background:var(--chalk);border-color:var(--line-2)}
+.chat-history .saved-chat-button.current,.drawer .saved-chat-button.current{border-color:var(--ink-2);background:var(--chalk)}
+.bank-chat-suggestions svg{color:var(--ink-2)}
+.ov-balance{border-left:1px solid var(--line)}
+.notification-list li.unread,.ib-list li.unread{border-left:1px solid var(--line)}
+.ib-list li.unread .category-badge{background:var(--canvas);border-color:var(--line);color:var(--ink-2)}
+.ib-list li.unread .ib-state{color:var(--ink);font-weight:600}.ib-list li.unread .ib-state .dot{width:8px;height:8px;color:var(--red)}
+.ib-list li.unread h3{font-weight:700}
+.ib-link.strong{color:var(--ink);font-weight:600}.ib-link:hover{color:var(--ink);text-decoration:underline}
+.page-tabs button[aria-selected="true"] .count{background:var(--ink);color:#fff}

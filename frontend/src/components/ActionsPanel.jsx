@@ -174,7 +174,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
   return <Panel label="Actions" size="drawer" eyebrow="Approvals and receipts" title={<><span className="act-dot" aria-hidden="true"/>Actions</>} closeLabel="Close actions" onClose={onClose}
     subtitle="Review synthetic demo actions before you confirm them, and see receipts for what was recorded. These affect demo records only."
     footer={<><button className="bank-chat-logout" disabled={!all.length} onClick={()=>exportCsv(all)}><Icon name="download"/>Export receipts (.csv)</button>
-      <button data-testid="reload-actions" className="primary-button" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/>Refresh</button></>}>
+      <button data-testid="reload-actions" className="bank-chat-logout" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/>Refresh</button></>}>
     <div className="act-tabs" role="tablist" aria-label="Filter actions">{[['all','All',all.length],['pending','Needs approval',pending.length],['receipts','History',history.length]].map(([key,label,count])=>
       <button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>{setTab(key);setGroup('All');}}>{label}<span className="count">{count}</span></button>)}</div>
     {all.length>0&&<div className="act-filters"><label className="act-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Filter by receipt ID, action or date…" value={query} onChange={event=>setQuery(event.target.value)}/></label>
