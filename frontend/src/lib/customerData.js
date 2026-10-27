@@ -42,7 +42,9 @@ function transaction(value) {
   const result={txn_id:match(value?.txn_id,/^txn_[1-9][0-9]{0,17}$/),date:day(value?.date),description:text(value?.description),
     amount:number(value?.amount),currency:match(value?.currency,/^[A-Z]{3}$/),status:choice(value?.status,['posted','pending','failed']),
     card_id:nullable(value?.card_id,id=>match(id,/^card_[1-9][0-9]{0,17}$/)),card_last4:nullable(value?.card_last4,last4=>match(last4,/^[0-9]{4}$/)),
-    failure_reason:nullable(value?.failure_reason,text),is_overseas:value?.is_overseas};
+    failure_reason:nullable(value?.failure_reason,text),is_overseas:value?.is_overseas,
+    txn_at:nullable(value?.txn_at??null,at=>{if(typeof at!=='string'||!Number.isFinite(Date.parse(at)))throw invalid();return at;}),
+    merchant_country:nullable(value?.merchant_country??null,code=>match(code,/^[A-Z]{2}$/))};
   if(typeof result.is_overseas!=='boolean'||(result.card_id===null)!==(result.card_last4===null))throw invalid();
   return result;
 }
