@@ -28,7 +28,7 @@ from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, S
 from app.schemas.actions import ActionOutcome
 from app.schemas.fraud import FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
-from app.schemas.knowledge import KnowledgeQuery
+from app.schemas.knowledge import KnowledgeQuery,SectionKey
 from app.services import actions,audit,customer_data,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
@@ -41,7 +41,10 @@ from app.services.guardrail import FRAUD
 from app.services.authorization import require_permission
 
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]',re.I)
-SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b',re.I)
+SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b',re.I)
+# Signing in is retail app help even when the question asks whether it relates to a reported charge; the fraud task covers the charge.
+LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app)\b",re.I)
+RELATED = re.compile(r'\b(?:related|connected|linked|because of|caused by)\b',re.I)
 DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)',re.I)
 TOPICS: dict[Domain, re.Pattern[str]] = {
     'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode)\b',re.I),
@@ -108,6 +111,7 @@ class ComposeUpdate(TypedDict):
 
 def topic_domain(question: str) -> Domain | None:
     """Rules own clear domain assignments, including questions extracted by the planner."""
+    if LOGIN.search(question) and (not FRAUD.search(question) or RELATED.search(question)):return 'retail'
     if FRAUD.search(question):return 'fraud'
     if RM_REQUEST.search(question):return 'relationship'
     domains = [domain for domain,pattern in TOPICS.items() if pattern.search(question)]
@@ -160,8 +164,11 @@ def prioritise(state: Turn) -> PriorityUpdate:
     issues=state['issues']
     if {'fraud_suspected','lost_card'}.intersection(risk.risk_flags) and not any(issue.domain=='fraud' for issue in issues):
         issues=[PlannedIssue(domain='fraud',question=risk.redacted_message),*issues]
+    fraud_reported=any(issue.domain=='fraud' for issue in issues)
+    # A sign-in problem raised with a suspected charge is answered as a security step; the link is a rule, not a finding.
     tasks = [Task(task_id=f't{i+1}', domain=issue.domain, intent='answer_question',
-        priority=task_priority(issue), entities={'question':issue.question})
+        priority=task_priority(issue), entities={'question':issue.question,
+            **({'linked':'card_fraud'} if fraud_reported and issue.domain=='retail' and LOGIN.search(issue.question) else {})})
         for i,issue in enumerate(issues)]
     return {'plan':TaskPlan(tasks=tasks)}
 
@@ -181,6 +188,17 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 
+async def linked_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
+    """Approved security guidance for a sign-in task linked to a reported charge, fetched by id rather than by keyword."""
+    if task.entities.get('linked')!='card_fraud':return []
+    if settings.knowledge_store!='database':
+        article=INDEX['account-security-after-fraud']
+        return [Evidence(id=article.id,text=article.content,publisher=article.publisher,scope=article.notice,source=Source.model_validate(source(article)))]
+    with data_api.connect(ctx) as db:item=await kb.get_section(SectionKey(article_id='account-security-after-fraud',version=1,anchor='main'),ctx,db)
+    if item is None or not item.current:return []
+    return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source())]
+
+
 def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     agent=AGENT_FOR[task.domain]
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
@@ -197,6 +215,9 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
     if settings.knowledge_store=='database':
         evidence=await database_evidence(task,ctx)
     else:evidence=task_evidence(task,state['history'],state['request'].language)
+    if state['request'].mode=='personal':
+        known={item.id for item in evidence}
+        evidence=[*evidence,*(item for item in await linked_evidence(task,ctx) if item.id not in known)]
     proposal: FraudProposal | None=None
     agent=AGENT_FOR[task.domain]
     prompt_id=task_prompt_id(task,state['request'])

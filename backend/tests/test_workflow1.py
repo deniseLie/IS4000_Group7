@@ -3,13 +3,14 @@
 Sample drafts go straight through the validators; they never stand in for the real AI client.
 Model planning and wording are covered by the opt-in real-provider browser and evaluation runs.
 """
+import asyncio
 import json
-from datetime import datetime,timedelta,timezone
+from datetime import date,datetime,timedelta,timezone
 from uuid import uuid4
 import pytest
 from app.schemas.agents import Evidence,PlannedIssue
 from app.schemas.chat import ChatRequest
-from app.schemas.contracts import AgentResult,Task,TaskPlan
+from app.schemas.contracts import AgentResult,Principal,RequestContext,Task,TaskPlan
 from app.schemas.events import ActionRequiredEvent,AnswerSection,Source
 from app.schemas.fraud import FraudProposal
 from app.schemas.workflows import ResponseMeta
@@ -44,14 +45,15 @@ def test_other_workflow_questions_are_not_fraud(question: str) -> None:
     assert 'fraud_suspected' not in assess_request(personal(question)).risk_flags
 
 
-def test_fraud_comes_first_and_other_issues_keep_the_customers_order() -> None:
+def test_fraud_comes_first_then_the_lockout_then_ordinary_issues() -> None:
     issues=[PlannedIssue(domain='retail',question='my transfer to my landlord still says pending'),
-        PlannedIssue(domain='retail',question='i got locked out of the app on my phone')]
+        PlannedIssue(domain='retail',question='i got locked out of the app on my phone'),
+        PlannedIssue(domain='retail',question='whats my credit card due date')]
     plan=prioritise({'risk':assess_request(personal()),'issues':issues})['plan']
-    assert [task.domain for task in plan.by_priority()]==['fraud','retail','retail']
-    assert [task.entities['question'] for task in plan.by_priority()][1:]==[issue.question for issue in issues]
+    assert [(task.domain,task.priority) for task in plan.by_priority()]==[('fraud','P0'),('retail','P1'),('retail','P3'),('retail','P3')]
+    assert [task.entities['question'] for task in plan.by_priority()][1:]==[issues[1].question,issues[0].question,issues[2].question]
     routed=route_issues([PlannedIssue(domain='retail',question='theres a $2400 charge i dont recognise'),*issues])
-    assert routed[0].domain=='fraud' and task_priority(PlannedIssue(domain='retail',question=issues[1].question))=='P3'
+    assert routed[0].domain=='fraud' and task_priority(PlannedIssue(domain='retail',question=issues[0].question))=='P3'
 
 
 @pytest.mark.parametrize('claimed,recorded,expected',[(('$',2400),('SGD',2400),True),(('$',2400),('USD',2400),True),
@@ -157,7 +159,7 @@ def test_decision_is_merged_into_the_urgent_section(command_state: str,receipt: 
 
 def test_personal_retail_uses_the_new_prompt_version() -> None:
     task=Task(task_id='t1',domain='retail',intent='answer_question',entities={'question':'car loan'})
-    assert task_prompt_id(task,personal())==prompts.load('retail','v3')['id']
+    assert task_prompt_id(task,personal())==prompts.load('retail','v4')['id']
     assert prompts.current('planner')['version']=='v2'
 
 
@@ -169,6 +171,79 @@ def retail_records(cards: list[dict[str,object]]):
 
 ALEX_CARD={'card_id':'card_10011','name':'Rewards Card','network':'visa','last4':'4821','status':'active','limit':8000.0,
     'outstanding':2464.2,'minimum_payment':50.0,'due_date':'2026-11-05'}
+TUESDAY=date(2026,10,27)
+
+
+def alex_retail():
+    """Alex's retail snapshot after migration 0064 (docs/synthetic-data-spec.md)."""
+    from app.schemas.retail import RetailRecords
+    def row(txn: str,day: str,name: str,amount: float,status: str,card: bool) -> dict[str,object]:
+        return {'txn_id':txn,'date':day,'description':name,'amount':amount,'currency':'SGD','status':status,
+            'card_id':'card_10011' if card else None,'card_last4':'4821' if card else None,'is_overseas':card and 'MERCHANT' in name,'failure_reason':None}
+    return RetailRecords.model_validate({'profile':{'name':'Alex Tan (DEMO)','preferred_language':'en','employment_status':'employed'},
+        'accounts':[{'account_id':'acc_10011','type':'savings','number':'****6012','currency':'SGD','balance':5230.45,'status':'active'}],
+        'cards':[{**ALEX_CARD,'outstanding':2470.19}],'loans':[],'captured_at':datetime.now(timezone.utc),'transactions':[
+            row('txn_100111','2026-10-17','ONLINE MERCHANT 8831',-2400.0,'posted',True),row('txn_100112','2026-10-17','Transfer to landlord',-1800.0,'pending',False),
+            row('txn_100115','2026-10-12','ONLINE MERCHANT 8831',-1.0,'posted',True),row('txn_100114','2026-10-01','Employer Pte Ltd (DEMO)',5600.0,'posted',False)]})
+
+
+def test_due_day_reader_resolves_the_customers_named_day_from_today() -> None:
+    from app.services.agents.retail_checks import business_days,due_date
+    assert due_date("my rent transfer still says pending and rent's due friday, will it make it?",TUESDAY)==date(2026,10,30)
+    assert due_date('Will it go through by Friday when rent is due?',TUESDAY)==date(2026,10,30)
+    assert due_date('it is due today',TUESDAY)==TUESDAY and due_date('due tomorrow',TUESDAY)==date(2026,10,28) and due_date('due tuesday',TUESDAY)==TUESDAY
+    assert due_date('due 2026-11-02',TUESDAY)==date(2026,11,2) and due_date('due by 1 nov',TUESDAY)==date(2026,11,1)
+    assert due_date('rent was due 20 oct',TUESDAY)==date(2026,10,20) and due_date('due 3 jan',TUESDAY)==date(2027,1,3)
+    assert due_date('i paid it on friday',TUESDAY) is None and due_date('due soon',TUESDAY) is None and due_date('due 31 feb',TUESDAY) is None
+    assert business_days(date(2026,10,17),TUESDAY)==7 and business_days(TUESDAY,TUESDAY)==0
+
+
+def test_retail_checks_supply_the_deadline_and_fall_below_figures_so_the_model_computes_none() -> None:
+    from decimal import Decimal
+    from app.services.agents.retail_checks import checks
+    records=alex_retail()
+    evidence=checks(records,"my rent transfer still says pending and rent's due friday, will it make it?",TUESDAY,(Decimal('1000'),'SGD'))
+    assert evidence is not None and evidence.id=='retail-checks' and 'txn_' not in evidence.text
+    for fact in ['Today in Singapore is 2026-10-27 (Tuesday)','pending since 2026-10-17 (Saturday): 10 calendar days and 7 business days ago',
+        "stated due day is 2026-10-30 (Friday), 3 days from today",'the balance would be SGD 3430.45','Both balances are above that threshold',
+        'credit card ending 4821 (outstanding 2470.19 of a 8000.00 limit; card currency not recorded) and do not change a bank account balance']:
+        assert fact in evidence.text
+    cited=[{'id':evidence.id,'text':evidence.text}]
+    answer=('Your SGD 1,800.00 transfer to your landlord has been pending since 2026-10-17, 7 business days ago, and rent is due on 2026-10-30, '
+        'in 3 days. Do not send it again. If it completes, your savings balance would be SGD 3,430.45, above the SGD 1,000.00 fall-below threshold.')
+    assert check_sources(answer,['retail-checks'],cited) is None
+    assert check_sources(answer.replace('3,430.45','3,330.45'),['retail-checks'],cited)=='unsupported_figure'
+    assert check_sources(answer+' It will arrive in 2 days.',['retail-checks'],cited)=='unsupported_figure'
+    settled=records.model_copy(update={'transactions':[item for item in records.transactions if item.status!='pending']})
+    assert checks(settled,'can i get a car loan',TUESDAY,None) is None and checks(records,'can i get a car loan',TUESDAY,None) is None
+    assert checks(settled,'is my balance close to the fall-below fee',TUESDAY,(Decimal('6000'),'SGD')).text.count('below that threshold')==1
+
+
+PART_B=("there's a $2,400 charge i don't recognise and i think there were smaller weird ones before it. my rent transfer still says "
+    "pending and rent's due friday, will it make it? also locked out of the app, is that related??")
+
+
+def test_part_b_lockout_is_linked_security_help_not_a_second_fraud_task() -> None:
+    issues=[PlannedIssue(domain='fraud',question="There's a $2,400 charge I don't recognise, plus smaller charges before it"),
+        PlannedIssue(domain='retail',question='My rent transfer is still pending and rent is due Friday; will it arrive on time?'),
+        PlannedIssue(domain='fraud',question='I am locked out of the app; is that related to the unrecognised charges?')]
+    routed=route_issues(issues)
+    assert [issue.domain for issue in routed]==['fraud','retail','retail']
+    plan=prioritise({'risk':assess_request(personal(PART_B)),'issues':routed})['plan'].by_priority()
+    assert [(task.domain,task.priority) for task in plan]==[('fraud','P0'),('retail','P1'),('retail','P3')]
+    assert plan[1].entities['linked']=='card_fraud' and 'linked' not in plan[2].entities and 'linked' not in plan[0].entities
+    alone=prioritise({'risk':assess_request(personal('i got locked out of the app')),'issues':[PlannedIssue(domain='retail',question='i got locked out of the app')]})
+    assert 'linked' not in alone['plan'].tasks[0].entities and alone['plan'].tasks[0].priority=='P1'
+    assert route_issues([PlannedIssue(domain='retail',question='an unrecognised charge appeared after I changed my password')])[0].domain=='fraud'
+
+
+def test_linked_lockout_gets_the_security_guidance_by_id() -> None:
+    from app.services.orchestrator import linked_evidence
+    task=Task(task_id='t2',domain='retail',intent='answer_question',priority='P1',entities={'question':'locked out','linked':'card_fraud'})
+    ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),customer_id=1001))
+    assert [item.id for item in asyncio.run(linked_evidence(task,ctx))]==['account-security-after-fraud']
+    assert asyncio.run(linked_evidence(task.model_copy(update={'entities':{'question':'locked out'}}),ctx))==[]
+    assert 'reset the password in the official app first' in prompts.load('retail','v4')['system']
 
 
 def test_card_payment_figures_are_supported_by_alexs_record_without_a_currency() -> None:
@@ -192,7 +267,7 @@ def test_two_cards_need_a_which_card_question_without_figures() -> None:
     assert validate_draft(task,raw,evidence).status=='needs_clarification'
     suffixed=raw.replace('credit cards do you mean','cards, ending 4821 or 7755, do you mean')
     assert validate_draft(task,suffixed,evidence).status=='error'
-    assert 'more than one card record' in prompts.load('retail','v3')['system']
+    assert 'more than one card record' in prompts.load('retail','v4')['system']
 
 
 def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
@@ -201,7 +276,7 @@ def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
     issue=simple_issue('can i get a car loan','English')
     assert issue is not None and issue.domain=='retail'
     assert search('can i get a car loan')[0].id=='car-loans'
-    assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail','v3')['system']
+    assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail','v4')['system']
 
 
 @pytest.mark.parametrize('raw',['not json',json.dumps({'answer':'Contact your bank.','source_ids':['customer-records']}),

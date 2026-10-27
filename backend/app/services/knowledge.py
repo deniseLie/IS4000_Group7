@@ -75,6 +75,8 @@ ARTICLES += [
 ]
 
 INDEX = {a.id: a for a in ARTICLES}
+# Memory-mode mirror of approved kb.facts (migration 0055): value, unit, article.
+FACTS = {'savings.fall_below_threshold': (1000, 'SGD', 'savings-fees')}
 
 def search(text: str) -> list[Article]:
     query = text.lower()
