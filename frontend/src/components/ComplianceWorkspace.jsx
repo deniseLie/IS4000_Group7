@@ -3,6 +3,7 @@ import {supabase} from '../lib/supabase';
 import {checkIsFresh,findingText,loadWorkspace,primaryStatus,runPrecheck,submitDocument} from '../lib/compliance';
 import ChecklistPreparation from './ChecklistPreparation';
 import Icon from './Icon';
+import {formatDate,formatDateTime} from '../lib/format';
 import DocumentUpload from './DocumentUpload';
 
 const sentence=value=>{const text=value.replaceAll('_',' ');return text[0].toUpperCase()+text.slice(1);};
@@ -56,10 +57,10 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
   {workspace&&!review&&<div className="cw-none" data-testid="compliance-none"><span><Icon name="check"/></span><div><h4>No review needed</h4><p>There is nothing for you to do right now. If the bank needs documents or information, you will see it here and in your Inbox.</p></div></div>}
   {review&&<>
    <article className="cw-card cw-overview">
-    <div className="cw-card-head"><h3>Review progress <span className={`cw-pill ${closed?'ok':'wait'}`}>{closed?'Closed':'In progress'}</span></h3><span className="cw-asof">Retrieved {new Date(workspace.as_of).toLocaleString('en-SG')}</span></div>
+    <div className="cw-card-head"><h3>Review progress <span className={`cw-pill ${closed?'ok':'wait'}`}>{closed?'Closed':'In progress'}</span></h3><span className="cw-asof">Retrieved {formatDateTime(workspace.as_of)}</span></div>
     <div className="cw-summary">
      <div><h4>{review.title}</h4><p className="cw-meta"><span className="cw-chip">{sentence(review.status)}</span>
-      {review.due_date&&<span><Icon name="calendar"/>Due <strong>{review.due_date}</strong></span>}<span>· Updated <time dateTime={review.status_updated_at}>{new Date(review.status_updated_at).toLocaleString('en-SG',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})} SGT</time></span></p></div>
+      {review.due_date&&<span><Icon name="calendar"/>Due <strong>{formatDate(review.due_date)}</strong></span>}<span>· Updated <time dateTime={review.status_updated_at}>{formatDateTime(review.status_updated_at)}</time></span></p></div>
      <div className="cw-progress" aria-label={`${finished} of ${items.length} documents with the bank`}><span>Documents with bank</span><strong>{finished} of {items.length}</strong>
       <div className="cw-bar"><span style={{width:`${items.length?finished/items.length*100:0}%`}}/></div></div>
     </div>
@@ -94,7 +95,7 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
      {report&&<div data-testid="precheck-result" data-precheck-status={fresh?report.status:'expired'} className={`cw-check ${fresh?report.status:'expired'}`}>
       <strong>PRELIMINARY check – not formal approval</strong><p>{!fresh?'This preliminary check has expired. Check the current upload again before submitting.':report.status==='no_issues'?'No issues found against the recorded notice requirements.':report.status==='issues_found'?'Please correct these notice requirement issues:':'Unable to assess reliably. No pass or fail is given.'}</p>
       <ul>{fresh&&report.findings.map((finding,index)=><li key={index}>{findingText(finding,rule)}</li>)}</ul>
-      <p className="rm-small">Checked {new Date(report.checked_at).toLocaleString()} · valid until {report.expires_at?new Date(report.expires_at).toLocaleString():'the recorded expiry'}.</p>
+      <p className="rm-small">Checked {formatDateTime(report.checked_at)} · valid until {report.expires_at?formatDateTime(report.expires_at):'the recorded expiry'}.</p>
       {onAsk&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onAsk('Explain the selected preliminary document check findings and how to fix them.',{kind:'document',case_id:review.case_id,item_id:item.item_id,document_id:current,check_id:report.check_id})}>Explain findings in chat</button>}
      </div>}
      {open&&(DONE.includes(item.submission_status)?<details className="cw-more"><summary>Upload a replacement</summary><DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/></details>

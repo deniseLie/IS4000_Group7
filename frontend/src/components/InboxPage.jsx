@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {loadInbox,markNotificationRead} from '../lib/notifications';
+import {formatDateTime} from '../lib/format';
 
 const CATEGORIES={card:'Cards',booking:'Appointments',compliance:'Compliance',document:'Documents',consent:'Data sharing',agenda:'Data sharing',rm:'Relationship',request:'Requests',requests:'Requests',handoff:'Support'};
 const TABS=[['all','All',()=>true],['unread','Unread',item=>!item.read_at],['service','Service updates',item=>item.is_service],['read','Read',item=>!!item.read_at]];
@@ -87,7 +88,7 @@ export default function InboxPage({links={},onActions}) {
       const label=category(item),link=links[label];
       return <li key={item.notification_id} className={item.read_at?'':'unread'} data-notification-id={item.notification_id} data-template-key={item.template_key}>
         <div className="ib-head"><span className="category-badge">{label}</span><span className="ib-state">{!item.read_at&&<span className="dot"/>}{item.is_service?'Service update':'Optional update'} · <span data-testid="notification-read-state">{item.read_at?'Read':'Unread'}</span></span>
-          <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('en-SG',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+          <time dateTime={item.created_at}>{formatDateTime(item.created_at)}</time></div>
         <h3>{item.title}</h3>
         <p>{item.body}</p>
         <div className="ib-foot"><code>Ref #{item.notification_id.slice(0,8).toUpperCase()}</code>

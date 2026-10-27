@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Panel from './Panel';
 import {confirmAction,rejectAction} from '../lib/actions';
 import {supabase} from '../lib/supabase';
+import {formatDateTime} from '../lib/format';
 
 // In-chat review of a proposed temporary block. The server confirms or rejects the stored command; closing sends nothing.
 export default function CardBlockDialog({action,onClose,onDecided}) {
@@ -29,7 +30,7 @@ export default function CardBlockDialog({action,onClose,onDecided}) {
     <div data-testid="card-block-dialog">
       {!outcome&&<>
         <p>Confirming temporarily blocks your synthetic card ending <strong>{last4}</strong>, so new card payments stop. It does not reverse any transaction. Identity verification and permanent cancellation are done by bank staff.</p>
-        <p>Declining leaves the card active. This offer expires at <time dateTime={action.expires_at}>{new Date(action.expires_at).toLocaleString()}</time>.</p>
+        <p>Declining leaves the card active. This offer expires at <time dateTime={action.expires_at}>{formatDateTime(action.expires_at)}</time>.</p>
         <div className="panel-actions"><button className="primary-button" data-testid="confirm-card-block" disabled={busy} onClick={()=>decide(confirmAction)}>Confirm</button>
           <button className="bank-chat-logout" data-testid="decline-card-block" disabled={busy} onClick={()=>decide(rejectAction)}>Decline</button></div>
       </>}

@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
 import {consentCategoryText} from '../lib/consentData';
+import {displayName,formatDateTime} from '../lib/format';
 
 export default function AgendaSharing({agenda,registry,consentBusy,onReviewActions}) {
   const [grantId,setGrantId]=useState('');
@@ -32,14 +33,14 @@ export default function AgendaSharing({agenda,registry,consentBusy,onReviewActio
   }
   return <section className="relationship-details" aria-label="Share saved agenda" data-testid="agenda-sharing">
     <h4>Review a saved agenda snapshot</h4>
-    <p>Recipient: <strong>{agenda.recipient_name}</strong>. Saved revision: {agenda.revision}. Purpose: relationship-manager briefing.</p>
+    <p>Recipient: <strong>{displayName(agenda.recipient_name)}</strong>. Saved revision: {agenda.revision}. Purpose: relationship-manager briefing.</p>
     <p>Data included: {consentCategoryText(agenda.categories)}. Later draft edits do not change a previously shared snapshot.</p>
     <pre className="agenda-content" data-testid="agenda-sharing-preview">{agenda.content}</pre>
     {consentBusy&&<p className="loading" role="status">Checking recorded consent…</p>}
     {!consentBusy&&registry&&grants.length===0&&<p data-testid="agenda-sharing-no-consent">Record and confirm one consent request above covering all these categories for this recipient, then reopen this view.</p>}
     <form onSubmit={propose}>
       <label>Consent grant <select data-testid="agenda-sharing-grant" value={grantId} disabled={busy||consentBusy||!registry||!!error||!!outcome} onChange={event=>setGrantId(event.target.value)}>
-        <option value="">Select an active grant</option>{grants.map(grant=><option key={grant.grant_id} value={grant.grant_id}>{consentCategoryText(grant.categories)} · {grant.expires_at?`Expires ${new Date(grant.expires_at).toLocaleString()}`:'No expiry'}</option>)}
+        <option value="">Select an active grant</option>{grants.map(grant=><option key={grant.grant_id} value={grant.grant_id}>{consentCategoryText(grant.categories)} · {grant.expires_at?`Expires ${formatDateTime(grant.expires_at)}`:'No expiry'}</option>)}
       </select></label>
       {selected&&<p>Selected grant: <code>{selected.grant_id}</code>. The server rechecks its scope, expiry and revocation when you confirm.</p>}
       <button className="primary-button" data-testid="propose-agenda-sharing" disabled={busy||consentBusy||!selected||!!error||!!outcome}>Prepare sharing proposal</button>

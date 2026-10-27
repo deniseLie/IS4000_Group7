@@ -1,6 +1,7 @@
 // Workflow 3 (David): in-chat relationship steps. Pure helpers are unit-tested; every change still goes through the Action Service.
 import {confirmAction,createActionCase,proposeAction,rejectAction} from './actions.js';
 import {loadConsentRecords} from './consent.js';
+import {formatDate} from './format.js';
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY=/^\d{4}-\d\d-\d\d$/;
@@ -81,9 +82,7 @@ export function requestProgress(status) {
   const index=REQUEST_STEPS.indexOf(status);
   return {done:index+1,label:status[0].toUpperCase()+status.slice(1)};
 }
-export function formatDay(value) {
-  return new Date(`${value}T00:00:00Z`).toLocaleDateString('en-SG',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric'});
-}
+export {formatDate as formatDay};
 
 function advisor(value,previous=false) {
   if(previous)return {name:text(value.name),role:text(value.role),team:text(value.team),started_on:day(value.started_on),ended_on:day(value.ended_on)};

@@ -8,6 +8,7 @@ import {proposeAction} from '../lib/actions';
 import {AGENDA_PROFILE_FIELDS} from '../lib/agendaData';
 import {consentCategoryText} from '../lib/consentData';
 import {slotDay,slotTime} from '../lib/appointmentData';
+import {displayName,firstName} from '../lib/format';
 import {FORMATS,REQUEST_STEPS,decide,formatDay,loadHandoverDraft,loadMeetingOptions,meetingDays,noteLines,organiseAgenda,proposeIn,requestProgress,shareWithConsent,splitNote} from '../lib/relationshipWorkflow';
 
 export const STEPS=[['request','Send a request'],['status','My requests'],['note','Handover note'],['meeting','Book a meeting']];
@@ -18,13 +19,13 @@ async function token() {
   if(!data.session)throw new Error('Please sign in again to continue with your relationship manager.');
   return data.session.access_token;
 }
-function first(name) {return name.replace(/\s*\(DEMO\)\s*$/,'').split(' ')[0];}
+const first=firstName;
 function Contact({advisor}) {
   return <dl className="rm-contact"><dt>Phone</dt><dd>{advisor.contact.phone||'Not recorded'}</dd><dt>Email</dt><dd>{advisor.contact.email||'Not recorded'}</dd></dl>;
 }
 function Fallback({intro,onSupport,children}) {
   return <div className="rm-fallback" data-testid="rm-fallback"><p>{children}</p>
-    {intro?.current&&<p>You can contact {intro.current.name} directly: {intro.current.contact.phone||'phone not recorded'}{intro.current.contact.email&&` · ${intro.current.contact.email}`}.</p>}
+    {intro?.current&&<p>You can contact {displayName(intro.current.name)} directly: {intro.current.contact.phone||'phone not recorded'}{intro.current.contact.email&&` · ${intro.current.contact.email}`}.</p>}
     <button className="bank-chat-logout" onClick={onSupport}><Icon name="support"/>Talk to a person</button></div>;
 }
 
@@ -37,9 +38,9 @@ export function RelationshipIntro({intro,error,onStep,onAsk,onSupport,onSource,b
   return <div className="bank-chat-message assistant" data-testid="rm-intro"><div className="bank-chat-avatar"><Icon name="spark"/></div><div className="bank-chat-bubble">
     <div className="answer-heading">Banking assistant<small className="answer-origin">From your records</small></div>
     {!current?<Fallback onSupport={onSupport}>{notice[0]?.body||'No current relationship manager is recorded.'}</Fallback>:<>
-      <p className="answer-text">{previous?<>You have a new relationship manager. {previous.name} looked after you until {formatDay(previous.ended_on)}; from {formatDay(current.started_on)} it is <strong>{current.name}</strong>.</>:<>Your relationship manager is <strong>{current.name}</strong>.</>}</p>
+      <p className="answer-text">{previous?<>You have a new relationship manager. {displayName(previous.name)} looked after you until {formatDay(previous.ended_on)}; from {formatDay(current.started_on)} it is <strong>{displayName(current.name)}</strong>.</>:<>Your relationship manager is <strong>{displayName(current.name)}</strong>.</>}</p>
       <article className="rm-card" data-testid="rm-card"><span className="initials large" aria-hidden="true">{initials(current.name)}</span>
-        <div><h3 data-testid="rm-name">{current.name}</h3><p>{current.role} · {current.team}</p><Contact advisor={current}/></div></article>
+        <div><h3 data-testid="rm-name">{displayName(current.name)}</h3><p>{current.role} · {current.team}</p><Contact advisor={current}/></div></article>
       {notice.length>0&&<div className="rm-notice" data-testid="rm-notice"><p><strong>{notice[0].heading}.</strong> {notice[0].body}</p>
         {notice.slice(1).map(item=><details key={item.anchor} className="rm-more"><summary>{item.heading}</summary><p>{item.body}</p></details>)}
         <button className="source-link" onClick={()=>onSource({id:'rm-change',title:notice[0].title,url:notice[0].url})}>Source: {notice[0].title}</button></div>}
@@ -107,7 +108,7 @@ function StatusStep({intro,refreshKey,onSupport,onRequest}) {
         <ol className="rm-progress" aria-label={`Status: ${progress.label}`}>{REQUEST_STEPS.map((step,index)=><li key={step} className={index<progress.done?'done':''} aria-current={index===progress.done-1?'step':undefined}>{step[0].toUpperCase()+step.slice(1)}</li>)}</ol>
         {item.status==='closed'&&<p className="rm-small">Closed by the bank.</p>}
         <p data-testid="rm-request-action">{item.customer_action?<><strong>Your action:</strong> {item.customer_action}</>:'Nothing is needed from you right now.'}</p>
-        <p className="rm-small">{current?`With ${names[item.advisor_id]}`:item.advisor_id&&intro.previous?`Raised with ${intro.previous.name}, your previous relationship manager. It is not recorded as transferred.`:'Recipient not recorded.'}
+        <p className="rm-small">{current?`With ${names[item.advisor_id]}`:item.advisor_id&&intro.previous?`Raised with ${displayName(intro.previous.name)}, your previous relationship manager. It is not recorded as transferred.`:'Recipient not recorded.'}
           {item.deadline&&` · Requested by ${formatDay(item.deadline)}`} · Urgency {item.urgency}</p></li>;})}</ol>}
   </section>;
 }
@@ -134,7 +135,7 @@ function NoteStep({intro,onSupport,onShared}) {
   const valid=lines&&lines.length>=1&&lines.length<=12&&lines.every(line=>line.trim()&&Array.from(line).length<=300);
   const note=saved?.receipt.result,{agenda}=lines?splitNote(lines):{agenda:[]};
   return <section className="rm-step" data-testid="rm-step-note" aria-label="Handover note">
-    <p className="rm-bot">I drafted a short note for {intro.current.name} from your recorded profile and open requests. Add the topics you want to discuss, and edit anything before saving.</p>
+    <p className="rm-bot">I drafted a short note for {displayName(intro.current.name)} from your recorded profile and open requests. Add the topics you want to discuss, and edit anything before saving.</p>
     {busy&&!lines&&<p className="loading" role="status">Drafting your note from your records…</p>}
     {error&&<Fallback intro={intro} onSupport={onSupport}>{error}</Fallback>}
     {lines&&<>
@@ -153,7 +154,7 @@ function NoteStep({intro,onSupport,onShared}) {
       </div>
       {saved&&!shared&&<p className="rm-small" data-testid="rm-note-saved">Saved privately (revision {note.revision}). Nothing has been shared. Receipt <code>{saved.receipt.receipt_id}</code></p>}
       {shared&&<div className="rm-receipt" role="status" data-testid="rm-note-shared"><Icon name="check"/><div><p><strong>Shared.</strong> {shared.shared.receipt.result.recipient_name} can now see this version of your note.</p>
-        <p className="rm-small">Consent {shared.grant.expires_at?`lasts until ${new Date(shared.grant.expires_at).toLocaleDateString('en-SG')}`:'has no expiry'}. Later edits are not sent. Receipt <code>{shared.shared.receipt.receipt_id}</code></p></div></div>}
+        <p className="rm-small">Consent {shared.grant.expires_at?`lasts until ${formatDay(shared.grant.expires_at)}`:'has no expiry'}. Later edits are not sent. Receipt <code>{shared.shared.receipt.receipt_id}</code></p></div></div>}
     </>}
     {sharing&&note&&<RelationshipConfirmDialog label="Share handover note" title={`Share your note with ${note.recipient_name}?`} subtitle="Your consent is needed before anything is shared." confirmLabel="Give consent and share"
       acknowledgement={`I consent to DemoBank sharing this note with ${note.recipient_name} for a relationship-manager briefing.`}
@@ -207,7 +208,7 @@ function MeetingStep({intro,question,onSupport,onBooked}) {
   return <section className="rm-step" data-testid="rm-step-meeting" aria-label="Book a meeting">
     <p className="rm-bot">Here are {first(intro.current.name)}'s available times{days.length?` from ${slotDay(`${days[0]}T12:00:00+08:00`)} to ${slotDay(`${days.at(-1)}T12:00:00+08:00`)}`:''} (Singapore time). Pick one and I'll hold it for 10 minutes.</p>
     {booked?<div className="rm-receipt" role="status" data-testid="rm-booking-confirmed"><Icon name="check"/><div>
-      <p><strong>Booked.</strong> {slotDay(booked.starts_at)}, {slotTime(booked.starts_at)}–{slotTime(booked.ends_at)} (Singapore time) with {intro.current.name}.</p>
+      <p><strong>Booked.</strong> {slotDay(booked.starts_at)}, {slotTime(booked.starts_at)}–{slotTime(booked.ends_at)} (Singapore time) with {displayName(intro.current.name)}.</p>
       <p>Format: {FORMATS[booked.format]}</p><p data-testid="rm-booking-joining">Joining details: {details(booked)}</p>
       <p className="rm-small">Receipt <code>{booked.receipt_id}</code>. This is a coursework demo: no real meeting or calendar invite is created.</p></div></div>
     :hold?<div className="rm-hold" data-testid="rm-hold">
@@ -228,7 +229,7 @@ function MeetingStep({intro,question,onSupport,onBooked}) {
       onConfirm={async status=>{status('Booking with the scheduling system…');const saved=await decide(proposal.command.command_id,true,await token());
         if(saved.receipt?.outcome!=='succeeded')throw new Error('The time is no longer available or the hold expired. Nothing was booked. Choose another time.');
         setProposal(null);setHold(null);setBooked({...saved.receipt.result,receipt_id:saved.receipt.receipt_id});onBooked?.();}}>
-      <dl className="rm-review"><dt>With</dt><dd>{intro.current.name}</dd><dt>When</dt><dd data-testid="rm-booking-when">{slotDay(held.starts_at)}, {slotTime(held.starts_at)}–{slotTime(held.ends_at)} (Singapore time)</dd>
+      <dl className="rm-review"><dt>With</dt><dd>{displayName(intro.current.name)}</dd><dt>When</dt><dd data-testid="rm-booking-when">{slotDay(held.starts_at)}, {slotTime(held.starts_at)}–{slotTime(held.ends_at)} (Singapore time)</dd>
         <dt>Format</dt><dd>{FORMATS[held.format]}</dd><dt>Joining details</dt><dd>{details(held)}</dd></dl>
     </RelationshipConfirmDialog>}
   </section>;
@@ -238,9 +239,9 @@ function MeetingStep({intro,question,onSupport,onBooked}) {
 function MeetStep({intro,onAsk,onSource}) {
   const {current,previous,notice}=intro;
   return <section className="rm-step" data-testid="rm-step-meet" aria-label="Meet your relationship manager">
-    <p className="rm-bot">{previous?`${previous.name} looked after you until ${formatDay(previous.ended_on)}. From ${formatDay(current.started_on)}, ${current.name} is your relationship manager.`:`${current.name} is your relationship manager.`}</p>
+    <p className="rm-bot">{previous?`${displayName(previous.name)} looked after you until ${formatDay(previous.ended_on)}. From ${formatDay(current.started_on)}, ${displayName(current.name)} is your relationship manager.`:`${displayName(current.name)} is your relationship manager.`}</p>
     <article className="rm-card"><span className="initials large" aria-hidden="true">{initials(current.name)}</span>
-      <div><h3>{current.name}</h3><p>{current.role} · {current.team}</p><Contact advisor={current}/></div></article>
+      <div><h3>{displayName(current.name)}</h3><p>{current.role} · {current.team}</p><Contact advisor={current}/></div></article>
     {notice.length>0&&<div className="rm-notice">{notice.map(item=><p key={item.anchor}><strong>{item.heading}.</strong> {item.body}</p>)}
       <button className="source-link" onClick={()=>onSource?.({id:'rm-change',title:notice[0].title,url:notice[0].url})}>Source: {notice[0].title}</button></div>}
     {previous&&onAsk&&<div className="panel-actions"><button className="bank-chat-logout" data-testid="rm-meet-ask" onClick={()=>onAsk('Why did my relationship manager change, and will things stay the same?')}>Ask the assistant about the change</button></div>}
@@ -263,7 +264,7 @@ export default function RelationshipWorkspace({intro,focus,onFocus,onSupport,onC
   const shown=key=>visited.has(key)||step===key;
   return <section className={`rm-workspace ${embedded?'rm-embedded':'compliance-workspace'}`} data-testid="rm-workspace" aria-label="Your relationship manager">
     {!embedded&&<div className="panel-heading"><div className="rm-head"><span className="initials" aria-hidden="true">{initials(intro.current.name)}</span>
-      <div><span className="eyebrow">Your new relationship manager</span><h3>{intro.current.name}</h3></div></div>
+      <div><span className="eyebrow">Your new relationship manager</span><h3>{displayName(intro.current.name)}</h3></div></div>
       <button className="icon-button" aria-label="Close relationship panel" onClick={onClose}><Icon name="close"/></button></div>}
     <div className="rm-flow">
       <ol className="rm-checklist" aria-label="Steps with your relationship manager">{FLOW.map(([key,label,hint],i)=><li key={key}>

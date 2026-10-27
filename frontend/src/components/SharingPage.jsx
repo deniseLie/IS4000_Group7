@@ -6,6 +6,7 @@ import AgendaDrafts from './AgendaDrafts';
 import {supabase} from '../lib/supabase';
 import {loadConsentRecords,loadSharingStatus} from '../lib/consent';
 import {consentCategoryText} from '../lib/consentData';
+import {displayName,firstName,formatDate,formatDateTime} from '../lib/format';
 
 export function initials(name) {return name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('');}
 
@@ -39,10 +40,10 @@ export default function SharingPage({embedded=false,onReviewActions,onRelationsh
     <section className="page-section"><h2 className="section-label">Who has access</h2>
       {recipient&&<div className="access-card" data-testid="sharing-details">
         <div className="access-person"><span className="initials" aria-hidden="true">{initials(recipient.name)}</span><div>
-          <h3><span data-testid="sharing-recipient">{recipient.name}</span><span className={`status-badge ${granted?'active':''}`}><span className="dot"/>{granted?'Active':'No consent'}</span></h3>
+          <h3><span data-testid="sharing-recipient">{displayName(recipient.name)}</span><span className={`status-badge ${granted?'active':''}`}><span className="dot"/>{granted?'Active':'No consent'}</span></h3>
           <p>Relationship manager · Data covered: Basic profile</p>
           <p role="status" data-testid="sharing-status">{granted?'You have active consent for this profile sharing.':'There is no active consent for this profile sharing.'}</p>
-          {status.consent.expires_at&&<p>Consent expires: <time dateTime={status.consent.expires_at}>{new Date(status.consent.expires_at).toLocaleString()}</time></p>}
+          {status.consent.expires_at&&<p>Consent expires: <time dateTime={status.consent.expires_at}>{formatDateTime(status.consent.expires_at)}</time></p>}
         </div></div>
         <div className="panel-actions"><button className="bank-chat-logout" onClick={()=>manage.current?.scrollIntoView({behavior:'smooth',block:'start'})}>Manage sharing</button>
           <button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare for meeting</button></div>
@@ -51,10 +52,10 @@ export default function SharingPage({embedded=false,onReviewActions,onRelationsh
       {!recipient&&<button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>}
     </section>
     {agendas&&<AgendaDrafts recipient={recipient} consentRegistry={registry} consentBusy={busy} onReviewActions={onReviewActions}/>}
-    {registry&&<section className="page-section"><h2 className="section-label">What {recipient?.name.split(' ')[0]||'your manager'} can see</h2><ConsentScope registry={registry} recipient={recipient}/></section>}
+    {registry&&<section className="page-section"><h2 className="section-label">What {recipient?firstName(recipient.name):'your manager'} can see</h2><ConsentScope registry={registry} recipient={recipient}/></section>}
     {registry&&<section className="page-section"><h2 className="section-label">Your consent history</h2>
       {history.length?<div className="table-frame"><table className="history-table"><thead><tr><th>Granted</th><th>Data and recipient</th><th>Status</th></tr></thead>
-        <tbody>{history.map(item=>{const state=item.revoked_at?'revoked':item.active?'active':'inactive';return <tr key={item.grant_id}><td><time dateTime={item.granted_at}>{new Date(item.granted_at).toLocaleDateString()}</time></td><td>{consentCategoryText(item.categories)}<small>{item.recipient_name||item.recipient}</small></td><td><span className={`status-badge ${state}`}>{state[0].toUpperCase()+state.slice(1)}</span></td></tr>;})}</tbody></table></div>
+        <tbody>{history.map(item=>{const state=item.revoked_at?'revoked':item.active?'active':'inactive';return <tr key={item.grant_id}><td><time dateTime={item.granted_at}>{formatDate(item.granted_at)}</time></td><td>{consentCategoryText(item.categories)}<small>{item.recipient_name?displayName(item.recipient_name):item.recipient}</small></td><td><span className={`status-badge ${state}`}>{state[0].toUpperCase()+state.slice(1)}</span></td></tr>;})}</tbody></table></div>
         :<p className="page-empty">No grants are recorded yet.</p>}
       <p className="page-note">You can change or withdraw your consent at any time.</p></section>}
     <section className="page-section consent-card" ref={manage}><ConsentControls registry={registry} recipient={recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/></section>

@@ -4,10 +4,11 @@ import {useEffect,useState} from 'react';
 import Panel from './Panel';
 import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
+import {formatAmount as amount,formatDate,formatDateTime} from '../lib/format';
 
+// Names and amounts stay exactly as recorded here (card and loan currencies are not recorded); dates use the shared format.
 function label(value) {return value.replaceAll('_',' ');}
-function amount(value) {return value.toLocaleString('en-SG',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function recordedDate(value) {return value===null?'Not recorded':value;}
+function recordedDate(value) {return value===null?'Not recorded':formatDate(value);}
 
 export default function RecordsPanel({onClose}) {
   const [records,setRecords]=useState(null);
@@ -37,7 +38,7 @@ export default function RecordsPanel({onClose}) {
     event.preventDefault();
     setQuery({from_date:from||null,to_date:to||null,filters:status?{status}:null});setRevision(value=>value+1);
   }
-  const footer=<><span>{records?<>Recorded as of <time dateTime={records.profile.as_of}>{new Date(records.profile.as_of).toLocaleString()}</time>. Each section is a separate audited read.</>:'Synthetic records · read only'}</span><button className="bank-chat-logout" onClick={onClose}>Close</button></>;
+  const footer=<><span>{records?<>Recorded as of <time dateTime={records.profile.as_of}>{formatDateTime(records.profile.as_of)}</time>. Each section is a separate audited read.</>:'Synthetic records · read only'}</span><button className="bank-chat-logout" onClick={onClose}>Close</button></>;
   return <Panel label="Customer records" eyebrow="Synthetic records · Read only" title="Your records" closeLabel="Close records" onClose={onClose} size="wide" footer={footer}>
     <p className="panel-notice">Read the synthetic records linked to your sign-in. This view does not change your data. Checklist preparation marks can be saved separately below.</p>
     <form className="records-filters records-filter-bar" onSubmit={refresh}>
@@ -61,13 +62,13 @@ export default function RecordsPanel({onClose}) {
         <p className="source-notice">Currency is not recorded for card and loan amounts.</p></section>
       <section><h3>Transactions</h3><p>Latest {records.transactions.data.length} matching records, up to 200. Dates use Singapore time.</p>
         {records.transactions.data.length===0&&<p data-testid="records-transactions-empty">No matching transactions.</p>}
-        {records.transactions.data.map(row=><article key={row.txn_id} data-testid="records-transaction"><h4>{row.description}</h4><p>{row.date} · {row.currency} {amount(row.amount)} · {row.status}{row.card_last4&&` · Card ****${row.card_last4}`}{row.is_overseas&&' · Overseas'}</p>{row.failure_reason&&<p>{row.failure_reason}</p>}</article>)}</section>
+        {records.transactions.data.map(row=><article key={row.txn_id} data-testid="records-transaction"><h4>{row.description}</h4><p>{formatDate(row.date)} · {row.currency} {amount(row.amount)} · {row.status}{row.card_last4&&` · Card ****${row.card_last4}`}{row.is_overseas&&' · Overseas'}</p>{row.failure_reason&&<p>{row.failure_reason}</p>}</article>)}</section>
       <section><h3>Compliance review</h3>{records.compliance.data?<article data-testid="records-case"><h4>{records.compliance.data.title}</h4><p>{records.compliance.data.notice_text}</p><p>{label(records.compliance.data.status)} · Due: {recordedDate(records.compliance.data.due_date)}</p>
         <ul>{records.compliance.data.requested_items.map(item=><li key={item.item_id} data-checklist-item-id={item.item_id}>{item.label} · {label(item.submission_status)} · {label(item.client_mark)}{item.instructions&&<p>{item.instructions}</p>}<ChecklistPreparation review={records.compliance.data} item={item}/></li>)}</ul></article>:<p>No client-visible review recorded.</p>}</section>
       <DocumentRecords snapshot={records.documents} review={records.compliance.data}/>
-      <section><h3>Relationship manager</h3>{records.advisor.data?.current?<article data-testid="records-advisor"><h4>{records.advisor.data.current.name}</h4><p>{records.advisor.data.current.role} · {records.advisor.data.current.team}</p><p>Assigned since {records.advisor.data.current.started_on}</p>
+      <section><h3>Relationship manager</h3>{records.advisor.data?.current?<article data-testid="records-advisor"><h4>{records.advisor.data.current.name}</h4><p>{records.advisor.data.current.role} · {records.advisor.data.current.team}</p><p>Assigned since {formatDate(records.advisor.data.current.started_on)}</p>
         <p data-testid="records-advisor-contact">Email: {records.advisor.data.current.contact.email||'Not recorded'} · Phone: {records.advisor.data.current.contact.phone||'Not recorded'}</p></article>:<p>No current relationship manager recorded.</p>}
-        {records.advisor.data?.previous&&<p>Previous: {records.advisor.data.previous.name} · Ended {records.advisor.data.previous.ended_on}</p>}</section>
+        {records.advisor.data?.previous&&<p>Previous: {records.advisor.data.previous.name} · Ended {formatDate(records.advisor.data.previous.ended_on)}</p>}</section>
       <p className="source-notice">Reload for current records.</p>
     </div>}
   </Panel>;

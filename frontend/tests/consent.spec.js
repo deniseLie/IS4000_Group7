@@ -15,7 +15,7 @@ test('consent status uses real assigned manager and registry at desktop and mobi
     expect((await loaded).status()).toBe(200);
     const dialog=page.getByTestId('sharing-page');
     await expect(dialog).toBeVisible();
-    await expect(page.getByTestId('sharing-recipient')).toHaveText(fixture.manager);
+    await expect(page.getByTestId('sharing-recipient')).toHaveText(fixture.manager.replace(/\s*\(DEMO\)\s*$/,''));  // the page shows "Demo" once, not after names
     await expect(page.getByTestId('sharing-status')).toHaveText(fixture.granted?
       'You have active consent for this profile sharing.':'There is no active consent for this profile sharing.');
     await expect(page.getByTestId('sharing-error')).toHaveCount(0);

@@ -6,6 +6,7 @@ import {confirmAction,loadActions,rejectAction} from '../lib/actions';
 import {resumeWorkflow} from '../lib/workflows';
 import {appointmentTime} from '../lib/appointmentData';
 import {consentCategoryText} from '../lib/consentData';
+import {displayName,formatDate,formatDateTime,formatTime} from '../lib/format';
 
 function commandTitle(command) {
   if(command.type==='card.temporary_block')return `Temporarily block card ending ${command.target.last4}`;
@@ -76,9 +77,9 @@ function plainTitle(command) {
     case 'compliance.update_checklist_item':return t.item_label;
     case 'document.register':return t.item_label||'Document upload';
     case 'document.submit':return t.item_label;
-    case 'requests.create':return `Request to ${t.recipient_name}`;
+    case 'requests.create':return `Request to ${displayName(t.recipient_name)}`;
     case 'agenda.save':return 'Handover note draft';
-    case 'rm.share_summary':return `Handover note shared with ${t.recipient_name}`;
+    case 'rm.share_summary':return `Handover note shared with ${displayName(t.recipient_name)}`;
     case 'consent.request':case 'consent.grant':return 'Relationship manager data sharing';
     case 'consent.revoke':return 'Withdraw data-sharing consent';
     case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `Meeting on ${appointmentTime(t.starts_at)}`;
@@ -86,24 +87,24 @@ function plainTitle(command) {
   }
 }
 function plainSummary(command) {
-  const t=command.target,mark=value=>value.replaceAll('_',' ');
+  const t=command.target,mark=value=>value.replaceAll('_',' '),who=t.recipient_name?displayName(t.recipient_name):t.recipient;
   switch(command.type) {
     case 'card.temporary_block':return 'Temporarily blocks this card so no new payments go through. It can be reactivated by support.';
     case 'compliance.update_checklist_item':return `Your preparation mark changes from ${mark(t.expected_client_mark)} to ${mark(t.client_mark)} for ${t.case_title}. The bank status stays ${mark(t.submission_status)}.`;
     case 'document.register':return `${t.file_name} (${(t.size_bytes/1048576).toFixed(2)} MB) stored privately for ${t.case_title}.`;
     case 'document.submit':return `${t.file_name} sent to the bank for review.`;
-    case 'requests.create':return `“${t.what}” · ${t.urgency} urgency${t.deadline?` · requested by ${t.deadline}`:''}.`;
-    case 'agenda.save':return `Private draft for ${t.recipient_name} (revision ${t.expected_revision+1}). Nothing is shared.`;
-    case 'rm.share_summary':return `Shares your saved note (revision ${t.agenda_revision}) with ${t.recipient_name}: ${consentCategoryText(t.categories)}.`;
-    case 'consent.request':return `Ask to let ${t.recipient_name||t.recipient} see ${consentCategoryText(t.categories)} for ${t.duration_days} days.`;
-    case 'consent.grant':return `Lets ${t.recipient_name||t.recipient} see ${consentCategoryText(t.categories)}${t.expires_at?` until ${new Date(t.expires_at).toLocaleDateString('en-SG')}`:''}. Other records stay restricted.`;
-    case 'consent.revoke':return `Stops ${t.recipient_name||t.recipient} seeing ${consentCategoryText(t.categories)} from now on.`;
-    case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `${appointmentTime(t.starts_at)} – ${appointmentTime(t.ends_at)} (Singapore time) · ${mark(t.format)}.`;
+    case 'requests.create':return `“${t.what}” · ${t.urgency} urgency${t.deadline?` · requested by ${formatDate(t.deadline)}`:''}.`;
+    case 'agenda.save':return `Private draft for ${who} (revision ${t.expected_revision+1}). Nothing is shared.`;
+    case 'rm.share_summary':return `Shares your saved note (revision ${t.agenda_revision}) with ${who}: ${consentCategoryText(t.categories)}.`;
+    case 'consent.request':return `Ask to let ${who} see ${consentCategoryText(t.categories)} for ${t.duration_days} days.`;
+    case 'consent.grant':return `Lets ${who} see ${consentCategoryText(t.categories)}${t.expires_at?` until ${formatDate(t.expires_at)}`:''}. Other records stay restricted.`;
+    case 'consent.revoke':return `Stops ${who} seeing ${consentCategoryText(t.categories)} from now on.`;
+    case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `${appointmentTime(t.starts_at)} – ${formatTime(t.ends_at)} (Singapore time) · ${mark(t.format)}.`;
     case 'handoff.create':return t.summary;
     default:return '';
   }
 }
-function shortDate(value) {return new Date(value).toLocaleString('en-SG',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+const shortDate=formatDateTime;
 // Exports only what this panel already loaded: one row per recorded action and its receipt.
 function exportCsv(items) {
   const quote=value=>`"${String(value??'').replaceAll('"','""')}"`;
@@ -194,16 +195,16 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         <div className="act-detail">
         {command.type==='handoff.create'&&<p>{command.target.summary}</p>}
         {command.type==='compliance.update_checklist_item'&&<div><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
-        {command.type==='requests.create'&&<div data-testid="command-request"><p>For: {command.target.who}. Recipient: {command.target.recipient_name}.</p><p>{command.target.what}</p><p>Urgency: {command.target.urgency}. Requested deadline: {command.target.deadline||'None'}. Country reference: {command.target.country||'None'}. Currency reference: {command.target.currency||'None'}.</p>{receipt?.outcome==='succeeded'&&<p>Request: <code>{receipt.result.request_id}</code>.</p>}</div>}
+        {command.type==='requests.create'&&<div data-testid="command-request"><p>For: {command.target.who}. Recipient: {command.target.recipient_name}.</p><p>{command.target.what}</p><p>Urgency: {command.target.urgency}. Requested deadline: {command.target.deadline?formatDate(command.target.deadline):'None'}. Country reference: {command.target.country||'None'}. Currency reference: {command.target.currency||'None'}.</p>{receipt?.outcome==='succeeded'&&<p>Request: <code>{receipt.result.request_id}</code>.</p>}</div>}
         {command.type==='document.register'&&<p data-testid="command-document">{command.target.file_name} · {command.target.size_bytes.toLocaleString('en-SG')} bytes · {command.target.case_title}{command.target.item_label&&` · ${command.target.item_label}`}</p>}
         {command.type==='document.submit'&&<p>{command.target.item_label} · {command.target.file_name}</p>}
         {command.type==='agenda.save'&&<div data-testid="command-agenda"><p>Draft recipient: {command.target.recipient_name}. Intended draft revision: {command.target.expected_revision+1}.</p><pre className="agenda-content">{command.target.content}</pre></div>}
         {command.type==='rm.share_summary'&&<div data-testid="command-agenda-sharing"><p>Recipient: {command.target.recipient_name}. Saved agenda revision: {command.target.agenda_revision}.</p>
           <p>Purpose: relationship-manager briefing. Data included: {consentCategoryText(command.target.categories)}.</p>
-          <p>Consent grant: <code>{command.target.consent_grant_id}</code>. Grant covers: {consentCategoryText(command.target.consent_categories)}. {command.target.grant_expires_at?`Expires ${new Date(command.target.grant_expires_at).toLocaleString()}.`:'This grant has no expiry.'}</p>
-          <pre className="agenda-content">{command.target.content}</pre>{receipt?.outcome==='succeeded'&&<p>Shared at {new Date(receipt.result.shared_at).toLocaleString()}. Snapshot: <code>{receipt.result.summary_id}</code>.</p>}</div>}
-        {command.type.startsWith('appointment.')&&<p data-testid="command-appointment">{appointmentTime(command.target.starts_at)} – {appointmentTime(command.target.ends_at)} (Singapore time). Format: {command.target.format.replaceAll('_',' ')}.</p>}
-        {command.type.startsWith('consent.')&&<div><p>Recipient: {command.target.recipient_name||command.target.recipient}</p><p>Purpose: {command.target.purpose}. Data categories: {consentCategoryText(command.target.categories)}.</p><p>{command.type==='consent.request'?`Requested duration: ${command.target.duration_days} days.`:command.target.expires_at?`Grant expires: ${new Date(command.target.expires_at).toLocaleString()}.`:'This recorded grant has no expiry.'}</p></div>}
+          <p>Consent grant: <code>{command.target.consent_grant_id}</code>. Grant covers: {consentCategoryText(command.target.consent_categories)}. {command.target.grant_expires_at?`Expires ${formatDateTime(command.target.grant_expires_at)}.`:'This grant has no expiry.'}</p>
+          <pre className="agenda-content">{command.target.content}</pre>{receipt?.outcome==='succeeded'&&<p>Shared at {formatDateTime(receipt.result.shared_at)}. Snapshot: <code>{receipt.result.summary_id}</code>.</p>}</div>}
+        {command.type.startsWith('appointment.')&&<p data-testid="command-appointment">{appointmentTime(command.target.starts_at)} – {formatTime(command.target.ends_at)} (Singapore time). Format: {command.target.format.replaceAll('_',' ')}.</p>}
+        {command.type.startsWith('consent.')&&<div><p>Recipient: {command.target.recipient_name||command.target.recipient}</p><p>Purpose: {command.target.purpose}. Data categories: {consentCategoryText(command.target.categories)}.</p><p>{command.type==='consent.request'?`Requested duration: ${command.target.duration_days} days.`:command.target.expires_at?`Grant expires: ${formatDateTime(command.target.expires_at)}.`:'This recorded grant has no expiry.'}</p></div>}
         </div>
         </details>
         {item.workflow&&<div data-testid="command-workflow" className="act-note">
@@ -211,7 +212,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
           {item.workflow.can_resume&&<button className="bank-chat-logout" data-testid="resume-workflow" disabled={busy||!!error} onClick={()=>retry(item.workflow.turn_id)}>Resume saved reply</button>}
         </div>}
         {command.state==='proposed'&&<>
-          <p className="act-meta">Proposal expires <time dateTime={command.expires_at}>{new Date(command.expires_at).toLocaleString()}</time>. The server checks expiry before executing.</p>
+          <p className="act-meta">Proposal expires <time dateTime={command.expires_at}>{formatDateTime(command.expires_at)}</time>. The server checks expiry before executing.</p>
           {!chosen&&<div className="act-actions"><button className="primary-button" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);}}><Icon name="check"/>Approve &amp; confirm</button></div>}
           {chosen&&<div className="command-review act-review" data-testid="command-review">
             <p>{command.type==='requests.create'?'Confirming records these exact request details for the displayed recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.':command.type==='rm.share_summary'?'Confirming shares exactly this saved snapshot with the displayed recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.':command.type==='consent.grant'?'Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.':command.type==='consent.revoke'?'Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.':command.type==='appointment.confirm'?'Confirming books this time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.':command.type==='appointment.cancel'?'Confirming cancels this appointment and releases its time.':'Confirming temporarily blocks this card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.'}</p>

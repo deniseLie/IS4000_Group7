@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
+import {displayName} from '../lib/format';
 
 export default function RequestIntake({recipient,recipientBusy,onReviewActions}) {
   const [what,setWhat]=useState('');
@@ -29,7 +30,7 @@ export default function RequestIntake({recipient,recipientBusy,onReviewActions})
   const disabled=busy||recipientBusy||!recipient||!!error||!!outcome;
   return <section className="relationship-details" data-testid="request-intake">
     <h4>Prepare a relationship request</h4>
-    <p>{recipient?`Recipient: ${recipient.name}.`:'A current relationship manager is required to prepare a request.'} This records a request in the demo. It does not perform a financial transaction or contact a real advisor.</p>
+    <p>{recipient?`Recipient: ${displayName(recipient.name)}.`:'A current relationship manager is required to prepare a request.'} This records a request in the demo. It does not perform a financial transaction or contact a real advisor.</p>
     <form className="records-filters" onSubmit={prepare}>
       <label className="request-details-field">Request details <textarea data-testid="request-details" required maxLength={1000} value={what} disabled={disabled} onChange={event=>setWhat(event.target.value)}/></label>
       <label>Urgency <select data-testid="request-urgency" value={urgency} disabled={disabled} onChange={event=>setUrgency(event.target.value)}>{['low','normal','high'].map(value=><option key={value}>{value}</option>)}</select></label>

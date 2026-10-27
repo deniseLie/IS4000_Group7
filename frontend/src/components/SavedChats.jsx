@@ -2,12 +2,10 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {listConversations,loadConversation} from '../lib/conversations';
+import {formatDate,formatTime} from '../lib/format';
 
 const PREVIEWS=10;  // titles are read from the newest saved chats only, to keep opening the panel quick
-function when(value) {
-  const date=new Date(value),today=new Date().toDateString()===date.toDateString();
-  return today?`Today, ${date.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit',hour12:false})}`:date.toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'});
-}
+function when(value) {return formatDate(value)===formatDate(new Date())?`Today, ${formatTime(value)}`:formatDate(value);}
 function clip(text,size) {const line=(text||'').replace(/\s+/g,' ').trim();return line.length>size?`${line.slice(0,size-1)}…`:line;}
 
 // Chat history column beside the assistant: the open conversation first, then earlier saved chats.

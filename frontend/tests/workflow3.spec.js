@@ -22,7 +22,7 @@ test('workflow 3 introduces the new RM, tracks requests, shares a note and books
   await page.goto('/');
   const intro=page.getByTestId('rm-intro');
   await expect(intro).toContainText('You have a new relationship manager');
-  await expect(page.getByTestId('rm-name')).toHaveText('Marcus Chua (DEMO)');
+  await expect(page.getByTestId('rm-name')).toHaveText('Marcus Chua');
   await expect(page.getByTestId('rm-card')).toContainText('+65 6000 0000');
   await expect(page.getByTestId('rm-notice')).toContainText('reorganised its private client advisory teams');
   await expect(page.getByTestId('rm-notice')).not.toContainText('team_restructure');

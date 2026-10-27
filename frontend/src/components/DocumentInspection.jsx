@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
 import {inspectDocument} from '../lib/documentInspection';
+import {formatDateTime} from '../lib/format';
 
 const STATUS={text_extracted:'Text extracted',no_extractable_text:'No extractable text layer',image_decoded:'Image decoded',encrypted:'Encrypted file — not inspected',
   invalid_file:'File could not be opened reliably',limits_exceeded:'File exceeds technical inspection limits',unsupported_content:'This file content is not supported for inspection'};
@@ -33,6 +34,6 @@ export default function DocumentInspection({documentId}) {
       {result.page_count!==null&&<p>PDF pages: {result.page_count}.</p>}
       {result.width!==null&&<p>Image size: {result.width} × {result.height} pixels.</p>}
       <p>Technical checks only. OCR was not performed. Bank-specific assessment rules are not configured. This does not approve the document or change its preliminary check, checklist or review status. File contents stay local to this backend; this check makes no AI provider call.</p>
-      <p>Checked <time dateTime={result.checked_at}>{new Date(result.checked_at).toLocaleString()}</time>.</p></div>}
+      <p>Checked <time dateTime={result.checked_at}>{formatDateTime(result.checked_at)}</time>.</p></div>}
   </div>;
 }

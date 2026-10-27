@@ -1,3 +1,4 @@
+import {formatDate,formatDateTime,formatTime} from './format.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function invalid() {return new Error('The recorded appointment could not be verified. Reload its current status before retrying.');}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
@@ -30,8 +31,6 @@ export function parseAppointments(value) {
   if(new Set(data.map(item=>item.appointment_id)).size!==data.length)throw invalid();
   return {call_id:id(value.call_id),as_of:timestamp(value.as_of),data};
 }
-export function appointmentTime(value) {
-  return new Date(value).toLocaleString('en-SG',{timeZone:'Asia/Singapore',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
-}
-export function slotDay(value) {return new Date(value).toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'short',day:'numeric',month:'short'});}
-export function slotTime(value) {return new Date(value).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour:'2-digit',minute:'2-digit'});}
+export function appointmentTime(value) {return formatDateTime(value,{weekday:'short'});}
+export function slotDay(value) {return formatDate(value,{weekday:'short',year:undefined});}
+export {formatTime as slotTime};

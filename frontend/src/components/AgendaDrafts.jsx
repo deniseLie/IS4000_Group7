@@ -4,6 +4,7 @@ import {createActionCase,proposeAction} from '../lib/actions';
 import {loadAgendas} from '../lib/relationship';
 import {AGENDA_PROFILE_FIELDS} from '../lib/agendaData';
 import {consentCategoryText} from '../lib/consentData';
+import {displayName,formatDateTime} from '../lib/format';
 import AgendaSharing from './AgendaSharing';
 
 export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onReviewActions}) {
@@ -69,7 +70,7 @@ export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onRe
       <button className="bank-chat-logout" data-testid="new-agenda" disabled={busy||!!error||!recipient} onClick={newDraft}>New agenda draft</button>
       {!recipient&&<p>A current relationship manager assignment is required to save a draft.</p>}
       {editor&&<form onSubmit={save} data-testid="agenda-editor">
-        <p>Recipient for this draft: {editor.recipient_name}. Editing revision {editor.revision}.</p>
+        <p>Recipient for this draft: {displayName(editor.recipient_name)}. Editing revision {editor.revision}.</p>
         <label htmlFor="agenda-topics">Topics, one per line (1–12 topics, 300 characters each)</label>
         <textarea id="agenda-topics" data-testid="agenda-topics" rows="5" value={topics} disabled={busy||!!error} onChange={event=>setTopics(event.target.value)}/>
         <p>Use fictional details only. Do not enter passwords, PINs, OTPs or credentials. Recognised private details are redacted before storage; review the saved preview.</p>
@@ -78,9 +79,9 @@ export default function AgendaDrafts({recipient,consentRegistry,consentBusy,onRe
         <button className="primary-button" data-testid="save-agenda" type="submit" disabled={busy||!!error||!valid}>Save private draft</button>
       </form>}
       <ul className="command-list" data-testid="agenda-list">{registry.agendas.map(agenda=><li key={agenda.agenda_id} data-agenda-id={agenda.agenda_id}>
-        <h4>Draft for {agenda.recipient_name}</h4><p>Revision <span data-testid="agenda-revision">{agenda.revision}</span>. Categories: {consentCategoryText(agenda.categories)}.</p>
+        <h4>Draft for {displayName(agenda.recipient_name)}</h4><p>Revision <span data-testid="agenda-revision">{agenda.revision}</span>. Categories: {consentCategoryText(agenda.categories)}.</p>
         <pre className="agenda-content" data-testid="agenda-content">{agenda.content}</pre>
-        <p>Saved <time dateTime={agenda.updated_at}>{new Date(agenda.updated_at).toLocaleString()}</time>. Saving keeps this draft private. Sharing creates a separate recorded snapshot.</p>
+        <p>Saved <time dateTime={agenda.updated_at}>{formatDateTime(agenda.updated_at)}</time>. Saving keeps this draft private. Sharing creates a separate recorded snapshot.</p>
         <button className="bank-chat-logout" data-testid="edit-agenda" disabled={busy||!!error} onClick={()=>editDraft(agenda)}>Edit saved draft</button>
         <button className="bank-chat-logout" data-testid="prepare-agenda-sharing" disabled={busy||!!error||!recipient||recipient.rm_id!==agenda.advisor_id} onClick={()=>{setEditor(null);setSharing(agenda);}}>Review sharing</button>
       </li>)}</ul>

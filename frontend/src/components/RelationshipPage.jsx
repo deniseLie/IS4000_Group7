@@ -6,6 +6,7 @@ import SharingPage from './SharingPage';
 import {initials} from './SharingPage';
 import {supabase} from '../lib/supabase';
 import {loadSharingStatus} from '../lib/consent';
+import {displayName} from '../lib/format';
 
 // Workflow 3 task page. The chat hands off here; "Guided steps" follows the workflow, "All requests & appointments" keeps the full manager view and "Data sharing & permissions" embeds consent.
 export default function RelationshipPage({intro,introError,focus,onFocus,mode,onMode,onBack,onAsk,onSource,onReviewActions,onSharing,onSupport}) {
@@ -32,7 +33,7 @@ export default function RelationshipPage({intro,introError,focus,onFocus,mode,on
     <header className="rm-page-head">
       <div><h1>Your relationship manager</h1><p>Send requests, share a handover note and book a meeting. Each step is confirmed by you first.</p></div>
       {current&&<div className="rm-page-rm"><span className="initials" aria-hidden="true">{initials(current.name)}</span>
-        <div><strong>{current.name}</strong><small>{current.role} · {current.contact.phone||'phone not recorded'}</small></div></div>}
+        <div><strong>{displayName(current.name)}</strong><small>{current.role} · {current.contact.phone||'phone not recorded'}</small></div></div>}
     </header>
     {(error||introError)&&<p role="alert">{error||introError}</p>}
     {!intro&&!introError&&busy&&<><p className="loading" role="status">Loading your relationship manager…</p><div className="loading-list" aria-hidden="true"><span className="skeleton-block"/><span className="skeleton-card large"/></div></>}

@@ -5,7 +5,8 @@ import Answer from './components/Answer';
 import SharingPage from './components/SharingPage';
 import RelationshipPage from './components/RelationshipPage';
 import CompliancePage from './components/CompliancePage';
-import OverviewPage,{displayName} from './components/OverviewPage';
+import OverviewPage from './components/OverviewPage';
+import {displayName,firstName} from './lib/format';
 import {loadSections} from './lib/customerData';
 import {loadInbox} from './lib/notifications';
 import {initials} from './components/SharingPage';
@@ -330,7 +331,7 @@ export default function Chat({session,onSignIn}) {
     if(message.role!=='assistant'||!message.content||mode!=='personal'||!rmIntro?.current)return null;
     const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';const intent=relationshipIntent(asked);
     if(!intent||!['request','status','meeting','note'].includes(intent)&&(message.error||!message.sections?.some(section=>section.domain==='relationship')))return null;
-    const [label,step]=NEXT[intent],name=rmIntro.current.name.replace(/\s*\(DEMO\)\s*$/,'').split(' ')[0];
+    const [label,step]=NEXT[intent],name=firstName(rmIntro.current.name);
     return <button className="primary-button rm-handoff" data-testid="rm-handoff" data-step={step} onClick={()=>openRm(step,['request','meeting'].includes(intent)?asked:null)}>
       {['status','note'].includes(intent)?label:`${label} ${name}`}<Icon name="arrow"/></button>;
   }
