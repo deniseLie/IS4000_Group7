@@ -94,6 +94,10 @@ export default function Chat({session,onSignIn}) {
     if(messages.length&&list)list.scrollTo({top:list.scrollHeight,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
   },[messages]);
   useEffect(()=>()=>request.current?.abort(),[]);
+  useEffect(()=>{  // the message box grows with its text, up to about six lines, then scrolls
+    const box=composer.current;if(!box)return;
+    box.style.height='auto';box.style.height=`${Math.min(box.scrollHeight,160)}px`;
+  },[input]);
 
   useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
     const sync=()=>setView(session?pageFromHash():'chat');
@@ -364,7 +368,7 @@ export default function Chat({session,onSignIn}) {
     <TopBar session={session} unread={unread} booting={booting} view={view} menu={menu} onNewChat={()=>{if(reset())navigate('chat');}} onSupport={prepareSummary} onSignIn={onSignIn}
       inbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
-      <Sidebar session={session} name={profileName} menu={menu} view={view} pages={pages} topics={topics} onNavigate={navigate} onDraft={question=>{navigate('chat');draft(question);}} onSignOut={signOut}/>
+      <Sidebar session={session} name={profileName} menu={menu} view={view} pages={pages} onNavigate={navigate} onSignOut={signOut}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-toolbar">
           <div className="scope-switch" role="radiogroup" aria-label="Information">{[...(session?[['personal','My records']]:[]),['public','General help']].map(([value,label])=>
@@ -375,7 +379,7 @@ export default function Chat({session,onSignIn}) {
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
         <p className="language-note chat-note"><Icon name="info"/>Language applies to AI answers only. {mode==='personal'?'Answers are informational and use your records.':session?<>General help doesn’t use your records, so the assistant can’t see your accounts, relationship manager or review. Switch to <button className="note-link" onClick={()=>{if(reset())setMode('personal');}}>My records</button> for those.</>:'Answers are general information.'}</p>
-        {store==='database'&&conversation&&pending&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
+        {store==='database'&&conversation&&pending&&!loading&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
           <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}
           <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
           <button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel reply</button></span></div>}
@@ -388,23 +392,24 @@ export default function Chat({session,onSignIn}) {
             {!messages.length&&showIntro&&<p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p>}
             {showIntro&&<RelationshipIntro intro={rmIntro} error={rmIntroError} busy={loading||booting||!!pending} onSource={showSource} onSupport={prepareSummary}
               onAsk={question=>send(null,question)} onStep={step=>openRm(step==='status'?'status':step)}/>}
-            {!messages.length&&!showIntro&&<div className="bank-chat-welcome"><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p>{session?<><h1 className="welcome-signed-in">{profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p>Ask about your accounts, cards and loans, your relationship manager or your compliance review.</p></>
-              :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p>Understand your accounts, cards and loans.<br/>Start with a question. We’ll take it from there.</p></>}<div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
+            {!messages.length&&!showIntro&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in">{profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Ask about your accounts, cards and loans, your relationship manager or your compliance review.</p></>
+              :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Understand your accounts, cards and loans. Start with a question.</p></>}<div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
             {messages.map((m,i)=><div key={i} data-testid={`chat-message-${m.role}`} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}>
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}</div>}
                 <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
                 {nextStep(m,i)}{complianceStep(m,i)}
-                {m.disclaimer&&<small className="answer-disclaimer">{m.disclaimer}</small>}
+                {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
               </div>
             </div>)}
             {view==='chat'&&session&&mode==='personal'&&showCompliance&&<ComplianceWorkspace key="compliance-workspace" submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>send(null,question,selection)}/>}
           </div>
           <div className="composer-area"><form className="bank-chat-composer" onSubmit={send}>
-            <input ref={composer} id="chat-composer" aria-label="Your message" value={input} onChange={e=>setInput(e.target.value)} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"/>
-            <div className="composer-tools"><span><Icon name="shield"/>Never share your PIN, password or OTP</span><button data-testid="send-message" disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}>{loading?'Please wait':'Send'}<Icon name="send"/></button></div>
-          </form><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
+            <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>setInput(e.target.value)} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"
+              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}}}/>
+            <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
+          </form><p className="composer-hint"><Icon name="shield"/>Never share your PIN, password or OTP. Enter sends; Shift+Enter adds a line.</p><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
           <details className="session-note"><summary>About this conversation</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile. Use Saved chats to reopen them. Starting a new chat keeps previous saved chats.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears this browser’s access to the previous guest chat.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be omitted from long chats. General guidance works without login. Sign in to view your account records.</p></details></div>
         </section>
         {footer}

@@ -1156,3 +1156,35 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 .panel-dialog.drawer[open]{animation:drawer-in .3s cubic-bezier(.4,0,.2,1)}
 .panel-dialog.drawer.closing{animation:drawer-out .22s cubic-bezier(.4,0,.2,1) forwards}
 .note-link{border:0;background:none;padding:0;font:inherit;color:var(--red);font-weight:600;text-decoration:underline;cursor:pointer}
+
+/* ============ Design review, batch 1 (Oct 2026) ============ */
+/* 1. Assistant: messages, notices and the message box share one centred reading column */
+:root{--chat-col:760px}
+.bank-chat-messages>*,.bank-chat-window>.chat-notice,.bank-chat-window>.chat-notice-bar,.chat-workspace>.pending-bar,.composer-area{width:100%;max-width:var(--chat-col);margin-left:auto;margin-right:auto}
+.bank-chat-window>.chat-toast{align-self:center}
+.bank-chat-messages.has-messages{padding-left:8px}
+.bank-chat-message.assistant .bank-chat-bubble{flex:1;max-width:none}
+.bank-chat-message.user .bank-chat-bubble{max-width:80%}
+.bank-chat-welcome .chat-greeting{margin:0 0 6px;font-size:16px;color:var(--ink-2)}
+.composer-area{padding-top:12px}
+.bank-chat-composer{display:flex;align-items:flex-end;gap:10px;padding:8px 8px 8px 16px;border:1px solid var(--line-2);border-radius:14px;background:#fff;box-shadow:0 1px 2px #0000000d;transition:border-color .15s,box-shadow .15s}
+.bank-chat-composer:focus-within{border-color:var(--ink-2);box-shadow:0 0 0 3px #1118270f}
+.bank-chat-composer textarea{flex:1;min-width:0;min-height:36px;max-height:160px;padding:7px 0;border:0;outline:none;resize:none;overflow-y:auto;background:transparent;color:var(--ink);font-size:15px;line-height:22px}
+.bank-chat-composer textarea::placeholder{color:var(--faint)}
+.bank-chat-composer textarea:focus-visible{outline:none}
+.bank-chat-composer textarea:disabled{cursor:not-allowed}
+.composer-send{display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:var(--red);color:#fff;transition:background .15s}
+.composer-send svg{width:18px;height:18px;stroke-width:2}
+.composer-send:hover:not(:disabled){background:var(--red-dark)}
+.composer-send:disabled{opacity:1;background:var(--line-2)}
+.composer-send:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.composer-hint{display:flex;align-items:center;justify-content:center;gap:6px;margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--muted);text-align:center}
+.composer-hint svg{width:14px;height:14px}
+.bank-chat-message.assistant .bank-chat-bubble>.answer-text{display:block}
+.bank-chat-bubble>.answer-sources,.bank-chat-bubble>.answer-disclaimer{display:inline-block;vertical-align:top;margin:14px 8px 0 0}
+.answer-disclaimer{border:0;padding:0;font-size:12px;line-height:1.5;color:var(--muted)}
+.answer-disclaimer summary{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;list-style:none;color:var(--muted)}
+.answer-disclaimer summary::-webkit-details-marker{display:none}
+.answer-disclaimer summary svg{width:14px;height:14px}
+.answer-disclaimer summary:hover{color:var(--ink);background:var(--chalk)}
+.answer-disclaimer p{max-width:520px;margin:6px 10px 0;line-height:1.6}
