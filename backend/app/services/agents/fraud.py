@@ -32,9 +32,12 @@ def pattern_evidence(records: SecurityRecords,txn_id: str) -> Evidence | None:
     fields={'date','description','amount','currency','card_last4'}
     rows=[*({'role':'earlier small charge',**item.model_dump(mode='json',include=fields)} for item in related),
         {'role':'reported charge',**reported.model_dump(mode='json',include=fields)}]
+    # Charged amounts are listed unsigned as well, so an answer that echoes "a $2,400 charge" is supported without a sign flip.
+    charged='; '.join(f'{item.date.isoformat()} {item.description}: {item.currency} {abs(item.amount):.2f} charged (recorded {item.currency} {item.amount:.2f})'
+        for item in [*related,reported])
     text=(f'DemoBank rule check, not a fraud decision: {len(related)} smaller charges from the same merchant on the same card '
         f'in the {fraud_records.PATTERN_DAYS} days before the reported charge. Small charges like these before a larger one can match '
-        'a card-testing pattern. '+json.dumps({'records':rows}))
+        f'a card-testing pattern. Charges: {charged}. '+json.dumps({'records':rows}))
     return Evidence(id='fraud-pattern',text=text,publisher='DemoBank rule check',
         scope='Deterministic rule over authenticated customer records; a pattern flag, not a fraud decision.',source=Source(id='fraud-pattern',
         title='Rule check: smaller charges from the same merchant',url=None,version=records.captured_at.isoformat(),publisher='DemoBank rule check'))

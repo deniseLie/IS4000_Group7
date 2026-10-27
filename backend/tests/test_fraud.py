@@ -91,6 +91,9 @@ def test_pattern_evidence_supports_the_grouped_figures_but_not_new_ones() -> Non
     grouped=('Two smaller charges from ONLINE MERCHANT 8831, SGD -1.00 on 2026-10-12 and SGD -4.99 on 2026-10-14, came before the '
         'SGD -2,400.00 charge on 2026-10-17. A DemoBank rule check says this can match a card-testing pattern; it is not proof of fraud.')
     assert check_sources(grouped,['fraud-pattern'],evidence) is None
+    echoed='The $2,400 charge came after two smaller charges of $1.00 and $4.99 from ONLINE MERCHANT 8831, a possible card-testing pattern.'
+    assert check_sources(echoed,['fraud-pattern'],evidence) is None
+    assert check_sources(echoed.replace('$4.99','$5.99'),['fraud-pattern'],evidence)=='unsupported_figure'
     assert check_sources(grouped.replace('-4.99','-5.99'),['fraud-pattern'],evidence)=='unsupported_figure'
     assert check_sources(grouped+' The total is SGD -2,405.99.',['fraud-pattern'],evidence)=='unsupported_figure'
 

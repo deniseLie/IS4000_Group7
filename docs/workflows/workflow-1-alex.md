@@ -158,3 +158,15 @@ All three branches rejoin: **all three problems answered and both decisions reco
 - Staff decide refunds and cancellation outside this demo; there is no staffed queue and no real card network.
 - Seed dates are fixed around October 2026; the 90-day record window and the 120-day dispute window must still include them.
 - Free-router model answers vary; a section that fails validation is withheld and escalated, and its offers still come from records.
+
+## Live checks (27 October 2026)
+
+Agent-level only: the real planner, fraud and retail agents, validators and OpenRouter, with Alex's post-`0064` records passed in place of the Data API read (native PostgREST is unavailable on Windows). Not a UI, database or end-to-end run; each line is one sample.
+
+| Model | Planner | Fraud (P0) | Lockout (P1) | Transfer (P3) |
+|---|---|---|---|---|
+| `openrouter/free` | 3 issues; lockout routed to fraud (fixed by `LOGIN` routing) | Passed: grouped the three charges, cited `fraud-pattern`, "not proof of fraud", both offers | — | Withheld: answered all three issues with unsigned card figures (fixed by `focused_history`) |
+| `openrouter/free` | 3 issues, lockout retail P1 linked | Withheld: off-topic draft; both offers still produced from records | Passed: security step, cites `account-security-after-fraud` | Provider error |
+| `dots-studio/dots-3-note-preview:free` | 3 issues, lockout retail P1 linked | Withheld: echoed "$2,400" unsigned (fixed by listing charged amounts in `fraud-pattern`; the same draft now passes the validators) | Passed | Passed: pending since 2026-10-17 (7 business days), due 2026-10-30 in 3 days, don't resend, fall-below check |
+
+Four further runs ended in provider errors at the planner. The native browser runs (`test_workflow1_browser.py`) still need the Mac setup.
