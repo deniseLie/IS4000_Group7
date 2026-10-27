@@ -28,7 +28,7 @@ test('chat opens by saying it is an AI assistant giving general information',asy
 });
 test('language scope is explained and safety guidance stays labelled',async({page})=>{
  await page.getByLabel('Answer language',{exact:true}).selectOption('Chinese');
- await expect(page.getByText('The language choice applies to AI answers.',{exact:false})).toBeVisible();
+ await expect(page.locator('label.pill-select')).toHaveAttribute('title','The language applies to AI answers only');
  const sent=page.waitForRequest(r=>r.url().endsWith('/chat'));
  await ask(page,'I lost my card');
  expect((await sent).postDataJSON().language).toBe('Chinese');

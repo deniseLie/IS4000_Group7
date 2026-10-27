@@ -44,7 +44,8 @@ const PAGES=['chat','overview','inbox','sharing','relationship','compliance'];
 const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Relationship manager']];
 // Guests can open every page's address too; they see a sign-in prompt instead of records (Actions is a drawer once signed in).
 function pageFromHash(session) {const page=location.hash.slice(1);return PAGES.includes(page)||!session&&page==='actions'?page:'chat';}
-const DISCLAIMER = 'Demo AI assistant. General information only, not advice or a contract. Customer data is fictional. AI answers can contain errors.';
+// The header badge says the data is fictional and each answer carries its own "General info, not advice" note.
+const DISCLAIMER = 'Demo AI assistant. AI answers can contain errors. Never share your PIN, password or OTP.';
 
 export default function Chat({session,onSignIn}) {
   const [messages,setMessages]=useState([]);
@@ -376,13 +377,13 @@ export default function Chat({session,onSignIn}) {
         <div className="chat-toolbar">
           <div className="scope-switch" role="radiogroup" aria-label="Information">{[...(session?[['personal','My records']]:[]),['public','General help']].map(([value,label])=>
             <button key={value} type="button" role="radio" aria-checked={mode===value} className={mode===value?'on':''} disabled={booting} onClick={()=>{if(mode!==value&&reset())setMode(value);}}>{label}</button>)}</div>
-          <label className="pill-select"><Icon name="info"/><select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select><Icon name="chevron"/></label>
+          <label className="pill-select" title="The language applies to AI answers only"><Icon name="info"/><select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select><Icon name="chevron"/></label>
           <span className="toolbar-spacer"/>
           <button className="bank-chat-logout new-chat" data-testid="new-chat" disabled={booting} onClick={()=>{if(reset())navigate('chat');}}><Icon name="plus"/>New chat</button>
           {store==='database'&&conversation&&<button className="icon-tool" data-testid="reload-saved-chat" aria-label="Refresh this chat" title="Refresh this chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}><Icon name="refresh"/></button>}
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
-        <p className="language-note chat-note"><Icon name="info"/>Language applies to AI answers only. {mode==='personal'?'Answers are informational and use your records.':session?<>General help doesn’t use your records, so the assistant can’t see your accounts, relationship manager or review. Switch to <button className="note-link" onClick={()=>{if(reset())setMode('personal');}}>My records</button> for those.</>:'Answers are general information.'}</p>
+        {session&&mode==='public'&&<p className="language-note chat-note"><Icon name="info"/><span>General help doesn’t use your records, so the assistant can’t see your accounts, relationship manager or review. Switch to <button className="note-link" onClick={()=>{if(reset())setMode('personal');}}>My records</button> for those.</span></p>}
         {store==='database'&&conversation&&pending&&!loading&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
           <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}
           <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
@@ -413,8 +414,8 @@ export default function Chat({session,onSignIn}) {
             <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>setInput(e.target.value)} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"
               onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}}}/>
             <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
-          </form><p className="composer-hint"><Icon name="shield"/>Never share your PIN, password or OTP. Enter sends; Shift+Enter adds a line.</p><p className="bank-chat-disclaimer">{DISCLAIMER}</p>
-          <details className="session-note"><summary>About this conversation</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile. Use Saved chats to reopen them. Starting a new chat keeps previous saved chats.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears this browser’s access to the previous guest chat.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be omitted from long chats. General guidance works without login. Sign in to view your account records.</p></details></div>
+          </form><div className="composer-note"><span><Icon name="shield"/>{DISCLAIMER}</span>
+            <details className="chat-about"><summary>How chats are saved</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile; reopen them from Recent chats. Starting a new chat keeps earlier ones.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears that access.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be left out of long chats.</p></details></div></div>
         </section>
         {footer}
       </main>
