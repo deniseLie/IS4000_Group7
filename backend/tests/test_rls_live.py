@@ -9,7 +9,7 @@ pytestmark = pytest.mark.skipif(not FIXTURE, reason='Requires persona test login
 
 # Rows each persona must see from the seed; every other customer table must hold none of theirs or anyone else's.
 EXPECTED = {
-    'demo.alex@example.com': {1001: {'banking.bank_accounts': 1, 'banking.credit_cards': 1, 'banking.transactions': 4, 'banking.loans': 1, 'notify.preferences': 1}},
+    'demo.alex@example.com': {1001: {'banking.bank_accounts': 1, 'banking.credit_cards': 1, 'banking.transactions': 6, 'banking.loans': 1, 'notify.preferences': 1}},
     'demo.michelle@example.com': {1002: {'banking.bank_accounts': 1, 'banking.transactions': 1, 'compliance.cases': 1, 'compliance.requested_items': 4, 'compliance.status_history': 4, 'compliance.info_requests': 1, 'notify.preferences': 1}},
     'demo.david@example.com': {1003: {'banking.bank_accounts': 1, 'rm.assignments': 2, 'rm.advisors': 2, 'rm.working_hours': 5, 'notify.preferences': 1}},
 }

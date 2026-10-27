@@ -24,7 +24,9 @@ Profile `1001`, `demo.alex@example.com`, employed, `SGD 5,000 - 8,000 / month`, 
 | Record | Values | Used by |
 |---|---|---|
 | Savings account `10011` | `****6012`, balance 5,230.45 | EB2 My Account Information |
-| Credit card `10011` | Rewards Card, Visa, last4 **4821**, limit 8,000, outstanding 2,464.20, minimum 50.00, due 2026-11-05, `active` | EB4, EB8 (block → `temporarily_blocked`) |
+| Credit card `10011` | Rewards Card, Visa, last4 **4821**, limit 8,000, outstanding 2,470.19 (2,464.20 before `0064`), minimum 50.00, due 2026-11-05, `active` | EB4, EB8 (block → `temporarily_blocked`) |
+| Transaction `100115` | 2026-10-12, `ONLINE MERCHANT 8831`, −1.00, card 4821, `posted`, overseas (migration `0064`) | EB8: small earlier charge; card-testing pattern rule |
+| Transaction `100116` | 2026-10-14, `ONLINE MERCHANT 8831`, −4.99, card 4821, `posted`, overseas (migration `0064`) | EB8: small earlier charge; card-testing pattern rule |
 | Transaction `100111` | 2026-10-17, `ONLINE MERCHANT 8831`, **−2,400.00**, card 4821, `posted`, overseas | EB8: the unrecognised charge (P0) |
 | Transaction `100112` | 2026-10-17, `Transfer to landlord`, **−1,800.00**, account 6012, `pending` | EB5: the pending transfer |
 | Transaction `100113` | 2026-10-15, `Demo Supermarket`, −64.20, card 4821, `posted` | Normal history around the charge |
