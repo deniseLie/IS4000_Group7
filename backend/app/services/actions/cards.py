@@ -3,12 +3,17 @@
 PostgreSQL keeps the synthetic card update, receipt, audit and outbox atomic while the backend
 connects using the customer's JWT, without a privileged database credential.
 """
-from app.schemas.actions import CardBlockTarget
+from app.schemas.actions import CardBlockTarget,CardChangeTarget
 from app.schemas.contracts import ActionCommand
 from app.schemas.disputes import DisputeTarget
 
 def temporary_block(command: ActionCommand) -> CardBlockTarget:
     return CardBlockTarget.model_validate(command.target)
+
+
+def change(command: ActionCommand) -> CardChangeTarget:
+    """The customer's own unblock or permanent cancellation; staff use run_staff (0030), never this path."""
+    return CardChangeTarget.model_validate(command.target)
 
 
 def dispute(command: ActionCommand) -> DisputeTarget:

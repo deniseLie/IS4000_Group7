@@ -11,8 +11,11 @@ from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact'})
 AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit'})
+# The customer's own card changes: confirmed by the signed-in customer only; agents are refused (customer_only_action).
+# Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
+CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
-    'requests.create','rm.share_summary','consent.grant','consent.revoke'})
+    'requests.create','rm.share_summary','consent.grant','consent.revoke'}) | CUSTOMER_CARD_CHANGES
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
 AGENT_ACTIONS = {
     'fraud':frozenset({'card.temporary_block','card.dispute','card.order_replacement'}),
@@ -51,7 +54,8 @@ def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | 
             return Decision(allow=False,reasons=['customer_session_required'])
         if scope.customer_id is not None and scope.customer_id != subject.customer_id:
             return Decision(allow=False,reasons=['customer_scope_mismatch'])
-    if action in STAFF_TYPES:return Decision(allow=False,reasons=['staff_access_required'])
+    if action in CUSTOMER_CARD_CHANGES and context.agent is not None:return Decision(allow=False,reasons=['customer_only_action'])
+    if action in STAFF_TYPES and action not in CUSTOMER_CARD_CHANGES:return Decision(allow=False,reasons=['staff_access_required'])
     if context.agent is not None:
         allowed = action in TOOLS[context.agent] or action in AGENT_ACTIONS.get(context.agent,frozenset())
         if not allowed:return Decision(allow=False,reasons=['agent_tool_forbidden'])

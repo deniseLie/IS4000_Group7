@@ -74,8 +74,21 @@ def test_obligations_and_staff_restrictions():
     assert decide(ctx.principal,'appointment.hold',None,ctx).obligations==[]
     for level in ['aal1','aal2']:
         elevated=ctx.model_copy(update={'principal':ctx.principal.model_copy(update={'aal':level})})
-        for tool in ['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']:
+        for tool in ['handoff.claim','handoff.close']:
             assert decide(elevated.principal,tool,None,elevated).reasons==['staff_access_required']
+        # The customer's own card changes are allowed for the customer, always behind confirmation; staff keep a separate path.
+        for tool in ['card.unblock','card.cancel_permanently']:
+            assert decide(elevated.principal,tool,{'customer_id':1001},elevated).obligations==['require:confirmation']
+            assert decide(elevated.principal,tool,{'customer_id':1003},elevated).reasons==['customer_scope_mismatch']
+
+
+@pytest.mark.parametrize('agent',['fraud','retail','relationship','compliance','document'])
+def test_no_agent_may_propose_a_customer_card_change(agent: str):
+    ctx=customer(agent)
+    for tool in ['card.unblock','card.cancel_permanently']:
+        assert decide(ctx.principal,tool,{'customer_id':1001},ctx).reasons==['customer_only_action']
+    guest=Principal(kind='guest')
+    assert not decide(guest,'card.unblock',None,RequestContext(session_id=uuid4(),principal=guest)).allow
 
 
 def test_denial_is_audited_before_customer_database_access():

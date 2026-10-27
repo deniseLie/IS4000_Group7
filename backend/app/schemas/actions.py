@@ -17,7 +17,9 @@ from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,C
     ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
-    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute']
+    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute','card.unblock','card.cancel_permanently']
+# The two card changes are also staff operations (0030); a target naming a handoff_id is the staff one.
+CUSTOMER_CARD_CHANGES=('card.unblock','card.cancel_permanently')
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
 ActionType=CustomerActionType | StaffActionType
 ActionState=Literal['proposed','confirmed','succeeded','failed','expired','rejected']
@@ -32,6 +34,17 @@ class CardBlockTarget(BaseModel):
 
 class StoredCardTarget(CardBlockTarget):
     last4: Annotated[str,StringConstraints(strict=True,pattern=r'^[0-9]{4}$')]
+
+
+class CardChangeTarget(BaseModel):
+    """The customer's own card to unblock or cancel; SQL derives the masked suffix and the status it was proposed from."""
+    model_config=ConfigDict(extra='ignore')
+    card_id: CardId
+
+
+class StoredCardChangeTarget(CardChangeTarget):
+    last4: Annotated[str,StringConstraints(strict=True,pattern=r'^[0-9]{4}$')]
+    from_status: Literal['active','temporarily_blocked']
 
 
 class StaffHandoffTarget(BaseModel):
@@ -69,6 +82,15 @@ class StaffCardResult(BaseModel):
     status: Literal['active','cancelled']
 
 
+class CustomerCardResult(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    card_id: CardId
+    last4: Annotated[str,StringConstraints(strict=True,pattern=r'^[0-9]{4}$')]
+    status: Literal['active','cancelled']
+    from_status: Literal['active','temporarily_blocked']
+    handoffs_noted: list[UUID]=Field(max_length=50)
+
+
 class StaffHandoffResult(BaseModel):
     model_config=ConfigDict(extra='ignore')
     handoff_id: UUID
@@ -89,9 +111,9 @@ class ActionFailure(BaseModel):
 
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
-    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget)
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
-    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget)
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget)
 
 
 class ActionRecord(BaseModel):
@@ -114,7 +136,8 @@ class ActionRecord(BaseModel):
         action_type=info.data.get('type')
         if action_type=='card.temporary_block':return StoredCardTarget.model_validate(value)
         if action_type=='handoff.create':return HandoffTarget.model_validate(value)
-        if action_type in ('card.unblock','card.cancel_permanently'):return StaffCardTarget.model_validate(value)
+        if action_type in CUSTOMER_CARD_CHANGES:
+            return StaffCardTarget.model_validate(value) if isinstance(value,dict) and 'handoff_id' in value else StoredCardChangeTarget.model_validate(value)
         if action_type in ('handoff.claim','handoff.close'):return StaffHandoffTarget.model_validate(value)
         if action_type=='appointment.hold':return SlotTarget.model_validate(value)
         if action_type in ('appointment.confirm','appointment.cancel'):return StoredAppointmentTarget.model_validate(value)
@@ -149,7 +172,10 @@ class ActionRecord(BaseModel):
             raise ValueError('A dispute draft requires recorded confirmation with the card answer')
         if self.state=='succeeded' and self.type=='rm.share_summary' and self.confirmed_at is None:
             raise ValueError('Agenda sharing requires recorded customer confirmation')
-        if self.type in ('card.unblock','card.cancel_permanently','handoff.claim','handoff.close') and (self.state not in ('succeeded','failed') or self.confirmed_at is None):
+        if self.type in CUSTOMER_CARD_CHANGES and isinstance(self.target,StoredCardChangeTarget):
+            if self.state=='succeeded' and self.confirmed_at is None:raise ValueError('A customer card change requires recorded confirmation')
+            if self.type=='card.unblock' and self.target.from_status!='temporarily_blocked':raise ValueError('Only a temporarily blocked card can be unblocked')
+        elif self.type in ('card.unblock','card.cancel_permanently','handoff.claim','handoff.close') and (self.state not in ('succeeded','failed') or self.confirmed_at is None):
             raise ValueError('Staff operations require an immediately recorded terminal result')
         return self
 
@@ -160,7 +186,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult
+    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -188,9 +214,14 @@ class ActionOutcome(BaseModel):
                 if command.type=='card.temporary_block' and (not isinstance(receipt.result,CardBlockResult) or receipt.result.card_id!=command.target.card_id):
                     raise ValueError('Card receipt does not match its proposed target')
                 if command.type=='handoff.create' and not isinstance(receipt.result,HandoffResult):raise ValueError('Handoff receipt requires a stored handoff')
-                if command.type in ('card.unblock','card.cancel_permanently'):
+                if command.type in CUSTOMER_CARD_CHANGES:
                     status='active' if command.type=='card.unblock' else 'cancelled'
-                    if not isinstance(receipt.result,StaffCardResult) or receipt.result.card_id!=command.target.card_id or receipt.result.status!=status:
+                    if isinstance(command.target,StoredCardChangeTarget):
+                        result=receipt.result
+                        if (not isinstance(result,CustomerCardResult) or result.status!=status or result.card_id!=command.target.card_id
+                                or result.last4!=command.target.last4 or result.from_status!=command.target.from_status):
+                            raise ValueError('Customer card receipt disagrees with the reviewed card or operation')
+                    elif not isinstance(receipt.result,StaffCardResult) or receipt.result.card_id!=command.target.card_id or receipt.result.status!=status:
                         raise ValueError('Staff card receipt disagrees with its recorded target or operation')
                 if command.type in ('handoff.claim','handoff.close'):
                     status='claimed' if command.type=='handoff.claim' else 'closed'
@@ -262,6 +293,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='document.register':return DocumentUploadTarget.model_validate(value)
         if info.data.get('type')=='document.submit':return SubmitDocumentTarget.model_validate(value)
         if info.data.get('type')=='card.dispute':return DisputeTarget.model_validate(value)
+        if info.data.get('type') in CUSTOMER_CARD_CHANGES:return CardChangeTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

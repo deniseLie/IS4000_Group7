@@ -24,4 +24,5 @@ def test_decide_rules():
     assert policy.decide(c.principal,'handoff.create',None,c).obligations==[]
     for level in ['aal1','aal2']:
         customer=ctx(aal=level)
-        assert not policy.decide(customer.principal,'card.unblock',None,customer).allow
+        assert not policy.decide(customer.principal,'handoff.claim',None,customer).allow
+        assert 'require:confirmation' in policy.decide(customer.principal,'card.unblock',None,customer).obligations

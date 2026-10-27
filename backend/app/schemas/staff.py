@@ -5,6 +5,14 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictInt,StringCo
 from app.schemas.contracts import Priority
 
 
+class HandoffNote(BaseModel):
+    """A customer's own change to the card in this case (migration 0068); the handoff stays open."""
+    model_config=ConfigDict(extra='ignore')
+    kind: Literal['card_unblocked_by_customer','card_cancelled_by_customer']
+    card_last4: Annotated[str,StringConstraints(strict=True,pattern=r'^[0-9]{4}$')]
+    created_at: AwareDatetime
+
+
 class StaffHandoff(BaseModel):
     model_config=ConfigDict(extra='ignore')
     handoff_id: UUID
@@ -17,3 +25,4 @@ class StaffHandoff(BaseModel):
     claimed_by: UUID | None
     created_at: AwareDatetime
     updated_at: AwareDatetime
+    customer_updates: list[HandoffNote]=Field(default=[],max_length=50)
