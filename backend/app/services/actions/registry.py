@@ -6,6 +6,7 @@ from app.services.actions import appointments,cards,handoffs,records
 
 EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'card.temporary_block': cards.temporary_block,
+    'card.dispute': cards.dispute,
     'handoff.create': handoffs.create,
     'appointment.hold': appointments.hold,
     'appointment.confirm': appointments.confirm,

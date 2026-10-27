@@ -9,6 +9,7 @@ from pydantic import JsonValue,TypeAdapter
 from postgrest import SyncPostgrestClient
 from app.core import data_api
 from app.schemas.actions import ActionOutcome,CustomerActionType
+from app.schemas.disputes import DisputeInput
 from app.schemas.contracts import ActionCommand,ProposedCommand,Receipt,RequestContext
 from app.schemas.workflows import OwnedWorkflow
 from app.services.actions.store import ActionIntegrityError,checked,load
@@ -35,11 +36,14 @@ def receipt_for(outcome: ActionOutcome) -> Receipt | ProposedCommand:
     raise ActionStateError(outcome.command.state)
 
 
-async def run_action(command: ActionCommand,ctx: RequestContext,confirmed: bool) -> Receipt | ProposedCommand:
+async def run_action(command: ActionCommand,ctx: RequestContext,confirmed: bool,*,confirmation_input: DisputeInput | None=None) -> Receipt | ProposedCommand:
+    """A dispute is confirmed only with the customer's card answer; no other type takes confirmation answers."""
     require_permission(ctx.principal,command.type,{'customer_id':ctx.principal.customer_id},ctx)
     target=canonical_target(command)
     if ctx.case_id is None:raise ActionIntegrityError('Actions require an owned conversation case')
     if confirmed and ctx.agent is not None:raise PolicyDenied('Agents may propose actions; only the customer can confirm them')
+    if (confirmation_input is not None)!=(confirmed and command.type=='card.dispute'):
+        raise ActionIntegrityError('Only a dispute confirmation takes, and requires, the card answer')
     with data_api.connect(ctx) as db:
         if confirmed:
             current=await load(command.command_id,ctx,db)
@@ -49,7 +53,11 @@ async def run_action(command: ActionCommand,ctx: RequestContext,confirmed: bool)
             saved=ActionCommand(command_id=stored.command_id,idempotency_key=stored.idempotency_key,type=stored.type,
                 target=stored.target.model_dump(mode='json'))
             if canonical_target(saved)!=target:raise ActionIntegrityError('Confirmation target differs from the stored proposal')
-            response=await data_api.execute(lambda:db.rpc('action_confirm',{'p_command_id':str(command.command_id)}).execute(),'actions.confirm')
+            if confirmation_input is not None:
+                answers=confirmation_input.model_dump(mode='json')
+                response=await data_api.execute(lambda:db.rpc('action_confirm_with_input',{'p_command_id':str(command.command_id),
+                    'p_input':answers}).execute(),'actions.confirm')
+            else:response=await data_api.execute(lambda:db.rpc('action_confirm',{'p_command_id':str(command.command_id)}).execute(),'actions.confirm')
         else:
             if command.state!='proposed' or command.expires_at is not None:raise ActionIntegrityError('Proposal state and expiry are assigned by the database')
             response=await data_api.execute(lambda:db.rpc('action_propose',{'p_command_id':str(command.command_id),

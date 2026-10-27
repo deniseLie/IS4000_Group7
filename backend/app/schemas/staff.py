@@ -10,7 +10,7 @@ class StaffHandoff(BaseModel):
     handoff_id: UUID
     customer_id: Annotated[StrictInt,Field(gt=0)]
     case_id: UUID
-    reason: Literal['card_verification','general_support']
+    reason: Literal['card_verification','card_dispute','general_support']
     priority: Priority
     summary: Annotated[str,StringConstraints(strict=True,min_length=1,max_length=1000,pattern=r'\S')]
     status: Literal['open','claimed']

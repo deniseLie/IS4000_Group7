@@ -1,4 +1,5 @@
 """Customer command review. Confirmation accepts only the command id; targets come from owned storage."""
+import json
 from collections.abc import Awaitable,Callable
 from typing import TypeVar
 from uuid import UUID
@@ -13,6 +14,7 @@ from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.actions import ActionCase,ActionOutcome,CreateAction,CreateActionCase
 from app.schemas.contracts import ActionCommand,RequestContext
+from app.schemas.disputes import DisputeInput
 from app.schemas.events import WorkflowPreview,WorkflowStatus
 from app.services import actions,audit,customer_data,workflows
 from app.services.checkpoint_codec import CheckpointIntegrityError
@@ -83,13 +85,26 @@ async def propose(query: CreateAction,request: Request,ctx: RequestContext=Depen
     return await response_for(operation,ctx,request)
 
 
+async def confirmation_answers(request: Request,command_type: str) -> DisputeInput | None:
+    """Only a dispute takes answers ({"answers": {...}}); any other confirmation body stays ignored, as before."""
+    if command_type!='card.dispute':return None
+    try:body=json.loads(await request.body() or b'null')
+    except (json.JSONDecodeError,UnicodeDecodeError) as error:
+        raise ApiError(422,'action_invalid','Answer whether you still have the card to confirm this dispute draft.') from error
+    answers=body.get('answers') if isinstance(body,dict) else None
+    try:return DisputeInput.model_validate(answers)
+    except ValidationError as error:
+        raise ApiError(422,'action_answers_required','Answer whether you still have the card to confirm this dispute draft.') from error
+
+
 @router.post('/commands/{command_id}/confirm',response_model=ActionOutcome)
 async def confirm(command_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
     async def operation() -> ActionOutcome:
         with data_api.connect(ctx) as db:current=await store.load(command_id,ctx,db)
         item=current.command
         command=ActionCommand(command_id=item.command_id,type=item.type,idempotency_key=item.idempotency_key,target=item.target.model_dump(mode='json'))
-        try:result=await actions.run_action(command,ctx.model_copy(update={'case_id':item.case_id}),True)
+        answers=await confirmation_answers(request,item.type)
+        try:result=await actions.run_action(command,ctx.model_copy(update={'case_id':item.case_id}),True,confirmation_input=answers)
         except actions.ActionStateError:
             if current.workflow is not None:await workflows.resume(current.workflow.turn_id,ctx)
             raise

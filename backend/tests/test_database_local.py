@@ -106,8 +106,9 @@ def test_audit_actor_and_customer_are_derived_from_claims(database: 'Connection[
 
 def test_native_row_change_and_audit_commit_together(database: 'Connection[SqlRow]') -> None:
     initial=database.execute('select count(*) from audit.events').fetchone()[0]
+    last=database.execute('select max(event_id) from audit.events').fetchone()[0]
     database.execute("update banking.credit_cards set status='temporarily_blocked' where card_id=10011")
-    assert database.execute("select customer_id,category,resource_type from audit.events where resource_type='banking.credit_cards'").fetchall()==[(1001,'row','banking.credit_cards')]
+    assert database.execute("select customer_id,category,resource_type from audit.events where resource_type='banking.credit_cards' and event_id>%s",(last,)).fetchall()==[(1001,'row','banking.credit_cards')]
     checked,bad,_,_=database.execute('select * from audit.verify_chain(null)').fetchone()
     assert checked==initial+1 and bad is None
     database.rollback()

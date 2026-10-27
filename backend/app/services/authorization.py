@@ -11,11 +11,11 @@ from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact'})
 AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit'})
-CONFIRM_TYPES = frozenset({'card.temporary_block','card.order_replacement','appointment.confirm','appointment.cancel',
+CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
     'requests.create','rm.share_summary','consent.grant','consent.revoke'})
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
 AGENT_ACTIONS = {
-    'fraud':frozenset({'card.temporary_block','card.order_replacement'}),
+    'fraud':frozenset({'card.temporary_block','card.dispute','card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke'}),
 }
