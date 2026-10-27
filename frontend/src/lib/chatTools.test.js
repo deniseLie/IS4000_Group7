@@ -48,7 +48,7 @@ test('handoff summary uses topic labels and recorded outcomes only, never custom
   {task_id:'t3',domain:'retail',priority:'P3',answer:'Withheld.',response_origin:'validation'}]},
   {role:'user',content:'whats my balance'},{role:'assistant',content:'error',error:true}];
  const s=handoffSummary(messages);
- assert.equal(s,'Customer asked for a person. Topics: Fraud & security (urgent), Everyday banking ×2. Card block: confirmed. Answers withheld: 1.');
+ assert.equal(s,'Customer asked for a person. Topics: Fraud & security (urgent), Complex banking needs ×2. Card block: confirmed. Answers withheld: 1.');
  for(const word of ['4821','2400','1,800','123456','landlord','recognise','balance'])assert.ok(!s.includes(word),word);
  assert.ok(s.length<=1000);
  assert.equal(handoffSummary([{role:'user',content:'hi'}]),'Customer asked for a person. Topics: General questions.');

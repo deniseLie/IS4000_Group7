@@ -28,7 +28,7 @@ v3 changes from v2: one deployable backend (modular monolith) instead of separat
 | ① Safety guard | **Input Guardrail** | Deterministic pre-filter, DLP | |
 | ② Orchestrator | **Conversation Orchestrator** | Supervisor / planner–executor | Includes the composer |
 | shared case state | **Conversation Store** | Durable conversation and workflow state | |
-| ③ five agents | **Domain Agents** | Bounded-context agents | Everyday Banking, Fraud & Security, Compliance Review, Document Check, Relationship (§5.6) |
+| ③ five agents | **Domain Agents** | Bounded-context agents | Complex Banking Needs, Fraud & Security, Compliance Review, Document Check, Relationship (§5.6) |
 | ④ Knowledge search | **Knowledge Service** | Retrieval (RAG) + fact table | |
 | ④ Customer 360 tools | **Customer Data Service** | Entitlement-scoped data access | Plain repository layer; no CQRS |
 | ④ Action ledger | **Action Service** | Command processing with confirmation | `run_action()` + executor files; ledger moved into Audit Log Service |
@@ -65,7 +65,7 @@ flowchart TB
     ORC["Conversation Orchestrator<br/>plan, dispatch, compose"]
     subgraph AGENTS["Domain Agents"]
       direction LR
-      A1["Everyday Banking"]
+      A1["Complex Banking Needs"]
       A2["Fraud & Security"]
       A3["Compliance Review"]
       A4["Document Check"]
@@ -220,7 +220,7 @@ flowchart LR
 |---|---|---|---|
 | 1 Plan | Keyword rules first. If one clear intent matches, build a one-task plan with no model call. Otherwise one structured-output LLM call returns `{tasks[{domain, intent, entities}]}` | Only when unclear | "$2,400 charge … app login failed … transfer still pending" → 3 tasks |
 | 2 Prioritise | Sort tasks P0–P3. Guardrail flags override: a `fraud_suspected` flag always adds a P0 fraud task | No | t1 fraud P0, t2 login P1, t3 transfer P3 |
-| 3 Dispatch | Run independent tasks in parallel (LangGraph `Send`), each with a timeout. If an agent proposes an action, mark the task `awaiting_confirmation` and pause the graph (`interrupt`) | Agents may | Fraud & Security + two Everyday Banking tasks in parallel; time ≈ slowest, not the sum |
+| 3 Dispatch | Run independent tasks in parallel (LangGraph `Send`), each with a timeout. If an agent proposes an action, mark the task `awaiting_confirmation` and pause the graph (`interrupt`) | Agents may | Fraud & Security + two Complex Banking Needs tasks in parallel; time ≈ slowest, not the sum |
 | 4 Compose | Deterministic merge: one section per task in priority order, citations kept with their section, pending actions listed | No | Fraud section first |
 
 When the customer confirms, `POST /commands/{id}/confirm` executes the action and resumes the same graph from its saved checkpoint, so the fraud agent continues its playbook with the receipt.
@@ -237,7 +237,7 @@ Detailed per-story behaviour lives in [user-story-mapping.md](user-story-mapping
 
 | Agent | Purpose | Can do | Must not do | Tools | Stories |
 |---|---|---|---|---|---|
-| **Everyday Banking** | Everyday account, card, loan, transaction and service questions | Explain products, fees, procedures from approved content; read the customer's own accounts, cards, loans, transactions; ask clarifying questions; hand off | Change anything; give investment, legal or tax advice; promise loan approval; investigate or reverse transactions; handle suspected fraud (re-plans it to Fraud & Security) | `kb.*`, `customer.get_*` (accounts, transactions, credit cards, loans, profile), `handoff.create` | EB2–EB6 |
+| **Complex Banking Needs** | Everyday account, card, loan, transaction and service questions | Explain products, fees, procedures from approved content; read the customer's own accounts, cards, loans, transactions; ask clarifying questions; hand off | Change anything; give investment, legal or tax advice; promise loan approval; investigate or reverse transactions; handle suspected fraud (re-plans it to Fraud & Security) | `kb.*`, `customer.get_*` (accounts, transactions, credit cards, loans, profile), `handoff.create` | EB2–EB6 |
 | **Fraud & Security** | Urgent security issues, P0 | Follow a fixed playbook; identify the suspicious transaction; **propose** a temporary card block; create a P0 handoff | Execute the block without confirmation; claim a block without a receipt; investigate, reverse or permanently cancel (human only); replace the Guardrail's fixed lost-card response | `customer.get_transactions`, `customer.get_credit_cards`, `actions.propose(card.temporary_block)`, `handoff.create` | EB8 |
 | **Compliance Review** | Explain and track the client's compliance review | Read the client-visible compliance case; explain requests and statuses from the authorised record and approved guidance; update the client's own checklist marks | Invent requirements, statuses, deadlines or estimates; mark documents accepted; reveal internal-only fields (e.g. risk scoring); speculate on reasons | `compliance.get_case`, `compliance.update_checklist_item`, `kb.search` (approved compliance scope), `handoff.create` | CR1, CR4 |
 | **Document Check** | Preliminary checks on uploaded documents | Run predefined checks (opens, legible, pages, required fields); explain issues and fixes; record results | Present results as approval; give a verdict when the document cannot be assessed reliably | `docs.precheck` | CR2 |
@@ -384,13 +384,13 @@ Which types are *auto* is set in the policy rules (§5.7.4), not in the executor
 
 | Tool | Responsibility | Inputs → outputs | Service | Agents |
 |---|---|---|---|---|
-| `kb.search` | Search approved articles and compliance guidance | `{query, scope, k}` → `chunks[]` | Knowledge | Everyday Banking, Compliance Review, Relationship |
-| `kb.get_fact` | Exact fee/limit/rate | `{fact_id}` → `{value, unit, source_id}` | Knowledge | Everyday Banking |
-| `customer.get_profile` | Profile fields allowed for the task | `{}` → `profile` | Customer Data | Everyday Banking, Relationship |
-| `customer.get_accounts` | Accounts and balances (masked) | `{}` → `accounts[]` | Customer Data | Everyday Banking |
-| `customer.get_transactions` | Transaction history | `{from, to, filters}` → `txns[]` | Customer Data | Everyday Banking, Fraud & Security |
-| `customer.get_credit_cards` | Limit, outstanding balance, minimum payment, due date, status (last 4 only) | `{}` → `cards[]` | Customer Data | Everyday Banking, Fraud & Security |
-| `customer.get_loans` | Loans and schedule | `{}` → `loans[]` | Customer Data | Everyday Banking |
+| `kb.search` | Search approved articles and compliance guidance | `{query, scope, k}` → `chunks[]` | Knowledge | Complex Banking Needs, Compliance Review, Relationship |
+| `kb.get_fact` | Exact fee/limit/rate | `{fact_id}` → `{value, unit, source_id}` | Knowledge | Complex Banking Needs |
+| `customer.get_profile` | Profile fields allowed for the task | `{}` → `profile` | Customer Data | Complex Banking Needs, Relationship |
+| `customer.get_accounts` | Accounts and balances (masked) | `{}` → `accounts[]` | Customer Data | Complex Banking Needs |
+| `customer.get_transactions` | Transaction history | `{from, to, filters}` → `txns[]` | Customer Data | Complex Banking Needs, Fraud & Security |
+| `customer.get_credit_cards` | Limit, outstanding balance, minimum payment, due date, status (last 4 only) | `{}` → `cards[]` | Customer Data | Complex Banking Needs, Fraud & Security |
+| `customer.get_loans` | Loans and schedule | `{}` → `loans[]` | Customer Data | Complex Banking Needs |
 | `compliance.get_case` | Notice, requested items, submission status, status history, recorded information requests, deadlines (client-visible fields only) | `{}` → `case` | Customer Data | Compliance Review |
 | `compliance.update_checklist_item` | Client marks an item prepared / not prepared | `{item_id, state}` → `item` | Action (auto, `records.py`) | Compliance Review |
 | `docs.precheck` | Preliminary document checks | `{document_id, expected_type}` → `{assessable, issues[]}` | Document Storage + LLM | Document Check |
@@ -485,8 +485,8 @@ A signed-in customer sends one message with three problems:
 | Task | Priority | Agent |
 |---|---|---|
 | t1 Unrecognised $2,400 card charge | **P0 fraud** | Fraud & Security |
-| t2 Mobile app login failing | **P1 security** | Everyday Banking |
-| t3 Transfer still pending | **P3** | Everyday Banking |
+| t2 Mobile app login failing | **P1 security** | Complex Banking Needs |
+| t3 Transfer still pending | **P3** | Complex Banking Needs |
 
 Not exercised here: Document Check (upload → precheck), the consent → share → book flow of the Relationship agent, and worker-started turns (RC1, CR6).
 
@@ -503,14 +503,14 @@ S = synchronous (caller waits), A = asynchronous.
 | 6 | Orchestrator → Conversation Store | S | Load session history (F7); create `case_id`; checkpoint |
 | 7 | *Plan* → LLM Gateway | S | Three intents, so rules are not enough → one planner call → `[card_txn_unrecognised, app_login_failed, transfer_pending]` with entities (`amount: 2400`, `payee: landlord`, `date: yesterday`); audit `agent.plan_created` |
 | 8 | *Prioritise* | S in-process | t1 P0 (also forced by the Guardrail flag), t2 P1, t3 P3; checkpoint; `status: planning` |
-| 9 | *Dispatch* → Fraud & Security (t1), Everyday Banking (t2), Everyday Banking (t3) | S, parallel | `{RequestContext, task, case_snapshot}` per task |
+| 9 | *Dispatch* → Fraud & Security (t1), Complex Banking Needs (t2), Complex Banking Needs (t3) | S, parallel | `{RequestContext, task, case_snapshot}` per task |
 | 9a | Fraud → `customer.get_transactions(min_amount 2400, last 30 days)` | S | Policy allow → RLS query → one match: card ending 4821, merchant code, yesterday; audit `policy.decision`, `data.read` |
 | 9b | Fraud → `actions.propose(card.temporary_block, card 4821)` | S | `run_action()`: policy obligation `require:confirmation` → command `proposed`, expires in 5 min; nothing executed yet; audit `action.proposed` |
 | 9c | Fraud → LLM Gateway | S | Fills the playbook template: describes the matched transaction, "contact the bank immediately through official channels", offers the temporary block. Steps and wording are fixed; the model only fills the transaction description |
-| 9d | Everyday Banking (t2) → `kb.search("app login failed")` | S | Approved article: check app version, reset password in the official app, account lock after repeated attempts → official support line. Because t1 is open in the same case, adds "if you did not make the charge, change your password through the official app" from the fraud article |
-| 9e | Everyday Banking (t2) → LLM Gateway | S | Short step list with citations. Does **not** ask for the password (F5) |
-| 9f | Everyday Banking (t3) → `customer.get_transactions(payee landlord, yesterday)` + `kb.search("pending transfer")` | S | Transfer found, status `pending`; article gives typical processing times and when to contact the bank |
-| 9g | Everyday Banking (t3) → LLM Gateway | S | Personal explanation: status is pending, not failed; what pending means; when to contact the bank. Never claims to cancel or speed it up |
+| 9d | Complex Banking Needs (t2) → `kb.search("app login failed")` | S | Approved article: check app version, reset password in the official app, account lock after repeated attempts → official support line. Because t1 is open in the same case, adds "if you did not make the charge, change your password through the official app" from the fraud article |
+| 9e | Complex Banking Needs (t2) → LLM Gateway | S | Short step list with citations. Does **not** ask for the password (F5) |
+| 9f | Complex Banking Needs (t3) → `customer.get_transactions(payee landlord, yesterday)` + `kb.search("pending transfer")` | S | Transfer found, status `pending`; article gives typical processing times and when to contact the bank |
+| 9g | Complex Banking Needs (t3) → LLM Gateway | S | Personal explanation: status is pending, not failed; what pending means; when to contact the bank. Never claims to cancel or speed it up |
 | 10 | *Dispatch* | S | t1 `awaiting_confirmation` → graph paused (`interrupt`); t2, t3 `done`; checkpoint |
 | 11 | *Compose* | S in-process | Sections in priority order: ① unrecognised charge + block offer, ② login steps, ③ pending transfer. No loan/fee content, so no disclaimer |
 | 12 | Response Validator | S | "$2,400", card "4821", transfer amount and `pending` match tool results; login and pending steps cite approved articles; block worded as *offered*, not done (no receipt yet); no secrets or URLs → pass, origin `ai` |
@@ -521,7 +521,7 @@ S = synchronous (caller waits), A = asynchronous.
 | 17 | Gateway → Orchestrator resume | S | Graph resumes from checkpoint with `rcpt_B`; Fraud playbook next step: block confirmed, a specialist will verify, how to get a replacement card |
 | 18 | Validator → Gateway → Web | S stream | "Card ending 4821 is temporarily blocked" is allowed because `rcpt_B` exists; `answer`, `done` |
 | 19 | Background Worker → Notification Service | A | `card.blocked` outbox event → service notification in the inbox (cannot be switched off) |
-| 20 | Alex: "what about the other one, the landlord one — should I redo it?" | S, new turn | F7: the Orchestrator loads the case, resolves "the other one" to t3, and the Everyday Banking agent answers from the same transaction record: do not resend while pending, to avoid paying twice |
+| 20 | Alex: "what about the other one, the landlord one — should I redo it?" | S, new turn | F7: the Orchestrator loads the case, resolves "the other one" to t3, and the Complex Banking Needs agent answers from the same transaction record: do not resend while pending, to avoid paying twice |
 
 **Failure branches**
 - *Alex had written "I lost my card"* → step 4 returns the EB8 lost-card fixed response (urgent steps + block offer) with **no model call**; steps 5–12 are skipped, and steps 14–18 still apply.
@@ -542,7 +542,7 @@ sequenceDiagram
   participant IG as Input Guardrail
   participant ORC as Orchestrator
   participant FR as Fraud and Security Agent
-  participant EB as Everyday Banking Agent
+  participant EB as Complex Banking Needs Agent
   participant SVC as Shared Services
   participant LLM as LLM Gateway
   participant VAL as Response Validator

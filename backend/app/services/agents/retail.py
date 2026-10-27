@@ -1,4 +1,4 @@
-"""Personal Everyday Banking answers use real scoped reads and the shared model/answer validators."""
+"""Personal Complex Banking Needs answers use real scoped reads and the shared model/answer validators."""
 import json
 from app.schemas.agents import Evidence
 from app.schemas.chat import Message

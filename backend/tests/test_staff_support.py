@@ -171,7 +171,7 @@ def test_general_support_handoff_from_chat_is_queued_after_urgent_cases(local_da
     handoff(local_data_api,native_api_client,'P0')
     ctx=owned_case(local_data_api,context(local_data_api,1001))
     propose(native_api_client,ctx,ActionCommand(type='handoff.create',idempotency_key=f'{ctx.case_id}:handoff:handoff.create',
-        target={'reason':'general_support','priority':'P2','summary':'Customer asked for a person. Topics: Everyday banking.'}))
+        target={'reason':'general_support','priority':'P2','summary':'Customer asked for a person. Topics: Complex banking needs.'}))
     user=staff_user(local_data_api)
     with SyncPostgrestClient(local_data_api.url) as db:
         db.auth(staff_token(local_data_api,user,'aal2',{'demobank_role':'support'}))

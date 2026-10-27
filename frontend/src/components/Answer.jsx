@@ -1,4 +1,4 @@
-const DOMAIN_LABELS={retail:'Everyday banking',fraud:'Fraud & security',compliance:'Compliance review',document:'Document check',relationship:'Relationship manager',smalltalk:'Banking assistant'};
+const DOMAIN_LABELS={retail:'Complex banking needs',fraud:'Fraud & security',compliance:'Compliance review',document:'Document check',relationship:'Relationship manager',smalltalk:'Banking assistant'};
 
 function Sources({sources,onSource}) {
   if(!sources?.length)return null;

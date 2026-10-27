@@ -8,7 +8,7 @@ Companion to [system-architecture.md](system-architecture.md) (§5.7.1 Knowledge
 
 Status: **exists** = article in today's `knowledge.py`; **partial** = exists but misses part of the story; **new** = to write.
 
-### Alex: everyday banking (EB2–EB6, EB8, F5)
+### Alex: complex banking needs (EB2–EB6, EB8, F5)
 
 | Story | Article(s) needed | Status | Current id |
 |---|---|---|---|

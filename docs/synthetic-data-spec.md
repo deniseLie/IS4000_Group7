@@ -17,7 +17,7 @@ Status: **proposal**. The fake records the three persona scenarios need (see [us
 
 > `Principal.customer_id` is a positive integer matching the database `bigint` key. Customer Data RPCs re-resolve the signed-in JWT's linked profile and reject any mismatch with that request scope.
 
-## 2. Alex Tan — everyday banking (EB1–EB6, EB8)
+## 2. Alex Tan — complex banking needs (EB1–EB6, EB8)
 
 Profile `1001`, `demo.alex@example.com`, employed, `SGD 5,000 - 8,000 / month`, English.
 

@@ -6,11 +6,11 @@ Source: [IS4000 Product Backlog](https://docs.google.com/spreadsheets/d/1JNiqRb5
 
 ## 1. Story IDs and personas
 
-Story IDs follow the *Product Backlog* tab. Persona 1 (Alex, Everyday Banking Client) owns stories **EB1–EB6 and EB8**, Persona 2 (Michelle) **CR1, CR2, CR4, CR6, CR7**, Persona 3 (David) **RC1–RC4**. Row **CC** holds the common acceptance criteria that every chatbot story must also meet, so they are not repeated per story. The backlog was refined to remove overlap; removed, merged and split stories are listed in §6.
+Story IDs follow the *Product Backlog* tab. Persona 1 (Alex, Complex Banking Needs Client) owns stories **EB1–EB6 and EB8**, Persona 2 (Michelle) **CR1, CR2, CR4, CR6, CR7**, Persona 3 (David) **RC1–RC4**. Row **CC** holds the common acceptance criteria that every chatbot story must also meet, so they are not repeated per story. The backlog was refined to remove overlap; removed, merged and split stories are listed in §6.
 
 | Persona | Profile | Stories | Main agent |
 |---|---|---|---|
-| Alex — everyday banking | Busy professional; wants quick, concise, actionable answers; often reports several problems at once | EB1–EB6, EB8 | Everyday Banking, Fraud & Security |
+| Alex — complex banking needs | Busy professional; wants quick, concise, actionable answers; often reports several problems at once | EB1–EB6, EB8 | Complex Banking Needs, Fraud & Security |
 | Michelle — compliance-ready client | Established client in a compliance review; wants clear explanations, document feedback and status | CR1, CR2, CR4, CR6, CR7 | Compliance Review, Document Check |
 | David — relationship continuity client | Long-standing client whose RM has changed; wants an introduction, consent-based handover and a meeting | RC1–RC4 | Relationship |
 | All customers | — | CC, plus foundation criteria on F5, F7, F14, F15, F18 | Platform components (see §3) |
@@ -26,7 +26,7 @@ Every chatbot story also meets these:
 
 ## 2. Agent mapping
 
-### Everyday Banking Agent — Alex, EB2–EB6
+### Complex Banking Needs Agent — Alex, EB2–EB6
 Purpose: resolve everyday questions quickly with short, actionable answers (Alex "prefers concise answers and immediate, actionable instructions").
 
 | Story | What the agent does | Data / tools | Rules the agent and validator enforce |
@@ -98,11 +98,11 @@ Purpose: continuity — David should know who his advisor is, not repeat himself
 | Story | Agent | Platform components involved |
 |---|---|---|
 | EB1 Login | — | Web Client, Identity Provider, API Gateway Layer, Customer Data Service, Audit Log |
-| EB2 My Account Information | Everyday Banking | Customer Data, Knowledge (facts), Input Guardrail (guest "my balance"), Action Service (handoff) |
-| EB3 Loan Enquiry | Everyday Banking | Knowledge (facts), Orchestrator *Compose* (disclaimer) |
-| EB4 Credit Card Enquiry | Everyday Banking | Customer Data, Knowledge (facts), Response Validator (figures) |
-| EB5 Failed or Pending Transaction | Everyday Banking | Customer Data, Knowledge |
-| EB6 Product & Service Information | Everyday Banking | Knowledge |
+| EB2 My Account Information | Complex Banking Needs | Customer Data, Knowledge (facts), Input Guardrail (guest "my balance"), Action Service (handoff) |
+| EB3 Loan Enquiry | Complex Banking Needs | Knowledge (facts), Orchestrator *Compose* (disclaimer) |
+| EB4 Credit Card Enquiry | Complex Banking Needs | Customer Data, Knowledge (facts), Response Validator (figures) |
+| EB5 Failed or Pending Transaction | Complex Banking Needs | Customer Data, Knowledge |
+| EB6 Product & Service Information | Complex Banking Needs | Knowledge |
 | EB8 Suspicious Charge & Lost Card | Fraud & Security | Input Guardrail (lost-card fixed response, fraud flag), Customer Data, Action Service (temporary block, handoff) |
 | CR1 Personalised Document Checklist | Compliance Review | Customer Data (case), Knowledge (approved guidance), Action Service (checklist update) |
 | CR2 Document Pre-Check | Document Check | Document Storage, LLM Gateway (vision), Audit Log |
@@ -127,8 +127,8 @@ What the persona expects: *recognise all three issues, prioritise the potentiall
 | Task | Priority | Agent | Stories |
 |---|---|---|---|
 | t1 Unrecognised $2,400 card charge | **P0 fraud** | Fraud & Security | EB8 (suspicious charge, card block) |
-| t2 Mobile app login failing | **P1 security** (account access) | Everyday Banking | EB6 (accessing online banking), F5 |
-| t3 Transfer still pending | **P3** | Everyday Banking | EB5 (pending) |
+| t2 Mobile app login failing | **P1 security** (account access) | Complex Banking Needs | EB6 (accessing online banking), F5 |
+| t3 Transfer still pending | **P3** | Complex Banking Needs | EB5 (pending) |
 
 Workflow 1 ([docs/workflows/workflow-1-alex.md](workflows/workflow-1-alex.md)) uses the wording "i got locked out of the app on my phone". That wording is ordinary app help (P3), so after the urgent charge the sections keep the customer's order: pending transfer, then app login. Wording that names a login failure or another security term (as above) still ranks the login issue P1.
 
@@ -159,6 +159,6 @@ Also exercised: informal wording, typos and three intents in one message (F14 pl
    | RC5 Introductory Meeting Preparation | Merged into RC2 (one handover note) |
    | X6 Request Intake | Merged into RC4 |
 
-   Splits and re-cuts: EB5 split into EB5 (failed or pending, Everyday Banking) and EB8 (suspicious charge and lost card, Fraud & Security); CR2 split into CR7 (upload) and CR2 (pre-check); EB2 is now signed-in account questions only, and guest product questions moved to EB6. EB3 no longer gives preliminary eligibility guidance.
+   Splits and re-cuts: EB5 split into EB5 (failed or pending, Complex Banking Needs) and EB8 (suspicious charge and lost card, Fraud & Security); CR2 split into CR7 (upload) and CR2 (pre-check); EB2 is now signed-in account questions only, and guest product questions moved to EB6. EB3 no longer gives preliminary eligibility guidance.
 2. In *Persona (new)*, Persona 1 has no title, and the *Key concern* row is shifted one column left (Michelle's concern sits under Alex).
 3. RC2 lists no explicit authentication step; this design requires a signed-in session for any note sharing.

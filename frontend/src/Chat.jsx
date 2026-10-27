@@ -311,7 +311,7 @@ export default function Chat({session,onSignIn}) {
   const topicLabel=HELP_TOPICS.find(entry=>entry[0]===helpTopic)[1];
   const handoffText=summary===null?null:supportScope?summary:`${attachSummary?summary:'Customer asked for a person.'} Requested help: ${topicLabel}.`;  // fixed labels only
   const topics=[
-    {icon:'account',title:'Accounts & savings',detail:'Make sense of everyday banking.',question:'What happens if I withdraw my fixed deposit early?'},
+    {icon:'account',title:'Accounts & savings',detail:'Make sense of complex banking needs.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];

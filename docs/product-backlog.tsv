@@ -194,7 +194,7 @@ How to build:
 2. Pass tool results and receipts into the validator
 3. Create a handoff on failure
 4. Add tests for each failure type"
-F16	Stub Agents	Minimal version of each of the five agents for the user stories to build on. Depends on: F1, F6, F9.	"• Everyday Banking, Fraud & Security, Compliance Review, Document Check and Relationship agents exist
+F16	Stub Agents	Minimal version of each of the five agents for the user stories to build on. Depends on: F1, F6, F9.	"• Complex Banking Needs, Fraud & Security, Compliance Review, Document Check and Relationship agents exist
 • Each has a prompt v1 folder and a prompt-log entry
 • Each has its tool allow-list from architecture §5.6
 • Each returns a valid AgentResult from the real provider, never a fixed sample answer

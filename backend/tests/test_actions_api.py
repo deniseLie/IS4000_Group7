@@ -159,7 +159,7 @@ def test_talk_to_a_person_records_a_separate_general_support_handoff(local_data_
         target={'reason':'card_verification','priority':'P0','summary':'Customer reported a suspicious synthetic card transaction.'}))
     # The chat summary uses labels only; a fresh direct-form case keeps it apart from the card-verification case.
     direct=owned_case(local_data_api,context(local_data_api,1001))
-    summary='Customer asked for a person. Topics: Fraud & security (urgent), Everyday banking ×2. Card block: confirmed.'
+    summary='Customer asked for a person. Topics: Fraud & security (urgent), Complex banking needs ×2. Card block: confirmed.'
     command=ActionCommand(type='handoff.create',idempotency_key=f'{direct.case_id}:handoff:handoff.create',
         target={'reason':'general_support','priority':'P0','summary':summary})
     saved=propose(native_api_client,direct,command)

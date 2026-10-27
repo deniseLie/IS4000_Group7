@@ -18,7 +18,7 @@ Relative points (1 = small); used only to balance the work, not as time estimate
 | Orchestrator (LangGraph: plan, prioritise, dispatch, compose, pause/resume) | 8 | Hard |
 | Knowledge base (keyword RAG, fact table, retrieval evaluation) | 3 | Medium |
 | Document Check agent (OCR, legibility, rules) | 5 | Medium–hard |
-| Everyday Banking + Fraud & Security agents | 5 | Medium |
+| Complex Banking Needs + Fraud & Security agents | 5 | Medium |
 | Action Service (`run_action()`, `cards.py`, `handoffs.py`, confirm endpoint) | 5 | Medium |
 | Customer Data + Authorisation (`decide()`), RLS, synthetic seed | 5 | Medium |
 | Worker + Notification + Realtime inbox | 5 | Medium |
@@ -37,7 +37,7 @@ Relative points (1 = small); used only to balance the work, not as time estimate
 
 | | **D1: Alex + conversation core** | **D2: Michelle + knowledge** | **D3: David + platform services** |
 |---|---|---|---|
-| **Persona scope** | EB2–EB6, EB8: Everyday Banking + Fraud & Security agents (5) | CR1, CR2, CR4, CR6, CR7: Compliance Review agent (3), document upload and Document Check agent (5), compliance tables (2) | RC1–RC4: Relationship agent (3), appointments + records executors (3) |
+| **Persona scope** | EB2–EB6, EB8: Complex Banking Needs + Fraud & Security agents (5) | CR1, CR2, CR4, CR6, CR7: Compliance Review agent (3), document upload and Document Check agent (5), compliance tables (2) | RC1–RC4: Relationship agent (3), appointments + records executors (3) |
 | **Shared piece** | Orchestrator (8), Response Validator (3), Audit Log (2) | Knowledge base, keyword RAG (3), CR6 reminder job (2) | Customer Data + Authorisation (5), Action Service (5), Worker + Notification (3) |
 | **UI** | Chat UI: sections, sources, confirm dialog (3) | Upload + checklist (3) | Slots, consent, agenda (3) |
 | **Total** | **~21** | **~18** | **~22** |
@@ -86,7 +86,7 @@ Stubs exist only so developers can work in parallel. They never replace the real
 
 | Owner | Task |
 |---|---|
-| D1 | Everyday Banking + Fraud & Security agents and prompts (new `vN` dirs + prompt-log); multi-task dispatch; pause/resume on confirmation; Response Validator for sections, receipts and facts; chat sections + confirm dialog |
+| D1 | Complex Banking Needs + Fraud & Security agents and prompts (new `vN` dirs + prompt-log); multi-task dispatch; pause/resume on confirmation; Response Validator for sections, receipts and facts; chat sections + confirm dialog |
 | D2 | Retrieval evaluation (hit rate, MRR, no-match); fix misses by improving section wording; tune `k`; support D1 with the knowledge integration |
 | D3 | `run_action()` + `cards.py` + `handoffs.py`; `POST /commands/{id}/confirm`; RLS tests |
 | B1 | Fraud playbook wording, replacement-card article, disclaimer templates; start Michelle's content |
