@@ -4,14 +4,16 @@ import {checkIsFresh,findingText,loadWorkspace,primaryStatus,runPrecheck,submitD
 import ChecklistPreparation from './ChecklistPreparation';
 import Icon from './Icon';
 import {formatDate,formatDateTime} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 import DocumentUpload from './DocumentUpload';
 
 const sentence=value=>{const text=value.replaceAll('_',' ');return text[0].toUpperCase()+text.slice(1);};
 
 export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,onBusyChange,onSupport,onReviewLoaded,submissionReceipt=null,onSubmitted}){
- const [workspace,setWorkspace]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[now,setNow]=useState(Date.now());
- const mounted=useRef(false),active=useRef(null),serverClock=useRef(null);
- function snapshot(result){serverClock.current={server:Date.parse(result.as_of),local:performance.now()};setNow(serverClock.current.server);setWorkspace(result);onReviewLoaded?.(result.review?.case_id??null);}
+ // A return visit shows the last loaded review at once (actions stay disabled while busy); only a fresh read sets the server clock.
+ const [workspace,setWorkspace]=useState(()=>cached('compliance')),[error,setError]=useState(''),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[now,setNow]=useState(Date.now());
+ const mounted=useRef(false),active=useRef(null),serverClock=useRef(null),owner=useRef(cacheOwner());
+ function snapshot(result){serverClock.current={server:Date.parse(result.as_of),local:performance.now()};setNow(serverClock.current.server);setWorkspace(remember('compliance',result,owner.current));onReviewLoaded?.(result.review?.case_id??null);}
  async function token(){const {data,error}=await supabase.auth.getSession();if(error)throw error;if(!data.session)throw new Error('Sign in again to view your compliance review.');return data.session.access_token;}
  async function refresh(){
   active.current?.abort();const controller=new AbortController();active.current=controller;setBusy(true);setError('');

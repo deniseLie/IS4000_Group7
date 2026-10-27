@@ -7,6 +7,7 @@ import RelationshipPage from './components/RelationshipPage';
 import CompliancePage from './components/CompliancePage';
 import OverviewPage from './components/OverviewPage';
 import {displayName,firstName} from './lib/format';
+import {cacheOwner,cached,remember} from './lib/cache';
 import {loadSections} from './lib/customerData';
 import {loadInbox} from './lib/notifications';
 import {initials} from './components/SharingPage';
@@ -146,7 +147,8 @@ export default function Chat({session,onSignIn}) {
   useEffect(()=>{  // the Inbox button carries a dot while recorded notifications are unread
     if(!session){setUnread(0);return;}
     const controller=new AbortController();
-    (async()=>{try{const headers=await sessionHeaders();const inbox=await loadInbox(headers.Authorization.replace(/^Bearer /,''),controller.signal);if(!controller.signal.aborted)setUnread(inbox.items.filter(item=>!item.read_at).length);}catch{}})();
+    const known=cached('inbox');if(known)setUnread(known.items.filter(item=>!item.read_at).length);
+    (async()=>{try{const scope=cacheOwner(),headers=await sessionHeaders();const inbox=await loadInbox(headers.Authorization.replace(/^Bearer /,''),controller.signal);if(!controller.signal.aborted)setUnread(remember('inbox',inbox,scope).items.filter(item=>!item.read_at).length);}catch{}})();
     return ()=>controller.abort();
   },[session?.user.id,view,pageKey]);
 

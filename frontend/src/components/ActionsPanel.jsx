@@ -7,6 +7,7 @@ import {resumeWorkflow} from '../lib/workflows';
 import {appointmentTime} from '../lib/appointmentData';
 import {consentCategoryText} from '../lib/consentData';
 import {displayName,formatDate,formatDateTime,formatTime} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 function commandTitle(command) {
   if(command.type==='card.temporary_block')return `Temporarily block card ending ${command.target.last4}`;
@@ -113,12 +114,15 @@ function exportCsv(items) {
   link.download='demobank-action-receipts.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
 }
 
+// Reopening shows the last loaded list at once; decisions stay disabled (busy) until the refreshed list arrives.
 export default function ActionsPanel({onClose,onWorkflowChange}) {
-  const [items,setItems]=useState(null);
+  const [items,setItems]=useState(()=>cached('actions'));
   const [selected,setSelected]=useState(null);
   const [acknowledged,setAcknowledged]=useState(false);
-  const [busy,setBusy]=useState(false);
+  const [busy,setBusy]=useState(false),[deciding,setDeciding]=useState(false);
   const [error,setError]=useState('');
+  const scope=useRef(cacheOwner());
+  useEffect(()=>{if(items)remember('actions',items,scope.current);},[items]);
   const active=useRef(null);
   useEffect(()=>{
     const controller=new AbortController();active.current=controller;
@@ -142,7 +146,7 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
   }
   async function submit(operation,commandId) {
     const controller=new AbortController();active.current=controller;
-    setBusy(true);setError('');
+    setBusy(true);setDeciding(true);setError('');
     try {
       const result=await operation(commandId,await token(),controller.signal);
       if(!controller.signal.aborted){
@@ -152,16 +156,16 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         if(!controller.signal.aborted)setItems(recorded);
       }
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
-    finally {if(!controller.signal.aborted)setBusy(false);}
+    finally {if(!controller.signal.aborted){setBusy(false);setDeciding(false);}}
   }
   async function retry(turnId) {
-    const controller=new AbortController();active.current=controller;setBusy(true);setError('');
+    const controller=new AbortController();active.current=controller;setBusy(true);setDeciding(true);setError('');
     try {
       const workflow=await resumeWorkflow(turnId,await token(),controller.signal);
       const recorded=await loadActions(await token(),controller.signal);
       if(!controller.signal.aborted){onWorkflowChange(workflow);setItems(recorded);}
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
-    finally {if(!controller.signal.aborted)setBusy(false);}
+    finally {if(!controller.signal.aborted){setBusy(false);setDeciding(false);}}
   }
   const [tab,setTab]=useState('all'),[group,setGroup]=useState('All'),[query,setQuery]=useState('');
   const all=items||[];
@@ -179,7 +183,8 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
       <button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>{setTab(key);setGroup('All');}}>{label}<span className="count">{count}</span></button>)}</div>
     {all.length>0&&<div className="act-filters"><label className="act-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Filter by receipt ID, action or date…" value={query} onChange={event=>setQuery(event.target.value)}/></label>
       <div className="act-chips">{groups.map(name=><button key={name} className={group===name?'active':''} aria-pressed={group===name} onClick={()=>setGroup(name)}>{name} ({name==='All'?scoped.length:scoped.filter(item=>groupOf(item.command)===name).length})</button>)}</div></div>}
-    {busy&&<p className="loading" role="status">Checking the recorded result… Closing this panel does not cancel a submitted decision. Reopen Actions to check its status.</p>}
+    {busy&&<p className="loading" role="status">{deciding?'Checking the recorded result… Closing this panel does not cancel a submitted decision. Reopen Actions to check its status.':items?'Updating…':'Loading your actions…'}</p>}
+    {busy&&!items&&!deciding&&<div className="loading-list" aria-hidden="true">{[0,1,2].map(key=><span key={key} className="skeleton-card large"/>)}</div>}
     {error&&<p role="alert" data-testid="actions-error">{error} Refresh, then try again.</p>}
     {items?.length===0&&<p className="act-empty" data-testid="actions-empty">No actions have been proposed for your demo profile.</p>}
     {items?.length>0&&visible.length===0&&<p className="act-empty">No actions match this view.</p>}

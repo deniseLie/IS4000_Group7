@@ -3,6 +3,7 @@ import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {loadInbox,markNotificationRead} from '../lib/notifications';
 import {formatDateTime} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 const CATEGORIES={card:'Cards',booking:'Appointments',compliance:'Compliance',document:'Documents',consent:'Data sharing',agenda:'Data sharing',rm:'Relationship',request:'Requests',requests:'Requests',handoff:'Support'};
 const TABS=[['all','All',()=>true],['unread','Unread',item=>!item.read_at],['service','Service updates',item=>item.is_service],['read','Read',item=>!!item.read_at]];
@@ -11,7 +12,7 @@ export function category(item) {return CATEGORIES[item.template_key.split('.')[0
 // Links map a notification category to the page or panel where it can be followed up.
 export default function InboxPage({links={},onActions}) {
   const [tab,setTab]=useState('all');
-  const [inbox,setInbox]=useState(null);
+  const [inbox,setInbox]=useState(()=>cached('inbox'));  // the last loaded inbox shows at once while it refreshes
   const [busy,setBusy]=useState(false);
   const [marking,setMarking]=useState(false);
   const [error,setError]=useState('');
@@ -30,8 +31,8 @@ export default function InboxPage({links={},onActions}) {
     active.current?.abort();
     const controller=new AbortController();active.current=controller;setBusy(true);setError('');
     try {
-      const result=await loadInbox(await token(),controller.signal);
-      if(!controller.signal.aborted&&mounted.current){setInbox(result);return result;}
+      const scope=cacheOwner(),result=await loadInbox(await token(),controller.signal);
+      if(!controller.signal.aborted&&mounted.current){setInbox(remember('inbox',result,scope));return result;}
     } catch(failure) {if(failure.name!=='AbortError'&&mounted.current){setError(failure.message);setInbox(null);}}
     finally {if(!controller.signal.aborted&&mounted.current)setBusy(false);}
     return null;
@@ -79,7 +80,7 @@ export default function InboxPage({links={},onActions}) {
     <div className="page-header"><div><p className="ib-eyebrow"><span>Notifications</span><span className={`ib-live ${connected?'on':''}`} data-testid="inbox-live-status" role="status"><span className="dot"/>{live}</span></p><h1>Inbox</h1><p>Updates for your account in this demo. These messages do not change a real bank account.</p></div>
       <div className="page-header-actions"><button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}><Icon name="refresh"/>Refresh</button>{onActions&&<button className="bank-chat-logout" onClick={onActions}><Icon name="document"/>Actions</button>}</div></div>
     <div className="ib-tabs" role="tablist" aria-label="Filter notifications">{TABS.map(([key,label,match])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>setTab(key)}>{label} ({items.filter(match).length})</button>)}</div>
-    {busy&&<p className="ib-busy loading" role="status">Checking recorded notifications…</p>}
+    {busy&&<p className="ib-busy loading" role="status">{inbox?'Updating…':'Loading notifications…'}</p>}
     {busy&&!inbox&&<div className="loading-list" aria-hidden="true">{[0,1,2].map(key=><span key={key} className="skeleton-card large"/>)}</div>}
     {error&&<p role="alert" data-testid="inbox-error">{error}</p>}
     {inbox?.items.length===0&&<p className="page-empty" data-testid="inbox-empty">No notifications are recorded for your account.</p>}

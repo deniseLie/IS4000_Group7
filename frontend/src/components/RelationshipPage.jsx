@@ -7,20 +7,21 @@ import {initials} from './SharingPage';
 import {supabase} from '../lib/supabase';
 import {loadSharingStatus} from '../lib/consent';
 import {displayName} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 // Workflow 3 task page. The chat hands off here; "Guided steps" follows the workflow, "All requests & appointments" keeps the full manager view and "Data sharing & permissions" embeds consent.
 export default function RelationshipPage({intro,introError,focus,onFocus,mode,onMode,onBack,onAsk,onSource,onReviewActions,onSharing,onSupport}) {
-  const [status,setStatus]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [status,setStatus]=useState(()=>cached('sharing-status')),[busy,setBusy]=useState(false),[error,setError]=useState('');  // shared with Data sharing
   const active=useRef(null);
   useEffect(()=>{
-    const controller=new AbortController();active.current=controller;setBusy(true);
+    const controller=new AbortController(),scope=cacheOwner();active.current=controller;setBusy(true);
     (async()=>{
       try {
         const {data,error:sessionError}=await supabase.auth.getSession();
         if(sessionError)throw sessionError;
         if(!data.session)throw new Error('Please sign in again to view relationship support.');
         const sharing=await loadSharingStatus(data.session.access_token,controller.signal);
-        if(!controller.signal.aborted)setStatus(sharing);
+        if(!controller.signal.aborted)setStatus(remember('sharing-status',sharing,scope));
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
       finally {if(!controller.signal.aborted)setBusy(false);}
     })();

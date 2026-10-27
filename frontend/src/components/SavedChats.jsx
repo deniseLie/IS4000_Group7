@@ -3,6 +3,7 @@ import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {listConversations,loadConversation} from '../lib/conversations';
 import {formatDate,formatTime} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 const PREVIEWS=10;  // titles are read from the newest saved chats only, to keep opening the panel quick
 function when(value) {return formatDate(value)===formatDate(new Date())?`Today, ${formatTime(value)}`:formatDate(value);}
@@ -11,7 +12,11 @@ function clip(text,size) {const line=(text||'').replace(/\s+/g,' ').trim();retur
 // Chat history column beside the assistant: the open conversation first, then earlier saved chats.
 // Each title is the first question asked in that chat and the subtitle the start of the first reply (both saved redacted).
 export default function SavedChats({current,closing=false,onClose,onOpen,onLoaded}) {
-  const [sessions,setSessions]=useState(null),[previews,setPreviews]=useState({});
+  // The last list shows at once while it refreshes; a chat's title (its first question and reply) never changes once
+  // known, so only chats without a cached title are read again.
+  const [sessions,setSessions]=useState(()=>cached('chats')),[previews,setPreviews]=useState(()=>cached('chat-titles')||{});
+  const owner=useRef(cacheOwner());
+  useEffect(()=>{remember('chat-titles',previews,owner.current);},[previews]);
   const [error,setError]=useState(''),[opening,setOpening]=useState(false);
   const heading=useRef(null),column=useRef(null),trigger=useRef(document.activeElement);
   const close=()=>onClose();  // the parent plays the closing motion
@@ -25,7 +30,7 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
     return ()=>{document.removeEventListener('keydown',escape);document.removeEventListener('pointerdown',away);if(previous?.isConnected)previous.focus();};
   },[]);
   useEffect(()=>{
-    const controller=new AbortController();
+    const controller=new AbortController(),scope=cacheOwner();
     async function load() {
       try {
         const {data,error:failure}=await supabase.auth.getSession();
@@ -34,12 +39,14 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
         const headers={Authorization:`Bearer ${data.session.access_token}`};
         const result=await listConversations(headers,controller.signal);
         if(controller.signal.aborted)return;
-        setSessions(result);onLoaded?.(result.length);
-        await Promise.all(result.slice(0,PREVIEWS).map(async item=>{
+        setSessions(remember('chats',result,scope));onLoaded?.(result.length);
+        const titles=cached('chat-titles')||{};
+        await Promise.all(result.slice(0,PREVIEWS).filter(item=>!(titles[item.session_id]?.title&&titles[item.session_id]?.detail)).map(async item=>{
           try {
             const history=await loadConversation({session_id:item.session_id,guest_token:null},headers,controller.signal);
             const asked=history.messages.find(m=>m.role==='user')?.content,reply=history.messages.find(m=>m.role==='assistant'&&!m.error)?.content;
-            if(!controller.signal.aborted)setPreviews(known=>({...known,[item.session_id]:{title:asked&&clip(asked,60),detail:reply&&clip(reply,80)}}));
+            const preview={title:asked&&clip(asked,60),detail:reply&&clip(reply,80)};
+            if(!controller.signal.aborted)setPreviews(known=>({...known,[item.session_id]:preview}));
           } catch {}  // a chat without a preview still opens; it keeps its mode label as the title
         }));
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}

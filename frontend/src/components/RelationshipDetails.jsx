@@ -4,6 +4,7 @@ import {supabase} from '../lib/supabase';
 import {holdAppointment,loadAppointments,loadRequests,loadSlots} from '../lib/relationship';
 import {proposeAction} from '../lib/actions';
 import {appointmentTime,slotDay,slotTime} from '../lib/appointmentData';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 function initialRange() {
   const now=new Date(Date.now()+8*60*60*1000);
@@ -29,13 +30,13 @@ export default function RelationshipDetails({recipient,recipientBusy,onReviewAct
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const active=useRef(null);
-  useEffect(()=>{
-    const controller=new AbortController();active.current=controller;
-    setResult(null);setOutcome(null);setError('');setBusy(true);
+  useEffect(()=>{  // a range already loaded shows at once; holding a slot stays disabled (busy) until the fresh read lands
+    const controller=new AbortController(),scope=cacheOwner(),key=`relationship:${JSON.stringify(range)}`;active.current=controller;
+    setResult(cached(key));setOutcome(null);setError('');setBusy(true);
     async function load() {
       try {
         const loaded=await records(range,await token(),controller.signal);
-        if(!controller.signal.aborted)setResult(loaded);
+        if(!controller.signal.aborted)setResult(remember(key,loaded,scope));
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
       finally {if(!controller.signal.aborted)setBusy(false);}
     }

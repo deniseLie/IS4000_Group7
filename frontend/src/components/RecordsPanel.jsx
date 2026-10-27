@@ -5,6 +5,7 @@ import Panel from './Panel';
 import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
 import {formatAmount as amount,formatDate,formatDateTime} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 // Names and amounts stay exactly as recorded here (card and loan currencies are not recorded); dates use the shared format.
 function label(value) {return value.replaceAll('_',' ');}
@@ -19,16 +20,16 @@ export default function RecordsPanel({onClose}) {
   const [to,setTo]=useState('');
   const [status,setStatus]=useState('');
   const [query,setQuery]=useState({from_date:null,to_date:null,filters:null});
-  useEffect(()=>{
-    const controller=new AbortController();
+  useEffect(()=>{  // a filter already loaded shows its last result at once while it is read again
+    const controller=new AbortController(),scope=cacheOwner(),key=`records:${JSON.stringify(query)}`;
     async function load() {
-      setLoading(true);setError('');setRecords(null);
+      setLoading(true);setError('');setRecords(cached(key));
       try {
         const {data,error:sessionError}=await supabase.auth.getSession();
         if(sessionError)throw sessionError;
         if(!data.session)throw new Error('Please sign in again to view your records.');
         const result=await loadRecords(data.session.access_token,query,controller.signal);
-        if(!controller.signal.aborted)setRecords(result);
+        if(!controller.signal.aborted)setRecords(remember(key,result,scope));
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
       finally {if(!controller.signal.aborted)setLoading(false);}
     }

@@ -4,29 +4,32 @@ import {initials} from './SharingPage';
 import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
 import {displayName,formatDate,formatDateTime,formatMoney as money} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 const ACCOUNT={savings:'Savings account',current:'Current account',multi_currency:'Multi-currency account'};
 const LOAN={home:'Home loan',car:'Car loan',personal:'Personal loan',securities_backed:'Securities-backed loan'};
 const REVIEW_DONE=['completed','closed'];
+const QUERY={from_date:null,to_date:null,filters:null},KEY=`records:${JSON.stringify(QUERY)}`;  // the same unfiltered read Records opens with
 function greeting() {const hour=Number(new Date().toLocaleString('en-SG',{timeZone:'Asia/Singapore',hour:'numeric',hour12:false}));return hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';}
 
 // Online-banking style landing page: everything the customer owns at a glance, with one way into each task.
 export default function OverviewPage({onNavigate,onAsk}) {
-  const [records,setRecords]=useState(null),[error,setError]=useState('');
+  // The last loaded records show at once on a return visit while a fresh read replaces them.
+  const [records,setRecords]=useState(()=>cached(KEY)),[error,setError]=useState('');
   useEffect(()=>{
-    const controller=new AbortController();
+    const controller=new AbortController(),scope=cacheOwner();
     (async()=>{
       try {
         const {data,error:sessionError}=await supabase.auth.getSession();
         if(sessionError)throw sessionError;
         if(!data.session)throw new Error('Please sign in again to view your accounts.');
-        const result=await loadRecords(data.session.access_token,{from_date:null,to_date:null,filters:null},controller.signal);
-        if(!controller.signal.aborted)setRecords(result);
+        const result=await loadRecords(data.session.access_token,QUERY,controller.signal);
+        if(!controller.signal.aborted)setRecords(remember(KEY,result,scope));
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     })();
     return ()=>controller.abort();
   },[]);
-  if(error)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p></section>;
+  if(error&&!records)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p></section>;
   if(!records)return <section className="app-page-body ov" data-testid="overview-page"><p className="loading" role="status">Loading your accounts…</p>
     <div className="skeleton-page" aria-hidden="true"><span className="skeleton-line wide"/><span className="skeleton-block tall"/>
       <div className="ov-grid"><div className="ov-main"><span className="skeleton-block"/><span className="skeleton-block"/></div><div className="ov-side"><span className="skeleton-block"/><span className="skeleton-block"/></div></div></div></section>;
@@ -39,6 +42,7 @@ export default function OverviewPage({onNavigate,onAsk}) {
     <header className="ov-head"><div><p className="ov-date">{new Date().toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'})}</p>
       <h1>{greeting()}, {name}</h1></div>
 </header>
+    {error&&<p role="alert">{error} These are your last loaded records.</p>}
     <div className="ov-balance"><span>Total balance in SGD accounts</span><strong data-testid="overview-total">{money(sgd)}</strong><small>As of {formatDateTime(records.accounts.as_of)}</small></div>
     <div className="ov-grid">
       <div className="ov-main">

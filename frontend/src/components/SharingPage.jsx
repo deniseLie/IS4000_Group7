@@ -7,12 +7,14 @@ import {supabase} from '../lib/supabase';
 import {loadConsentRecords,loadSharingStatus} from '../lib/consent';
 import {consentCategoryText} from '../lib/consentData';
 import {displayName,firstName,formatDate,formatDateTime} from '../lib/format';
+import {cacheOwner,cached,remember} from '../lib/cache';
 
 export function initials(name) {return name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('');}
 
 export default function SharingPage({embedded=false,onReviewActions,onRelationship}) {
-  const [status,setStatus]=useState(null);
-  const [registry,setRegistry]=useState(null);
+  // The last loaded status shows at once; consent controls stay disabled (busy) until the fresh read arrives.
+  const [status,setStatus]=useState(()=>cached('sharing-status'));
+  const [registry,setRegistry]=useState(()=>cached('consent-records'));
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [agendas,setAgendas]=useState(false);
@@ -20,13 +22,13 @@ export default function SharingPage({embedded=false,onReviewActions,onRelationsh
   const manage=useRef(null);
   useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);
   async function refresh() {
-    const controller=new AbortController();active.current=controller;setBusy(true);setError('');setStatus(null);setRegistry(null);
+    const controller=new AbortController(),scope=cacheOwner();active.current=controller;setBusy(true);setError('');setStatus(cached('sharing-status'));setRegistry(cached('consent-records'));
     try {
       const {data,error:sessionError}=await supabase.auth.getSession();
       if(sessionError)throw sessionError;
       if(!data.session)throw new Error('Please sign in again to review data sharing.');
       const [result,records]=await Promise.all([loadSharingStatus(data.session.access_token,controller.signal),loadConsentRecords(data.session.access_token,controller.signal)]);
-      if(!controller.signal.aborted){setStatus(result);setRegistry(records);}
+      if(!controller.signal.aborted){setStatus(remember('sharing-status',result,scope));setRegistry(remember('consent-records',records,scope));}
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted){setError(failure.message);setStatus(null);setRegistry(null);}}
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
@@ -35,7 +37,7 @@ export default function SharingPage({embedded=false,onReviewActions,onRelationsh
   return <section className={`${embedded?'sharing-embedded':'app-page-body'} sharing-page`} aria-label="Data sharing" data-testid="sharing-page">
     {!embedded&&<nav className="breadcrumb" aria-label="Breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span aria-current="page">Data sharing</span></nav>}
     <div className="page-header"><div>{embedded?<><span className="eyebrow">Data sharing</span><h2>Data sharing &amp; permissions</h2></>:<h1>Data sharing</h1>}<p>Control who can see your information, and for how long. Checking this status does not share data or change your consent.</p></div></div>
-    {busy&&<p className="loading" role="status">Checking data-sharing consent…</p>}
+    {busy&&<p className="loading" role="status">{status?'Updating…':'Checking data-sharing consent…'}</p>}
     {error&&<p role="alert" data-testid="sharing-error">{error}</p>}
     <section className="page-section"><h2 className="section-label">Who has access</h2>
       {recipient&&<div className="access-card" data-testid="sharing-details">
