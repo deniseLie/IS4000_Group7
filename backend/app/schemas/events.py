@@ -43,7 +43,8 @@ class AnswerSection(BaseModel):  # one per task, priority order
     needs_human: bool = False
     response_origin: Origin
     prompt_version: str | None = None
-    pending_action: ActionRequiredEvent | None = None  # paused previews only; never saved in a final reply
+    pending_action: ActionRequiredEvent | None = None  # legacy single offer; read only from replies saved before card.dispute
+    pending_actions: list[ActionRequiredEvent] = Field(default=[], max_length=2)  # paused previews only (block, then dispute); never in a final reply
     decision: str | None = None  # fixed text for a recorded action outcome on this section's task
 
 

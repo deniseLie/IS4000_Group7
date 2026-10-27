@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import AgentResult,RequestContext,Task,TaskPlan
 from app.schemas.conversations import ConversationAccess,CreateConversation,TurnInput,TurnResponse
-from app.schemas.fraud import FraudProposal
+from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PipelineContext,ResponseMeta
 from app.services import conversations,workflow_store
 from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
@@ -28,7 +28,7 @@ from tests.test_actions_api import context,headers
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgreSQL/PostgREST')
 
 
-async def pause(db: SyncPostgrestClient,ctx: RequestContext) -> tuple[OwnedWorkflow,UUID]:
+async def pause(db: SyncPostgrestClient,ctx: RequestContext,dispute: bool=False) -> tuple[OwnedWorkflow,UUID]:
     access=ConversationAccess(session_id=uuid4(),guest_token=None)
     await conversations.create(CreateConversation(session_id=access.session_id,mode='personal',language='English'),access,ctx,db)
     query='I do not recognise txn_100111 on my synthetic card ending 4821.'
@@ -44,7 +44,8 @@ async def pause(db: SyncPostgrestClient,ctx: RequestContext) -> tuple[OwnedWorkf
         'workflow_version':'v2-actions-v1','plan':TaskPlan(tasks=[task]),
         'results':[AgentResult(task_id='t1',agent='fraud',status='needs_human',text='Review the synthetic card action you selected.',answer_kind='conversation')],
         'evidence':[[]],'metadata':[ResponseMeta(origin='safety',prompt_id=None)],
-        'proposals':[FraudProposal(card_id='card_10011',transaction_id='txn_100111')]},as_node='dispatch')
+        'proposals':[FraudProposal(card_id='card_10011',transaction_id='txn_100111')],
+        'disputes':[DisputeProposal(card_id='card_10011',transaction_ids=['txn_100111','txn_100115','txn_100116']) if dispute else None]},as_node='dispatch')
     result=await graph.ainvoke(None,config,context=PipelineContext(request=current,workflow=owned),durability='sync')
     assert result['__interrupt__'] and 'answer' not in result
     snapshot=await graph.aget_state(config)
@@ -52,10 +53,10 @@ async def pause(db: SyncPostgrestClient,ctx: RequestContext) -> tuple[OwnedWorkf
     return owned,result['pending_reviews'][0].command_id
 
 
-def paused(api: NativeAPI,ctx: RequestContext) -> tuple[OwnedWorkflow,UUID]:
+def paused(api: NativeAPI,ctx: RequestContext,dispute: bool=False) -> tuple[OwnedWorkflow,UUID]:
     with SyncPostgrestClient(api.url) as db:
         db.auth(ctx.principal.jwt.get_secret_value())
-        return asyncio.run(pause(db,ctx))
+        return asyncio.run(pause(db,ctx,dispute))
 
 
 @pytest.fixture
@@ -78,7 +79,7 @@ def test_review_resumes_persisted_graph_once(local_data_api: NativeAPI,native_ap
     assert history['active_turn'] is None and history['workflow'] is None
     answer=history['messages'][-1]['payload']
     assert answer['response_origin']=='safety' and all(section['response_origin']=='safety' for section in answer['sections'])
-    assert len(answer['sections'])==1 and answer['sections'][0]['task_id']=='t1' and answer['sections'][0]['pending_action'] is None
+    assert len(answer['sections'])==1 and answer['sections'][0]['task_id']=='t1' and answer['sections'][0]['pending_actions']==[]
     assert answer['sections'][0]['decision'].startswith('Your card ending 4821 is temporarily blocked.' if decision=='confirm' else 'You chose not to block the card ending 4821; it stays active.')
     assert ('handoff for identity verification' in answer['answer'])==(decision=='confirm')
     again=native_api_client.post(f'/workflows/{owned.turn.turn_id}/resume',headers=headers(ctx))
@@ -92,6 +93,36 @@ def test_review_resumes_persisted_graph_once(local_data_api: NativeAPI,native_ap
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
+@pytest.mark.parametrize('block,dispute',[('confirm','confirm'),('reject','confirm'),('confirm','reject')])
+def test_block_and_dispute_are_two_decisions_in_one_paused_turn_with_one_case_summary(local_data_api: NativeAPI,
+        native_api_client: TestClient,enabled: None,block: str,dispute: str) -> None:
+    import psycopg
+    ctx=context(local_data_api,1001)
+    owned,block_id=paused(local_data_api,ctx,dispute=True)
+    preview=native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(ctx)).json()
+    offers=preview['preview']['sections'][0]['pending_actions']
+    assert [item['type'] for item in offers]==['card.temporary_block','card.dispute'] and offers[0]['command_id']==str(block_id)
+    assert offers[1]['summary']=='Review a dispute draft of 3 charges on synthetic card ending 4821'
+    dispute_id=offers[1]['command_id']
+    assert native_api_client.post(f'/commands/{dispute_id}/confirm',headers=headers(ctx)).status_code==422
+    assert native_api_client.post(f'/commands/{block_id}/{block}',headers=headers(ctx)).json()['workflow']['state']=='awaiting_confirmation'
+    body={'answers':{'card_in_possession':'yes'}} if dispute=='confirm' else None
+    response=native_api_client.post(f'/commands/{dispute_id}/{dispute}',headers=headers(ctx),json=body)
+    assert response.status_code==200 and response.json()['workflow']['state']=='completed',response.text
+    answer=native_api_client.get(f'/conversations/{owned.access.session_id}',headers=headers(ctx)).json()['messages'][-1]['payload']
+    decision=answer['sections'][0]['decision']
+    assert len(answer['sections'])==1 and decision.startswith('Your card ending 4821 is temporarily blocked.' if block=='confirm' else 'You chose not to block')
+    assert ('Your dispute draft for 3 charges on the card ending 4821 is recorded' in decision)==(dispute=='confirm')
+    with psycopg.connect(local_data_api.database_uri) as db:
+        handoffs=db.execute('select reason,priority,summary from support.handoffs').fetchall()
+        assert [(reason,priority) for reason,priority,_ in handoffs]==[('card_dispute' if dispute=='confirm' else 'card_verification','P0')]
+        summary=handoffs[0][2]
+        assert 'Card ending 4821.' in summary and 'Reported charge: 2026-10-17 ONLINE MERCHANT 8831 SGD -2400.00.' in summary
+        assert ('card in possession: yes' in summary)==(dispute=='confirm') and summary.endswith('Staff decide refunds and cancellation.')
+        assert db.execute("select card_in_possession from (select result->>'card_in_possession' card_in_possession from actions.receipts r join actions.commands c using(command_id) where c.type='card.dispute') d").fetchall()==([('yes',)] if dispute=='confirm' else [])
+        assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+
+
 def test_waiting_reply_preview_is_owned_and_only_available_before_the_decision(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     ctx=context(local_data_api,1001)
     owned,command=paused(local_data_api,ctx)
@@ -100,8 +131,8 @@ def test_waiting_reply_preview_is_owned_and_only_available_before_the_decision(l
     body=preview.json()
     assert body['workflow']['state']=='awaiting_confirmation' and body['workflow']['pending_commands']==[str(command)]
     section=body['preview']['sections'][0]
-    assert section['task_id']=='t1' and section['pending_action']['command_id']==str(command) and section['decision'] is None
-    assert section['pending_action']['summary'].endswith('ending 4821')
+    assert section['task_id']=='t1' and [item['command_id'] for item in section['pending_actions']]==[str(command)] and section['decision'] is None
+    assert section['pending_actions'][0]['summary'].endswith('ending 4821')
     foreign=context(local_data_api,1003)
     assert native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(foreign)).status_code==404
     assert native_api_client.post(f'/commands/{command}/reject',headers=headers(ctx)).status_code==200

@@ -5,6 +5,7 @@ Model planning and wording are covered by the opt-in real-provider browser and e
 """
 import asyncio
 import json
+import re
 from datetime import date,datetime,timedelta,timezone
 from uuid import uuid4
 import pytest
@@ -13,7 +14,8 @@ from app.schemas.chat import ChatRequest
 from app.schemas.contracts import AgentResult,Principal,RequestContext,Task,TaskPlan
 from app.schemas.events import ActionRequiredEvent,AnswerSection,Source
 from app.schemas.fraud import FraudProposal
-from app.schemas.workflows import ResponseMeta
+from app.schemas.disputes import DisputeItem,StoredDisputeTarget
+from app.schemas.workflows import PendingReview,ResponseMeta
 from app.services import prompts
 from app.services.agents import fraud
 from app.services.agents.answer import validate_draft
@@ -131,9 +133,9 @@ def state() -> dict[str,object]:
 def test_preview_shows_every_section_with_the_block_offer_on_the_urgent_one() -> None:
     action=ActionRequiredEvent(command_id=uuid4(),type='card.temporary_block',summary='Review a temporary block for synthetic card ending 4821',
         expires_at=datetime.now(timezone.utc)+timedelta(minutes=10))
-    preview=preview_answer(state(),{'t1':action})
+    preview=preview_answer(state(),{'t1':[action]})
     assert [section.task_id for section in preview.sections or []]==['t1','t2','t3']
-    assert [section.pending_action for section in preview.sections or []]==[action,None,None]
+    assert [section.pending_actions for section in preview.sections or []]==[[action],[],[]]
     assert all(section.decision is None for section in preview.sections or [])
 
 
@@ -154,7 +156,56 @@ def test_decision_is_merged_into_the_urgent_section(command_state: str,receipt: 
     assert [section.task_id for section in sections]==['t1','t2','t3']
     assert sections[0].decision==text and sections[0].answer=='Answer t1.' and sections[0].needs_human
     assert 'action-receipt-t1' in [item.id for item in sections[0].sources] and text in answer.answer
-    assert all(section.pending_action is None for section in sections)
+    assert all(section.pending_actions==[] and section.pending_action is None for section in sections)
+
+
+def test_block_and_dispute_offers_and_decisions_share_the_urgent_section() -> None:
+    from app.schemas.actions import ActionOutcome
+    from app.services.orchestrator import dispute_text,paused_preview
+    from tests.test_dispute_schema import TARGET,outcome
+    soon=datetime.now(timezone.utc)+timedelta(minutes=10)
+    block=ActionRequiredEvent(command_id=uuid4(),type='card.temporary_block',summary='Review a temporary block for synthetic card ending 4821',expires_at=soon)
+    dispute=ActionRequiredEvent(command_id=uuid4(),type='card.dispute',summary='Review a dispute draft of 2 charges on synthetic card ending 4821',expires_at=soon)
+    preview=preview_answer(state(),{'t1':[block,dispute]})
+    assert [section.pending_actions for section in preview.sections or []]==[[block,dispute],[],[]]
+    proposed=ActionOutcome.model_validate(outcome('proposed',None))
+    paused={**state(),'pending_reviews':[PendingReview(task_id='t1_dispute',command_id=proposed.command.command_id)]}
+    events,answer=paused_preview(paused,[proposed],[proposed.command.command_id])
+    assert [event.summary for event in events]==['Review a dispute draft of 2 charges on synthetic card ending 4821']
+    assert (answer.sections or [])[0].pending_actions==events
+    stored=StoredDisputeTarget.model_validate(TARGET)
+    recorded=dispute_text('succeeded','succeeded',stored)
+    assert recorded.startswith('Your dispute draft for 2 charges on the card ending 4821 is recorded for bank staff review.') and 'nothing has been refunded' in recorded
+    assert dispute_text('rejected',None,stored).startswith('You chose not to send the dispute draft') and dispute_text('failed','failed',stored).endswith('Nothing was sent.')
+    current=state()
+    current['decision_sections']=[AnswerSection(task_id=task,domain='fraud',priority='P0',answer=text,needs_human=True,response_origin='safety',
+        sources=[Source(id='action-receipt-'+task,title='Recorded synthetic action decisions',url=None,version='v1')])
+        for task,text in [('t1_decision',decision_text('succeeded','succeeded','4821')),('t1_dispute_decision',recorded)]]
+    sections=compose(current)['answer'].sections or []
+    assert [section.task_id for section in sections]==['t1','t2','t3']
+    assert sections[0].decision==decision_text('succeeded','succeeded','4821')+' '+recorded
+    assert {'action-receipt-t1_decision','action-receipt-t1_dispute_decision'}<={item.id for item in sections[0].sources}
+
+
+def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions() -> None:
+    from app.schemas.customer_data import CustomerTransaction
+    from app.services.case_summary import build
+    from tests.test_dispute_schema import ITEMS
+    items=[DisputeItem.model_validate(item) for item in ITEMS]
+    transfer=CustomerTransaction.model_validate({'txn_id':'txn_100112','date':'2026-10-17','description':'Transfer to landlord','amount':-1800.0,
+        'currency':'SGD','status':'pending','card_id':None,'card_last4':None,'is_overseas':False,'failure_reason':None})
+    summary=build(last4='4821',reported_id='txn_100111',items=items,block='succeeded',dispute='succeeded',possession='yes',transfers=[transfer],
+        due=date(2026,10,30),lockout=True,customer_words=PART_B)
+    for fact in ['Card ending 4821.','Reported charge: 2026-10-17 ONLINE MERCHANT 8831 SGD -2400.00.',
+        'Rule check (a pattern flag, not a fraud decision): 1 smaller earlier charges from the same merchant: 2026-10-12 ONLINE MERCHANT 8831 SGD -1.00.',
+        'Temporary block: confirmed.','Dispute draft for 2 charges: confirmed; card in possession: yes.',
+        'Also raised: pending transfer Transfer to landlord SGD -1800.00 since 2026-10-17, customer-stated due date 2026-10-30; app lockout, answered as a security step.',
+        'Customer’s words: "there\'s a $2,400 charge','Staff decide refunds and cancellation.']:
+        assert fact in summary
+    assert len(summary)<=1000 and not re.search(r'(?<![0-9])([0-9][ -]?){13,19}(?![0-9])',summary)
+    declined=build(last4='4821',reported_id='txn_100111',items=items,block='rejected',dispute='succeeded',possession='no',transfers=[],
+        due=None,lockout=False,customer_words='x '*900)
+    assert 'Temporary block: declined.' in declined and 'card in possession: no' in declined and 'Also raised' not in declined and len(declined)<=1000
 
 
 def test_personal_retail_uses_the_new_prompt_version() -> None:

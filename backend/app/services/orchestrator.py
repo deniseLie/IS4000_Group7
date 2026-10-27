@@ -8,6 +8,8 @@ rules prioritise fraud, security, regulatory deadlines, then ordinary tasks, pre
 """
 import asyncio
 import re
+from datetime import timedelta
+from zoneinfo import ZoneInfo
 from typing import TypedDict
 from uuid import UUID,uuid5
 import httpx
@@ -16,23 +18,25 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
-from pydantic import ValidationError
+from pydantic import TypeAdapter,ValidationError
 from postgrest.exceptions import APIError
 from app.core.config import settings
 from app.core import data_api
 from app.core.observability import log_event,span
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
+from app.schemas.customer_data import CustomerTransaction
 from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan,Receipt
 from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, Source,WorkflowPausedEvent
 from app.schemas.actions import ActionOutcome
-from app.schemas.fraud import FraudProposal
+from app.schemas.disputes import StoredDisputeTarget
+from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery,SectionKey
-from app.services import actions,audit,customer_data,kb, llm_gateway, prompts,workflow_store
+from app.services import actions,audit,case_summary,customer_data,kb, llm_gateway, prompts,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
-from app.services.agents import compliance,document,fraud,relationship,retail
+from app.services.agents import compliance,document,fraud,relationship,retail,retail_checks
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -40,6 +44,7 @@ from app.services.knowledge import INDEX,source
 from app.services.guardrail import FRAUD
 from app.services.authorization import require_permission
 
+DISPUTE='_dispute'
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]',re.I)
 SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b',re.I)
 # Signing in is retail app help even when the question asks whether it relates to a reported charge; the fraud task covers the charge.
@@ -69,6 +74,7 @@ class Turn(TypedDict):
     evidence: list[list[Evidence]]
     metadata: list[ResponseMeta]
     proposals: list[FraudProposal | None]
+    disputes: list[DisputeProposal | None]
     pending_reviews: list[PendingReview]
     decision_sections: list[AnswerSection]
     workflow_version: str
@@ -88,6 +94,7 @@ class DispatchUpdate(TypedDict):
     evidence: list[list[Evidence]]
     metadata: list[ResponseMeta]
     proposals: list[FraudProposal | None]
+    disputes: list[DisputeProposal | None]
 
 
 class TaskDispatch(TypedDict):
@@ -95,6 +102,7 @@ class TaskDispatch(TypedDict):
     evidence: list[Evidence]
     metadata: ResponseMeta
     proposal: FraudProposal | None
+    dispute: DisputeProposal | None
 
 
 class ReviewUpdate(TypedDict):
@@ -219,6 +227,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         known={item.id for item in evidence}
         evidence=[*evidence,*(item for item in await linked_evidence(task,ctx) if item.id not in known)]
     proposal: FraudProposal | None=None
+    dispute: DisputeProposal | None=None
     agent=AGENT_FOR[task.domain]
     prompt_id=task_prompt_id(task,state['request'])
     if state['request'].mode=='public' or task.domain=='smalltalk':
@@ -228,7 +237,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
     elif task.domain=='fraud':
         decision,evidence=await fraud.respond(task,state['history'],state['request'].language,
             ctx.model_copy(update={'agent':'fraud'}),evidence)
-        result=decision.result;proposal=decision.proposal;prompt_id=decision.prompt_id
+        result=decision.result;proposal=decision.proposal;dispute=decision.dispute;prompt_id=decision.prompt_id
     elif task.domain in {'retail','compliance','relationship','document'}:
         responder={'retail':retail.respond,'compliance':compliance.respond,'relationship':relationship.respond,'document':document.respond}[task.domain]
         from app.services.compliance_selection import selection
@@ -240,7 +249,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
     else:
         result=AgentResult(task_id=task.task_id,agent=agent,status='error',
             text='This personal service is not connected yet. Use General help for public information or your bank’s official support channel.')
-    return {'result':result,'evidence':evidence,'proposal':proposal,
+    return {'result':result,'evidence':evidence,'proposal':proposal,'dispute':dispute,
         'metadata':ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id)}
 
 
@@ -258,7 +267,7 @@ async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         audit.add('agent','agent.failed','failed',details=fields)
         text=fraud.URGENT+' '+WITHHELD if task.domain=='fraud' else WITHHELD
         return {'result':AgentResult(task_id=task.task_id,agent=agent,status='error',text=text),'evidence':[],
-            'proposal':None,'metadata':ResponseMeta(origin='validation',prompt_id=task_prompt_id(task,state['request']))}
+            'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='validation',prompt_id=task_prompt_id(task,state['request']))}
 
 
 async def dispatch(state: Turn, runtime: Runtime[PipelineContext]) -> DispatchUpdate:
@@ -269,23 +278,32 @@ async def dispatch(state: Turn, runtime: Runtime[PipelineContext]) -> DispatchUp
         running=[group.create_task(dispatch_task(task,state,ctx)) for task in state['plan'].by_priority()]
     rows=[task.result() for task in running]
     return {'results':[row['result'] for row in rows],'evidence':[row['evidence'] for row in rows],
-        'metadata':[row['metadata'] for row in rows],'proposals':[row['proposal'] for row in rows]}
+        'metadata':[row['metadata'] for row in rows],'proposals':[row['proposal'] for row in rows],'disputes':[row['dispute'] for row in rows]}
 
 
 async def propose_actions(state: Turn,runtime: Runtime[PipelineContext]) -> ReviewUpdate:
     owned=runtime.context.workflow
     reviews: list[PendingReview]=[]
     cards: set[str]=set()
-    for task,proposal in zip(state['plan'].by_priority(),state['proposals'],strict=True):
+    disputes=state.get('disputes') or [None]*len(state['proposals'])
+    for task,proposal,dispute in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
         if proposal is None or proposal.card_id in cards:continue
         if owned is None:raise ValueError('Personal proposals require an owned durable turn')
         ctx=runtime.context.request.model_copy(update={'agent':'fraud'})
-        command=ActionCommand(command_id=uuid5(owned.turn.case_id,task.task_id+':card.temporary_block'),type='card.temporary_block',
-            target={'card_id':proposal.card_id},idempotency_key=f'{owned.turn.case_id}:{task.task_id}:card.temporary_block')
-        result=await actions.propose_for_workflow(command,task.task_id,owned,ctx)
-        reviews.append(PendingReview(task_id=task.task_id,command_id=result.command.command_id))
+        offers=[(task.task_id,'card.temporary_block',{'card_id':proposal.card_id})]
+        # The dispute draft is its own decision in the same paused turn, under its own workflow task id.
+        if dispute is not None and dispute.card_id==proposal.card_id:offers.append((task.task_id+DISPUTE,'card.dispute',dispute.model_dump(mode='json')))
+        for task_id,kind,target in offers:
+            command=ActionCommand(command_id=uuid5(owned.turn.case_id,task_id+':'+kind),type=kind,target=target,
+                idempotency_key=f'{owned.turn.case_id}:{task_id}:{kind}')
+            result=await actions.propose_for_workflow(command,task_id,owned,ctx)
+            reviews.append(PendingReview(task_id=task_id,command_id=result.command.command_id))
         cards.add(proposal.card_id)
     return {'pending_reviews':reviews}
+
+
+def base_task(task_id: str) -> str:
+    return task_id.removesuffix('_decision').removesuffix(DISPUTE)
 
 
 async def review_actions(state: Turn,runtime: Runtime[PipelineContext]) -> dict[str,str]:
@@ -304,28 +322,57 @@ async def review_actions(state: Turn,runtime: Runtime[PipelineContext]) -> dict[
 
 
 async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
+    """Fixed decision text per recorded outcome, then one staff handoff per reported charge with the deterministic case summary."""
     sections: list[AnswerSection]=[]
     ctx=runtime.context.request
     owned=runtime.context.workflow
+    outcomes: dict[str,dict[str,ActionOutcome]]={}
     for review in state['pending_reviews']:
         with data_api.connect(ctx) as db:outcome=await action_store.load(review.command_id,ctx,db)
         if outcome.command.state in ('proposed','confirmed'):raise ValueError('Cannot compose a reply before a recorded decision')
-        receipt=outcome.receipt.outcome if outcome.receipt is not None else None
         if owned is None:raise ValueError('Action settlement requires an owned turn')
-        if receipt=='succeeded':
-            # Only a blocked card goes to staff for verification and permanent cancellation.
-            task_id=review.task_id+'_handoff'
-            command=ActionCommand(command_id=uuid5(owned.turn.case_id,task_id+':handoff.create'),type='handoff.create',
-                target={'reason':'card_verification','priority':'P0','summary':'Customer reported a suspicious synthetic card transaction. Review the recorded card decision.'},
-                idempotency_key=f'{owned.turn.case_id}:{task_id}:handoff.create')
-            handoff=await actions.propose_for_workflow(command,task_id,owned,ctx.model_copy(update={'agent':'fraud'}))
-            if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
-        sections.append(AnswerSection(task_id=review.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',
-            answer=decision_text(outcome.command.state,receipt,outcome.command.target.last4),
+        outcomes.setdefault(base_task(review.task_id),{})[outcome.command.type]=outcome
+        receipt=outcome.receipt.outcome if outcome.receipt is not None else None
+        text=(decision_text(outcome.command.state,receipt,outcome.command.target.last4) if outcome.command.type=='card.temporary_block'
+            else dispute_text(outcome.command.state,receipt,outcome.command.target))
+        sections.append(AnswerSection(task_id=review.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',answer=text,
             sources=[Source(id='action-receipt-'+review.task_id,title='Recorded synthetic action decisions',url=None,version='v1',publisher='DemoBank action ledger'),
                 Source.model_validate(source(INDEX['unrecognised-charge']))],
             needs_human=True,response_origin='safety',prompt_version=None))
+    for task_id,decided in outcomes.items():
+        block,dispute=decided.get('card.temporary_block'),decided.get('card.dispute')
+        succeeded={kind for kind,item in decided.items() if item.receipt is not None and item.receipt.outcome=='succeeded'}
+        if not succeeded or block is None or owned is None:continue
+        # Staff verify a blocked card and review a confirmed dispute; both come from this one summary under one handoff.
+        reason='card_dispute' if 'card.dispute' in succeeded else 'card_verification'
+        handoff_id=task_id+'_handoff'
+        command=ActionCommand(command_id=uuid5(owned.turn.case_id,handoff_id+':handoff.create'),type='handoff.create',
+            target={'reason':reason,'priority':'P0','summary':await staff_summary(state,task_id,block,dispute,ctx)},
+            idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
+        handoff=await actions.propose_for_workflow(command,handoff_id,owned,ctx.model_copy(update={'agent':'fraud'}))
+        if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
     return {'decision_sections':sections}
+
+
+async def staff_summary(state: Turn,task_id: str,block: ActionOutcome,dispute: ActionOutcome | None,ctx: RequestContext) -> str:
+    """Case summary from records and recorded decisions; the other issues come from the plan and a fresh pending-transfer read."""
+    tasks=state['plan'].by_priority()
+    index=[task.task_id for task in tasks].index(task_id)
+    proposal=state['proposals'][index]
+    target=dispute.command.target if dispute is not None else None
+    items=target.items if isinstance(target,StoredDisputeTarget) else []
+    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
+    transfer=[task for task in tasks if task.domain=='retail' and retail_checks.TRANSFER.search(str(task.entities.get('question','')))
+        and 'linked' not in task.entities]
+    pending=[]
+    if transfer:
+        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
+        pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
+    due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
+    return case_summary.build(last4=block.command.target.last4,reported_id=proposal.transaction_id if proposal else '',items=items,
+        block=block.command.state,dispute=dispute.command.state if dispute is not None else None,
+        possession=dispute.command.confirmation_input.card_in_possession if dispute is not None and dispute.command.confirmation_input else None,
+        transfers=pending,due=due,lockout=any(task.entities.get('linked')=='card_fraud' for task in tasks),customer_words=state['risk'].redacted_message)
 
 
 def decision_text(state: str,receipt: str | None,last4: str) -> str:
@@ -339,6 +386,18 @@ def decision_text(state: str,receipt: str | None,last4: str) -> str:
         'share your PIN, password, one-time code or full card number. You can still use Talk to a person.')
     if state=='expired':return 'The temporary-block proposal expired without changing your card.'
     return 'The temporary block failed because the card changed. Your card was not changed.'
+
+
+def dispute_text(state: str,receipt: str | None,target: object) -> str:
+    """Fixed wording for a recorded dispute draft; "recorded" is said only with a succeeded receipt."""
+    count=len(target.items) if isinstance(target,StoredDisputeTarget) else 0
+    last4=target.last4 if isinstance(target,StoredDisputeTarget) else ''
+    if receipt=='succeeded':return (f'Your dispute draft for {count} charges on the card ending {last4} is recorded for bank staff review. '
+        'Staff decide any refund or cancellation; nothing has been refunded. Your case summary goes to staff with the support handoff, '
+        'so you do not need to repeat the story. Open Actions to inspect the receipt.')
+    if state=='rejected':return 'You chose not to send the dispute draft. You can still report the charges through the official fraud line or app.'
+    if state=='expired':return 'The dispute draft expired without being sent.'
+    return 'The dispute draft was not recorded because a listed charge changed. Nothing was sent.'
 
 
 async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
@@ -374,22 +433,23 @@ async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> 
     return {'decision_sections':[*sections,section]}
 
 
-def answer_for(state: Turn,pending: dict[str,ActionRequiredEvent]) -> AnswerEvent:
-    """Sections in priority order; a recorded decision is written into its own task's section."""
+def answer_for(state: Turn,pending: dict[str,list[ActionRequiredEvent]]) -> AnswerEvent:
+    """Sections in priority order; recorded decisions are written into their own task's section, block first."""
     tasks = state['plan'].by_priority()
-    decisions = {item.task_id.removesuffix('_decision'):item for item in state.get('decision_sections',[])}
+    decisions: dict[str,list[AnswerSection]]={}
+    for item in state.get('decision_sections',[]):decisions.setdefault(base_task(item.task_id),[]).append(item)
     sections: list[AnswerSection] = []
     for task,result,evidence,meta in zip(tasks,state['results'],state['evidence'],state['metadata'],strict=True):
         sources = {item.id:item.source for item in evidence}
         cited = [sources[c.source_id] for c in result.citations]
-        decision = decisions.pop(task.task_id,None)
-        if decision is not None:cited += [item for item in decision.sources if item.id not in {s.id for s in cited}]
+        recorded = decisions.pop(task.task_id,[])
+        for decision in recorded:cited += [item for item in decision.sources if item.id not in {s.id for s in cited}]
         sections.append(AnswerSection(task_id=task.task_id, domain=task.domain, priority=task.priority,
             answer_kind=result.answer_kind, answer=result.text, sources=cited,
-            needs_human=result.status in ('error','needs_human') or decision is not None, response_origin=meta.origin,
-            prompt_version=meta.prompt_id, pending_action=pending.get(task.task_id),
-            decision=decision.answer if decision is not None else None))
-    sections.extend(decisions.values())
+            needs_human=result.status in ('error','needs_human') or bool(recorded), response_origin=meta.origin,
+            prompt_version=meta.prompt_id, pending_actions=pending.get(task.task_id,[]),
+            decision=' '.join(item.answer for item in recorded) or None))
+    sections.extend(item for items in decisions.values() for item in items)
     unique = {s.id:s for section in sections for s in section.sources}
     answer = AnswerEvent(answer='\n\n'.join(section.answer+('\n\n'+section.decision if section.decision else '') for section in sections), sources=list(unique.values()),
         privacy_warning=False, history_trimmed=len(state['history'])<state['history_count'],
@@ -405,16 +465,21 @@ def compose(state: Turn) -> ComposeUpdate:
     return {'answer':answer_for(state,{})}
 
 
-def preview_answer(state: Turn,pending: dict[str,ActionRequiredEvent]) -> AnswerEvent:
-    """Every section while a block decision is pending; the offer sits on its own task's section."""
+def preview_answer(state: Turn,pending: dict[str,list[ActionRequiredEvent]]) -> AnswerEvent:
+    """Every section while decisions are pending; the block and dispute offers sit on their own task's section."""
     return answer_for({**state,'decision_sections':[]},pending)
 
 
 def paused_preview(state: Turn,outcomes: list[ActionOutcome],pending_ids: list[UUID]) -> tuple[list[ActionRequiredEvent],AnswerEvent]:
-    pending={review.task_id:ActionRequiredEvent(command_id=item.command.command_id,type=item.command.type,
-        summary='Review a temporary block for synthetic card ending '+item.command.target.last4,expires_at=item.command.expires_at)
-        for review,item in zip(state['pending_reviews'],outcomes,strict=True) if item.command.command_id in pending_ids}
-    return list(pending.values()),preview_answer(state,pending)
+    pending: dict[str,list[ActionRequiredEvent]]={}
+    for review,item in zip(state['pending_reviews'],outcomes,strict=True):
+        if item.command.command_id not in pending_ids:continue
+        target=item.command.target
+        summary=(f'Review a dispute draft of {len(target.items)} charges on synthetic card ending {target.last4}'
+            if isinstance(target,StoredDisputeTarget) else 'Review a temporary block for synthetic card ending '+target.last4)
+        pending.setdefault(base_task(review.task_id),[]).append(ActionRequiredEvent(command_id=item.command.command_id,
+            type=item.command.type,summary=summary,expires_at=item.command.expires_at))
+    return [event for events in pending.values() for event in events],preview_answer(state,pending)
 
 
 def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateGraph[Turn, PipelineContext, Turn, Turn]:
