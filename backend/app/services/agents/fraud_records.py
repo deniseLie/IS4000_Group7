@@ -4,10 +4,13 @@ from datetime import datetime,timedelta,timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 from pydantic import TypeAdapter
-from app.schemas.fraud import FraudProposal,SecurityCard,SecurityRecords,SecurityTransaction
+from app.schemas.fraud import DisputeProposal,FraudProposal,SecurityCard,SecurityRecords,SecurityTransaction
 from app.schemas.contracts import RequestContext
 from app.services import customer_data
 from app.services.source_checks import unit_matches,unit_values
+
+PATTERN_DAYS=60
+SMALL_CHARGE=Decimal('10')
 
 
 async def load(ctx: RequestContext) -> SecurityRecords:
@@ -37,3 +40,25 @@ def eligible_proposals(question: str,records: SecurityRecords) -> list[FraudProp
     active={card.card_id for card in records.cards if card.status=='active'}
     candidates=[FraudProposal(card_id=item.card_id,transaction_id=item.txn_id) for item in transactions if item.card_id in active]
     return candidates if len({item.card_id for item in candidates})==1 else []
+
+
+def merchant(item: SecurityTransaction) -> str:
+    return ' '.join(item.description.casefold().split())
+
+
+def related_charges(records: SecurityRecords,txn_id: str) -> list[SecurityTransaction]:
+    """Small posted debits from the reported charge's merchant on the same card in the 60 days before it.
+
+    A bounded rule that can match a card-testing pattern; it is not a fraud decision or a semantic classifier.
+    """
+    reported=next((item for item in records.transactions if item.txn_id==txn_id),None)
+    if reported is None or reported.card_id is None:return []
+    related=[item for item in records.transactions if item.txn_id!=txn_id and item.card_id==reported.card_id
+        and merchant(item)==merchant(reported) and item.currency==reported.currency and item.status=='posted'
+        and 0<-Decimal(str(item.amount))<=SMALL_CHARGE and timedelta(0)<=reported.date-item.date<=timedelta(days=PATTERN_DAYS)]
+    return sorted(related,key=lambda item:(item.date,int(item.txn_id[4:])))[-9:]
+
+
+def dispute_for(records: SecurityRecords,proposal: FraudProposal) -> DisputeProposal:
+    ids={proposal.transaction_id,*(item.txn_id for item in related_charges(records,proposal.transaction_id))}
+    return DisputeProposal(card_id=proposal.card_id,transaction_ids=sorted(ids,key=lambda item:int(item[4:])))

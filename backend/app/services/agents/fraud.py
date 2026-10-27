@@ -12,6 +12,7 @@ from app.services.agents import fraud_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
+PROMPT='v4'
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
 URGENT='If you do not recognise a charge, contact your bank now through the official fraud line on the back of your card or its official app. Never share your PIN, password, one-time code or full card number.'
 
@@ -21,6 +22,22 @@ def evidence_for(records: SecurityRecords) -> Evidence:
         scope='Authenticated customer records; captured for this request only.',source=Source(id='customer-records',
         title='Authenticated synthetic card and transaction records',url=None,version=records.captured_at.isoformat(),
         publisher='DemoBank synthetic records'))
+
+
+def pattern_evidence(records: SecurityRecords,txn_id: str) -> Evidence | None:
+    """Rule-related small charges for the reported one; prose first so the trailing JSON stays readable to unit checks."""
+    related=fraud_records.related_charges(records,txn_id)
+    if not related:return None
+    reported=next(item for item in records.transactions if item.txn_id==txn_id)
+    fields={'date','description','amount','currency','card_last4'}
+    rows=[*({'role':'earlier small charge',**item.model_dump(mode='json',include=fields)} for item in related),
+        {'role':'reported charge',**reported.model_dump(mode='json',include=fields)}]
+    text=(f'DemoBank rule check, not a fraud decision: {len(related)} smaller charges from the same merchant on the same card '
+        f'in the {fraud_records.PATTERN_DAYS} days before the reported charge. Small charges like these before a larger one can match '
+        'a card-testing pattern. '+json.dumps({'records':rows}))
+    return Evidence(id='fraud-pattern',text=text,publisher='DemoBank rule check',
+        scope='Deterministic rule over authenticated customer records; a pattern flag, not a fraud decision.',source=Source(id='fraud-pattern',
+        title='Rule check: smaller charges from the same merchant',url=None,version=records.captured_at.isoformat(),publisher='DemoBank rule check'))
 
 
 def schema_for(evidence: list[Evidence]) -> dict[str,JsonValue]:
@@ -66,10 +83,17 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     latest=history[-1].content if history and history[-1].role=='user' else ''
     if len(pairs)>1 and len(narrowed:=fraud_records.eligible_proposals(latest,records))==1:pairs=narrowed
     flagged=bool(FRAUD.search(question) or FRAUD.search(latest))
-    pv=prompts.load('fraud','v3')
+    pattern=pattern_evidence(records,pairs[0].transaction_id) if len(pairs)==1 else None
+    if pattern is not None:evidence.append(pattern)
+    pv=prompts.load('fraud',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
+    if flagged and len(pairs)==1:system+='\nRecords-derived offers for review: temporary card block and dispute draft'
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
     system+='\nEligible pairs: '+json.dumps([item.model_dump() for item in pairs])
     response=await llm_gateway.call(pv,system,[(m.role,m.content) for m in history],schema_for(evidence))
-    return decision_for(task,json.dumps(response.data,ensure_ascii=False),evidence,pairs,pv['id'],flagged),evidence
+    decision=decision_for(task,json.dumps(response.data,ensure_ascii=False),evidence,pairs,pv['id'],flagged)
+    # The dispute draft, like the guaranteed block offer, comes from records for a flagged report, never from model text.
+    if flagged and decision.proposal is not None:
+        decision=decision.model_copy(update={'dispute':fraud_records.dispute_for(records,decision.proposal)})
+    return decision,evidence

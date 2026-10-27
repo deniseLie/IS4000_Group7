@@ -65,8 +65,22 @@ class FraudDraft(AgentDraft):
         return self
 
 
+class DisputeProposal(BaseModel):
+    """A records-derived dispute draft: the reported charge plus rule-related charges on the same card, never model output."""
+    model_config=ConfigDict(extra='forbid')
+    card_id: CardId
+    transaction_ids: list[TransactionId]=Field(min_length=1,max_length=10)
+
+    @model_validator(mode='after')
+    def canonical(self) -> Self:
+        if self.transaction_ids!=sorted(set(self.transaction_ids),key=lambda item:int(item[4:])):
+            raise ValueError('Dispute transactions must be unique and in id order')
+        return self
+
+
 class FraudDecision(BaseModel):
     model_config=ConfigDict(extra='forbid')
     result: AgentResult
     proposal: FraudProposal | None
     prompt_id: str
+    dispute: DisputeProposal | None=None

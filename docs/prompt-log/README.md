@@ -6,6 +6,7 @@ One file per released prompt version, under `<agent>/`. Prompt files live in `ba
 
 | Version | Date | Change | Offline | Live (manual) | Decision |
 |---|---|---|---|---|---|
+| [fraud v4](fraud/v4.md) | 2026-10-27 | Card-testing pattern evidence, block and dispute offers awaiting review, no internal ids | Validator checks pass | See Workflow 1 Part B | Workflow 1 Part B; v3 retained |
 | [fraud v2](fraud/v2.md) | 2026-10-19 | Personal fraud evidence and bounded proposals | Validator and native workflow checks pass | Provider error; accuracy unverified | First personal workflow; public v1 retained |
 | [planner v1](planner/v1.md) | 2026-10-19 | Initial public v2 issue planning | Schema/routing checks pass | v2 browser checks pass | Initial foundation |
 | [domain common v1](domain_common/v1.md) | 2026-10-19 | Shared output contract and bounded source revision | Validator checks pass | Five real agents checked | Initial foundation |
