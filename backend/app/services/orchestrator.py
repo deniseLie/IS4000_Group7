@@ -48,7 +48,9 @@ DISPUTE='_dispute'
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]',re.I)
 SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b',re.I)
 # Signing in is retail app help even when the question asks whether it relates to a reported charge; the fraud task covers the charge.
-LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app)\b",re.I)
+LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app"
+    r"|(?:app|account)\s+(?:is\s+|was\s+|got\s+|has\s+been\s+)?locked|otps?|one[- ]time\s+(?:codes?|passwords?))\b",re.I)
+CHARGE = re.compile(r'\bcharges?\b',re.I)
 RELATED = re.compile(r'\b(?:related|connected|linked|because of|caused by)\b',re.I)
 DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)',re.I)
 TOPICS: dict[Domain, re.Pattern[str]] = {
@@ -171,7 +173,10 @@ def prioritise(state: Turn) -> PriorityUpdate:
     risk=state['risk']
     issues=state['issues']
     if {'fraud_suspected','lost_card'}.intersection(risk.risk_flags) and not any(issue.domain=='fraud' for issue in issues):
-        issues=[PlannedIssue(domain='fraud',question=risk.redacted_message),*issues]
+        # The planner's own charge question becomes the fraud task, so the charge is not answered twice.
+        charge=next((i for i,issue in enumerate(issues) if CHARGE.search(issue.question) and not LOGIN.search(issue.question)),None)
+        issues=([*issues[:charge],PlannedIssue(domain='fraud',question=issues[charge].question),*issues[charge+1:]] if charge is not None
+            else [PlannedIssue(domain='fraud',question=risk.redacted_message),*issues])
     fraud_reported=any(issue.domain=='fraud' for issue in issues)
     # A sign-in problem raised with a suspected charge is answered as a security step; the link is a rule, not a finding.
     tasks = [Task(task_id=f't{i+1}', domain=issue.domain, intent='answer_question',
@@ -209,9 +214,9 @@ async def linked_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     """Approved security guidance for a sign-in task linked to a reported charge, fetched by id rather than by keyword."""
     if task.entities.get('linked')!='card_fraud':return []
     if settings.knowledge_store!='database':
-        article=INDEX['account-security-after-fraud']
+        article=INDEX['app-login-recovery']
         return [Evidence(id=article.id,text=article.content,publisher=article.publisher,scope=article.notice,source=Source.model_validate(source(article)))]
-    with data_api.connect(ctx) as db:item=await kb.get_section(SectionKey(article_id='account-security-after-fraud',version=1,anchor='main'),ctx,db)
+    with data_api.connect(ctx) as db:item=await kb.get_section(SectionKey(article_id='app-login-recovery',version=2,anchor='unexpected-code'),ctx,db)
     if item is None or not item.current:return []
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source())]
 

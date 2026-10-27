@@ -25,6 +25,8 @@ RELEASED.update({('domain_common','v1'):'v1+18c3cd30',('planner','v1'):'v1+5ef4e
 RELEASED[('fraud','v3')]='v3+75382468'
 RELEASED[('fraud','v4')]='v4+a6b2bd0c'
 RELEASED[('retail','v4')]='v4+3fa65f65'
+RELEASED[('fraud','v5')]='v5+3ef7cab6'
+RELEASED[('retail','v5')]='v5+378f6d71'
 RELEASED[('document','v2')]='v2+d6e35152'
 RELEASED[('document','v3')]='v3+c2b4a08b'
 RELEASED[('document_check','v1')]='v1+8d9e2c2c'

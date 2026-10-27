@@ -13,7 +13,7 @@ from app.services import kb,knowledge,llm_gateway,prompts
 from app.services.agents import retail_checks,retail_records
 from app.services.agents.answer import draft_schema,validate_draft
 
-PROMPT='v4'
+PROMPT='v5'
 LINKED='\nLinked context (DemoBank rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
 
 
