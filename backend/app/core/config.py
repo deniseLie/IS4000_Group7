@@ -31,8 +31,6 @@ class Settings(BaseSettings):
 
     prompt_version: str = "v3"
     prompt_versions: dict[str, str] = {'planner':'v2','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
-    llm_price_in_per_m: float = 0
-    llm_price_out_per_m: float = 0
 
     # LLM Gateway limits (services/llm_gateway.py)
     llm_timeout_s: float = 30

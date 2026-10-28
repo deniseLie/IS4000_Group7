@@ -8,10 +8,12 @@ from app.api import actions, auth, chat, consent, conversations, customer, docum
 from app.core.config import settings
 from app.core.errors import http_error
 from app.core.gateway import GatewayMiddleware
+from app.core import langsmith_client
 from app.core.lifecycle import lifespan
 from app.core.observability import RequestIdMiddleware, setup_logging
 
 setup_logging()
+langsmith_client.install_if_tracing()  # LANGSMITH_TRACING=true uploads only redacted run data
 app = FastAPI(title="Chatbot API",lifespan=lifespan)
 app.add_exception_handler(HTTPException, http_error)
 # Last added runs first: CORS (so error responses keep CORS headers), then request id, then the gateway.

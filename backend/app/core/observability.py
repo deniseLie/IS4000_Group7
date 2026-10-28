@@ -5,7 +5,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+import langsmith
 
 request_id=ContextVar('request_id',default='-')
 logger=logging.getLogger('demobank')
@@ -36,35 +36,31 @@ class timer:
         self.ms=round((time.perf_counter()-self.start)*1000)
 
 class Trace:
-    """One chat request: trace-level fields in attrs, timed steps in spans. Ids, counts, flags and timings only, never text."""
+    """Request state LangSmith does not keep: the per-request token budget and the model calls the audit log records."""
     def __init__(self):
-        self.id=request_id.get()
-        self.attrs={}
-        self.spans=[]
-        self.n=0
+        self.attrs={}  # route, outcome and other request facts; the audit reads them and the root run carries them as metadata
+        self.llm_calls=[]  # one dict per model call, for agent.llm_call audit events
         self.tokens=0  # LLM tokens used so far; the gateway enforces the per-request budget
-        self.start=time.perf_counter()
 
 def start_trace():
     trace=Trace()
     current_trace.set(trace)
     return trace
 
+RUN_TYPES={'tool':'tool','agent':'chain','decision':'chain','llm':'chain'}
+
 @contextmanager
 def span(name,kind,**attrs):
-    """Time a step and record it on the current trace (no-op recording when none). Yields the attrs dict so callers can add results."""
-    trace=current_trace.get()
-    if trace:trace.n+=1
-    record={'seq':trace.n-1 if trace else 0,'name':name,'kind':kind,'started_at':datetime.now(timezone.utc).isoformat(),'status':'ok','attrs':attrs}
-    start=time.perf_counter()
-    try:
-        yield attrs
-    except BaseException as e:
-        record.update(status='error',error_type=type(e).__name__[:64])
-        raise
-    finally:
-        record['ms']=round((time.perf_counter()-start)*1000)
-        if trace:trace.spans.append(record)
+    """One step as a LangSmith run nested under the current run (nothing is sent while tracing is off).
+    Yields the attrs dict so callers can add results; they become the run's metadata."""
+    with langsmith.trace(name,RUN_TYPES[kind],metadata={'kind':kind}) as run:
+        try:
+            yield attrs
+        except BaseException as e:
+            attrs['error_type']=type(e).__name__[:64]
+            raise
+        finally:
+            run.add_metadata(attrs)
 
 def add_span(name,kind,**attrs):
     with span(name,kind,**attrs):pass

@@ -103,7 +103,6 @@ CODEX_CLI_PATH=/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.a
 PROMPT_VERSION=v2
 PORT=8000
 VITE_API_URL=/api
-TRACE_STORE=0
 ```
 
 `CODEX_CLI_PATH` must be the executable itself, not a shell alias or a command with
@@ -167,7 +166,7 @@ For a recorded real-model check, run from `backend/` while no other chat request
 is active:
 
 ```bash
-TRACE_STORE=0 ../.venv/bin/python -m evaluation.run --live --suite focused --output evaluation-results.json
+../.venv/bin/python -m evaluation.run --live --suite focused --output evaluation-results.json
 ```
 
 Check that `model_config` identifies `codex`, `codex-cli` and `gpt-5.6-luna`.

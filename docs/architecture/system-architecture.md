@@ -42,7 +42,7 @@ All seven v3.1 principles are implemented; the notes say how.
 | Reply over SSE | **Streaming Response (SSE)** | `fetch` + parser | `api/chat.py`, `frontend/src/lib/chatTools.js` |
 | Human handoff queue | **Human Handoff** | `handoffs.py` executor + staff script | `actions/handoffs.py`, `actions/staff.py`, `scripts/staff_support.py` |
 | Proactive triggers + event bus + rules | **Background Worker** | Outbox poller + reminder scheduler (no pg_cron) | `app/worker.py`, `core/lifecycle.py` |
-| Observability | **Tracing & Evaluation** | `ops` trace tables, JSON logs, eval harness | `core/observability.py`, `services/trace_store.py`, `backend/evaluation/` |
+| Observability | **Tracing & Evaluation** | LangSmith runs (redacted), JSON request logs, eval harness | `core/observability.py`, `core/langsmith_client.py`, `backend/evaluation/` |
 | — (new) | **Audit Log Service** | Append-only hash-chained `audit.events` | `services/audit.py`, migrations `0005`–`0007`, `0054` |
 | LLM provider | **LLM Gateway** | One client for planner and agents | `services/llm_gateway.py`, `prompts.py` |
 | Supabase Postgres | **Operational Database** | Hosted Supabase Postgres + RLS | `backend/supabase/migrations/` |
@@ -399,9 +399,9 @@ Stories without an agent are handled by platform components: EB1 login (Identity
 
 ### 5.12 Tracing & Evaluation
 - **Category:** Tracing, structured logs, evaluation harness.
-- **Responsibility & boundaries:** One trace per request with spans per node/agent/tool/LLM call, JSON logs with ids and counts only, offline and live evaluation sets. Not the compliance record — that is the Audit Log Service.
-- **Infrastructure / pattern:** `ops.traces`, `ops.spans` (`0001_trace_tables.sql`), `core/observability.py`, `services/trace_store.py`, `backend/evaluation/` (`run.py`, `--live --suite focused`).
-- **Dependencies:** ↑ all backend modules. ↓ Operational Database.
+- **Responsibility & boundaries:** One LangSmith root run per request with nested runs per node/agent/tool/LLM call (redacted before upload), JSON request logs with ids and counts only, offline and live evaluation sets. Not the compliance record — that is the Audit Log Service.
+- **Infrastructure / pattern:** LangSmith (`core/observability.py`, `core/langsmith_client.py`), `backend/evaluation/` (`run.py`, `--live --suite focused`, `langsmith_sync.py`). `ops.traces`/`ops.spans` (`0001`) are retired history; `0074` drops `log_trace`.
+- **Dependencies:** ↑ all backend modules. ↓ LangSmith.
 
 ### 5.13 Agent tools
 

@@ -1,5 +1,6 @@
 import json
 import httpx
+import langsmith
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -24,7 +25,6 @@ from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
-from app.services.trace_store import save_trace
 from app.services.orchestrator import answer_personal,answer_public
 from app.services import rm_handover
 from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
@@ -34,9 +34,8 @@ FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance'}
 
 def audit_model_calls(batch,trace):
     """Record real model-call metadata before either a reply or a review pause is released."""
-    for s in trace.spans:
-        if s['name']=='llm':
-            batch.add('agent','agent.llm_call','success' if s['status']=='ok' else 'failed',details={**{k:s['attrs'].get(k) for k in ('model','prompt_version','transport','input_tokens','output_tokens')},'ms':s.get('ms')})
+    for call in trace.llm_calls:
+        batch.add('agent','agent.llm_call','success' if call['ok'] else 'failed',details={k:call[k] for k in ('model','prompt_version','transport','input_tokens','output_tokens','ms')})
 
 
 def audit_reply(batch,trace,result=None,error=None):
@@ -86,6 +85,10 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
         raise ApiError(503,'personal_unavailable','Personal workflows require saved conversations to be enabled.')
     trace=start_trace()
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
+    # Root LangSmith run: opened here and closed in the stream's finally, so pre-stream reads nest under it too.
+    root=langsmith.trace('chat','chain',inputs={'messages':[m.model_dump() for m in req.messages],'mode':req.mode,'language':req.language},
+        metadata={'request_id':str(ctx.request_id),'session_id':str(ctx.session_id),'pipeline':settings.pipeline})
+    run=root.__enter__()
     batch=start_batch(db,session_id=ctx.session_id)
     batch.add('chat','chat.message_received',details={'mode':req.mode,'history_len':len(req.messages)})
     async def personal_context() -> str:
@@ -94,8 +97,12 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
             attrs['chars']=len(result)
         batch.add('data','data.read',resource_type='customer_context',details={'tool':'customer_context'})
         return result
-    context=await personal_context() if prepared is None and req.mode=='personal' and risk.fixed_response is None else None
+    try:context=await personal_context() if prepared is None and req.mode=='personal' and risk.fixed_response is None else None
+    except BaseException as error:
+        root.__exit__(type(error),error,error.__traceback__)
+        raise
     async def events():
+        failure=None
         turn=prepared.turn if prepared is not None else None
         if prepared is not None:yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}
         yield {'event':'status','data':'Checking the available information…'}
@@ -140,9 +147,11 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
             audit_reply(batch,trace,result)
             await batch.flush()
             trace.attrs['outcome']='ok'
+            run.add_outputs(result)
             yield {'event':'answer','data':json.dumps(result,ensure_ascii=False)}
             yield {'event':'done','data':''}
         except Exception as error:
+            failure=error
             code=database_code(error) if isinstance(error,APIError) else None
             log_event('chat_failed',error_type=type(error).__name__,db_code=code)
             trace.attrs.update(outcome='error',error_type=type(error).__name__[:64],route=trace.attrs.get('route') or 'error')
@@ -162,5 +171,6 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
         finally:
             trace.attrs.setdefault('outcome','error')
             trace.attrs.setdefault('route','error')
-            save_trace(trace)
+            run.add_metadata(trace.attrs)
+            root.__exit__(*((type(failure),failure,failure.__traceback__) if failure else (None,None,None)))
     return EventSourceResponse(events())

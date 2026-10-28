@@ -1,8 +1,8 @@
 """LLM Gateway (docs/architecture/system-architecture.md §5.11): the one model client for the planner and all agents.
-Strict JSON output, timeout, limited retries, per-request token budget, one `llm` trace span per call.
+Strict JSON output, timeout, limited retries, per-request token budget, one `llm` LangSmith run per call
+(LangChain nests the provider call under it) and one model-call record for the audit log.
 Failures raise LLMError and are reported; they are never replaced with a sample answer."""
 import asyncio
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from langchain.chat_models import init_chat_model
 from langchain_core.callbacks import get_usage_metadata_callback
 from app.core.config import settings
-from app.core.observability import current_trace, log_event, span
+from app.core.observability import current_trace, span
 
 class LLMError(RuntimeError):
     reason='provider_error'
@@ -122,8 +122,6 @@ async def call(prompt,system,messages,schema):
             # Unknown usage is charged at the output cap so the budget still holds.
             if trace:trace.tokens+=(tin or 0)+(tout if tout is not None else max_tokens)
             if tin is not None:a.update(input_tokens=tin,output_tokens=tout)
-            if tin is not None and name=='api':  # subscription usage is not a per-token bill; leave cost unknown
-                a['cost_usd']=round(tin*settings.llm_price_in_per_m/1e6+tout*settings.llm_price_out_per_m/1e6,6)
             if not isinstance(data,dict):raise LLMBadOutput('$: expected object')
             check(data,schema)
             outcome='ok'
@@ -132,6 +130,7 @@ async def call(prompt,system,messages,schema):
             outcome=e.reason
             raise
         finally:
-            log_event('llm_call',logging.INFO if outcome=='ok' else logging.WARNING,agent=prompt['agent'],model=model,prompt_version=prompt['id'],
-                      input_tokens=a.get('input_tokens'),output_tokens=a.get('output_tokens'),retries=a.get('retries',0),
-                      ms=round((time.perf_counter()-start)*1000),outcome=outcome)
+            a['outcome']=outcome
+            if trace:=current_trace.get():
+                trace.llm_calls.append({'ok':outcome=='ok','model':model,'prompt_version':prompt['id'],'transport':name,
+                    'input_tokens':a.get('input_tokens'),'output_tokens':a.get('output_tokens'),'ms':round((time.perf_counter()-start)*1000)})
