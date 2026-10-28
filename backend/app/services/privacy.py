@@ -6,6 +6,9 @@ from app.schemas.contracts import Redaction, RedactionType
 PATTERNS = [
     re.compile(r'''(?i)\b(?:password|passcode)\s*(?:is\s+|[:=]\s*)(?:"[^"\n]+"|'[^'\n]+'|[^\s,;"']+)'''),
     re.compile(r'(?i)\b(?:pin|otp|cvv|cvc|one[- ]time (?:password|code))\s*(?:is\s+|[:=]\s*)?(?:\d[ -]?){2,9}\d\b'),
+    # A one-time code named earlier in the same sentence ("the OTP from last night was 482913"); not amounts or card endings.
+    re.compile(r'(?i)\b(?:otps?|one[- ]time (?:passwords?|codes?|pins?)|(?:sms|verification|security|login|sign[- ]?in|authentication) codes?|tacs?)\b'
+        r'[^.!?\n\d$€£]{0,40}?(?<!\d)(?<!sgd )(?<!usd )(?<!ending )(?<!ending in )(?:\d[ -]?){3,7}\d(?!\d|[.,]\d)'),
     re.compile(r'(?<!\d)(?:\d[ -]?){13,19}(?!\d)'),
     re.compile(r'(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b'),
     re.compile(r'(?i)\b[STFGM]\d{7}[A-Z]\b'),
@@ -23,8 +26,9 @@ def redact_details(text: str) -> tuple[str, list[Redaction]]:
             elif index == 1:
                 label = match.group().lower()
                 kind = 'pin' if label.startswith('pin') else 'cvv' if label.startswith(('cvv', 'cvc')) else 'otp'
-            elif index == 2:kind = 'card_number'
-            elif index == 3:kind = 'email'
+            elif index == 2:kind = 'otp'
+            elif index == 3:kind = 'card_number'
+            elif index == 4:kind = 'email'
             else:kind = 'nric'
             counts[kind] = counts.get(kind, 0) + 1
         cleaned = pattern.sub('[private detail removed]', cleaned)

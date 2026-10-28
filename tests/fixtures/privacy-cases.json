@@ -19,5 +19,15 @@
   {"text":"My NRIC is Ｓ１２３４５６７Ｄ","secret":"Ｓ１２３４５６７Ｄ"},
   {"text":"My NRIC is S123​4567D","secret":"S1234567D"},
   {"text":"Where do I update my NRIC details?","secret":null},
-  {"text":"My account ending 6012 has SGD 5230.45.","secret":null}
+  {"text":"My account ending 6012 has SGD 5230.45.","secret":null},
+  {"text":"the OTP from last night was 482913","secret":"482913"},
+  {"text":"i got an sms code yesterday, it was 482 913","secret":"482 913"},
+  {"text":"My one-time password came by SMS: 4829-13","secret":"4829-13"},
+  {"text":"The verification code they sent me is now 73915204","secret":"73915204"},
+  {"text":"also i got a weird OTP last night and now my app is locked","secret":null},
+  {"text":"Is the OTP for my $2,400 charge real?","secret":null},
+  {"text":"The OTP for my card ending 4821 never arrived","secret":null},
+  {"text":"OTP came at 9:40 pm, is that normal?","secret":null},
+  {"text":"I forgot my PIN for card ending 4821","secret":null},
+  {"text":"My postal code is 238823","secret":null}
 ]
