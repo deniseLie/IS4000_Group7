@@ -1,4 +1,4 @@
-"""Workflow 1 end to end (Part B: block and dispute decisions with one staff case summary): normal UI, personal v2 with the real planner and agents, native JWT/RLS data.
+"""Workflow 1 end to end (Part B, impossible travel: block and dispute decisions with one staff case summary): normal UI, personal v2 with the real planner and agents, native JWT/RLS data.
 
 Run from backend/: TEST_BROWSER_LOCAL=1 TEST_WORKFLOW1_LIVE=1 ../.venv/bin/python -m pytest tests/test_workflow1_browser.py -q
 Needs the native Data API (see test_data_api_local.py), frontend npm dependencies and a configured provider.
@@ -37,6 +37,8 @@ def test_workflow_one(local_data_api: NativeAPI,native_api_client: TestClient,mo
         assert [(reason,priority) for reason,priority,_ in handoffs]==([('card_dispute','P0'),('general_support','P0')] if blocked else [('general_support','P0')])
         if blocked:
             summary=handoffs[0][2]
-            for fact in ['Card ending 4821.','SGD -2400.00','SGD -1.00','SGD -4.99','card in possession: yes','Transfer to landlord','app lockout']:assert fact in summary
+            for fact in ['Card ending 4821.','TECHVAULT ELECTRONICS SGD -2400.00','SUNSET GRILL LA SGD -86.40','card in possession: yes',
+                'Transfer to landlord','app sign-in problem']:assert fact in summary
+            assert 'Hawker Delight' not in summary
         assert db.execute("select count(*) from conversation.turns where state='completed'").fetchone()[0]>=5
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
