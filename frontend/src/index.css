@@ -1103,17 +1103,12 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 /* ---------- Assistant toolbar, notices and history motion ---------- */
 .chat-toolbar{gap:10px;padding:14px 0}
 .toolbar-spacer{flex:1}
-.scope-switch{display:inline-flex;padding:3px;border-radius:8px;background:var(--canvas)}
-.scope-switch button{border:0;background:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;color:var(--muted);min-height:26px;transition:background .15s,color .15s}
-.scope-switch button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px #0000001a}
-.scope-switch button:not(.on):hover{color:var(--ink)}
 .icon-tool{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--muted)}
 .icon-tool svg{width:15px;height:15px}.icon-tool:hover:not(:disabled){color:var(--ink);border-color:var(--line-2)}
 .icon-tool:disabled{opacity:.5}.icon-tool:active:not(:disabled) svg{animation:spin .5s linear}
 .recent-chats{margin-left:0;background:#FEF2F2;border-color:#FECACA;color:#B30000}
 .recent-chats svg{color:var(--red)}.recent-chats .count{background:#fff;color:#B30000}
 .recent-chats:hover,.recent-chats.active{background:#FEE2E2;border-color:#FCA5A5}
-.chat-note{display:flex;align-items:center;gap:6px;margin:8px 0 4px!important;font-size:11.5px;color:var(--faint)}.chat-note svg{width:12px;height:12px}
 .pending-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0;padding:10px 14px;border:1px solid #FDE68A;border-radius:8px;background:#FFFBEB;font-size:13px;color:#92400E}
 .pending-bar>svg{width:16px;height:16px;color:#D97706}.pending-bar>span:first-of-type{flex:1;min-width:200px}
 .pending-actions{display:flex;gap:6px}.pending-bar .bank-chat-logout{min-height:30px;padding:4px 10px;background:#fff}
@@ -1155,7 +1150,6 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 /* Actions drawer moves like the Recent chats column (same curve and timing); the dimmed, blurred backdrop stays */
 .panel-dialog.drawer[open]{animation:drawer-in .3s cubic-bezier(.4,0,.2,1)}
 .panel-dialog.drawer.closing{animation:drawer-out .22s cubic-bezier(.4,0,.2,1) forwards}
-.note-link{border:0;background:none;padding:0;font:inherit;color:var(--red);font-weight:600;text-decoration:underline;cursor:pointer}
 
 /* ============ Design review, batch 1 (Oct 2026) ============ */
 /* 1. Assistant: messages, notices and the message box share one centred reading column */
@@ -1243,7 +1237,7 @@ h1,h2,h3,h4,.brand-name,.page-header h1,.rm-page-head h1,.ov-head h1,.cw-title h
 
 /* 6. Readability: no text under 12px (rules that forced 11px with !important are matched the same way) */
 .eyebrow,.ib-eyebrow,.section-label,.saved-group,.cw-label,.rm-stage-title,.sp-options legend,.ov-balance span,.requirement-meta,.security-note,.sidebar-who small,.chat-history .saved-chat-sub{font-size:12px!important}
-.sidebar-session small,.chat-settings label,.language-note,.chat-note,.chat-subbar .language-note,.bank-chat-suggestions button>span:not(.topic-arrow),.quick-help,.quick-help button,
+.sidebar-session small,.chat-settings label,.language-note,.chat-subbar .language-note,.bank-chat-suggestions button>span:not(.topic-arrow),.quick-help,.quick-help button,
 .answer-section h3 small,.answer-section[data-priority="P0"] h3 small,.answer-origin,.answer-sources p,.session-note,.support-panel small,.login-footer,.login-brand>small,.panel-footer,
 .records-filter-bar label,.page-status,.page-tabs .count,.notification-head time,.notification-foot,.category-badge,.breadcrumb,.status-badge,.live-pill,.column-label,.slot-grid .bank-chat-logout,
 .case-meta,.progress-label,.requirement-card .relationship-details p,.guidance-list dt,.guidance-card small,.documents-card dl,.documents-card .records-filters label,.documents-card .bank-chat-logout,

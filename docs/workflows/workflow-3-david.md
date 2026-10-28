@@ -44,7 +44,7 @@ flowchart TD
 
 | # | Step | What happens in the app | Stories |
 |---|---|---|---|
-| 1 | David logs in, opens chat | Existing sign-in; **My records** is the default for signed-in users. | EB1 |
+| 1 | David logs in, opens chat | Existing sign-in; signed-in users always chat with their records (no mode switch). | EB1 |
 | 2 | Bot introduces the new RM | On chat open, `GET /relationship/introduction` (`customer_read_introduction`, audited, JWT + RLS) returns current/previous advisor and the approved wording. A change in the last 60 days shows an assistant message labelled **From your records** with name, role, team, phone and email, the approved explanation and its source. Not an AI answer. | RC1 · F10 |
 | 3–4 | "why did my old guy leave? will things stay the same?" | Routed to the relationship agent (new routing rules). Prompt **v3** may explain the change only with the cited `relationship-transition` evidence: approved `rm-change` sections chosen in SQL from the recorded reason code. The code itself never reaches the model or the browser. With no approved mapping, the `unrecorded` wording is used. | RC1 |
 | 5–6 | "can someone send me my annual portfolio statement" | Routed to relationship (not retail "statement"). The reply ends with **Send this request to Marcus →**, which opens step 2 of the RM page pre-filled with his words; he sets urgency and an optional deadline → **Review request** → in-chat dialog shows the exact stored, redacted proposal → **Send request**. Only the `requests.create` receipt produces "Received … in Marcus Chua (DEMO)'s request queue, status Sent". The request row's `advisor_id` is the current RM; that is the RM's queue in the data model. | RC4 |

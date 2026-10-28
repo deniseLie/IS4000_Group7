@@ -17,7 +17,6 @@ test('saved customer chats reopen with real stored replies and sources',async({p
     await page.setViewportSize({width,height:900});
     await page.goto('/');
     await page.getByTestId('new-chat').click();
-    await page.getByRole('radiogroup',{name:'Information'}).getByRole('radio',{name:'General help'}).click();
     const created=page.waitForResponse(response=>response.url().endsWith('/conversations')&&response.request().method()==='POST');
     await askSafety(page,'I lost my card');
     const saved=await (await created).json();
@@ -88,7 +87,6 @@ test('expired guest chat requires an explicit new chat before sending',async({pa
 async function unavailableChat(page) {
   await page.setViewportSize({width:390,height:900});
   await page.goto('/');
-  await page.getByRole('radiogroup',{name:'Information'}).getByRole('radio',{name:'General help'}).click();
   await page.getByLabel('Your message',{exact:true}).fill('Hello!');
   await page.getByTestId('send-message').click();
   await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');

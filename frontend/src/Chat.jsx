@@ -38,8 +38,8 @@ const ERRORS = {
   conversation_not_found:'This saved chat was not found or has expired. Start a new chat.',
   conversation_unavailable:'Saved chats are unavailable. Please retry.',
   auth_invalid:'Session expired. Please sign in again.', auth_expired:'Session expired. Please sign in again.', auth_required:'Please sign in to use your account.',
-  profile_missing:'No demo customer profile is linked to this login. Use General help or ask the project owner to link a demo profile.',
-  personal_unavailable:'Your records are unavailable. Select General help to continue.',
+  profile_missing:'No demo customer profile is linked to this login. Sign out to chat as a guest, or ask the project owner to link a demo profile.',
+  personal_unavailable:'Your records are unavailable right now. Please retry later.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
 const PAGES=['chat','overview','inbox','sharing','relationship','compliance'];
@@ -212,7 +212,7 @@ export default function Chat({session,onSignIn}) {
       catch(failure) {setBootError(failure.message);return false;}
     }
     version.current++;request.current?.abort();request.current=null;
-    setMessages([]);setInput('');setLoading(false);setNotice('New chat started.',true);
+    setMessages([]);setInput('');setLoading(false);setMode(session?'personal':'public');setNotice('New chat started.',true);
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
     setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);setRmFocus(null);setRmOpen(false);if(store!==null)setBootError('');
     return true;
@@ -388,15 +388,12 @@ export default function Chat({session,onSignIn}) {
       <TabBar current={current} pages={pages.filter(page=>page.view!=='actions')}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-toolbar">
-          <div className="scope-switch" role="radiogroup" aria-label="Information">{[...(session?[['personal','My records']]:[]),['public','General help']].map(([value,label])=>
-            <button key={value} type="button" role="radio" aria-checked={mode===value} className={mode===value?'on':''} disabled={booting} onClick={()=>{if(mode!==value&&reset())setMode(value);}}>{label}</button>)}</div>
           <label className="pill-select" title="The language applies to AI answers only"><Icon name="info"/><select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select><Icon name="chevron"/></label>
           <span className="toolbar-spacer"/>
           <button className="bank-chat-logout new-chat" data-testid="new-chat" disabled={booting} onClick={()=>{if(reset())navigate('chat');}}><Icon name="plus"/>New chat</button>
           {store==='database'&&conversation&&<button className="icon-tool" data-testid="reload-saved-chat" aria-label="Refresh this chat" title="Refresh this chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}><Icon name="refresh"/></button>}
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
-        {session&&mode==='public'&&<p className="language-note chat-note"><Icon name="info"/><span>General help doesn’t use your records, so the assistant can’t see your accounts, relationship manager or review. Switch to <button className="note-link" onClick={()=>{if(reset())setMode('personal');}}>My records</button> for those.</span></p>}
         {store==='database'&&conversation&&pending&&!loading&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
           <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}
           <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>

@@ -262,7 +262,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         finally:selection.reset(token)
     else:
         result=AgentResult(task_id=task.task_id,agent=agent,status='error',
-            text='This personal service is not connected yet. Use General help for public information or your bank’s official support channel.')
+            text='This personal service is not connected yet. Please use your bank’s official support channel.')
     return {'result':result,'evidence':evidence,'proposal':proposal,'dispute':dispute,
         'metadata':ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id)}
 

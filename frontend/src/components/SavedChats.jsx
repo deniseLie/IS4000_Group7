@@ -47,7 +47,7 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
             const asked=history.messages.find(m=>m.role==='user')?.content,reply=history.messages.find(m=>m.role==='assistant'&&!m.error)?.content;
             const preview={title:asked&&clip(asked,60),detail:reply&&clip(reply,80)};
             if(!controller.signal.aborted)setPreviews(known=>({...known,[item.session_id]:preview}));
-          } catch {}  // a chat without a preview still opens; it keeps its mode label as the title
+          } catch {}  // a chat without a preview still opens; it keeps a plain "Chat" title
         }));
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     }
@@ -55,12 +55,12 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
   },[]);
   const active=sessions?.filter(item=>item.session_id===current)||[],previous=sessions?.filter(item=>item.session_id!==current)||[];
   const row=item=>{
-    const preview=previews[item.session_id],mode=item.mode==='public'?'General help':'My records',mine=item.session_id===current;
+    const preview=previews[item.session_id],mine=item.session_id===current;
     return <li key={item.session_id}><button className={`saved-chat-button ${mine?'current':''}`} disabled={opening}
       data-testid="saved-chat" data-conversation-id={item.session_id} onClick={async()=>{setOpening(true);setError('');try{await onOpen(item);}catch(failure){if(failure.name!=='AbortError')setError(failure.message);}finally{setOpening(false);}}}>
       <span className="saved-chat-when"><strong>{when(item.last_active_at)}</strong>{mine?<em>Current</em>:<Icon name="chevron"/>}</span>
-      <span className="saved-chat-title">{preview?.title||mode}</span>
-      <span className="saved-chat-sub">{preview?.detail||`${mode} · ${item.language}`}{item.active_turn_id?' · Reply pending':''}</span></button></li>;
+      <span className="saved-chat-title">{preview?.title||'Chat'}</span>
+      <span className="saved-chat-sub">{preview?.detail||item.language}{item.active_turn_id?' · Reply pending':''}</span></button></li>;
   };
   return <div ref={column} className={`chat-history-track ${closing?'closing':''}`}><aside className={`chat-history ${closing?'closing':''}`} aria-label="Saved chats" data-testid="saved-chats-panel">
     <div className="chat-history-head"><h2 ref={heading} tabIndex={-1}><Icon name="history"/>Past conversations</h2>

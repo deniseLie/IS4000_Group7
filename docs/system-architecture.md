@@ -132,7 +132,7 @@ Communication inside `api` is plain function calls. Network hops: browser ↔ AP
 | `CHAT_TRANSPORT` | `api` \| `codex` | OpenRouter via LangChain, or the local Codex CLI (manual alternative) |
 | `RUN_WORKER_IN_API` | `false` \| `true` | Run the notification worker inside the API process |
 
-Chat has two modes: `public` ("General help", guests and signed-in users, approved knowledge only) and `personal` (signed-in customer, own records).
+Chat has two modes, chosen from the login with no UI switch: `public` (guests, approved knowledge only) and `personal` (signed-in customer: approved knowledge plus own records). Older saved `public` chats of signed-in users reopen in their saved mode; New chat returns to `personal`.
 
 ---
 

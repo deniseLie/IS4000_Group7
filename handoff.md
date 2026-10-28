@@ -230,7 +230,7 @@ switch to another provider or stored answer.
 | Codex is busy | Wait for the current request. The adapter permits one active CLI call per backend process. |
 | Timeout or rate limit | Retry later after checking account limits. Each CLI attempt has a 75-second timeout; validation can request one revision. |
 | Answer withheld | The real reply failed validation. Review the evidence; do not bypass checks or replace it with a sample answer. |
-| No linked customer profile | Use General help. Do not create banking rows or change RLS as part of this handoff. |
+| No linked customer profile | Sign out and chat as a guest. Do not create banking rows or change RLS as part of this handoff. |
 
 ## What this update includes
 

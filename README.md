@@ -154,7 +154,7 @@ button. A saved proposal alone does not execute its requested change.
 
 ### 1. Guest help, sources and fixed safety guidance
 
-1. Open the site signed out and leave **Information** on **General help**.
+1. Open the site signed out (guests always get general help).
 2. Ask: "Does paying only the minimum on my credit card avoid interest?"
 3. For a successful model reply, show **AI-generated**, its source controls and
    the source detail panel. Topic cards only fill the composer; press **Send**.
@@ -171,7 +171,7 @@ or withheld answer. A safety response is not evidence that the AI provider works
 
 1. Sign in as Alex and open **Records**. Show masked accounts, cards, loans and
    transactions. Change a transaction date/status filter and **Reload records**.
-2. Close Records, change **Information** to **My records**, and ask
+2. Close Records and ask
    "What are my recorded account balances?" Show the personal answer's sources.
 3. Use **Reload saved chat**, then **Saved chats**, to reopen the recorded answer.
    Refresh the browser and show that the owned conversation remains available.
@@ -184,7 +184,7 @@ missing; do not present unsupported product advice as implemented.
 
 ### 3. Michelle: compliance case and preparation marks
 
-1. Sign in as Michelle, choose **My records**, and ask
+1. Sign in as Michelle and ask
    "What is the current status of my compliance review?"
 2. Open **Records** and show the notice, recorded status, deadline, checklist and
    information requests. Compare the answer with these records and its sources.
@@ -235,7 +235,7 @@ The existing Records-only technical check remains available:
 8. To show revocation, select **Review revocation** for that grant and confirm in
    Actions. Refresh its status. Revocation does not erase an earlier shared copy.
 
-For the read-only Relationship AI demonstration, select **My records** and ask
+For the read-only Relationship AI demonstration, sign in as David and ask
 "Who is my relationship manager?" Show the recorded-assignment source and reload
 the saved answer. Requests and appointment suggestions use their own sources.
 AI agenda drafting and conversational changes remain pending; use the reviewed
