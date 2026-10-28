@@ -1,5 +1,7 @@
 # Tracing plan: store traces in Supabase
 
+> **Superseded.** Request tracing moved to LangSmith (README "Tracing", `docs/langsmith-evals-plan.md`). The Supabase trace store described below is retired: `services/trace_store.py` is gone and migration `0071` drops `public.log_trace`; `ops.traces`/`ops.spans` remain as read-only history. Kept for the module 6.1 requirements mapping.
+
 Source: *IS4000 Module 6.1 – Traces and Evals* (slides 4, 5, 9, 10, 11, 12).
 Goal: record one complete trace per `/chat` request in our own Supabase project, so teammates can see analytics on a stats page without a LangSmith seat. LangSmith has been removed; the Supabase table is the only trace store (plus the local JSON `answer` log line).
 

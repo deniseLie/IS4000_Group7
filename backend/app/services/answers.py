@@ -1,7 +1,7 @@
 import json
 import re
 from collections.abc import Awaitable,Callable
-from app.core.observability import log_event, timer, span, add_span, current_trace
+from app.core.observability import span, add_span, current_trace
 from app.schemas.chat import ChatRequest,Message
 from app.schemas.agents import Evidence
 from app.schemas.contracts import RequestContext
@@ -93,12 +93,9 @@ async def make_database_answer(req: ChatRequest,context: str | None,ctx: Request
 
 
 async def produce_answer(req,context,allow_model,evidence_loader: EvidenceLoader):
-    """Log one summary line per request: route, retrieved ids, prompt version, reject reason, timings. No user text or records."""
+    """Copy the route, retrieved ids and reject reason to the request trace (audit and root-run metadata)."""
     info={}
-    with timer() as t:
-        result=await _answer(req,context,info,allow_model,evidence_loader)
-    info.update(source_check=result['source_check'],needs_human=result['needs_human'],privacy_warning=result['privacy_warning'],prompt_version=result['prompt_version'],ms=t.ms)
-    log_event('answer',**info)
+    result=await _answer(req,context,info,allow_model,evidence_loader)
     trace=current_trace.get()
     if trace:trace.attrs.update(route=info.get('route'),source_check=result['source_check'],needs_human=result['needs_human'],privacy_warning=result['privacy_warning'],prompt_version=result['prompt_version'],reject_reason=info.get('reject_reason'),article_ids=info.get('article_ids',[]),history_trimmed=result['history_trimmed'])
     return result

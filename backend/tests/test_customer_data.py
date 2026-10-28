@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from postgrest import SyncPostgrestClient
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
-from app.core.observability import start_trace
+from tests.langsmith_support import Runs
 from app.schemas.contracts import Principal,RequestContext
 from app.services import customer_data as cd
 from app.services.authorization import PolicyDenied
@@ -27,7 +27,7 @@ def context(api: NativeAPI,cid: int) -> RequestContext:
 
 @pytest.mark.parametrize('cid',[1001,1002,1003])
 @pytest.mark.parametrize('leaky',[False,True])
-def test_snapshots_match_owned_database_records_and_atomic_audit(local_data_api: NativeAPI,native_api_client: TestClient,cid: int,leaky: bool) -> None:
+def test_snapshots_match_owned_database_records_and_atomic_audit(local_data_api: NativeAPI,native_api_client: TestClient,langsmith_runs: Runs,cid: int,leaky: bool) -> None:
     import psycopg
     from psycopg import sql
     if leaky:
@@ -38,7 +38,6 @@ def test_snapshots_match_owned_database_records_and_atomic_audit(local_data_api:
                 ('rm','assignments'),('rm','advisors')]:
                 db.execute(sql.SQL('create policy native_leaky on {}.{} for select to authenticated using(true)').format(sql.Identifier(schema),sql.Identifier(table)))
     ctx=context(local_data_api,cid)
-    trace=start_trace()
     results=[asyncio.run(reader(ctx)) for reader in READERS]
     results.append(asyncio.run(cd.get_transactions(ctx,None,None,None)))
     profile,accounts,cards,loans,case,assignment,transactions=results
@@ -58,7 +57,7 @@ def test_snapshots_match_owned_database_records_and_atomic_audit(local_data_api:
         assert (assignment.data['current']['rm_id'] if assignment.data and assignment.data['current'] else None)==(str(expected_rm[0]) if expected_rm else None)
         reads=db.execute("select resource_id,details->>'tool' from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()
         assert len(reads)==7 and {row[0] for row in reads}=={str(result.call_id) for result in results}
-        assert {record['name'] for record in trace.spans}=={row[1] for row in reads}
+        assert {run['name'] for run in langsmith_runs.created}=={row[1] for row in reads}
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
     for row in accounts.data:assert row['number'].startswith('****') and len(row['number'])==8
     for row in cards.data:assert len(row['last4'])==4 and not {'pan','card_number','customer_id'}&row.keys()

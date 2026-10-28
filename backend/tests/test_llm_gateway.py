@@ -41,7 +41,7 @@ def test_spent_budget_stops_before_any_model_call(monkeypatch):
         trace.tokens=settings.llm_request_token_budget
         with pytest.raises(gw.LLMBudgetExceeded):
             asyncio.run(gw.call(prompts.load('answer','v2'),'system',[('user','Hello')],SCHEMA))
-        assert trace.spans==[]
+        assert trace.llm_calls==[]
         trace.tokens=settings.llm_request_token_budget-100
         assert gw.remaining_budget()==100
     finally:current_trace.set(None)

@@ -16,9 +16,9 @@ Status: proposal, nothing built yet. Reverses decision 2 in `docs/tracing-plan.m
 
 ## 2. Scope decisions (defaults; change before building)
 
-1. **LangSmith runs alongside Supabase tracing.** `ops.traces` keeps feeding the stats page (teammates without a LangSmith seat) and stays ids/counts only. LangSmith is used for eval experiments and opt-in local tracing. Replacing `ops.*` entirely would be a separate decision.
-2. **App tracing off by default.** `LANGSMITH_TRACING=false` in `.env.example`; the backend never turns it on itself. Eval runs enable it inside the runner only (`langsmith.tracing_context(enabled=True)`).
-3. **Redaction before upload.** Our invariant is that logs hold no user text or customer records. LangSmith traces hold prompts and answers, so: the `Client` gets `hide_inputs`/`hide_outputs` hooks that pass every string through `privacy.redact`; eval datasets contain only synthetic public questions; personal-mode tracing (synthetic persona records) stays off until §6 phase 4 is agreed.
+1. **LangSmith replaces Supabase tracing (decided 2026-10-28).** The app traces every `/chat` request to LangSmith; `services/trace_store.py` is removed and migration `0071` drops `public.log_trace`, leaving `ops.traces`/`ops.spans` as read-only history. The app keeps only what LangSmith does not capture: `x-request-id` and the JSON `request` log, warning/error logs, the token budget and the audit log's model-call records.
+2. **App tracing follows `LANGSMITH_TRACING`.** `.env.example` ships `false` (no key); the project `.env` sets `true`. Tests force it off. Eval runs enable it inside the runner regardless (`langsmith.tracing_context(enabled=True)`).
+3. **Redaction before upload.** LangSmith runs hold prompts, answers and, in personal mode, synthetic customer records (decided 2026-10-28: full text in every mode). The client's `anonymizer` passes every string through `privacy.redact`; eval datasets contain only synthetic questions.
 4. **Real provider only.** Targets call the real `llm_gateway`; no fake model (AGENTS.md). Provider failures are recorded as `error` outcomes, never replaced.
 5. **Offline validator cases stay local** in pytest/`run.py` offline mode. They call no model, so LangSmith adds nothing.
 
