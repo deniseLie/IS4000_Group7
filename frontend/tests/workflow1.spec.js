@@ -141,7 +141,7 @@ for(const decision of ['confirm','decline'])test(`workflow one ${decision}: gues
   // A pasted one-time code gets the fixed privacy reply before any request; no model call is made.
   let chats=0;
   page.on('request',request=>{if(request.url().endsWith('/chat')&&request.method()==='POST')chats++;});
-  await page.locator('#chat-composer').fill('the OTP from last night was 482913');
+  await page.locator('#chat-composer').fill('my OTP is 482913');
   await page.getByTestId('send-message').click();
   await expect(page.getByRole('status')).toContainText('Private details were removed');
   expect(chats).toBe(0);
