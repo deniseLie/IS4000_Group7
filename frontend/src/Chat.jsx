@@ -25,7 +25,7 @@ import TopBar from './components/TopBar';
 import Sidebar,{TabBar} from './components/Sidebar';
 import LockedPage from './components/LockedPage';
 import { supabase } from './lib/supabase';
-import { boundedHistory, handoffSummary, readEvents, redact, supportSummary } from './lib/chatTools';
+import { boundedHistory, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
 import {loadWorkflowPreview,parsePausedWorkflow,parsePreview} from './lib/workflows';
 import {createActionCase,proposeAction} from './lib/actions';
@@ -93,6 +93,7 @@ export default function Chat({session,onSignIn}) {
   const [pageKey,setPageKey]=useState(0);
   const messageList=useRef(null);
   const composer=useRef(null);
+  const recall=useRef(null);
   const request=useRef(null);
   const version=useRef(0);
   useEffect(()=>{
@@ -296,6 +297,15 @@ export default function Chat({session,onSignIn}) {
     setView(page);
   }
   function draft(question) { setInput(question);requestAnimationFrame(()=>composer.current?.focus()); }
+  function recallSent(e) {  // Up/Down in an empty box (or one still showing a recalled question) steps through sent questions
+    const up=e.key==='ArrowUp';if((!up&&e.key!=='ArrowDown')||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.nativeEvent.isComposing)return;
+    const box=e.currentTarget,sent=sentHistory(messages),browsing=recall.current!==null&&input===sent[recall.current];
+    if(!sent.length||(input&&!browsing))return;
+    if(browsing&&(up?input.lastIndexOf('\n',box.selectionStart-1)>=0:input.indexOf('\n',box.selectionEnd)>=0))return;  // move within a multi-line question first
+    e.preventDefault();recall.current=recallStep(sent.length,browsing?recall.current:null,up);
+    const text=recall.current===null?'':sent[recall.current];setInput(text);
+    requestAnimationFrame(()=>composer.current?.setSelectionRange(text.length,text.length));
+  }
   async function prepareReviewSupport(selection){
     setSupportScope(null);setSupportTarget('support');setAttachSummary(true);setHelpTopic('compliance');setHandoff({saving:true,outcome:null,error:''});
     try{const headers=await sessionHeaders();const token=headers.Authorization?.replace(/^Bearer /,'');
@@ -414,8 +424,8 @@ export default function Chat({session,onSignIn}) {
             {view==='chat'&&session&&mode==='personal'&&showCompliance&&<ComplianceWorkspace key="compliance-workspace" submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>send(null,question,selection)}/>}
           </div>
           <div className="composer-area"><form className="bank-chat-composer" onSubmit={send}>
-            <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>setInput(e.target.value)} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"
-              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}}}/>
+            <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>{recall.current=null;setInput(e.target.value);}} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"
+              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}else recallSent(e);}}/>
             <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
           </form><div className="composer-note"><span><Icon name="shield"/>{DISCLAIMER}</span>
             <details className="chat-about"><summary>How chats are saved</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile; reopen them from Recent chats. Starting a new chat keeps earlier ones.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears that access.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be left out of long chats.</p></details></div></div>

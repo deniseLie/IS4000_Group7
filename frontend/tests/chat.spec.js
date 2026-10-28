@@ -146,3 +146,13 @@ test('source and support dialogs keep keyboard focus and close on Escape',async(
  await page.screenshot({path:'test-results/design-support-mobile.png',fullPage:true});
  await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(support).toBeFocused();
 });
+test('Up and Down in an empty message box recall sent questions',async({page})=>{
+ await ask(page,'What is my balance?');await ask(page,'I lost my card');
+ const box=page.getByRole('textbox',{name:'Your message'});await box.focus();
+ await box.press('ArrowUp');await expect(box).toHaveValue('I lost my card');
+ await box.press('ArrowUp');await expect(box).toHaveValue('What is my balance?');
+ await box.press('ArrowUp');await expect(box).toHaveValue('What is my balance?');
+ await box.press('ArrowDown');await expect(box).toHaveValue('I lost my card');
+ await box.press('ArrowDown');await expect(box).toHaveValue('');
+ await box.fill('My own draft');await box.press('ArrowUp');await expect(box).toHaveValue('My own draft');
+});

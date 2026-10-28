@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {boundedHistory,handoffSummary,redact,readEvents,supportSummary} from './chatTools.js';
+import {boundedHistory,handoffSummary,recallStep,redact,readEvents,sentHistory,supportSummary} from './chatTools.js';
 
 for(const c of JSON.parse(fs.readFileSync(new URL('../../../tests/fixtures/privacy-cases.json',import.meta.url),'utf8'))) {
  test(`shared privacy case: ${c.text}`,()=>{
@@ -58,4 +58,14 @@ test('handoff summary uses topic labels and recorded outcomes only, never custom
  assert.equal(urgent('You chose not to block the card ending 4821; it stays active. '+sent),'Customer asked for a person. Topics: Fraud & security (urgent). Card block: declined. Dispute draft: sent to staff.');
  assert.ok(urgent('Your card ending 4821 is temporarily blocked. You chose not to send the dispute draft.').endsWith('Card block: confirmed. Dispute draft: declined.'));
  assert.ok(!urgent(sent).includes('4821'));
+});
+test('sent questions are recalled newest first without back-to-back repeats',()=>{
+ const messages=[{role:'user',content:'a'},{role:'assistant',content:'x'},{role:'user',content:'b'},{role:'user',content:'b'},{role:'assistant',content:''},{role:'user',content:'a'}];
+ assert.deepEqual(sentHistory(messages),['a','b','a']);
+ assert.deepEqual(sentHistory([]),[]);
+});
+test('recall steps stop at the oldest question and return to the empty box',()=>{
+ assert.equal(recallStep(0,null,true),null);
+ assert.equal(recallStep(2,null,true),0);assert.equal(recallStep(2,0,true),1);assert.equal(recallStep(2,1,true),1);
+ assert.equal(recallStep(2,1,false),0);assert.equal(recallStep(2,0,false),null);assert.equal(recallStep(2,null,false),null);
 });

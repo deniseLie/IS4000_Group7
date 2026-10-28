@@ -16,6 +16,18 @@ export function boundedHistory(messages) {
   return history;
 }
 
+// questions already sent (redacted as shown), newest first, for Up/Down recall in the message box
+export function sentHistory(messages) {
+  return messages.filter(m => m.role === 'user' && m.content).map(m => m.content).reverse().filter((q,i,all) => q !== all[i-1]);
+}
+
+// next recall position: Up goes older and stops at the oldest; Down goes newer, then back to the empty box (null)
+export function recallStep(count, index, up) {
+  if (!count) return null;
+  if (up) return index === null ? 0 : Math.min(index + 1, count - 1);
+  return index === null || index === 0 ? null : index - 1;
+}
+
 export async function readEvents(body, onEvent) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
