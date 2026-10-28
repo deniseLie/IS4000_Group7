@@ -104,7 +104,7 @@ test('saved customer v2 unavailable section stays withheld after refresh and the
   await seedSession(page);
   await unavailableChat(page);
   const handoff=page.getByTestId('answer-sections').locator('section[data-response-origin="safety"]');
-  await expect(handoff).toContainText('A support handoff is recorded for the withheld part');
+  await expect(handoff).toContainText('passed it to your relationship manager');
   await openMenuItem(page,'open-actions');
   await expect(page.getByTestId('command-state')).toHaveText('succeeded');
   await expect(page.getByTestId('command-receipt')).toHaveCount(1);

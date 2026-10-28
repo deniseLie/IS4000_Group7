@@ -61,11 +61,9 @@ export default function OverviewPage({onNavigate,onAsk}) {
           <button className="source-link" onClick={()=>onAsk('Show my recent transactions')}>Ask about a transaction</button></article>
       </div>
       <aside className="ov-side">
-        <article className="ov-card ov-tile"><h2>Your relationship manager</h2>
-          {rm?<><div className="ov-person"><span className="initials" aria-hidden="true">{initials(rm.name)}</span><div><strong>{displayName(rm.name)}</strong><small>{rm.role}</small></div></div>
-            <p className="ov-small">{rm.contact.phone||'Phone not recorded'}</p>
-            <button className="bank-chat-logout" data-testid="overview-open-rm" onClick={()=>onNavigate('relationship')}>Requests and meetings<Icon name="arrow"/></button></>
-            :<p className="ov-empty">We are assigning you a relationship manager. Use Talk to a person if you need help now.</p>}</article>
+        <article className="ov-card ov-tile" data-testid="overview-help"><h2>Need a person?</h2>
+          <p className="ov-small">Ask the assistant first. If it can't answer, it passes your question to your relationship manager and gives you a reference.</p>
+          <button className="bank-chat-logout" data-testid="overview-open-requests" onClick={()=>onNavigate('requests')}>See my requests<Icon name="arrow"/></button></article>
         <article className={`ov-card ov-tile ${open?'attention':''}`} data-testid="overview-compliance"><h2>Compliance review</h2>
           {open?<><p><strong>{review.title}</strong></p><p className="ov-small">Action needed{review.due_date?` by ${formatDate(review.due_date)}`:''}</p>
             <button className="primary-button" onClick={()=>onNavigate('compliance')}>Continue review<Icon name="arrow"/></button></>

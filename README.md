@@ -4,7 +4,21 @@ The chatbot improvements, including the banking knowledge and source-check chang
 
 For the current presentation, use the [ordered demo walkthrough](#demo-walkthrough) and [startup commands](#local-setup).
 
-For another Mac, start with [handoff.md](handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
+For another Mac, start with [docs/setup/macbook-handoff.md](docs/setup/macbook-handoff.md): CLI sign-in, private environment settings, startup, verification and the OpenRouter switch.
+
+## Persona 1 and foundation update — 28 October 2026
+
+After the UBS check-in the client persona is **Michelle** (compliance plus everyday needs) and the RM becomes the second persona. This update adds what UBS asked for on the client side and in the foundation:
+
+- **My requests (tickets, TK1/TK2):** every request has a reference (`TCK-…`), an owner team and a plain-language status. Fraud handoffs, "Talk to a person" handoffs and RM requests open a ticket automatically. The bot never decides or marks a ticket resolved; the owner moves tickets with `select support.set_ticket_status('TCK-001001','resolved','Your statement is in your inbox.');` in the SQL editor.
+- **Request categories (F20) and card limit requests (CL1):** card limit, statements, personal details, payment issue, login, compliance question, something else. Each says what is needed and **who decides**. The chat shows *Raise a card limit request* or *Raise a request for the bank*; the form proposes a `ticket.create` action that the customer confirms in Actions.
+- **MCP tool layer (F21):** `TOOL_TRANSPORT=mcp` sends agent tool calls through an MCP server (`app/mcp_server.py`); `python -m scripts.mcp_server` serves the same tools to an external MCP client.
+- **Audit trail walkthrough (F24):** `python -m scripts.audit_walkthrough --case-id <id> --database-url <owner connection> --markdown` prints one case end to end for the slides.
+- **Document pre-check (CR2):** documents mostly in another language are flagged as needing a certified English translation.
+- **Local deployment (F17):** `docker compose up --build` (reads the root `.env`).
+- **How the agents are called:** [docs/architecture/agent-flow.md](docs/architecture/agent-flow.md).
+
+Apply migrations **0071** and **0072** to the hosted project (same way as earlier ones), then restart the backend. Michelle gets a card ending 7310 and two demo tickets.
 
 ## Card self-service update — 27 October 2026
 
@@ -26,22 +40,22 @@ Known limits: the seeded charge (2026-10-17) is readable until 2027-01-15 (90-da
 
 ## Real AI update — 13 October 2026
 
-Local update — 14 October: [Codex subscription setup](docs/codex-local-provider.md)
+Local update — 14 October: [Codex subscription setup](docs/setup/codex-local-provider.md)
 adds `CHAT_TRANSPORT=codex` for real GPT-5.6 Luna requests through the signed-in CLI.
 Set `CHAT_TRANSPORT=api` and restart the backend to use the preserved OpenRouter
 configuration. This switch does not require changing the browser. See that guide
 for current browser evidence, including the Chinese timeout and successful rerun.
 
-See [the review](docs/real-ai-review.md) for the code map, test evidence and remaining limitations. This update removes the fake browser model and all answer-generating test replacements. Offline checks feed sample strings directly to validators; browser checks use the normal backend and real provider. The application labels AI-generated replies separately from fixed safety guidance and withheld answers.
+See [the review](docs/evaluation/real-ai-review.md) for the code map, test evidence and remaining limitations. This update removes the fake browser model and all answer-generating test replacements. Offline checks feed sample strings directly to validators; browser checks use the normal backend and real provider. The application labels AI-generated replies separately from fixed safety guidance and withheld answers.
 
-The ongoing [core completion checklist](docs/core-completion-plan.md) tracks the
+The ongoing [core completion checklist](docs/evaluation/core-completion-plan.md) tracks the
 next work on stories 6, 13–18. Local source checks now reject changed explicit
 currency/percentage pairs and some external-policy attribution errors. Live
 verification of the focused conversation and minimum-payment cases now passes
 with Luna. OpenRouter still needs a separate recheck. The two earlier deferred
 checks remain deferred.
 
-The [14 October results review](docs/core-results-review.md) closes the focused
+The [14 October results review](docs/evaluation/core-results-review.md) closes the focused
 Luna round. It records an evaluation bug and its fix, 151 backend tests, 19 offline
 checks, reviewed real answers and the remaining backlog limits. Run only the
 small source-check set with `python -m evaluation.run --live --suite focused` from
@@ -59,7 +73,7 @@ The working React app now uses the UBS-inspired concept with DemoBank's own name
 and no UBS logo: neutral surfaces, red accents, responsive topic cards and matching
 sign-in, source and support panels. Suggestions fill the composer; they never
 substitute a stored response. Keyboard focus stays inside open panels, Escape
-closes them, and focus returns to the trigger. See [UI verification](docs/ui-refresh.md)
+closes them, and focus returns to the trigger. See [UI verification](docs/planning/ui-refresh.md)
 for current desktop/mobile and real-provider test evidence.
 
 ## Implemented features
@@ -141,7 +155,7 @@ secret warnings, requests for human support and a guest's personal-balance reque
 use fixed safety responses. Action receipts and notification templates describe
 recorded outcomes without an AI call. Provider failures stay visible; the app does
 not replace them with scripted banking answers. The configuration above selects
-OpenRouter; [the Codex guide](docs/codex-local-provider.md) describes the explicit
+OpenRouter; [the Codex guide](docs/setup/codex-local-provider.md) describes the explicit
 alternative. Neither mode supplies real bank product terms.
 
 The demo uses fictional customers in actual hosted Supabase Auth, database and
@@ -622,13 +636,13 @@ Prompts live in `backend/app/prompts/<agent>/<version>/`, not in Python. The ans
 
 Each `/chat` request is recorded as one trace: a session row plus timed spans (`route`, `retrieve`, `customer_context`, `llm`, `validate`). Only ids, counts, flags, enums, timings and token/cost numbers are stored, never chat text or customer records. A named `reject_reason` explains every withheld answer. Every request also writes one JSON `answer` log line.
 
-Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_KEY`). The backend writes through the `public.log_trace` function from `backend/supabase/migrations/0001_trace_tables.sql`; the `ops.traces` and `ops.spans` tables themselves are closed to the public key by RLS. A failed or slow write is logged and never affects the chat. Unit and browser tests force `TRACE_STORE=0`. Known limits: the anon key is public, so anyone could add junk rows through `log_trace` (bounded by validation and a 10,000-per-day cap); model retries inside the provider client are not visible; cost is only as accurate as `LLM_PRICE_*_PER_M`. See `docs/tracing-plan.md`.
+Storage is opt-in: set `TRACE_STORE=1` (needs `SUPABASE_URL` and `SUPABASE_ANON_KEY`). The backend writes through the `public.log_trace` function from `backend/supabase/migrations/0001_trace_tables.sql`; the `ops.traces` and `ops.spans` tables themselves are closed to the public key by RLS. A failed or slow write is logged and never affects the chat. Unit and browser tests force `TRACE_STORE=0`. Known limits: the anon key is public, so anyone could add junk rows through `log_trace` (bounded by validation and a 10,000-per-day cap); model retries inside the provider client are not visible; cost is only as accurate as `LLM_PRICE_*_PER_M`. See `docs/architecture/tracing-plan.md`.
 
 ## Audit log
 
-`audit.events` (migrations `0005`, `0006`) is the append-only, hash-chained record of who did what (`docs/system-architecture.md` §6). Rows are written only by `audit.record()`; app roles cannot update, delete or truncate it, and each row's `hash` covers the previous row's hash. A generic trigger records insert/update/delete on the business tables in the same transaction (changed column names; values only for enum-like columns). `POST /chat` collects its events in `app/services/audit.py` and writes them in one `public.audit_record_batch` call before the `answer` event; if that write fails the client gets `error` and no answer. Events hold ids, enums and counts only; both the Python helper and the database reject free text. Migration `0054` preserves canonical UUID identifiers even when their suffix contains twelve digits; other long-number strings remain rejected. It is applied and verified in the hosted project. The native registration regression covers the numeric-suffix Storage object id and verifies the audit chain.
+`audit.events` (migrations `0005`, `0006`) is the append-only, hash-chained record of who did what (`docs/architecture/system-architecture.md` §6). Rows are written only by `audit.record()`; app roles cannot update, delete or truncate it, and each row's `hash` covers the previous row's hash. A generic trigger records insert/update/delete on the business tables in the same transaction (changed column names; values only for enum-like columns). `POST /chat` collects its events in `app/services/audit.py` and writes them in one `public.audit_record_batch` call before the `answer` event; if that write fails the client gets `error` and no answer. Events hold ids, enums and counts only; both the Python helper and the database reject free text. Migration `0054` preserves canonical UUID identifiers even when their suffix contains twelve digits; other long-number strings remain rejected. It is applied and verified in the hosted project. The native registration regression covers the numeric-suffix Storage object id and verifies the audit chain.
 
-Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and migration `0005` applied, and a missing configuration or failed write fails the chat request. The only off switch is `AUDIT_STORE=0`, which the unit and browser test runners set so they never add rows to the append-only table; do not set it elsewhere. Check the chain with `python -m scripts.verify_audit` from `backend/` (signs in with `TEST_PERSONA_FIXTURE_FILE`); `--record` saves the head to `docs/evidence/audit-anchor.json`, and later runs fail if older rows were rewritten or the newest removed. Known limits: the table owner can disable the triggers and rewrite the chain (caught only against a recorded anchor); the structural check cannot prove a short token is not personal data; guest events share a 20,000-per-day cap because the anon key is public; every audited write is serialised by one lock.
+Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and migration `0005` applied, and a missing configuration or failed write fails the chat request. The only off switch is `AUDIT_STORE=0`, which the unit and browser test runners set so they never add rows to the append-only table; do not set it elsewhere. Check the chain with `python -m scripts.verify_audit` from `backend/` (signs in with `TEST_PERSONA_FIXTURE_FILE`); `--record` saves the head to `docs/evaluation/evidence/audit-anchor.json`, and later runs fail if older rows were rewritten or the newest removed. Known limits: the table owner can disable the triggers and rewrite the chain (caught only against a recorded anchor); the structural check cannot prove a short token is not personal data; guest events share a 20,000-per-day cap because the anon key is public; every audited write is serialised by one lock.
 
 ## API gateway
 
@@ -636,7 +650,7 @@ Audit writing is always on: it needs `SUPABASE_URL`, `SUPABASE_ANON_KEY` and mig
 
 ## Database migrations
 
-Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order and record their repository versions in Supabase migration history. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/synthetic-data-spec.md`), `0005` adds the audit log, `0006` its row-change triggers and `0007` the once-per-session `auth.session_started` function. Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set.
+Migrations live in `backend/supabase/migrations/` as `NNNN_short_name.sql` (four digits, next free number, never renumbered or edited once applied; fix forward with a new file). Apply them in order and record their repository versions in Supabase migration history. `0002` reproduces the `banking` schema that predates the repo, `0003` adds the business schemas (RLS on every table, read-only customer policies), `0004` seeds the synthetic personas Alex, Michelle and David (`docs/planning/synthetic-data-spec.md`), `0005` adds the audit log, `0006` its row-change triggers and `0007` the once-per-session `auth.session_started` function. Create the persona Auth users before `0004`, and add new schemas to the Data API's exposed schemas. `tests/test_rls_live.py` checks per-persona visibility when `TEST_PERSONA_FIXTURE_FILE` is set. `0071` adds the Ticket Service and request categories, `0072` the audit case timeline.
 
 ## Local setup
 
@@ -647,7 +661,10 @@ First-time dependency installation, from the repository root:
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.txt
+.venv/bin/python -m pip install 'mcp>=2.3,<3'   # optional: only for TOOL_TRANSPORT=mcp or scripts/mcp_server.py
 ```
+
+Or run both services in Docker: `docker compose up --build`, then open http://localhost:5173.
 
 Start the foundation demo backend in one terminal:
 
@@ -705,7 +722,7 @@ cd backend
 ../.venv/bin/python -m evaluation.run --output evaluation-results.json
 ```
 
-This writes JSON and HTML reports. It checks sample strings directly through validators, plus retrieval and fixed safety paths. It does not replace the AI client or measure live model accuracy. The new mode is `offline_validator_checks`, so it cannot be compared automatically with the old simulated-answer reports. The historical [before](backend/evaluation/before.html) and [after](backend/evaluation/after.html) reports used the old simulated-answer method with the same 17 cases: 10 passed before, 17 passed after. Four improvements cover missing banking sources; three cover invented figures. Reports include dataset, knowledge and implementation hashes.
+This writes JSON and HTML reports. It checks sample strings directly through validators, plus retrieval and fixed safety paths. It does not replace the AI client or measure live model accuracy. The new mode is `offline_validator_checks`, so it cannot be compared automatically with the old simulated-answer reports. The historical [before](docs/evaluation/history/before.html) and [after](docs/evaluation/history/after.html) reports used the old simulated-answer method with the same 17 cases: 10 passed before, 17 passed after. Four improvements cover missing banking sources; three cover invented figures. Reports include dataset, knowledge and implementation hashes.
 
 Compare future runs using the same dataset and mode:
 

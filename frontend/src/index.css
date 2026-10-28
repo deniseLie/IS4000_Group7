@@ -1261,3 +1261,21 @@ small{font-size:max(12px,.83em)}
 .card-manage .source-notice{flex-basis:100%;margin:0}
 .card-cancel-warning{margin-top:10px;padding:12px;border:1px solid var(--red);border-radius:8px;background:var(--tint)}
 .card-cancel{color:var(--red)}
+
+/* My requests (tickets) */
+.ticket-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.ticket-list > li { padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.ticket-list p { margin: 6px 0; font-size: 13px; line-height: 1.6; }
+.ticket-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ticket-status { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #f0efec; color: var(--muted); }
+.ticket-status.submitted, .ticket-status.in_review { background: #e7f1fb; color: #1d4e89; }
+.ticket-status.waiting_on_client, .ticket-status.overdue { background: var(--tint); color: var(--red); }
+.ticket-status.resolved { background: #e5f4e4; color: #23692b; }
+.ticket-next { display: flex; gap: 8px; align-items: flex-start; color: var(--muted); }
+.ticket-next svg { width: 14px; height: 14px; flex: none; margin-top: 3px; }
+.raise-request { margin-bottom: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; }
+/* Document guide: what a file must show, with a made-up example (ComplianceWorkspace DocumentGuide). */
+.cw-guide{margin:10px 0;padding:10px 12px;border:1px solid var(--line,#e5e5e5);border-radius:8px;background:var(--chalk,#fafafa)}
+.cw-guide>strong{font-size:13px}.cw-guide ul{margin:6px 0 4px 18px;padding:0;font-size:13px;line-height:1.6}
+.cw-example{margin-top:8px;padding:12px 14px;border:1px dashed var(--line,#d0d0d0);border-radius:6px;background:#fff;font-family:'JetBrains Mono',ui-monospace,monospace}
+.cw-example p{margin:2px 0;font-size:12px;color:var(--ink,#222)}

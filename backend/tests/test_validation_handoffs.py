@@ -87,7 +87,7 @@ def test_mixed_validation_handoff_is_durable_deduplicated_and_owned(local_data_a
     assert answer.response_origin=='validation' and answer.source_check=='rejected' and answer.needs_human
     assert [section.answer for section in answer.sections[:3]]==[WITHHELD,WITHHELD,'Hello.']
     assert len(answer.sections)==4 and answer.sections[-1].response_origin=='safety'
-    assert 'handoff is recorded' in answer.sections[-1].answer and '987.654' not in answer.answer
+    assert 'passed it to your relationship manager' in answer.sections[-1].answer and '987.654' not in answer.answer
     stored=native_api_client.get(f'/conversations/{owned.access.session_id}',headers=headers(ctx))
     assert stored.status_code==200 and stored.json()['messages'][-1]['payload']['sections']==answer.model_dump(mode='json')['sections']
     with psycopg.connect(local_data_api.database_uri) as db:
@@ -122,7 +122,46 @@ def test_handoff_outbox_failure_rolls_back_and_retry_records_one_receipt(local_d
                 assert sql.execute('select count(*) from '+table).fetchone()==(0,)
             sql.execute('drop trigger reject_validation_test on events.outbox')
         result=asyncio.run(graph.ainvoke(None,config,context=runtime,durability='sync'))
-        assert 'handoff is recorded' in result['answer'].answer
+        assert 'passed it to your relationship manager' in result['answer'].answer
         with psycopg.connect(local_data_api.database_uri) as sql:
             assert sql.execute('select count(*) from actions.receipts').fetchone()==(1,)
             assert sql.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+
+
+def test_question_for_a_person_opens_one_rm_ticket_with_its_reference(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
+    """Migration 0073: the handover task records a general_support handoff and SQL opens an rm_handover ticket."""
+    import psycopg
+    from app.schemas.contracts import AgentResult
+    from app.services import rm_handover
+    ctx=context(local_data_api,1002)
+    question='Should I invest my bonus in the new bond fund?'
+    with SyncPostgrestClient(local_data_api.url) as db:
+        db.auth(ctx.principal.jwt.get_secret_value())
+        async def run() -> AnswerEvent:
+            access=ConversationAccess(session_id=uuid4(),guest_token=None)
+            await conversations.create(CreateConversation(session_id=access.session_id,mode='personal',language='English'),access,ctx,db)
+            started=await conversations.start_turn(TurnInput(turn_id=uuid4(),revision=0,user_text=question,priority='P3'),access,ctx,db)
+            owned=OwnedWorkflow(access=access,turn=started.turn)
+            req=ChatRequest(messages=[{'role':'user','content':question}],mode='personal')
+            task=Task(task_id='t1',domain='relationship',intent='answer_question',priority='P3',entities={'question':question,'handover':'rm'})
+            current=ctx.model_copy(update={'case_id':owned.turn.case_id})
+            graph=graph_for(db,current,owned)
+            config={'configurable':{'thread_id':str(owned.turn.case_id)}}
+            await graph.aupdate_state(config,{'request':req,'history':req.messages,'history_count':1,'risk':assess_request(req),
+                'workflow_version':'v2-actions-v1','plan':TaskPlan(tasks=[task]),
+                'results':[AgentResult(task_id='t1',agent='relationship',status='needs_human',answer_kind='conversation',text=rm_handover.SORRY)],
+                'evidence':[[]],'metadata':[ResponseMeta(origin='safety',prompt_id=None)],'proposals':[None]},as_node='dispatch')
+            runtime=PipelineContext(request=current,workflow=owned)
+            first=await graph.ainvoke(None,config,context=runtime,durability='sync')
+            before=[snapshot async for snapshot in graph.aget_state_history(config) if snapshot.next==('escalate_validation',)]
+            again=await graph.ainvoke(None,before[0].config,context=runtime,durability='sync')
+            assert again['answer']==first['answer']
+            return AnswerEvent.model_validate(first['answer'])
+        answer=asyncio.run(run())
+    assert len(answer.sections)==1 and answer.needs_human and answer.sections[0].answer==rm_handover.SORRY
+    with psycopg.connect(local_data_api.database_uri) as sql:
+        reference,category,summary,owner=sql.execute("select reference,category,summary,owner_team from support.tickets where source='handoff'").fetchone()
+        assert sql.execute("select count(*) from support.tickets where source='handoff'").fetchone()==(1,)
+        assert sql.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+    assert category=='rm_handover' and owner=='Your relationship manager' and question in summary
+    assert reference in answer.sections[0].decision and 'My requests' in answer.sections[0].decision

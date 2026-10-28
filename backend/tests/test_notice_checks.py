@@ -122,3 +122,10 @@ def test_real_provider_varied_layouts(layout,monkeypatch,caplog):
     if expected=='pass':assert findings==[],details
     elif expected=='preliminary_or_review':assert not findings or all(f.code=='unassessable' for f in findings),details
     else:assert expected in [f.code for f in findings],details
+
+
+def test_mostly_non_latin_documents_are_flagged_for_translation_and_english_ones_are_not() -> None:
+    from app.services.notice_checks import needs_translation,with_language
+    assert needs_translation('居住证明 地址 新加坡 电费账单 '*8) and not needs_translation('Proof of address, Orchard Road, Singapore. '*4)
+    assert not needs_translation('短')   # too little text to judge
+    assert [f.code for f in with_language([],'居住证明 地址 新加坡 电费账单 '*8)]==['translation_needed']

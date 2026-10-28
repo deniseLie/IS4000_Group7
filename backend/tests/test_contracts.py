@@ -8,7 +8,7 @@ from app.schemas.contracts import ActionCommand, AgentResult, Principal, Receipt
 from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, StatusEvent
 
 U=str(uuid4())
-EXAMPLES={  # the §4 examples in docs/system-architecture.md, with real uuids
+EXAMPLES={  # the §4 examples in docs/architecture/system-architecture.md, with real uuids
     RequestContext:{'request_id':U,'session_id':U,'case_id':None,'principal':{'kind':'customer','user_id':U,'customer_id':1001,'auth_session_id':U,'aal':'aal1'},'locale':'en-SG','received_at':'2026-10-18T09:00:00+00:00'},
     RiskAssessment:{'redacted_message':'I lost my card','redactions':[{'type':'card_number','count':1}],'risk_flags':['lost_card'],'priority':'P0','fixed_response':{'code':'lost_card_v1','needs_human':True}},
     TaskPlan:{'plan_id':U,'tasks':[{'task_id':'t1','domain':'fraud','intent':'report_unrecognised_txn','priority':'P0','entities':{'amount':2400},'needs_auth':True,'status':'pending'}]},

@@ -148,7 +148,7 @@ def test_actual_bytes_precheck_correction_and_submission_over_http(local_data_ap
         instruction={'proof_address':'Full name, address and document date within the last 3 months.', 'wealth_declaration':'Full name, source of wealth and signature.', 'tax_residency':'Full name, country of tax residence and signature.', 'bank_statements':'Full name and bank name. Statements for the last 3 months.'}[rule]
         db.execute("update compliance.requested_items set precheck_rule_id=%s,label=%s,instructions=%s where item_id=%s",(rule,'Requested evidence',instruction,target['item_id']))
         key=db.execute("select secret from compliance.precheck_keys where key_id='v1'").fetchone()[0]
-    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key))
+    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key));monkeypatch.setattr(settings,'precheck_mode','notice')  # these opt-in tests exercise the model notice checks
     with local_storage(local_data_api,tmp_path/'blobs') as url:
         monkeypatch.setenv('SUPABASE_URL',url);monkeypatch.setenv('SUPABASE_ANON_KEY','native-public-test-key')
         for valid in [False,True]:
@@ -205,7 +205,7 @@ def test_expired_check_is_blocked_in_api_and_sql_and_reassesses_real_bytes(local
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("update compliance.requested_items set precheck_rule_id='proof_address',label='Proof of address',instructions='Full name, address and document date within the last 3 months.' where item_id=%s",(target['item_id'],))
         key=db.execute("select secret from compliance.precheck_keys where key_id='v1'").fetchone()[0]
-    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key))
+    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key));monkeypatch.setattr(settings,'precheck_mode','notice')  # these opt-in tests exercise the model notice checks
     with local_storage(local_data_api,tmp_path/'blobs') as url:
         monkeypatch.setenv('SUPABASE_URL',url);monkeypatch.setenv('SUPABASE_ANON_KEY','native-public-test-key')
         uploaded=httpx.post(url+f"/storage/v1/object/demobank-compliance-private/1002/{target['case_id']}/{target['document_id']}",headers={**headers(ctx),'Content-Type':'application/pdf'},content=payload)

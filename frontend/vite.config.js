@@ -5,6 +5,6 @@ export default defineConfig(({ mode }) => ({
   envDir: '..',
   plugins: [react()],
   server: {
-    proxy: { "/api": { target: `http://127.0.0.1:${process.env.BACKEND_PORT || loadEnv(mode, '..', '').PORT || 8000}`, rewrite: (p) => p.replace(/^\/api/, "") } },
+    proxy: { "/api": { target: `http://${process.env.BACKEND_HOST || '127.0.0.1'}:${process.env.BACKEND_PORT || loadEnv(mode, '..', '').PORT || 8000}`, rewrite: (p) => p.replace(/^\/api/, "") } },
   },
 }));

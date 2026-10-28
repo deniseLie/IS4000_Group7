@@ -1,6 +1,6 @@
 # Workflow 1 – Alex: something's wrong with my money (three linked problems, the urgent one first)
 
-**Persona:** Alex (synthetic customer 1001, see `docs/synthetic-data-spec.md`)
+**Persona:** Alex (synthetic customer 1001, see `docs/planning/synthetic-data-spec.md`)
 **Outcome:** Alex knows the card was used in Singapore and then in Los Angeles about 2 hours later, which cannot both be Alex, so the two US charges (including the SGD 86.40 one Alex did not mention) are flagged; the card is protected, a dispute draft for both and one case summary are with staff, and Alex knows not to resend the rent transfer, that the app lock is protective, to reset the password only in the official app and never to share the one-time code.
 
 ## How to read this

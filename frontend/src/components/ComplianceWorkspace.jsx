@@ -1,17 +1,27 @@
 import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
-import {checkIsFresh,findingText,loadWorkspace,primaryStatus,runPrecheck,submitDocument} from '../lib/compliance';
+import {checkIsFresh,findingText,loadTemplates,loadWorkspace,primaryStatus,runPrecheck,submitDocument,templateFor} from '../lib/compliance';
 import ChecklistPreparation from './ChecklistPreparation';
 import Icon from './Icon';
 import {formatDate,formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 import DocumentUpload from './DocumentUpload';
 
+// What each kind of document must show, with a made-up example (GET /documents/templates; public, synthetic).
+function DocumentGuide({template}){
+ if(!template)return null;
+ return <div className="cw-guide" data-testid="document-guide"><strong>Your file must show</strong>
+  <ul>{template.must_show.map(line=><li key={line}>{line}</li>)}</ul>
+  <details className="cw-more"><summary>See a made-up example</summary><div className="cw-example" aria-label={`Example: ${template.title}`}>{template.example.map(line=><p key={line}>{line}</p>)}</div></details>
+  {template.tips?.length>0&&<p className="rm-small">{template.tips.join(' ')}</p>}</div>;
+}
+
 const sentence=value=>{const text=value.replaceAll('_',' ');return text[0].toUpperCase()+text.slice(1);};
 
 export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,onBusyChange,onSupport,onReviewLoaded,submissionReceipt=null,onSubmitted}){
  // A return visit shows the last loaded review at once (actions stay disabled while busy); only a fresh read sets the server clock.
  const [workspace,setWorkspace]=useState(()=>cached('compliance')),[error,setError]=useState(''),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[now,setNow]=useState(Date.now());
+ const [templates,setTemplates]=useState([]);
  const mounted=useRef(false),active=useRef(null),serverClock=useRef(null),owner=useRef(cacheOwner());
  function snapshot(result){serverClock.current={server:Date.parse(result.as_of),local:performance.now()};setNow(serverClock.current.server);setWorkspace(remember('compliance',result,owner.current));onReviewLoaded?.(result.review?.case_id??null);}
  async function token(){const {data,error}=await supabase.auth.getSession();if(error)throw error;if(!data.session)throw new Error('Sign in again to view your compliance review.');return data.session.access_token;}
@@ -21,6 +31,7 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
   catch(failure){if(mounted.current&&!controller.signal.aborted){setError(failure.message);setWorkspace(null);}}
   finally{if(mounted.current&&!controller.signal.aborted)setBusy(false);}
  }
+ useEffect(()=>{const controller=new AbortController();loadTemplates(controller.signal).then(setTemplates).catch(()=>{});return ()=>controller.abort();},[]);
  useEffect(()=>{onBusyChange?.(busy);return ()=>onBusyChange?.(false);},[busy,onBusyChange]);
  useEffect(()=>{mounted.current=true;refresh();const timer=setInterval(()=>{const base=serverClock.current;if(base)setNow(base.server+performance.now()-base.local);},1000);return ()=>{mounted.current=false;active.current?.abort();clearInterval(timer);};},[]);
  async function checkAndSubmit(documentId,recheck=false){
@@ -86,16 +97,17 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
      <p><strong>{item.question}</strong></p><p>{item.instructions||'Submission instructions are not recorded; contact support.'}</p>
      <div className="panel-actions">{onAsk&&<button className="primary-button" disabled={busy||chatBusy} onClick={()=>onAsk('Please explain the selected recorded request for additional information and where I should respond.',{kind:'information_request',case_id:review.case_id,request_id:item.request_id})}>Explain this request<Icon name="arrow"/></button>}
       {help({review_case_id:review.case_id,request_id:item.request_id})}</div></div></article>)}
-   <div className="cw-head"><div><h4>Documents to upload</h4><p className="rm-small">Fictional files only (PDF, DOCX, PNG or JPEG). Each upload is checked against your notice; a passing check submits it for bank review.</p></div>{help({review_case_id:review.case_id})}</div>
+   <div className="cw-head"><div><h4>Documents to upload</h4><p className="rm-small">PDF works best (DOCX, PNG or JPEG also accepted). Each upload gets a quick check; if everything is there it goes to the bank for review.</p></div>{help({review_case_id:review.case_id})}</div>
    <ul className="compliance-items">{items.map(item=>{
     const current=workspace.current_documents[item.item_id],report=workspace.checks.find(report=>report.document_id===current),fresh=report&&checkIsFresh(report,now),rule=workspace.rules[item.item_id];
     const open=!closed&&item.submission_status!=='accepted';
     return <li key={item.item_id} data-testid="compliance-item" data-item-id={item.item_id} className={`cw-item ${tone(item)}`}>
      <div className="cw-item-head"><h4>{item.label}</h4><p data-testid="compliance-item-status" className={`cw-pill ${DONE.includes(item.submission_status)?tone(item):markTone(item)}`}><strong>{primaryStatus(item)}</strong></p><span className="cw-item-icon"><Icon name={icon(item)}/></span></div>
      <p className="cw-instructions">{item.instructions||'Instructions unavailable. Contact support rather than guessing.'}</p>
-     {rule?<details className="cw-more"><summary>Requirements from your notice</summary><p>{item.instructions||item.label}</p>{item.check_guidance&&<p>Approved checking guidance: {item.check_guidance}</p>}<p>Results stay valid for {workspace.policy.validity_hours} hours; period coverage uses {workspace.policy.statement_period_mode.replaceAll('_',' ')}.</p><p>Text from your file is read by the configured AI provider for this preliminary check. Authenticity, identity and signatures are not verified.</p></details>:<p>No assessment rules are configured. Contact support.</p>}
+     {open&&<DocumentGuide template={templateFor(item,templates)}/>}
+     {rule?<details className="cw-more"><summary>How the check works</summary><p>Each upload gets a quick automatic check against the list above. It looks for the details only; it does not confirm the document is genuine, and only the bank can accept it.</p><p>A check result stays valid for {workspace.policy.validity_hours} hours.</p></details>:<p>Automatic checks are not set up for this item. Use Get help with this document.</p>}
      {report&&<div data-testid="precheck-result" data-precheck-status={fresh?report.status:'expired'} className={`cw-check ${fresh?report.status:'expired'}`}>
-      <strong>PRELIMINARY check – not formal approval</strong><p>{!fresh?'This preliminary check has expired. Check the current upload again before submitting.':report.status==='no_issues'?'No issues found against the recorded notice requirements.':report.status==='issues_found'?'Please correct these notice requirement issues:':'Unable to assess reliably. No pass or fail is given.'}</p>
+      <strong>Quick check – not bank approval</strong><p>{!fresh?'This preliminary check has expired. Check the current upload again before submitting.':report.status==='no_issues'?'Everything we look for is there.':report.status==='issues_found'?'Please fix these before submitting:':'We could not check this file.'}</p>
       <ul>{fresh&&report.findings.map((finding,index)=><li key={index}>{findingText(finding,rule)}</li>)}</ul>
       <p className="rm-small">Checked {formatDateTime(report.checked_at)} · valid until {report.expires_at?formatDateTime(report.expires_at):'the recorded expiry'}.</p>
       {onAsk&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onAsk('Explain the selected preliminary document check findings and how to fix them.',{kind:'document',case_id:review.case_id,item_id:item.item_id,document_id:current,check_id:report.check_id})}>Explain findings in chat</button>}

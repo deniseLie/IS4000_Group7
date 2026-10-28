@@ -20,6 +20,7 @@ from app.schemas.relationship_intro import Introduction,MeetingOption
 from app.schemas.documents import DocumentRecord
 from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
 from app.schemas.document_inspection import DocumentObject
+from app.schemas.tickets import CustomerTicket,RequestCategory
 from app.services.authorization import require_permission
 
 STUB=False
@@ -42,6 +43,8 @@ DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_
 DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
 DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
 DOCUMENT_OBJECT=TypeAdapter(CustomerEnvelope[DocumentObject | None])
+TICKETS=TypeAdapter(CustomerEnvelope[Annotated[list[CustomerTicket],Field(max_length=200)]])
+CATEGORIES=TypeAdapter(Annotated[list[RequestCategory],Field(max_length=50)])
 
 
 class CustomerDataIntegrityError(ValueError):
@@ -191,3 +194,18 @@ async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
     envelope=await get_available_slot_records(query,ctx)
     return ToolResult(data=[row.model_dump(mode='json',exclude={'customer_id'}) for row in envelope.data],
         call_id=envelope.call_id,as_of=envelope.as_of)
+
+
+async def get_tickets(ctx: RequestContext) -> ToolResult:
+    """The customer's own tickets with plain-language status; internal notes never leave SQL."""
+    envelope=await _read('tickets.list','customer_read_tickets',{},TICKETS,ctx)
+    if len({row.reference for row in envelope.data})!=len(envelope.data):raise CustomerDataIntegrityError('Ticket snapshot repeats a reference')
+    return _result(envelope)
+
+
+async def get_categories(ctx: RequestContext) -> list[RequestCategory]:
+    """Public request-category configuration (F20); readable by guests too."""
+    require_permission(ctx.principal,'tickets.categories',None,ctx)
+    def read() -> list[RequestCategory]:
+        with data_api.connect(ctx) as db:return CATEGORIES.validate_python(db.rpc('read_request_categories',{}).execute().data)
+    with span('tickets.categories','tool',tool='tickets.categories'):return await data_api.execute(read,'tickets.categories')

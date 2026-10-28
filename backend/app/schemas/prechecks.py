@@ -39,7 +39,7 @@ class PrecheckRule(BaseModel):
 
 class Finding(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    code: Literal['missing_field','page_count','date_invalid','date_outdated','unassessable','rules_unavailable','provider_unavailable','missing_pages']
+    code: Literal['missing_field','page_count','date_invalid','date_outdated','unassessable','rules_unavailable','provider_unavailable','missing_pages','translation_needed']
     field: str | None=None
 
 

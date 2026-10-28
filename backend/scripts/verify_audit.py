@@ -1,5 +1,5 @@
 """Audit chain check (system-architecture.md §6, F3, migration 0005). Calls public.audit_verify_chain, compares the result
-with the anchor recorded last time (docs/evidence/audit-anchor.json, kept in git so it lives outside the database),
+with the anchor recorded last time (docs/evaluation/evidence/audit-anchor.json, kept in git so it lives outside the database),
 and with --record saves the current head as the new anchor. Prints counts and hashes only.
 
 Needs SUPABASE_URL, SUPABASE_ANON_KEY and a login file: JSON {"email","password"} or a list of them (first is used),
@@ -17,7 +17,7 @@ from pathlib import Path
 import sys
 from urllib.parse import urlparse
 
-ANCHOR = Path(__file__).resolve().parents[2] / 'docs' / 'evidence' / 'audit-anchor.json'
+ANCHOR = Path(__file__).resolve().parents[2] / 'docs' / 'evaluation' / 'evidence' / 'audit-anchor.json'
 
 
 def problems(result, anchor):

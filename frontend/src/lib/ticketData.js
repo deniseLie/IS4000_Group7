@@ -1,0 +1,82 @@
+// My requests (TK1/TK2) and request categories (F20). Tickets are created only through a reviewed ticket.create action.
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const API_URL=import.meta.env?.VITE_API_URL || '/api';
+export const STATUSES={submitted:'Submitted',in_review:'In review',waiting_on_client:'Waiting for you',resolved:'Resolved',closed:'Closed'};
+const KINDS=['text','amount','date','date_past','choice','card'];
+function invalid() {return new Error('The recorded request could not be verified. Reload My requests.');}
+function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
+function text(value,max) {if(typeof value!=='string'||!value.trim()||value.length>max)throw invalid();return value;}
+function time(value) {if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value)||!Number.isFinite(Date.parse(value)))throw invalid();return value;}
+function key(value) {if(typeof value!=='string'||!/^[a-z_]{3,40}$/.test(value))throw invalid();return value;}
+function details(value) {
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>10)throw invalid();
+  return Object.fromEntries(Object.entries(value).map(([name,item])=>{if(!/^[a-z_]{2,30}$/.test(name)||typeof item!=='string'||item.length>300)throw invalid();return [name,item];}));
+}
+
+export function parseTicketTarget(value) {
+  if(!['low','normal','high'].includes(value?.urgency)||!Number.isSafeInteger(value.target_hours)||value.target_hours<1)throw invalid();
+  return {category:key(value.category),summary:text(value.summary,500),urgency:value.urgency,details:details(value.details),
+    category_label:text(value.category_label,80),owner_team:text(value.owner_team,80),decided_by:text(value.decided_by,120),target_hours:value.target_hours};
+}
+export function parseTicketResult(value) {
+  if(!Object.keys(STATUSES).includes(value?.status)||typeof value.created!=='boolean'||typeof value.reference!=='string'||!/^TCK-\d{6,}$/.test(value.reference))throw invalid();
+  return {ticket_id:id(value.ticket_id),reference:value.reference,category:key(value.category),status:value.status,owner_team:text(value.owner_team,80),target_at:time(value.target_at),created:value.created};
+}
+export function ticketResultMatches(target,result) {return target.category===result.category&&target.owner_team===result.owner_team;}
+
+export function parseTicket(value) {
+  if(!Object.keys(STATUSES).includes(value?.status)||!['low','normal','high','urgent'].includes(value.urgency)||typeof value.overdue!=='boolean'
+    ||!['form','chat','handoff','rm_request','seed'].includes(value.source)||typeof value.reference!=='string'||!/^TCK-\d{6,}$/.test(value.reference))throw invalid();
+  const update=value.last_update;
+  if(update!==null&&(!update||!Object.keys(STATUSES).includes(update.status)||update.note!==null&&typeof update.note!=='string'))throw invalid();
+  return {ticket_id:id(value.ticket_id),reference:value.reference,category:key(value.category),category_label:text(value.category_label,80),summary:text(value.summary,500),
+    details:details(value.details),urgency:value.urgency,status:value.status,owner_team:text(value.owner_team,80),decided_by:text(value.decided_by,120),source:value.source,
+    created_at:time(value.created_at),updated_at:time(value.updated_at),target_at:time(value.target_at),overdue:value.overdue,
+    last_update:update&&{at:time(update.at),status:update.status,note:update.note}};
+}
+export function parseTickets(value) {
+  if(!Array.isArray(value?.data)||value.data.length>200)throw invalid();
+  const tickets=value.data.map(parseTicket);
+  if(new Set(tickets.map(item=>item.reference)).size!==tickets.length)throw invalid();
+  return tickets;
+}
+export function parseCategories(value) {
+  if(!Array.isArray(value)||value.length>50)throw invalid();
+  return value.map(item=>{
+    if(!Array.isArray(item?.fields)||item.fields.length>10||typeof item.customer_raisable!=='boolean'||!Number.isSafeInteger(item.target_hours))throw invalid();
+    const fields=item.fields.map(field=>{
+      if(!/^[a-z_]{2,30}$/.test(field?.key??'')||!KINDS.includes(field.kind)||typeof field.required!=='boolean')throw invalid();
+      return {key:field.key,label:text(field.label,120),kind:field.kind,required:field.required,choices:Array.isArray(field.choices)?field.choices.map(c=>text(c,40)):null};
+    });
+    return {category:key(item.category),label:text(item.label,80),description:text(item.description,400),owner_team:text(item.owner_team,80),
+      decided_by:text(item.decided_by,120),target_hours:item.target_hours,fields,documents:Array.isArray(item.documents)?item.documents.map(d=>text(d,200)):[],customer_raisable:item.customer_raisable};
+  });
+}
+
+// The next step a customer sees, in plain language. The bank decides; this only describes the recorded status.
+export function nextStep(ticket) {
+  if(ticket.status==='waiting_on_client')return ticket.last_update?.note||'The bank needs something from you. Use Talk to a person if it is unclear.';
+  if(ticket.status==='resolved')return 'The bank marked this resolved. If something is still wrong, raise a new request or use Talk to a person.';
+  if(ticket.status==='closed')return 'Closed. Nothing more is needed from you.';
+  if(ticket.overdue)return `This is past the ${ticket.owner_team.toLowerCase()}'s target time. Use Talk to a person to ask your relationship manager to follow up.`;
+  return `No action needed from you. The ${ticket.owner_team.toLowerCase()} decides and will update this request.`;
+}
+
+// Which raisable category a chat question points to; null when none clearly does.
+export function ticketIntent(question) {
+  const q=String(question||'').toLowerCase();
+  if(/\b(?:increase|raise|higher|lower|reduce|change|up)\b[^.?!]{0,40}\b(?:credit\s+)?(?:card\s+)?limit\b|\blimit\s+(?:increase|change)\b/.test(q))return 'card_limit_change';
+  if(/\b(?:status|update|progress)\b[^.?!]{0,30}\b(?:my\s+)?(?:ticket|request|case)s?\b|\bmy\s+(?:tickets|open requests)\b/.test(q))return 'status';
+  return null;
+}
+
+async function body(response) {
+  let value;
+  try {value=await response.json();} catch(error) {if(error instanceof SyntaxError)throw invalid();throw error;}
+  if(!response.ok)throw new Error(typeof value?.error?.message==='string'&&value.error.message.trim()?value.error.message:'Your requests are unavailable. Please retry.');
+  return value;
+}
+export async function loadTickets(token,signal) {return parseTickets(await body(await fetch(`${API_URL}/tickets`,{headers:{Authorization:`Bearer ${token}`},signal})));}
+export async function loadCategories(token,signal) {
+  return parseCategories(await body(await fetch(`${API_URL}/tickets/categories`,{headers:token?{Authorization:`Bearer ${token}`}:{},signal})));
+}

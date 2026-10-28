@@ -45,7 +45,7 @@ def test_compliance_snapshot_is_owned_and_excludes_internal_assessments(local_da
     assert not any(value in json.dumps([item.model_dump() for item in evidence]) for value in ['risk_rating','reviewer_note','INTERNAL (DEMO)'])
     if snapshot.data:
         assert len(snapshot.data.requested_items)==4 and snapshot.data.status=='awaiting_client_documents'
-        assert str(snapshot.data.due_date)=='2026-11-15' and len(snapshot.data.info_requests)==1
+        assert str(snapshot.data.due_date)=='2026-11-30' and len(snapshot.data.info_requests)==1
     else:assert json.loads(evidence[0].text)=={'records':None}
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select resource_id from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()==[(str(snapshot.call_id),)]

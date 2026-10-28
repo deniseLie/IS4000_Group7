@@ -85,7 +85,9 @@ async def run(document_id: UUID,ctx: RequestContext,recheck: bool=False) -> Tool
     if context.document_id!=document_id:raise customer_data.CustomerDataIntegrityError('Precheck document changed')
     if context.rule is None:raise ApiError(422,'precheck_rules_unavailable','No preliminary checks are configured for this item; contact support.')
     key=settings.document_precheck_signing_key
-    if key is None or len(key.get_secret_value())<43:raise customer_data.CustomerDataIntegrityError('Private precheck signing configuration is unavailable')
+    if key is None or len(key.get_secret_value())<43:
+        # Operator setup, not a customer problem: DOCUMENT_PRECHECK_SIGNING_KEY must equal compliance.precheck_keys v1 (README).
+        raise ApiError(503,'precheck_not_configured','Document checks are not switched on yet. Your upload is saved; please try the check again later.')
     source=(await customer_data.get_document_object(document_id,ctx)).data
     if source is None or source.case_id!=context.case_id:raise customer_data.CustomerDataIntegrityError('Registered document is unavailable')
     payload=await document_inspection.download(source,ctx)
@@ -98,8 +100,13 @@ async def run(document_id: UUID,ctx: RequestContext,recheck: bool=False) -> Tool
         text,pages=await extract(payload,source.mime_type,parsed.page_count)
         extraction='ocr' if text else 'unavailable'
     checked_at=datetime.now(timezone.utc)
-    from app.services import notice_checks
-    requirements,findings=await notice_checks.check(text,pages,context.notice,checked_at.astimezone(ZoneInfo(context.policy.timezone)).date(),context.policy)
+    from app.services import document_templates,notice_checks
+    today=checked_at.astimezone(ZoneInfo(context.policy.timezone)).date()
+    template=document_templates.template_for(context.notice) if settings.precheck_mode=='template' else None
+    if template is not None:
+        name=(await customer_data.get_profile_record(ctx)).data.name
+        requirements,findings=document_templates.check(template,text,pages,name,today,context.policy)
+    else:requirements,findings=await notice_checks.check(text,pages,context.notice,today,context.policy)
     finished_at=datetime.now(timezone.utc)
     if finished_at.astimezone(ZoneInfo(context.policy.timezone)).date()!=checked_at.astimezone(ZoneInfo(context.policy.timezone)).date():
         from app.schemas.prechecks import Finding

@@ -10,12 +10,12 @@ from app.services.answers import ACTION_CLAIM, URL, check_answer
 from app.services.privacy import redact
 from app.services.agents.registry import AGENT_FOR, AgentName
 
-WITHHELD = 'I could not verify this part of the answer. Please rephrase it or contact your bank through its official support channel.'
+WITHHELD = "Sorry, I couldn't confirm this part of my answer, so I won't guess."
 
 
 def response_prompt_id(name: AgentName) -> str:
     """Identify every released prompt fragment used for the agent's answer."""
-    return '/'.join((prompts.current(name)['id'],prompts.current('domain_common')['id'],prompts.load('answer','v2')['id']))
+    return '/'.join((prompts.current(name)['id'],prompts.current('domain_common')['id'],prompts.load('answer','v3')['id']))
 
 
 def draft_schema(evidence: list[Evidence]) -> dict[str, JsonValue]:
@@ -49,7 +49,7 @@ def validate_draft(task: Task, raw: str, evidence: list[Evidence]) -> AgentResul
 async def respond(task: Task, question: str, history: list[Message], evidence: list[Evidence], language: str) -> AgentResult:
     name = AGENT_FOR[task.domain]
     pv = prompts.current(name)
-    shared = prompts.load('answer', 'v2')
+    shared = prompts.load('answer', 'v3')
     common = prompts.current('domain_common')
     system = shared['system'] + shared['format'] + shared['public_only'] + pv['system'] + common['system']
     system += '\nAnswer language: ' + language

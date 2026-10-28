@@ -36,6 +36,11 @@ RELEASED[('notice_requirements','v1')]='v1+5d973f56'
 RELEASED[('notice_requirements','v2')]='v2+c556c910'
 RELEASED[('document_evidence','v1')]='v1+a6d0d1ed'
 RELEASED[('document_evidence','v2')]='v2+4d5d0060'
+RELEASED[('answer','v3')]='v3+7ebdfbfd'
+RELEASED[('compliance','v3')]='v3+30458b0b'
+RELEASED[('retail','v6')]='v6+c4aaa7a7'
+RELEASED[('document','v4')]='v4+f7e7c0f1'
+RELEASED[('relationship','v4')]='v4+2c8aec82'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

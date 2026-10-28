@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCheck,parseWorkspace,primaryStatus,findingText} from './compliance.js';
+import {parseCheck,parseWorkspace,primaryStatus,findingText,templateFor} from './compliance.js';
 const id='00000000-0000-4000-8000-100200000001',item='00000000-0000-4000-8000-100200000011',doc='00000000-0000-4000-8000-100200000031';
 const report={check_id:id,document_id:doc,case_id:id,item_id:item,customer_id:1002,rule_id:'proof_address',rule_version:1,scope:'synthetic_template_only',sha256:'a'.repeat(64),status:'no_issues',findings:[],extraction:'text',page_count:1,checked_at:'2026-10-24T00:00:00Z'};
 function snapshot(){return {call_id:id,as_of:report.checked_at,data:{policy:{validity_hours:24,status_stale_days:7,statement_period_mode:'completed_months'},review:{case_id:id,status:'awaiting_client_documents',status_updated_at:report.checked_at,title:'Demo review',notice_text:'Demo notice',requested_items:[{item_id:item,label:'Address',client_mark:'prepared',submission_status:'not_submitted'}],info_requests:[]},documents:[],rules:{},current_documents:{[item]:doc},checks:[{...report}]}};}
@@ -18,8 +18,9 @@ test('inconsistent or foreign check envelopes cannot render as a success',()=>{
  const foreign=snapshot();foreign.data.checks[0].case_id=doc;assert.throws(()=>parseWorkspace(foreign));
 });
 test('fix instructions distinguish statement periods from document dates',()=>{
- assert.match(findingText({code:'date_outdated',field:'Statement period'},{}),/date or period coverage/);
- assert.match(findingText({code:'unassessable'},{}),/No pass or fail/);
+ assert.match(findingText({code:'date_outdated',field:'Statement period'},{}),/Needed: Statement period/);
+ assert.match(findingText({code:'unassessable'},{}),/no pass or fail/);
+ assert.match(findingText({code:'unassessable',field:'No readable text'},{}),/upload the PDF/);
 });
 
 test('checks expire at Singapore midnight, including future-dated reports',async()=>{
@@ -34,6 +35,12 @@ test('notice checks require a notice digest and never describe fixed templates',
  const value={...report,scope:'notice_based',requirements_hash:'b'.repeat(64)};
  assert.equal(parseCheck(value).scope,'notice_based');
  assert.throws(()=>parseCheck({...value,requirements_hash:null}));
- assert.match(findingText({code:'provider_unavailable'},{}),/provider is unavailable/);
+ assert.match(findingText({code:'provider_unavailable'},{}),/service is unavailable/);
  assert.doesNotMatch(findingText({code:'missing_field',field:'Address'},{}),/Label:|template/);
+});
+test('each requested item finds its document template by its own label',()=>{
+ const templates=[{key:'proof_address',match:'\\baddress\\b|\\butility\\b'},{key:'bank_statements',match:'\\bstatements?\\b'}];
+ assert.equal(templateFor({label:'Proof of residential address',instructions:'A utility bill or bank statement'},templates).key,'proof_address');
+ assert.equal(templateFor({label:'Bank statements (last 3 months)'},templates).key,'bank_statements');
+ assert.equal(templateFor({label:'Marriage certificate'},templates),null);
 });

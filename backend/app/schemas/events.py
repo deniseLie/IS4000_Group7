@@ -1,4 +1,4 @@
-"""SSE event payloads for POST /chat (docs/system-architecture.md §4). Additive to today's status, answer, done, error."""
+"""SSE event payloads for POST /chat (docs/architecture/system-architecture.md §4). Additive to today's status, answer, done, error."""
 from datetime import datetime
 from typing import Literal
 from uuid import UUID

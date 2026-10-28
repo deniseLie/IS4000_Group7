@@ -16,10 +16,12 @@ class Settings(BaseSettings):
     pipeline: Literal['v1', 'v2'] = 'v1'
     knowledge_store: Literal['memory','database'] = 'memory'
     conversation_store: Literal['off','database'] = 'off'
+    tool_transport: Literal['direct','mcp'] = 'direct'  # mcp: agent tool calls go through app/mcp_server.py
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
     document_ocr_command: str | None = None
+    precheck_mode: Literal['template','notice'] = 'template'  # template: fixed per-document rules (document_templates.py); notice: model reads the notice
     document_ocr_languages: str=Field(default="eng",pattern=r"^[A-Za-z0-9_+.-]{1,80}$")
     document_ocr_vision_languages: str=Field(default="en-US",pattern=r"^[A-Za-z0-9,_.-]{1,100}$")
     document_ocr_word_confidence: float=Field(default=80,ge=0,le=100)
@@ -27,7 +29,7 @@ class Settings(BaseSettings):
     worker_database_url: SecretStr | None = Field(default=None,repr=False)
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    prompt_version: str = "v2"
+    prompt_version: str = "v3"
     prompt_versions: dict[str, str] = {'planner':'v2','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
     llm_price_in_per_m: float = 0
     llm_price_out_per_m: float = 0

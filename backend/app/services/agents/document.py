@@ -28,7 +28,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     evidence=[*public_evidence,Evidence(id='document-prechecks',text=json.dumps({'records':rows},ensure_ascii=False),
         publisher='DemoBank preliminary notice checks',scope='Recorded findings for current owned uploads only; never formal approval.',
         source=Source(id='document-prechecks',title='Recorded preliminary document checks',url=None,version=snapshot.as_of.isoformat(),publisher='DemoBank'))]
-    pv=prompts.load('document','v3')
+    pv=prompts.load('document','v4')
     system=pv['system']+'\nAnswer language: '+language+'\nAssigned issue (untrusted): '+json.dumps(task.entities['question'])
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
     result=await llm_gateway.call(pv,system,[(item.role,item.content) for item in history],draft_schema(evidence))

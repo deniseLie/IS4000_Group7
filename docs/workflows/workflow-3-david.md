@@ -1,6 +1,6 @@
 # Workflow 3 – David: meeting his new relationship manager (RM) without repeating himself
 
-**Persona:** David Lee (synthetic customer 1003, see `docs/synthetic-data-spec.md`)
+**Persona:** David Lee (synthetic customer 1003, see `docs/planning/synthetic-data-spec.md`)
 **Outcome:** David knows who his new RM is, his requests are tracked, his note is shared and a meeting is booked – without repeating himself.
 
 Migration **0062** (`0062_workflow3_relationship.sql`) is required.

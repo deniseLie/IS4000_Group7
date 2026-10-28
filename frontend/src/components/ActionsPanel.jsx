@@ -28,6 +28,7 @@ function commandTitle(command) {
   if(command.type==='document.register')return 'Record a private document upload';
   if(command.type==='document.submit')return 'Submit a checked demo document for review';
   if(command.type==='requests.create')return 'Submit a relationship request';
+  if(command.type==='ticket.create')return `Raise a request: ${command.target.category_label}`;
   if(command.type==='agenda.save')return 'Save a private agenda draft';
   if(command.type==='rm.share_summary')return 'Share a saved agenda snapshot';
   throw new Error('This action type has no review title. Reload its recorded status.');
@@ -53,6 +54,7 @@ function receiptText(item) {
   if(item.command.type==='compliance.update_checklist_item')return 'This command saved your preparation mark only. It did not submit or verify a document or change the bank review status. Reload Records for the current mark.';
   if(item.command.type==='document.register')return 'This command recorded a private uploaded file. It did not accept the document for the bank, complete a preliminary check or change the review case status. Reload Records for its current status.';
   if(item.command.type==='document.submit')return 'This command submitted the checked file against its requested item. It is awaiting bank review, not accepted or approved.';
+  if(item.command.type==='ticket.create')return `${item.receipt.result.created?'Recorded':'You already had an open request of this kind, so it was reused'}: ${item.receipt.result.reference}. The ${item.receipt.result.owner_team.toLowerCase()} decides the outcome, not the assistant. Check My requests for its status.`;
   if(item.command.type==='requests.create')return 'This command recorded the reviewed request with status sent. This does not mean the service is fulfilled or a real advisor was contacted. Check Requests for its current status.';
   if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
   if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
@@ -62,7 +64,7 @@ function receiptText(item) {
 const GROUPS=['Cards','Compliance','Data sharing','Appointments','Requests','Support'];
 function groupOf(command) {
   const kind=command.type.split('.')[0];
-  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm'].includes(kind)?'Data sharing':kind==='appointment'?'Appointments':kind==='requests'?'Requests':'Support';
+  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm'].includes(kind)?'Data sharing':kind==='appointment'?'Appointments':['requests','ticket'].includes(kind)?'Requests':'Support';
 }
 function statusPill(item) {
   const state=item.command.state;
@@ -84,6 +86,7 @@ function plainTitle(command) {
     case 'document.register':return t.item_label||'Document upload';
     case 'document.submit':return t.item_label;
     case 'requests.create':return `Request to ${displayName(t.recipient_name)}`;
+    case 'ticket.create':return t.category_label;
     case 'agenda.save':return 'Handover note draft';
     case 'rm.share_summary':return `Handover note shared with ${displayName(t.recipient_name)}`;
     case 'consent.request':case 'consent.grant':return 'Relationship manager data sharing';
@@ -103,6 +106,7 @@ function plainSummary(command) {
     case 'document.register':return `${t.file_name} (${(t.size_bytes/1048576).toFixed(2)} MB) stored privately for ${t.case_title}.`;
     case 'document.submit':return `${t.file_name} sent to the bank for review.`;
     case 'requests.create':return `“${t.what}” · ${t.urgency} urgency${t.deadline?` · requested by ${formatDate(t.deadline)}`:''}.`;
+    case 'ticket.create':return `“${t.summary}” · goes to the ${t.owner_team.toLowerCase()}, who decide.`;
     case 'agenda.save':return `Private draft for ${who} (revision ${t.expected_revision+1}). Nothing is shared.`;
     case 'rm.share_summary':return `Shares your saved note (revision ${t.agenda_revision}) with ${who}: ${consentCategoryText(t.categories)}.`;
     case 'consent.request':return `Ask to let ${who} see ${consentCategoryText(t.categories)} for ${t.duration_days} days.`;
@@ -121,6 +125,7 @@ const REVIEW={'card.temporary_block':['Confirming temporarily blocks this card. 
   'card.cancel_permanently':['Confirming permanently cancels this card. This cannot be undone: it can never be reactivated, and a replacement card is a separate request to the bank. Rejecting leaves the card unchanged.','permanent card cancellation','Cancel card permanently'],
   'card.dispute':['Confirming sends this dispute draft and your answer about the card to bank staff, who decide any refund or cancellation. Nothing is refunded now. Rejecting sends nothing.','dispute draft','Send dispute draft'],
   'requests.create':['Confirming records these exact request details for the displayed recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.','relationship request','Submit reviewed request'],
+  'ticket.create':['Confirming records this request with a reference number for the team shown. The assistant does not approve, reject or predict the outcome; that team decides. Rejecting records nothing.','request','Submit request'],
   'rm.share_summary':['Confirming shares exactly this saved snapshot with the displayed recipient. Consent and the saved revision are rechecked. Rejecting shares nothing.','saved agenda snapshot and consent','Confirm sharing'],
   'consent.grant':['Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.','data-sharing scope','Confirm consent grant'],
   'consent.revoke':['Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.','data-sharing scope','Confirm revocation'],
@@ -223,6 +228,9 @@ export default function ActionsPanel({onClose,onWorkflowChange}) {
         {['card.unblock','card.cancel_permanently'].includes(command.type)&&!command.staff&&<p data-testid="command-card-change">Card ending {command.target.last4}. Status when proposed: {command.target.from_status.replaceAll('_',' ')}. After confirmation: {command.type==='card.unblock'?'active':'cancelled (permanent)'}.</p>}
         {command.type==='card.dispute'&&<div data-testid="command-dispute"><p>Card ending {command.target.last4}. Charges:</p><ul>{command.target.items.map(item=><li key={item.transaction_id}>{charge(item)}</li>)}</ul>{command.answers&&<p>Do you still have the card? {possessionLabel(command.answers.card_in_possession)}.</p>}</div>}
         {command.type==='compliance.update_checklist_item'&&<div><p>{command.target.case_title} · {command.target.item_label}</p><p>Preparation: {command.target.expected_client_mark.replaceAll('_',' ')} → {command.target.client_mark.replaceAll('_',' ')}. Recorded bank status: {command.target.submission_status.replaceAll('_',' ')}.</p></div>}
+        {command.type==='ticket.create'&&<div data-testid="command-ticket"><p>Category: {command.target.category_label}. Goes to: {command.target.owner_team}.</p><p>{command.target.summary}</p>
+          {Object.keys(command.target.details).length>0&&<ul>{Object.entries(command.target.details).map(([name,value])=><li key={name}>{name.replaceAll('_',' ')}: {value}</li>)}</ul>}
+          <p>Urgency: {command.target.urgency}. Who decides: {command.target.decided_by}</p>{receipt?.outcome==='succeeded'&&<p>Reference: <code>{receipt.result.reference}</code>.</p>}</div>}
         {command.type==='requests.create'&&<div data-testid="command-request"><p>For: {command.target.who}. Recipient: {command.target.recipient_name}.</p><p>{command.target.what}</p><p>Urgency: {command.target.urgency}. Requested deadline: {command.target.deadline?formatDate(command.target.deadline):'None'}. Country reference: {command.target.country||'None'}. Currency reference: {command.target.currency||'None'}.</p>{receipt?.outcome==='succeeded'&&<p>Request: <code>{receipt.result.request_id}</code>.</p>}</div>}
         {command.type==='document.register'&&<p data-testid="command-document">{command.target.file_name} · {command.target.size_bytes.toLocaleString('en-SG')} bytes · {command.target.case_title}{command.target.item_label&&` · ${command.target.item_label}`}</p>}
         {command.type==='document.submit'&&<p>{command.target.item_label} · {command.target.file_name}</p>}

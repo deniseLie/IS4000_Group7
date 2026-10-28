@@ -9,20 +9,20 @@ from app.schemas.contracts import Decision, Principal, RequestContext
 from app.services import audit
 from app.services.agents.registry import TOOLS
 
-PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact'})
+PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact','tickets.categories'})
 AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit'})
 # The customer's own card changes: confirmed by the signed-in customer only; agents are refused (customer_only_action).
 # Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
 CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
-    'requests.create','rm.share_summary','consent.grant','consent.revoke'}) | CUSTOMER_CARD_CHANGES
+    'requests.create','rm.share_summary','consent.grant','consent.revoke','ticket.create'}) | CUSTOMER_CARD_CHANGES
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
 AGENT_ACTIONS = {
     'fraud':frozenset({'card.temporary_block','card.dispute','card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke'}),
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories'}
 
 
 class PolicyResource(BaseModel):

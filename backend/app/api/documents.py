@@ -16,6 +16,13 @@ from app.schemas.actions import ActionOutcome
 router=APIRouter(prefix='/documents')
 
 
+@router.get('/templates')
+def templates() -> list[dict[str,object]]:
+    """What each kind of document must show, with a made-up example (public guidance, no customer data)."""
+    from app.services import document_templates
+    return document_templates.describe()
+
+
 @router.get('/workspace',response_model=ToolResult)
 async def workspace(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     return await read_result(lambda:prechecks.workspace(ctx),request,ctx,'compliance.workspace')

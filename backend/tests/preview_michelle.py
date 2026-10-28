@@ -33,7 +33,7 @@ def test_michelle_preview(local_data_api,native_api_client,tmp_path,monkeypatch)
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-preview-michelle-private-checkpoint-key')
     with psycopg.connect(local_data_api.database_uri) as db:
         key=db.execute("select secret from compliance.precheck_keys where key_id='v1'").fetchone()[0]
-    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key))
+    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key));monkeypatch.setattr(settings,'precheck_mode','notice')
     for name,extra in [('Missing address',[]),('Complete address',['Address: Fictional Lane'])]:
         (tmp_path/(name+' DEMO.pdf')).write_bytes(template_pdf(['Utility bill','Full name: Synthetic Demo','Document date: '+date.today().isoformat(),*extra]))
     with local_storage(local_data_api,tmp_path/'blobs') as storage:

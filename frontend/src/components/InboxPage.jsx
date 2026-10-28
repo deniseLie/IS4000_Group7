@@ -5,7 +5,7 @@ import {loadInbox,markNotificationRead} from '../lib/notifications';
 import {formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 
-const CATEGORIES={card:'Cards',booking:'Appointments',compliance:'Compliance',document:'Documents',consent:'Data sharing',agenda:'Data sharing',rm:'Relationship',request:'Requests',requests:'Requests',handoff:'Support'};
+const CATEGORIES={card:'Cards',booking:'Appointments',compliance:'Compliance',document:'Documents',consent:'Data sharing',agenda:'Data sharing',rm:'Relationship',request:'Requests',requests:'Requests',handoff:'Support',ticket:'My requests'};
 const TABS=[['all','All',()=>true],['unread','Unread',item=>!item.read_at],['service','Service updates',item=>item.is_service],['read','Read',item=>!!item.read_at]];
 export function category(item) {return CATEGORIES[item.template_key.split('.')[0]]||'Update';}
 

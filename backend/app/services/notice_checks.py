@@ -124,6 +124,18 @@ def assess_evidence(data,text,pages,requirements,today,policy):
     return list({(f.code,f.field):f for f in findings}.values())[:12]
 
 
+def needs_translation(text):
+    """Deterministic CR2 flag: most letters are outside the basic Latin alphabet (for example a Chinese or Tamil
+    document), so the bank will likely need a certified English translation. Like other findings it is preliminary,
+    not a bank decision; the customer can upload a translation as a correction."""
+    letters=[c for c in text if c.isalpha()]
+    return len(letters)>=40 and sum(not c.isascii() for c in letters)/len(letters)>=0.3
+
+
+def with_language(findings,text):
+    return findings+[Finding(code='translation_needed')] if needs_translation(text) and not any(f.code=='translation_needed' for f in findings) else findings
+
+
 async def check(text,pages,notice,today,policy=None):
     policy=policy or CheckPolicy()
     if not text.strip() or len(text)>32000 or not notice.strip():return [],[Finding(code='unassessable')]
@@ -138,7 +150,7 @@ async def check(text,pages,notice,today,policy=None):
         for attempt in range(2):
             result=await llm_gateway.call(extract,extract['system'],[('user',json.dumps(payload,ensure_ascii=False))],EVIDENCE_SCHEMA)
             findings=assess_evidence(result.data,text,pages,requirements,today,policy)
-            if not any(f.code=='unassessable' and f.field is None for f in findings) or attempt:return requirements,findings
+            if not any(f.code=='unassessable' and f.field is None for f in findings) or attempt:return requirements,with_language(findings,text)
     except llm_gateway.LLMError:return [],[Finding(code='provider_unavailable')]
     return [],[Finding(code='unassessable')]
 

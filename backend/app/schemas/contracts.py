@@ -1,4 +1,4 @@
-"""Shared data contracts between pipeline modules (docs/system-architecture.md §4). Change only by PR reviewed by all developers."""
+"""Shared data contracts between pipeline modules (docs/architecture/system-architecture.md §4). Change only by PR reviewed by all developers."""
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4

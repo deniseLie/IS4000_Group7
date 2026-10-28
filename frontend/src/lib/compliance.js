@@ -1,7 +1,7 @@
 import {parseAction} from './actions.js';
 const API=import.meta.env?.VITE_API_URL||'/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CODES=['missing_field','page_count','date_invalid','date_outdated','unassessable','rules_unavailable','provider_unavailable','missing_pages'];
+const CODES=['missing_field','page_count','date_invalid','date_outdated','unassessable','rules_unavailable','provider_unavailable','missing_pages','translation_needed'];
 function invalid(){return new Error('The compliance workspace could not be verified. Reload before continuing.');}
 export function identifier(value){if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
 function timestamp(value){if(typeof value!=='string'||!Number.isFinite(Date.parse(value)))throw invalid();return value;}
@@ -58,13 +58,25 @@ export function primaryStatus(item){
  return item.client_mark==='prepared'?'Prepared':'Not prepared';
 }
 export function findingText(finding,rule){
- if(finding.code==='missing_pages')return `The printed page numbering indicates missing page(s): ${finding.field}. Upload the complete file.`;
- if(finding.code==='missing_field')return `The notice requires ${finding.field}. I could not find clear completed evidence; add it or upload the correct document.`;
- if(finding.code==='page_count')return 'The page count does not match the explicit page requirement in your notice. Upload the complete document.';
- if(finding.code==='date_invalid')return 'The document issue date is missing, ambiguous, conflicting or later than today. Upload a copy with a clear issue date.';
- if(finding.code==='date_outdated')return `The date or period coverage does not meet this recorded requirement: “${finding.field}”. Upload the required date/periods.`;
- if(finding.code==='provider_unavailable')return 'The document interpretation provider is unavailable. Your upload is saved, but no pass or fail was given. Try checking again later.';
- return 'I cannot check this reliably. Upload a clearer copy or contact support. No pass or fail is given.';
+ if(finding.code==='translation_needed')return 'This file seems to be mostly in another language. Please add a certified English translation, or use Talk to a person to ask which translation the bank accepts.';
+ if(finding.code==='missing_pages')return `Some pages seem to be missing (page ${finding.field}). Please upload the complete file.`;
+ if(finding.code==='missing_field')return `We couldn't find this in the file: ${finding.field}. Please upload a document that shows it.`;
+ if(finding.code==='page_count')return 'The number of pages does not match what was asked for. Please upload the complete document.';
+ if(finding.code==='date_invalid')return 'The date on this file is missing, unclear or in the future. Please upload a copy with a clear date.';
+ if(finding.code==='date_outdated')return `This file is too old or does not cover the right dates. Needed: ${finding.field}. Please upload a more recent one.`;
+ if(finding.code==='provider_unavailable')return 'The checking service is unavailable right now. Your upload is saved; please try the check again later.';
+ if(finding.code==='unassessable'&&finding.field==='No readable text')return "We couldn't read any text in this file. Please upload the PDF from the provider's website or app instead of a photo or scan.";
+ return "We couldn't check this file reliably, so no pass or fail is given. Please upload a clearer PDF, or ask for help.";
+}
+export function templateFor(item,templates){
+ const own=`${item?.label||''} ${item?.instructions||''}`;
+ return (templates||[]).find(template=>{try{return new RegExp(template.match,'i').test(own);}catch{return false;}})||null;
+}
+export async function loadTemplates(signal){
+ const response=await fetch(`${API}/documents/templates`,{signal});
+ if(!response.ok)return [];
+ const body=await response.json();
+ return Array.isArray(body)?body.filter(item=>item&&typeof item.key==='string'&&Array.isArray(item.must_show)&&Array.isArray(item.example)):[];
 }
 async function request(path,token,signal,method='GET'){
  const response=await fetch(`${API}${path}`,{method,headers:{Authorization:`Bearer ${token}`},signal});

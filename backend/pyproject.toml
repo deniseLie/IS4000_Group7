@@ -30,6 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 dbtest = ["pgserver==0.1.4"]
+mcp = ["mcp>=2.3,<3"]
 
 [tool.setuptools.packages.find]
 include = ["app*", "evaluation*", "scripts*"]

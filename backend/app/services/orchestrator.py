@@ -32,8 +32,8 @@ from app.schemas.actions import ActionOutcome
 from app.schemas.disputes import StoredDisputeTarget
 from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
-from app.schemas.knowledge import KnowledgeQuery,SectionKey
-from app.services import actions,audit,case_summary,customer_data,kb, llm_gateway, prompts,workflow_store
+from app.schemas.knowledge import KnowledgeQuery,KnowledgeSection,SectionKey
+from app.services import actions,audit,case_summary,customer_data,kb, llm_gateway, prompts,rm_handover,tools,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
 from app.services.agents import compliance,document,fraud,relationship,retail,retail_checks
@@ -133,6 +133,7 @@ def simple_issue(question: str, language: str) -> PlannedIssue | None:
     if language == 'English' and re.fullmatch(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', question, re.I):
         return PlannedIssue(domain='smalltalk', question=question)
     if language != 'English' or MULTIPLE.search(question):return None
+    if rm_handover.needs_person(question) and not FRAUD.search(question):return PlannedIssue(domain='relationship',question=question)
     domain = topic_domain(question)
     if domain is not None:return PlannedIssue(domain=domain,question=question)
     return None
@@ -181,7 +182,9 @@ def prioritise(state: Turn) -> PriorityUpdate:
     # A sign-in problem raised with a suspected charge is answered as a security step; the link is a rule, not a finding.
     tasks = [Task(task_id=f't{i+1}', domain=issue.domain, intent='answer_question',
         priority=task_priority(issue), entities={'question':issue.question,
-            **({'linked':'card_fraud'} if fraud_reported and issue.domain=='retail' and LOGIN.search(issue.question) else {})})
+            **({'linked':'card_fraud'} if fraud_reported and issue.domain=='retail' and LOGIN.search(issue.question) else {}),
+            # Advice, fee/rate negotiation, complaints and asks for the RM go to the RM; the model never answers them.
+            **({'handover':'rm'} if issue.domain!='fraud' and rm_handover.needs_person(issue.question) else {})})
         for i,issue in enumerate(issues)]
     return {'plan':TaskPlan(tasks=tasks)}
 
@@ -194,10 +197,13 @@ def task_evidence(task: Task, history: list[Message], language: str) -> list[Evi
 
 
 async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
-    """Retrieve only the latest planned question; never replace a no-match with unrelated articles."""
+    """Retrieve only the latest planned question; never replace a no-match with unrelated articles.
+
+    Goes through the tool layer, so with TOOL_TRANSPORT=mcp this is an MCP tools/call (F21)."""
     query=KnowledgeQuery(query=task.entities['question'],scope='public',k=4)
     # The supervisor retrieves shared evidence; this is not an agent-initiated tool call.
-    with data_api.connect(ctx) as db:sections=await kb.search(query,ctx,db)
+    found=await tools.call('knowledge_search',{'query':query.query,'k':query.k},ctx)
+    sections=TypeAdapter(list[KnowledgeSection]).validate_python(found['items'])
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 
@@ -226,9 +232,9 @@ def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
     if task.domain=='fraud':return prompts.load(agent,fraud.PROMPT)['id']
     if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
-    if task.domain=='document':return prompts.load('document','v3')['id']
+    if task.domain=='document':return prompts.load('document','v4')['id']
     if task.domain=='relationship':return prompts.load(agent,relationship.PROMPT)['id']
-    if task.domain=='compliance':return prompts.load(agent,'v2')['id']
+    if task.domain=='compliance':return prompts.load(agent,'v3')['id']
     return None
 
 
@@ -267,9 +273,18 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         'metadata':ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id)}
 
 
+def can_hand_over(ctx: RequestContext) -> bool:
+    return ctx.principal.kind=='customer' and ctx.case_id is not None
+
+
 async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
     """Bound the whole task and withhold expected provider/data failures without releasing its evidence."""
     agent=AGENT_FOR[task.domain]
+    if task.entities.get('handover')=='rm':
+        # No model call: a fixed, polite line; escalate_validation records the handover and adds the reference.
+        text=rm_handover.SORRY if can_hand_over(ctx) else rm_handover.GUEST
+        return {'result':AgentResult(task_id=task.task_id,agent=agent,status='needs_human',answer_kind='conversation',text=text),
+            'evidence':[],'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
     try:
         with span('task','agent',task_id=task.task_id,agent=agent,priority=task.priority):
             return await asyncio.wait_for(generate_task(task,state,ctx),timeout=settings.agent_timeout_s)
@@ -415,17 +430,30 @@ def dispute_text(state: str,receipt: str | None,target: object) -> str:
 
 
 async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
-    """Record one receipt-backed handoff for withheld sections in a linked customer's saved case.
+    """Hand questions that need a person, and withheld sections, to the client's relationship manager.
 
-    No rejected model text or customer records enter the summary. Guests and unsaved public
-    chats have no customer-owned action case and keep the explicit official-support guidance.
-    The existing action ledger deduplicates retries and commits audit/outbox with the handoff.
+    Each handover task gets one receipt-backed general_support handoff whose summary is the client's redacted
+    question; SQL opens an rm_handover ticket and the reply quotes its reference. Withheld sections share one
+    handoff with a fixed summary (no rejected model text or records). Guests and unsaved chats get guidance only.
+    The action ledger deduplicates retries and commits audit/outbox with the handoff.
     """
     ctx=runtime.context.request
-    failed=[task for task,result,meta in zip(state['plan'].by_priority(),state['results'],state['metadata'],strict=True)
+    owned=runtime.context.workflow
+    tasks=state['plan'].by_priority()
+    sections=list(state['decision_sections'])
+    if not can_hand_over(ctx):return {'decision_sections':sections}
+    receipt_source=lambda task_id:Source(id='action-receipt-'+task_id,title='Recorded handover to your relationship manager',url=None,version='v1',publisher='DemoBank action ledger')
+    for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True):
+        # Rule-matched questions, and answers where the agent itself said a person is needed (not fraud: it has its own handoffs).
+        asked=task.entities.get('handover')=='rm' or result.status=='needs_human' and meta.origin=='ai' and task.domain!='fraud'
+        if not asked:continue
+        task_id=rm_handover.task_key(task.task_id+'_rm',owned.turn.turn_id if owned is not None else ctx.case_id)
+        _,reference=await rm_handover.hand_over(str(task.entities.get('question','')),task.priority,ctx,owned,task_id)
+        sections.append(AnswerSection(task_id=task.task_id+'_decision',domain=task.domain,priority=task.priority,answer_kind='conversation',
+            answer=rm_handover.handed_over(reference),sources=[receipt_source(task_id)],needs_human=True,response_origin='safety',prompt_version=None))
+    failed=[task for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True)
         if result.status=='error' and meta.origin=='validation']
-    sections=state['decision_sections']
-    if not failed or ctx.principal.kind!='customer' or ctx.case_id is None:return {'decision_sections':sections}
+    if not failed:return {'decision_sections':sections}
     task=failed[0]
     task_id='validation_handoff'
     command=ActionCommand(command_id=uuid5(ctx.case_id,task_id+':handoff.create'),type='handoff.create',
@@ -433,17 +461,15 @@ async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> 
             'summary':'An assistant section was withheld because it could not be verified. Review the saved customer case; no rejected answer is included.'},
         idempotency_key=f'{ctx.case_id}:{task_id}:handoff.create')
     current=ctx.model_copy(update={'agent':None})
-    owned=runtime.context.workflow
     if owned is not None:
         outcome=await actions.propose_for_workflow(command,task_id,owned,current)
         receipt=actions.receipt_for(outcome)
     else:receipt=await actions.run_action(command,current,False)
     if not isinstance(receipt,Receipt) or receipt.outcome!='succeeded':
         raise ActionIntegrityError('Validation handoff did not return a successful receipt for the owned customer case')
-    section=AnswerSection(task_id=task_id,domain=task.domain,priority=task.priority,answer_kind='banking',
-        answer='A support handoff is recorded for the withheld part of this answer in this demo. There is no staffed queue. Open Actions to inspect its recorded receipt. Use your bank’s official support channel if you need assistance.',
-        sources=[Source(id='action-receipt-'+task_id,title='Recorded synthetic support handoff',url=None,version='v1',publisher='DemoBank action ledger')],
-        needs_human=True,response_origin='safety',prompt_version=None)
+    section=AnswerSection(task_id=task_id,domain=task.domain,priority=task.priority,answer_kind='conversation',
+        answer="I couldn't double-check part of this answer, so I've passed it to your relationship manager to follow up. You can follow it in My requests.",
+        sources=[receipt_source(task_id)],needs_human=True,response_origin='safety',prompt_version=None)
     return {'decision_sections':[*sections,section]}
 
 

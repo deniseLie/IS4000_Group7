@@ -30,7 +30,7 @@ def test_michelle_upload_check_correct_submit_and_reload(local_data_api,native_a
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-michelle-browser-private-checkpoint-signing-key')
     with psycopg.connect(local_data_api.database_uri) as db:
         key=db.execute("select secret from compliance.precheck_keys where key_id='v1'").fetchone()[0]
-    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key))
+    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key));monkeypatch.setattr(settings,'precheck_mode','notice')
     base=['Utility bill','Full name: Synthetic Demo','Document date: '+date.today().isoformat()]
     missing=tmp_path/'Missing Address DEMO.pdf';missing.write_bytes(template_pdf(base))
     valid=tmp_path/'Complete Address DEMO.pdf';valid.write_bytes(template_pdf([*base,'Address: Fictional Lane']))
@@ -61,7 +61,7 @@ def test_expired_michelle_upload_is_rechecked_in_normal_ui(local_data_api,native
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("update compliance.requested_items set precheck_rule_id='proof_address',label='Proof of address',instructions='A utility bill dated within the last 3 months, showing your full name and address.' where item_id=%s",(target['item_id'],))
         key=db.execute("select secret from compliance.precheck_keys where key_id='v1'").fetchone()[0]
-    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key))
+    monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key));monkeypatch.setattr(settings,'precheck_mode','notice')
     with local_storage(local_data_api,tmp_path/'blobs') as url:
         monkeypatch.setenv('SUPABASE_URL',url);monkeypatch.setenv('SUPABASE_ANON_KEY','native-public-test-key')
         uploaded=httpx.post(url+f"/storage/v1/object/demobank-compliance-private/1002/{target['case_id']}/{target['document_id']}",headers={**headers(ctx),'Content-Type':'application/pdf'},content=payload)
