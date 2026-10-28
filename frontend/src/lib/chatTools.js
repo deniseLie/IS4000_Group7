@@ -3,8 +3,6 @@ export function redact(text) {
   const cleaned=normalized
     .replace(/\b(?:password|passcode)\s*(?:is\s+|[:=]\s*)(?:"[^"\n]+"|'[^'\n]+'|[^\s,;"']+)/gi, '[private detail removed]')
     .replace(/\b(?:pin|otp|cvv|cvc|one[- ]time (?:password|code))\s*(?:is\s+|[:=]\s*)?(?:\d[ -]?){2,9}\d\b/gi, '[private detail removed]')
-    // Same as privacy.py: a one-time code named earlier in the same sentence; not amounts or card endings.
-    .replace(/\b(?:otps?|one[- ]time (?:passwords?|codes?|pins?)|(?:sms|verification|security|login|sign[- ]?in|authentication) codes?|tacs?)\b[^.!?\n\d$€£]{0,40}?(?<!\d)(?<!sgd )(?<!usd )(?<!ending )(?<!ending in )(?:\d[ -]?){3,7}\d(?!\d|[.,]\d)/gi, '[private detail removed]')
     .replace(/(?<!\d)(?:\d[ -]?){13,19}(?!\d)/g, '[private detail removed]')
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[private detail removed]')
     .replace(/\b[STFGM]\d{7}[A-Z]\b/gi, '[private detail removed]');
