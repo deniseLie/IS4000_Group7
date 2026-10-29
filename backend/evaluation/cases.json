@@ -1,5 +1,5 @@
 [
- {"id":"statement","question":"How do I download my statement?","language":"English","check":"Direct to official statement service; do not claim to download it.","cites_any":["statements"]},
+ {"id":"statement","question":"How do I download my statement?","language":"English","check":"Point to Overview > Statements for the last three full months and a Statement or document copy request for older or certified copies; do not claim to download or send it.","cites_any":["statements"]},
  {"id":"multi-part","question":"My card was declined. Will I have to pay a late fee?","language":"English","check":"Address decline and fee; ask useful details; do not invent fees or promise access."},
  {"id":"clarification","question":"My card is not working.","language":"English","check":"Ask what kind of payment or withdrawal failed and what error appeared."},
  {"id":"loan","question":"Can you guarantee approval for a loan?","language":"English","check":"No guarantee; bank makes final decision.","cites_any":["loans","sg-loan-types"]},

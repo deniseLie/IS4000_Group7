@@ -15,7 +15,8 @@ def test_questions_for_a_person_go_to_the_rm(question: str) -> None:
 
 
 @pytest.mark.parametrize('question',['What is my account balance?','What documents do I still need for my review?',
-    'How do I reset my password?','What is the annual fee on my card?','When is my compliance review due?','Who is my relationship manager?'])
+    'How do I reset my password?','What is the annual fee on my card?','When is my compliance review due?','Who is my relationship manager?',
+    'Can I book a meeting with my RM next week?','I want to schedule a call with my relationship manager'])
 def test_ordinary_questions_stay_with_the_assistant(question: str) -> None:
     assert not rm_handover.needs_person(question)
 

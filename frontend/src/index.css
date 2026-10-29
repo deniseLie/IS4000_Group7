@@ -1331,10 +1331,72 @@ small{font-size:max(12px,.83em)}
 .page-tabs .count{transition:background-color .2s ease,color .2s ease}
 .tab-fade{animation:rise-in .22s ease-out}
 @media (prefers-reduced-motion:reduce){.page-tabs button::after,.page-tabs button,.ib-tabs button{transition:none}.tab-fade{animation:none}}
-
 /* Pages start close to the sidebar instead of centring in a wide gap */
 .app-page{padding:0 40px}
 .app-page-body{margin:0;max-width:1040px}
 .compliance-page{max-width:1040px}
 @media (max-width:1000px){.app-page{padding:0 24px}}
 @media (max-width:760px){.app-page{padding:0 16px}}
+/* Meetings tab (CR18) */
+.meetings-title{margin:22px 0 10px;font-size:16px;font-weight:600}
+.meetings-title:first-of-type{margin-top:4px}
+.meetings-notice{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:#EAF4EC;color:var(--ok);font-size:13px}
+.meetings-notice svg{width:16px;height:16px}
+.meetings-list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.meetings-list:empty{display:none}
+.meeting{display:grid;grid-template-columns:auto 1fr auto;gap:6px 14px;align-items:center;padding:14px 16px;border-top:1px solid var(--line)}
+.meeting:first-child{border-top:0}.meeting.held{background:#FFFBF3}
+.meeting-icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#EEF3FB;color:#2B4C7E}.meeting-icon svg{width:17px;height:17px}
+.meeting strong{display:block;font-size:14px}.meeting small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.meeting-actions{grid-column:2/-1;display:flex;gap:8px;flex-wrap:wrap}
+.meetings-list.past .meeting{grid-template-columns:1fr auto}
+.meetings-format{display:inline-flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px}.meetings-format select{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.meeting-days{display:grid;gap:12px}
+.meeting-day h3{margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+.meeting-slots{display:flex;flex-wrap:wrap;gap:6px}.meeting-slots .bank-chat-logout{min-height:32px;padding:5px 12px}
+
+/* CR15 statements: picker on Overview, a statement sheet over the page, and print that shows only the sheet. */
+.st-pick{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:10px 0 6px}
+.st-pick label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:180px;flex:1}
+.st-pick select{padding:8px 10px;border:1px solid var(--line-2,var(--line));border-radius:8px;background:#fff;color:var(--ink);font:inherit}
+.st-older{margin-top:12px}
+.st-overlay{position:fixed;inset:0;z-index:60;background:rgba(17,24,39,.45);display:flex;justify-content:center;align-items:flex-start;padding:32px 16px;overflow:auto}
+.st-sheet{background:#fff;color:#111827;width:min(820px,100%);border-radius:12px;padding:32px 36px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.st-tools{display:flex;gap:10px;justify-content:flex-end;margin-bottom:20px}
+.st-head{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #111827;padding-bottom:14px}
+.st-head>div{display:flex;flex-direction:column;gap:2px}.st-head>div:last-child{text-align:right}
+.st-head h2{margin:0;font-size:18px}.st-head span{font-size:13px;color:#6B7280}
+.st-bank{font-size:20px;letter-spacing:.02em}
+.st-meta,.st-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}
+.st-meta dt,.st-sum dt{font-size:12px;color:#6B7280}.st-meta dd,.st-sum dd{margin:2px 0 0;font-weight:600}
+.st-sum{background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:12px 14px}
+.st-table{width:100%;border-collapse:collapse;font-size:13px}
+.st-table th{text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #D1D5DB;padding:8px 6px}
+.st-table td{border-bottom:1px solid #E5E7EB;padding:8px 6px;vertical-align:top}
+.st-table .num{text-align:right;white-space:nowrap}
+.st-carry td{color:#6B7280}.st-none{text-align:center;color:#6B7280}
+.st-note{font-size:12px;color:#374151;margin:14px 0 0}
+.st-foot{font-size:11px;color:#6B7280;margin-top:22px;border-top:1px solid #E5E7EB;padding-top:10px}
+@media (max-width:600px){.st-sheet{padding:20px 16px}.st-table{font-size:12px}.st-head{flex-direction:column}.st-head>div:last-child{text-align:left}}
+@media print{
+  body>*:not(.st-overlay){display:none!important}
+  body *{visibility:hidden}
+  .statement-print,.statement-print *{visibility:visible}
+  .st-overlay{position:static;background:none;padding:0;overflow:visible}
+  .statement-print{position:absolute;left:0;top:0;width:100%;box-shadow:none;border-radius:0;padding:0}
+  .st-tools{display:none}
+  .st-table tr{break-inside:avoid}
+}
+
+/* Bank questions (0080): reply box, answered and closed states. */
+.cw-reply{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.cw-reply label{font-size:13px;font-weight:600;color:var(--ink)}
+.cw-reply textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line-2,var(--line));border-radius:8px;font:inherit;font-size:14px;resize:vertical;background:#fff;color:var(--ink)}
+.cw-reply-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.cw-reply-foot small{color:var(--muted);font-size:12px}
+.cw .cw-alert.waiting{border-color:#F3D9A6;border-left-color:#c58a12;background:#FFFBF2}
+.cw .cw-alert.done{border-color:#CBE3CF;border-left-color:#2f7a3d;background:#F5FAF6}
+.cw-alert.waiting .eyebrow{color:#8a5a00}.cw-alert.done .eyebrow{color:#2f7a3d}
+.cw-alert-icon.wait{border-color:#c58a12;color:#8a5a00}.cw-alert-icon.ok{border-color:#2f7a3d;color:#2f7a3d}
+.cw-answer{white-space:pre-wrap;padding:8px 12px;border-left:3px solid var(--line);color:var(--ink-2,var(--ink));background:#fff;border-radius:6px}
+.cw-sent-at{display:block;margin-top:8px;color:var(--muted);font-size:12px}

@@ -1,6 +1,6 @@
 # Workflow 1 – Client (Michelle)
 
-The client side of DemoBank: one persona who uses the assistant for everyday banking within guardrails, her compliance review, and handover to her relationship manager. Stories CR3–CR17 in [the backlog](../planning/product-backlog.xlsx); how the agents run is in [how-agents-run.md](../how-agents-run.md).
+The client side of DemoBank: one persona who uses the assistant for everyday banking within guardrails, her compliance review, and handover to her relationship manager. Stories CR1–CR18 in [the backlog](../planning/product-backlog.xlsx); how the agents run is in [how-agents-run.md](../how-agents-run.md).
 
 Demo login: `demo.michelle@example.com` (customer 1002).
 
@@ -14,7 +14,7 @@ There is one client persona. The relationship manager is not a separate persona 
 | Situation | Her periodic compliance review is open (due 30 Nov 2026). The bank has asked for proof of address, bank statements for the last 3 months, a source-of-wealth declaration and a tax residency self-certification. She also has everyday questions about her accounts and her card ending 7310. |
 | Goals | Get short, clear answers any time without calling the bank. Know exactly which documents are still needed and whether a file is right **before** sending it. Reach her relationship manager when something needs a person, without repeating herself. |
 | Frustrations | Long, robotic replies full of codes and disclaimers. Uploading a document only to hear weeks later that it was the wrong one. Being told "contact the bank" with no follow-up. |
-| What she uses | Assistant chat · Compliance review (checklist, upload, quick check, submit) · My requests (references and status) · Inbox · Records and Actions |
+| What she uses | Assistant chat · Overview (balances, recent activity, Statements) · Compliance review (checklist, upload, quick check, submit) · My requests (references, status and Meetings) · Inbox · Actions |
 
 ## What the assistant does for her
 
@@ -22,6 +22,7 @@ There is one client persona. The relationship manager is not a separate persona 
 2. **Compliance review.** Explains what is still needed and by when; each requested document shows what it must contain with a made-up example; every upload gets a quick template check (name, Singapore address and postal code, recent date, statement months, signature) before it goes to the bank.
 3. **Handover to her RM.** When a question needs a person (advice, fee or rate requests, complaints, "talk to my RM", or anything the assistant can't answer reliably), the assistant says so kindly, passes the question to her RM with the chat context, and gives her a `TCK-` reference to follow in My requests.
 4. **Urgent safety.** A lost card or an unrecognised charge still gets the fixed safety steps and the in-chat card block; fraud goes to fraud operations, not the RM.
+5. **Meetings and statements.** Asking for a meeting suggests free times and a *Book a time with your RM* button; asking for a statement points to Overview → Statements, or to a statement copy request for older or certified ones.
 
 ## Guardrails (acceptance criteria for every reply)
 
@@ -131,11 +132,47 @@ The merge with `c1b33ed` preserves the incoming account menu, Inbox, Relationshi
 
 Post-merge verification: 54 frontend unit tests and production build pass; both real-provider Michelle browser scenarios pass (`/private/tmp/michelle-merge-final-browser.log`); nine shared scenarios pass (`/private/tmp/michelle-merge-shared-browser.log`), and the four-width appointment hold/confirm/cancel regression passes after the grid correction (`/private/tmp/michelle-merge-appointments-final.log`). Computer Use verified the merged hosted-connected Compliance page with all four documents still submitted. No source-reference assets or private configuration are included in the commit.
 
+## The bank's decision on a document, and reminders (CR3, CR6, CR7)
+
+After Michelle submits a file, the bank's reviewer records the decision (migration 0076). Until the RM workflow exists this is one call in the SQL editor, owner only; no client, guest or assistant path can call it:
+
+```sql
+select compliance.record_bank_decision('<item_id>','accepted');
+select compliance.record_bank_decision('<item_id>','rejected','The bill is older than 3 months.');
+```
+
+- **Accepted:** the item shows *Accepted by bank*.
+- **Correction:** the item shows *Correction requested by bank* and her review gets a *The bank asked you* request, due on the review's due date unless another date is given. It closes by itself when she uploads a new file for that item.
+- **Reminders:** while the notification worker runs (README, step 5), any open request or deadline within 7 days sends one reminder a day to her Inbox, only while something is still to send. Once she has sent every document, the deadline reminders disappear from her Inbox; a correction reminder disappears when she sends the new file (0078). A reminder whose deadline has since changed is cleared too, and a new one with the right date follows (0079). A correction given a due date 3 days away shows this at once.
+
+## Answering the bank's questions (CR6)
+
+A question the bank asks (for example "Please explain the source of the SGD 120,000 incoming transfer") shows on her Compliance review as *The bank asked you* with a reply box (migration 0080). How it is passed:
+
+| Step | What she sees | What happens |
+|---|---|---|
+| Open | The question, the date to reply by, a reply box and *Send to the bank* | Reminders run from 7 days before the date |
+| She sends her answer | "Sent to the bank on … – waiting for review", with her answer | Action `compliance.answer_request` with a receipt in Actions, an Inbox notice, reminders for it disappear. Her text is redacted before it is stored |
+| Bank accepts | "Accepted by bank" | `compliance.record_request_decision('<request_id>','accepted')` |
+| Bank needs more | "The bank asked a follow-up question", and a new open question | `compliance.record_request_decision('<request_id>','more_info','…')` |
+
+Only the bank closes a question; the assistant and her answer cannot. Tests: `test_request_answers.py`, `actions.test.js`.
+
+## Meetings with her RM (CR18)
+
+**My requests → Meetings** lists free times for the next 14 days from her RM's working hours. Picking one holds it for 10 minutes; *Confirm booking* books it and *Cancel meeting* releases it. Each is an action with a receipt in Actions. Two bookings can never share a time. In the chat, "can I book a meeting with my RM?" is not handed over as a ticket: the relationship agent (`relationship/v5`) suggests up to 3 free times and the reply ends with *Book a time with your RM*. Tests: `test_meetings.py`, `test_rm_handover.py`.
+
+## Statements (CR15)
+
+**Overview → Statements**: she picks the account or card and one of the last 3 full months, then *View statement* opens a statement with opening and closing balance, money in and out, and each transaction with a running balance. *Print or save as PDF* prints only the statement. Pending payments are listed as not included. Balances are worked back from today's balance, so they always agree with Overview.
+
+Older months, certified or paper copies are a *Statement or document copy* request in My requests (the link under Statements, or the button the assistant adds when she asks for one). Her July–September activity is seeded by migration 0077, which also replaces the statements article with these steps (v2). Tests: `statements.test.js`, `test_statements.py`.
+
 ## Urgent card help and payments (CR12, CR13)
 
-> The demo records for this part (card 4821 with the Singapore then Los Angeles charges and the pending rent transfer) belong to the earlier test customer 1001, whose login is removed. To demo it as Michelle, her records need a suspicious charge and a pending transfer (open item).
+> **Michelle's demo (0075):** on 27 Oct her card 7310 was used at Orchard Bistro, Singapore (12:40 pm) and then at two London merchants, SGD 1.00 at 2:05 pm and SGD 3,850.00 at 2:21 pm, which the impossible-travel rule flags. A SGD 12,000 FAST transfer to Lim Interiors from 28 Oct is still pending. Try "I don't recognise the London charges on my card" and "did my transfer to Lim Interiors go through?". The walkthrough below was recorded earlier with test customer Alex (card 4821); the steps and rules are the same.
 
-**Persona:** Alex (synthetic customer 1001, see `docs/synthetic-data.md`)
+**Persona:** Alex (synthetic customer 1001, seeded by migration 0004)
 **Outcome:** Alex knows the card was used in Singapore and then in Los Angeles about 2 hours later, which cannot both be Alex, so the two US charges (including the SGD 86.40 one Alex did not mention) are flagged; the card is protected, a dispute draft for both and one case summary are with staff, and Alex knows not to resend the rent transfer, that the app lock is protective, to reset the password only in the official app and never to share the one-time code.
 
 ### How to read this

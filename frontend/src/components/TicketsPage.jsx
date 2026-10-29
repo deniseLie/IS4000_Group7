@@ -4,6 +4,7 @@ import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
 import {loadCategories,loadTickets,nextStep,STATUSES,ticketSummary} from '../lib/ticketData';
 import {formatDateTime} from '../lib/format';
+import Meetings from './Meetings';
 
 async function token() {
   const {data,error}=await supabase.auth.getSession();if(error)throw error;
@@ -14,13 +15,13 @@ const TABS=[['open','Open',t=>['submitted','in_review','waiting_on_client'].incl
 
 // My requests (TK1/TK2): every ticket with its reference and plain-language status, plus a guided form (CL1)
 // that proposes a ticket.create action. Nothing is recorded until the customer confirms it in Actions.
-export default function TicketsPage({prefill,onReviewActions,onSupport}) {
+export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,initialTab='open'}) {
   const [tickets,setTickets]=useState(null);
   const [categories,setCategories]=useState(null);
-  const [tab,setTab]=useState('open');
+  const [tab,setTab]=useState(initialTab);
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
-  const [raising,setRaising]=useState(!!prefill);
+  const [raising,setRaising]=useState(!!prefill&&!prefill.tab);
   const active=useRef(null);
   async function refresh() {
     active.current?.abort();const controller=new AbortController();active.current=controller;setBusy(true);setError('');
@@ -32,17 +33,19 @@ export default function TicketsPage({prefill,onReviewActions,onSupport}) {
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
   useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const shown=(tickets||[]).filter(TABS.find(entry=>entry[0]===tab)[2]);
+  const shown=tab==='meetings'?[]:(tickets||[]).filter(TABS.find(entry=>entry[0]===tab)[2]);
   return <div className="app-page-body" data-testid="tickets-page">
     <header className="page-header"><div><span className="eyebrow">Support</span><h1>My requests</h1>
-      <p>Requests you have raised with the bank and their current status.</p></div>
+      <p>Requests you have raised with the bank, their current status and your meetings.</p></div>
       <div className="page-header-actions"><button className="bank-chat-logout" onClick={refresh} disabled={busy}><Icon name="refresh"/>Refresh</button>
         <button className="primary-button" data-testid="raise-request" onClick={()=>setRaising(true)}><Icon name="plus"/>Raise a request</button></div></header>
     {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions}/>}
-    <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}</nav>
+    <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}
+      <button role="tab" data-testid="tab-meetings" aria-selected={tab==='meetings'} onClick={()=>setTab('meetings')}>Meetings</button></nav>
     {busy&&!tickets&&<p className="loading" role="status">Loading your requests…</p>}
     {error&&<p role="alert">{error}</p>}
-    {tickets&&!shown.length&&<p className="page-empty">No requests here.</p>}
+    {tab==='meetings'&&<div className="tab-fade" key="meetings"><Meetings rmName={rmName}/></div>}
+    {tab!=='meetings'&&tickets&&!shown.length&&<p className="page-empty">No requests here.</p>}
     <ul className="ticket-list tab-fade" key={tab}>{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
       <div className="ticket-head"><strong>{ticket.category_label}</strong><span className={`ticket-status ${ticket.status}${ticket.overdue?' overdue':''}`}>{STATUSES[ticket.status]}{ticket.overdue?' · past target time':''}</span></div>
       <p>{ticketSummary(ticket)}</p>

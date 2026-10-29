@@ -17,7 +17,7 @@ import RecordsPanel from './components/RecordsPanel';
 import CardBlockDialog from './components/CardBlockDialog';
 import DisputeDialog from './components/DisputeDialog';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
-import {loadIntroduction} from './lib/relationshipWorkflow';
+import {loadIntroduction,relationshipIntent} from './lib/relationshipWorkflow';
 import {prepareComplianceSupport} from './lib/compliance';
 import TopBar from './components/TopBar';
 import Sidebar,{TabBar} from './components/Sidebar';
@@ -89,6 +89,7 @@ export default function Chat({session,onSignIn}) {
   const [view,setView]=useState(()=>pageFromHash(session));
   const [pageKey,setPageKey]=useState(0);
   const [ticketPrefill,setTicketPrefill]=useState(null);  // category and summary carried from a chat question to My requests
+  const [overviewFocus,setOverviewFocus]=useState(null);  // section to scroll to when Overview opens from the assistant
   const messageList=useRef(null);
   const composer=useRef(null);
   const recall=useRef(null);
@@ -295,6 +296,7 @@ export default function Chat({session,onSignIn}) {
   }
 
   function navigate(page) {
+    setOverviewFocus(null);
     if(page===view){if(page!=='chat')setPageKey(key=>key+1);return;}  // choosing the open page reloads it
     if(page==='chat')history.pushState(null,'',location.pathname+location.search);else location.hash=page;
     setView(page);
@@ -340,12 +342,18 @@ export default function Chat({session,onSignIn}) {
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
+  function requestStatement(summary) {setTicketPrefill({category:'statement_request',summary,key:Date.now()});navigate('requests');}
   // Request categories (CL1/TK1/TK2): a matching question, or a reply handed to the RM, ends with a button to My requests.
   function ticketStep(message,index) {
     if(message.role!=='assistant'||!message.content||!session||mode!=='personal')return null;
     const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';const intent=ticketIntent(asked);
     if(intent==='status')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button>;
     if(intent==='card_limit_change')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill({category:intent,summary:redact(asked).slice(0,500),key:Date.now()});navigate('requests');}}>Raise a card limit request<Icon name="arrow"/></button>;
+    // CR15: a statement question ends with a way to the Statements section, or to a statement copy request for older ones.
+    if(intent==='statements')return <button className="primary-button rm-handoff" data-testid="statement-handoff" onClick={()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});}}>Go to Statements<Icon name="arrow"/></button>;
+    if(intent==='statement_request')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>requestStatement(redact(asked).slice(0,500))}>Request a statement copy<Icon name="arrow"/></button>;
+    // CR18: a meeting question ends with a button to the Meetings tab, where she picks a free time.
+    if(relationshipIntent(asked)==='meeting')return <button className="primary-button rm-handoff" data-testid="meeting-handoff" onClick={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}>Book a time with your RM<Icon name="arrow"/></button>;
     // A question handed to the relationship manager: its reference is in the reply; follow it in My requests.
     if(message.needs_human&&/My requests/.test(message.content))
       return <button className="bank-chat-logout rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button>;
@@ -429,10 +437,10 @@ export default function Chat({session,onSignIn}) {
       {view==='chat'&&savedChats&&<SavedChats closing={historyClosing} current={conversation?.session_id} onLoaded={setChatCount} onClose={closeHistory} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
       {view!=='chat'&&<main className="app-page">
         {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
-        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}}/>}
+        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
         {session&&view==='actions'&&<ActionsPanel key={pageKey} onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}}/>}
-        {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary}/>}
+        {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary} rmName={rmIntro?.current?.name} initialTab={ticketPrefill?.tab||'open'}/>}
         {session&&view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
         {footer}
       </main>}

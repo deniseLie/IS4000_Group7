@@ -92,3 +92,15 @@ test('a customer card change is told apart from the staff operation of the same 
     {command:{...base,target:{...base.target,handoff_id:'12345678-1234-1234-1234-123456789099'}},receipt:null},
   ])assert.throws(()=>parseAction(changed));
 });
+
+test('an answer to the bank parses only with a matching receipt', () => {
+  const command_id='12345678-1234-1234-1234-123456789022',case_id='12345678-1234-1234-1234-123456789023';
+  const target={case_id:'00000000-0000-4000-8000-100200000001',request_id:'00000000-0000-4000-8000-100200000021',answer:'Sale of my flat.',question:'Please explain the source of the transfer.'};
+  const value={command:{command_id,case_id,customer_id:1002,type:'compliance.answer_request',target,idempotency_key:`${case_id}:answer1:compliance.answer_request`,
+    state:'succeeded',proposed_at:'2026-10-29T05:40:00Z',expires_at:'2026-10-29T05:45:00Z',confirmed_at:null},
+    receipt:{receipt_id:`rcpt_${command_id.replaceAll('-','')}`,command_id,customer_id:1002,outcome:'succeeded',
+      result:{...target,status:'responded',responded_at:'2026-10-29T05:40:01Z'},audit_event_id:9,created_at:'2026-10-29T05:40:01Z'}};
+  const parsed=parseAction(value);
+  assert.equal(parsed.receipt.result.status,'responded');
+  assert.throws(()=>parseAction({...value,receipt:{...value.receipt,result:{...value.receipt.result,answer:'Something else'}}}));
+});

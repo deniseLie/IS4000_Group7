@@ -134,6 +134,8 @@ class InformationRequest(BaseModel):
     status: Literal['open','responded','closed']
     responded_at: AwareDatetime | None
     created_at: AwareDatetime
+    response: Text | None=None
+    outcome: Literal['accepted','more_info'] | None=None
 
 
 class ComplianceCase(BaseModel):

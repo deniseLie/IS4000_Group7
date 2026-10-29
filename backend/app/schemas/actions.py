@@ -11,6 +11,7 @@ from app.schemas.sharing import AgendaShareResult,AgendaShareTarget,StoredAgenda
 from app.schemas.checklist import ChecklistResult,ChecklistTarget,StoredChecklistTarget
 from app.schemas.request_actions import RequestResult,RequestTarget,StoredRequestTarget
 from app.schemas.tickets import StoredTicketTarget,TicketResult,TicketTarget
+from app.schemas.request_answers import RequestAnswerResult,RequestAnswerTarget,StoredRequestAnswerTarget
 from app.schemas.document_uploads import DocumentUploadResult,DocumentUploadTarget,StoredDocumentUploadTarget
 from app.schemas.disputes import DisputeInput,DisputeResult,DisputeTarget,StoredDisputeTarget
 from app.schemas.prechecks import SubmitDocumentTarget,StoredSubmission,SubmissionResult
@@ -18,7 +19,7 @@ from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,C
     ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
-    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute','card.unblock','card.cancel_permanently','ticket.create']
+    'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute','card.unblock','card.cancel_permanently','ticket.create','compliance.answer_request']
 # The two card changes are also staff operations (0030); a target naming a handoff_id is the staff one.
 CUSTOMER_CARD_CHANGES=('card.unblock','card.cancel_permanently')
 StaffActionType=Literal['card.unblock','card.cancel_permanently','handoff.claim','handoff.close']
@@ -112,9 +113,9 @@ class ActionFailure(BaseModel):
 
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
-    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget | StoredTicketTarget)
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget | StoredTicketTarget | StoredRequestAnswerTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
-    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget | TicketTarget)
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget | TicketTarget | RequestAnswerTarget)
 
 
 class ActionRecord(BaseModel):
@@ -153,6 +154,7 @@ class ActionRecord(BaseModel):
         if action_type=='document.submit':return StoredSubmission.model_validate(value)
         if action_type=='card.dispute':return StoredDisputeTarget.model_validate(value)
         if action_type=='ticket.create':return StoredTicketTarget.model_validate(value)
+        if action_type=='compliance.answer_request':return StoredRequestAnswerTarget.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -190,7 +192,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult
+    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -256,6 +258,9 @@ class ActionOutcome(BaseModel):
                 if command.type=='document.register':
                     if not isinstance(receipt.result,DocumentUploadResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
                         raise ValueError('Document receipt disagrees with the owned uploaded object')
+                if command.type=='compliance.answer_request':
+                    if not isinstance(receipt.result,RequestAnswerResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
+                        raise ValueError('Answer receipt disagrees with the reviewed answer')
                 if command.type=='compliance.update_checklist_item':
                     if not isinstance(receipt.result,ChecklistResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
                         raise ValueError('Checklist receipt disagrees with the reviewed preparation mark')
@@ -301,6 +306,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='card.dispute':return DisputeTarget.model_validate(value)
         if info.data.get('type') in CUSTOMER_CARD_CHANGES:return CardChangeTarget.model_validate(value)
         if info.data.get('type')=='ticket.create':return TicketTarget.model_validate(value)
+        if info.data.get('type')=='compliance.answer_request':return RequestAnswerTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

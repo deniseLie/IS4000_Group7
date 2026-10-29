@@ -73,6 +73,9 @@ export function ticketSummary(ticket) {
 export function ticketIntent(question) {
   const q=String(question||'').toLowerCase();
   if(/\b(?:increase|raise|higher|lower|reduce|change|up)\b[^.?!]{0,40}\b(?:credit\s+)?(?:card\s+)?limit\b|\blimit\s+(?:increase|change)\b/.test(q))return 'card_limit_change';
+  // Statements (CR15): the last 3 full months are on Overview; older, certified or paper copies are a request.
+  if(/\b(?:e-?)?statements?\b/.test(q)&&!/\b(?:review|compliance|upload|submit)\b/.test(q))
+    return /\b(?:older|old|certified|paper|copy|copies|stamped|last\s+year|(?:20[0-9]{2})|(?:[4-9]|1[0-2])\s+months?|six|twelve)\b/.test(q)?'statement_request':'statements';
   if(/\b(?:status|update|progress)\b[^.?!]{0,30}\b(?:my\s+)?(?:ticket|request|case)s?\b|\bmy\s+(?:tickets|open requests)\b/.test(q))return 'status';
   return null;
 }

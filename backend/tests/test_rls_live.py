@@ -1,4 +1,4 @@
-"""Live RLS check on the hosted project (migrations 0002-0004, docs/synthetic-data.md).
+"""Live RLS check on the hosted project (migrations 0002-0004 seed data).
 Opt-in: TEST_PERSONA_FIXTURE_FILE is a JSON list of {"email","password"} for the three persona logins,
 plus SUPABASE_URL and SUPABASE_ANON_KEY. Uses the public anon key and each persona's own JWT only."""
 import json, os

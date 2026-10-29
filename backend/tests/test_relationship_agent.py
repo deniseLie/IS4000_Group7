@@ -104,7 +104,7 @@ def test_missing_relationship_provider_withholds_answer_and_records_support_hand
     response=native_api_client.post('/chat',headers=headers(ctx),json={'mode':'personal','messages':[{'role':'user','content':'Who is my relationship manager?'}],
         'conversation_id':str(sid),'turn_id':str(uuid4()),'revision':0})
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
-    assert 'v4+2c8aec82' in response.text
+    assert 'v5+82c591e9' in response.text
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
         assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)

@@ -4,6 +4,7 @@ from app.schemas.sharing import AgendaShareTarget
 from app.schemas.checklist import ChecklistTarget
 from app.schemas.request_actions import RequestTarget
 from app.schemas.tickets import TicketTarget
+from app.schemas.request_answers import RequestAnswerTarget
 from app.schemas.document_uploads import DocumentUploadTarget
 from app.schemas.prechecks import SubmitDocumentTarget
 from app.schemas.consent_actions import ConsentGrantTarget,ConsentRequestTarget,ConsentRevokeTarget
@@ -54,3 +55,9 @@ def create_ticket(command: ActionCommand) -> TicketTarget:
     target=TicketTarget.model_validate(command.target)
     return TicketTarget.model_validate({**target.model_dump(),'summary':redact(target.summary)[0],
         'details':{key:redact(value)[0] for key,value in target.details.items()}})
+
+
+def answer_request(command: ActionCommand) -> RequestAnswerTarget:
+    """Her answer to the bank is redacted before SQL stores it; SQL refuses anything still unredacted."""
+    target=RequestAnswerTarget.model_validate(command.target)
+    return RequestAnswerTarget.model_validate({**target.model_dump(),'answer':redact(target.answer)[0]})

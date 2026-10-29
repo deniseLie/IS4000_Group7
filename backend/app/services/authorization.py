@@ -10,7 +10,7 @@ from app.services import audit
 from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact','tickets.categories'})
-AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit'})
+AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit','compliance.answer_request'})
 # The customer's own card changes: confirmed by the signed-in customer only; agents are refused (customer_only_action).
 # Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
 CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})

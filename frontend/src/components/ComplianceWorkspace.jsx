@@ -6,6 +6,7 @@ import Icon from './Icon';
 import {formatDate,formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 import DocumentUpload from './DocumentUpload';
+import BankRequest from './BankRequest';
 
 // What each kind of document must show, with a made-up example (GET /documents/templates; public, synthetic).
 function DocumentGuide({template}){
@@ -92,12 +93,11 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
      </section>
     </div>
    </article>
-   {review.info_requests.filter(item=>item.status==='open').map(item=><article key={item.request_id} className="cw-alert">
-    <span className="cw-alert-icon" aria-hidden="true">!</span>
-    <div className="cw-alert-body"><div className="cw-alert-head"><span className="eyebrow">The bank asked you</span><span className="cw-deadline">Request deadline: {item.due_date||'Not recorded'}</span></div>
-     <p><strong>{item.question}</strong></p><p>{item.instructions||'Submission instructions are not recorded; contact support.'}</p>
-     <div className="panel-actions">{onAsk&&<button className="primary-button" disabled={busy||chatBusy} onClick={()=>onAsk('Please explain the selected recorded request for additional information and where I should respond.',{kind:'information_request',case_id:review.case_id,request_id:item.request_id})}>Explain this request<Icon name="arrow"/></button>}
-      {help({review_case_id:review.case_id,request_id:item.request_id})}</div></div></article>)}
+   {/* The bank's questions (0080): open ones first with a reply box, then answered and closed ones. */}
+   {[...review.info_requests].sort((a,b)=>({open:0,responded:1,closed:2}[a.status]-{open:0,responded:1,closed:2}[b.status])).map(item=><BankRequest key={item.request_id}
+    review={review} request={item} disabled={busy||chatBusy} onAnswered={refresh}
+    onAsk={onAsk&&(()=>onAsk('Please explain the selected recorded request for additional information and how I should answer it.',{kind:'information_request',case_id:review.case_id,request_id:item.request_id}))}
+    help={help({review_case_id:review.case_id,request_id:item.request_id})}/>)}
    <div className="cw-head"><div><h4>Documents to upload</h4><p className="rm-small">PDF works best (DOCX, PNG or JPEG also accepted). Each upload gets a quick check; if everything is there it goes to the bank for review.</p></div>{help({review_case_id:review.case_id})}</div>
    <ul className="compliance-items">{items.map(item=>{
     const current=workspace.current_documents[item.item_id],report=workspace.checks.find(report=>report.document_id===current),fresh=report&&checkIsFresh(report,now),rule=workspace.rules[item.item_id];

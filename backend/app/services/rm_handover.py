@@ -27,6 +27,8 @@ HANDOVER=re.compile(
     r"|\b(?:complain|complaint|unhappy with (?:the )?(?:service|bank))\b"
     r"|\b(?:talk|speak|chat|connect|get in touch)\b[^.?!]{0,25}\b(?:my\s+)?(?:rm|relationship manager|banker|advisor|adviser)\b"
     r"|\b(?:call|email|message)\s+me\b|\bcall\s+(?:me\s+)?back\b",re.I)
+# Booking a meeting is self-service (CR18: My requests > Meetings), so it is never handed over.
+MEETING=re.compile(r'\b(?:meet|meeting|appointment|book(?:ing)?|schedule|catch up)\b',re.I)
 LABEL='Your relationship manager'
 SORRY=("That's something I'm not able to help with here, as it needs someone who knows your full situation. "
     "I'll pass your question to your relationship manager so they can answer you directly.")
@@ -35,7 +37,7 @@ GUEST=("That's something I'm not able to help with here, as it needs someone who
 
 
 def needs_person(question: str) -> bool:
-    return bool(HANDOVER.search(question))
+    return bool(HANDOVER.search(question)) and not MEETING.search(question)
 
 
 def summary_for(question: str) -> str:

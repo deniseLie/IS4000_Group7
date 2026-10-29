@@ -445,7 +445,8 @@ async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> 
     receipt_source=lambda task_id:Source(id='action-receipt-'+task_id,title='Recorded handover to your relationship manager',url=None,version='v1',publisher='DemoBank action ledger')
     for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True):
         # Rule-matched questions, and answers where the agent itself said a person is needed (not fraud: it has its own handoffs).
-        asked=task.entities.get('handover')=='rm' or result.status=='needs_human' and meta.origin=='ai' and task.domain!='fraud'
+        asked=task.entities.get('handover')=='rm' or (result.status=='needs_human' and meta.origin=='ai' and task.domain!='fraud'
+            and not rm_handover.MEETING.search(str(task.entities.get('question',''))))
         if not asked:continue
         task_id=rm_handover.task_key(task.task_id+'_rm',owned.turn.turn_id if owned is not None else ctx.case_id)
         _,reference=await rm_handover.hand_over(str(task.entities.get('question','')),task.priority,ctx,owned,task_id)

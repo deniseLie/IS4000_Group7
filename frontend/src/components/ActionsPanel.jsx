@@ -24,6 +24,7 @@ function commandTitle(command) {
   if(command.type==='consent.grant')return 'Grant reviewed data-sharing consent';
   if(command.type==='consent.revoke')return 'Revoke a recorded data-sharing grant';
   if(command.type==='compliance.update_checklist_item')return 'Save a checklist preparation mark';
+  if(command.type==='compliance.answer_request')return 'Answer a question from the bank';
   if(command.type==='document.register')return 'Record a private document upload';
   if(command.type==='document.submit')return 'Submit a checked demo document for review';
   if(command.type==='requests.create')return 'Submit a relationship request';
@@ -73,6 +74,7 @@ function plainTitle(command) {
     case 'card.unblock':return command.staff?`Card ending ${t.last4} reactivated`:`Unblock card ending ${t.last4}`;
     case 'card.cancel_permanently':return command.staff?`Card ending ${t.last4} cancelled`:`Cancel card ending ${t.last4} permanently`;
     case 'compliance.update_checklist_item':return t.item_label;
+    case 'compliance.answer_request':return t.question;
     case 'document.register':return t.item_label||'Document upload';
     case 'document.submit':return t.item_label;
     case 'requests.create':return `Request to ${displayName(t.recipient_name)}`;
@@ -92,6 +94,7 @@ function plainSummary(command) {
     case 'card.dispute':return `Sends these charges to bank staff for review: ${t.items.map(charge).join('; ')}. Staff decide any refund.`;
     case 'card.unblock':return command.staff?'':'Reactivates this card so new payments go through again. If it was blocked for a suspicious charge, unblock it only if you are sure the card is safe.';
     case 'card.cancel_permanently':return command.staff?'':'Permanently cancels this card. This cannot be undone: the card can never be reactivated.';
+    case 'compliance.answer_request':return `Your answer to "${t.question}" goes to the bank for review.`;
     case 'compliance.update_checklist_item':return `Your preparation mark changes from ${mark(t.expected_client_mark)} to ${mark(t.client_mark)} for ${t.case_title}. The bank status stays ${mark(t.submission_status)}.`;
     case 'document.register':return `${t.file_name} (${(t.size_bytes/1048576).toFixed(2)} MB) stored privately for ${t.case_title}.`;
     case 'document.submit':return `${t.file_name} sent to the bank for review.`;
@@ -138,6 +141,7 @@ function activity(command) {
   switch(command.type) {
     case 'document.register':return ['upload',`Uploaded ${t.file_name}`,t.item_label?`For ${t.item_label}. Not sent to the bank yet.`:'Stored privately.'];
     case 'document.submit':return ['send',`Sent ${t.item_label} to the bank`,`${t.file_name} · waiting for the bank's review`];
+    case 'compliance.answer_request':return ['send','Answered a question from the bank',`${t.question} · waiting for the bank's review`];
     case 'compliance.update_checklist_item':return ['check',`Marked ${t.item_label} as ${t.client_mark==='prepared'?'ready':'not ready'}`,'Your own checklist mark. It does not send anything to the bank.'];
     case 'handoff.create':{
       const summary=t.summary||'';
@@ -174,6 +178,7 @@ function meaning(item) {
     case 'document.register':return 'Your file is saved privately. It goes to the bank only after its quick check passes.';
     case 'document.submit':return 'The bank has the file. Only the bank can accept it; you will see the outcome in Compliance review and your Inbox.';
     case 'compliance.update_checklist_item':return 'Only your own checklist mark changed.';
+    case 'compliance.answer_request':return 'Your answer was sent to the bank. The bank decides whether it is enough.';
     case 'handoff.create':return 'Your relationship manager has the question and will reply. Follow it in My requests.';
     case 'ticket.create':return `Reference ${receipt.result.reference}. ${receipt.result.owner_team} decides; follow it in My requests.`;
     default:return receiptText(item);

@@ -10,6 +10,9 @@
 | `04_apply_0073_hosted.sql` | Handover to the RM (`rm_handover` tickets), `handoff_id` in ticket reads, Michelle's deadline 30 Nov 2026 | Once |
 | `05_apply_0074_hosted.sql` | Retires the Supabase trace writes (tracing is LangSmith) | Once |
 | `06_keep_only_michelle.sql` | Removes every customer except Michelle (1002): their logins and all their rows. Advisers, knowledge and categories stay; the audit log is untouched | Once; run step 1 (preview), then step 2, then step 3 (every count should be 0) |
+| `07_catch_up_0068_0078_hosted.sql` | Catch-up. Hosted already had the repository's 0062, 0063, 0065–0067 and 0069 (applied without being recorded); this adds what was missing: 0068 card self-service (made repeatable), 0070 merchant country and login-help article v2 (Alex's rows left out), then 0075–0078 (Michelle's demo charges and pending transfer, bank decisions, statements, reminder clean-up) | Once, after 06. One transaction; safe to re-run |
+| `08_apply_0079_hosted.sql` | Clears reminders already in the Inbox that she has acted on or whose deadline is out of date, once now and whenever a due date changes | Once, after 07 |
+| `09_apply_0080_hosted.sql` | Michelle can answer the bank's questions on her review (reply box, receipt in Actions, Inbox notice); `compliance.record_request_decision` lets the bank accept an answer or ask a follow-up | Once, after 08 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

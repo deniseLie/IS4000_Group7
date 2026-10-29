@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import Icon from './Icon';
 import {initials} from './SharingPage';
+import Statements from './Statements';
 import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
 import {displayName,formatDate,formatDateTime,formatMoney as money} from '../lib/format';
@@ -13,7 +14,7 @@ const QUERY={from_date:null,to_date:null,filters:null},KEY=`records:${JSON.strin
 function greeting() {const hour=Number(new Date().toLocaleString('en-SG',{timeZone:'Asia/Singapore',hour:'numeric',hour12:false}));return hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';}
 
 // Online-banking style landing page: everything the customer owns at a glance, with one way into each task.
-export default function OverviewPage({onNavigate,onAsk}) {
+export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}) {
   // The last loaded records show at once on a return visit while a fresh read replaces them.
   const [records,setRecords]=useState(()=>cached(KEY)),[error,setError]=useState('');
   useEffect(()=>{
@@ -29,6 +30,8 @@ export default function OverviewPage({onNavigate,onAsk}) {
     })();
     return ()=>controller.abort();
   },[]);
+  // Opened from the assistant's "Go to Statements" button: scroll to that section once the records are on screen.
+  useEffect(()=>{if(focus==='statements'&&records)document.getElementById('statements')?.scrollIntoView({behavior:'smooth',block:'start'});},[focus,!!records]);
   if(error&&!records)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p></section>;
   if(!records)return <section className="app-page-body ov" data-testid="overview-page"><p className="loading" role="status">Loading your accounts…</p>
     <div className="skeleton-page" aria-hidden="true"><span className="skeleton-line wide"/><span className="skeleton-block tall"/>
@@ -59,6 +62,7 @@ export default function OverviewPage({onNavigate,onAsk}) {
             <b className={row.amount<0?'out':'in'}>{row.amount<0?'−':'+'}{money(Math.abs(row.amount),row.currency)}</b></li>)}</ul>
             :<p className="ov-empty">No recent transactions.</p>}
           <button className="source-link" onClick={()=>onAsk('Show my recent transactions')}>Ask about a transaction</button></article>
+        <Statements records={records} onRequest={onRequestStatement}/>
       </div>
       <aside className="ov-side">
         <article className="ov-card ov-tile" data-testid="overview-help"><h2>Need a person?</h2>

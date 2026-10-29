@@ -34,4 +34,8 @@ test('categories keep their fields and chat questions map to a category',()=>{
   assert.equal(ticketIntent('Can you increase my credit card limit to 30k for my trip?'),'card_limit_change');
   assert.equal(ticketIntent('what is the status of my request?'),'status');
   assert.equal(ticketIntent('Does paying only the minimum avoid interest?'),null);
+  assert.equal(ticketIntent('How do I get my statement for September?'),'statements');
+  assert.equal(ticketIntent('I need a certified statement for my visa application'),'statement_request');
+  assert.equal(ticketIntent('Can I get my statements from 2024?'),'statement_request');
+  assert.equal(ticketIntent('Which bank statements do I upload for my review?'),null);
 });

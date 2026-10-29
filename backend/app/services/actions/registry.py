@@ -23,4 +23,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'document.register': records.register_document,
     'document.submit': records.submit_document,
     'ticket.create': records.create_ticket,
+    'compliance.answer_request': records.answer_request,
 }

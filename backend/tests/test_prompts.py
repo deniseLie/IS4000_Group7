@@ -41,6 +41,7 @@ RELEASED[('compliance','v3')]='v3+30458b0b'
 RELEASED[('retail','v6')]='v6+c4aaa7a7'
 RELEASED[('document','v4')]='v4+f7e7c0f1'
 RELEASED[('relationship','v4')]='v4+2c8aec82'
+RELEASED[('relationship','v5')]='v5+82c591e9'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

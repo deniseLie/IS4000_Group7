@@ -33,7 +33,7 @@ def test_retail_records_are_real_masked_and_customer_scoped(local_data_api: Nati
     ctx=context(local_data_api,cid).model_copy(update={'agent':'retail'})
     records=asyncio.run(retail_records.load(ctx))
     assert len(records.accounts)==1 and records.accounts[0].balance==expected and records.accounts[0].number.startswith('****')
-    assert len(records.transactions)=={1001:6,1002:3,1003:4}[cid]  # 0063 adds everyday activity; 0070 adds Alex's two overseas card charges
+    assert len(records.transactions)=={1001:6,1002:21,1003:4}[cid]  # 0063 everyday activity; 0070 Alex's overseas charges; 0075 Michelle's card charges and pending transfer; 0077 her August–September history (July is outside the 90-day window)
     evidence=retail.evidence_for(records)
     assert len(evidence)==5 and all(item.source.url is None for item in evidence)
     with psycopg.connect(local_data_api.database_uri) as db:
