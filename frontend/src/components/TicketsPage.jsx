@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
-import {loadCategories,loadTickets,nextStep,STATUSES} from '../lib/ticketData';
+import {loadCategories,loadTickets,nextStep,STATUSES,ticketSummary} from '../lib/ticketData';
 import {formatDateTime} from '../lib/format';
 
 async function token() {
@@ -35,7 +35,7 @@ export default function TicketsPage({prefill,onReviewActions,onSupport}) {
   const shown=(tickets||[]).filter(TABS.find(entry=>entry[0]===tab)[2]);
   return <div className="app-page-body" data-testid="tickets-page">
     <header className="page-header"><div><span className="eyebrow">Support</span><h1>My requests</h1>
-      <p>Everything you asked the bank to do, with its reference and where it stands. The team named on each request decides; the assistant never approves or rejects.</p></div>
+      <p>Requests you have raised with the bank and their current status.</p></div>
       <div className="page-header-actions"><button className="bank-chat-logout" onClick={refresh} disabled={busy}><Icon name="refresh"/>Refresh</button>
         <button className="primary-button" data-testid="raise-request" onClick={()=>setRaising(true)}><Icon name="plus"/>Raise a request</button></div></header>
     {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions}/>}
@@ -43,9 +43,9 @@ export default function TicketsPage({prefill,onReviewActions,onSupport}) {
     {busy&&!tickets&&<p className="loading" role="status">Loading your requests…</p>}
     {error&&<p role="alert">{error}</p>}
     {tickets&&!shown.length&&<p className="page-empty">No requests here.</p>}
-    <ul className="ticket-list">{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
+    <ul className="ticket-list tab-fade" key={tab}>{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
       <div className="ticket-head"><strong>{ticket.category_label}</strong><span className={`ticket-status ${ticket.status}${ticket.overdue?' overdue':''}`}>{STATUSES[ticket.status]}{ticket.overdue?' · past target time':''}</span></div>
-      <p>{ticket.summary}</p>
+      <p>{ticketSummary(ticket)}</p>
       <p className="ticket-next"><Icon name="info"/>{nextStep(ticket)}</p>
       <small>Reference <code>{ticket.reference}</code> · {ticket.owner_team} · raised {formatDateTime(ticket.created_at)}{ticket.last_update?` · updated ${formatDateTime(ticket.last_update.at)}`:''}</small>
       {ticket.status==='waiting_on_client'&&onSupport&&<p><button className="bank-chat-logout" onClick={onSupport}>Talk to a person</button></p>}

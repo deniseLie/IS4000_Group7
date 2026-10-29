@@ -77,7 +77,7 @@ export default function InboxPage({links={},onActions}) {
   const visible=items.filter(TABS.find(entry=>entry[0]===tab)[2]);
   const connected=live==='Live inbox updates connected.';
   return <section className="app-page-body inbox-page ib" aria-label="Notifications" data-testid="inbox-page">
-    <div className="page-header"><div><p className="ib-eyebrow"><span>Notifications</span><span className={`ib-live ${connected?'on':''}`} data-testid="inbox-live-status" role="status"><span className="dot"/>{live}</span></p><h1>Inbox</h1><p>Updates for your account in this demo. These messages do not change a real bank account.</p></div>
+    <div className="page-header"><div><p className="ib-eyebrow"><span>Notifications</span><span className={`ib-live ${connected?'on':''}`} data-testid="inbox-live-status" role="status"><span className="dot"/>{live}</span></p><h1>Inbox</h1><p>Messages and updates from the bank about your account.</p></div>
       <div className="page-header-actions"><button className="bank-chat-logout" data-testid="reload-notifications" disabled={busy||marking} onClick={refresh}><Icon name="refresh"/>Refresh</button>{onActions&&<button className="bank-chat-logout" onClick={onActions}><Icon name="document"/>Actions</button>}</div></div>
     <div className="ib-tabs" role="tablist" aria-label="Filter notifications">{TABS.map(([key,label,match])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?'active':''} onClick={()=>setTab(key)}>{label} ({items.filter(match).length})</button>)}</div>
     {busy&&<p className="ib-busy loading" role="status">{inbox?'Updating…':'Loading notifications…'}</p>}
@@ -85,7 +85,7 @@ export default function InboxPage({links={},onActions}) {
     {error&&<p role="alert" data-testid="inbox-error">{error}</p>}
     {inbox?.items.length===0&&<p className="page-empty" data-testid="inbox-empty">No notifications are recorded for your account.</p>}
     {inbox&&items.length>0&&visible.length===0&&<p className="page-empty">No notifications in this view.</p>}
-    <ul className="notification-list ib-list" data-testid="inbox-list">{visible.map(item=>{
+    <ul className="notification-list ib-list tab-fade" key={tab} data-testid="inbox-list">{visible.map(item=>{
       const label=category(item),link=links[label];
       return <li key={item.notification_id} className={item.read_at?'':'unread'} data-notification-id={item.notification_id} data-template-key={item.template_key}>
         <div className="ib-head"><span className="category-badge">{label}</span><span className="ib-state">{!item.read_at&&<span className="dot"/>}{item.is_service?'Service update':'Optional update'} · <span data-testid="notification-read-state">{item.read_at?'Read':'Unread'}</span></span>

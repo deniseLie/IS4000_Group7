@@ -40,7 +40,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable right now. Please retry later.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat','overview','inbox','compliance','requests'];  // one client view: the RM pages are not shown; the assistant hands questions to the RM
+const PAGES=['chat','overview','inbox','compliance','requests','actions'];  // one client view: the RM pages are not shown; the assistant hands questions to the RM
 const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Advice, fees or something else for my relationship manager']];
 // Guests can open every page's address too; they see a sign-in prompt instead of records (Actions is a drawer once signed in).
 function pageFromHash(session) {const page=location.hash.slice(1);return PAGES.includes(page)||!session&&page==='actions'?page:'chat';}
@@ -76,7 +76,6 @@ export default function Chat({session,onSignIn}) {
     setHistoryClosing(true);
     historyTimer.current=setTimeout(()=>{historyTimer.current=null;setHistoryClosing(false);setSavedChats(false);},260);
   }
-  const [actionsOpen,setActionsOpen]=useState(false);
   const [recordsOpen,setRecordsOpen]=useState(false);
   const [complianceOpen,setComplianceOpen]=useState(null);
   const [complianceBusy,setComplianceBusy]=useState(false);
@@ -105,6 +104,11 @@ export default function Chat({session,onSignIn}) {
     box.style.height='auto';box.style.height=`${Math.min(box.scrollHeight,160)}px`;
   },[input]);
 
+  const lastView=useRef(view);
+  useEffect(()=>{  // leaving Actions after a card decision refreshes the saved reply it belongs to
+    if(lastView.current==='actions'&&view!=='actions'&&workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
+    lastView.current=view;
+  },[view]);
   useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
     const sync=()=>setView(pageFromHash(session));
     window.addEventListener('hashchange',sync);return ()=>window.removeEventListener('hashchange',sync);
@@ -180,7 +184,7 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);closeHistory();setActionsOpen(false);setRecordsOpen(false);
+    setSummary(null);setArticle(null);closeHistory();setRecordsOpen(false);
     setNotice(preview?'This saved reply is waiting for your card decisions in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!preview&&!history.workflow&&!history.history_trimmed);
   }
 
@@ -213,7 +217,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setMode(session?'personal':'public');setNotice('New chat started.',true);
     setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);if(store!==null)setBootError('');
     return true;
   }
 
@@ -356,22 +360,21 @@ export default function Chat({session,onSignIn}) {
   }
   const showCompliance=complianceOpen??messages.some(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
   const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · No real banking services</span></footer>;  // who is signed in is shown by the sidebar profile
-  function openActions() {closeOverlays();setActionsOpen(true);}
+  function openActions() {closeOverlays();navigate('actions');}
   const review={label:'Review in Actions',onSelect:openActions},requests={label:'Open My requests',onSelect:()=>navigate('requests')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
-  function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setActionsOpen(false);setRecordsOpen(false);}
+  function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();history.replaceState(null,'',location.pathname+location.search);try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
     ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
-    {testid:'open-actions',ariaLabel:'Review proposed actions',icon:'card',label:'Actions',onSelect:openActions},
+    {testid:'open-actions',ariaLabel:'Open actions',icon:'history',label:'Actions',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
   // The sidebar and the mobile tab bar list the same pages; for guests every page but the assistant is a sign-in prompt.
   const pages=[
     {view:'overview',testid:'open-overview',icon:'account',label:'Overview',short:'Home'},
     {view:'chat',testid:'open-chat',icon:'chat',label:'Assistant',short:'Assistant'},
-    {view:'inbox',testid:session?'open-notifications':'nav-inbox',icon:'bell',label:'Inbox',short:'Inbox',badge:unread},
-    {view:'actions',testid:'nav-actions',icon:'card',label:'Actions',short:'Actions',onSelect:session?openActions:null},
+    {view:'actions',testid:'nav-actions',icon:'history',label:'Actions',short:'Actions',onSelect:session?openActions:null},
     {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',short:'Review'},
     {view:'requests',testid:'open-requests',icon:'clip',label:'My requests',short:'Requests'},
   ].map(page=>({...page,locked:!session&&page.view!=='chat',onSelect:page.onSelect||(()=>{if(page.view!=='chat')closeOverlays();navigate(page.view);})}));
@@ -379,10 +382,10 @@ export default function Chat({session,onSignIn}) {
 
   return <div className="bank-chat-page">
     <a className="skip-link" href="#chat-composer">Skip to message</a>
-    <TopBar session={session} onSupport={prepareSummary} onSignIn={onSignIn}/>
+    <TopBar session={session} onSupport={prepareSummary} onSignIn={onSignIn} unread={unread} inboxOpen={view==='inbox'} onInbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
       <Sidebar session={session} name={profileName} menu={menu} current={current} pages={pages} onSignOut={signOut}/>
-      <TabBar current={current} pages={pages.filter(page=>page.view!=='actions')}/>
+      <TabBar current={current} pages={pages}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-toolbar">
           <label className="pill-select" title="The language applies to AI answers only"><Icon name="info"/><select aria-label="Answer language" disabled={booting} value={language} onChange={e=>{if(store!=='database'||reset())setLanguage(e.target.value);}}>{['English','Chinese','Malay','Tamil'].map(l=><option key={l}>{l}</option>)}</select><Icon name="chevron"/></label>
@@ -392,7 +395,7 @@ export default function Chat({session,onSignIn}) {
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
         {store==='database'&&conversation&&pending&&!loading&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
-          <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={()=>setActionsOpen(true)}>Review actions</button>}
+          <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={openActions}>Review actions</button>}
           <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
           <button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel reply</button></span></div>}
         <section className="bank-chat-window" aria-label="Banking conversation">
@@ -428,8 +431,9 @@ export default function Chat({session,onSignIn}) {
         {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
         {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
+        {session&&view==='actions'&&<ActionsPanel key={pageKey} onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}}/>}
         {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary}/>}
-        {session&&view==='compliance'&&<CompliancePage key={pageKey} onBack={()=>navigate('chat')} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
+        {session&&view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
         {footer}
       </main>}
     </div>
@@ -457,9 +461,5 @@ export default function Chat({session,onSignIn}) {
       }}/>;
     })()}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)} onReviewActions={openActions}/>}
-    {actionsOpen&&<ActionsPanel onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}} onClose={()=>{
-      setActionsOpen(false);
-      if(workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
-    }}/>}
   </div>;
 }

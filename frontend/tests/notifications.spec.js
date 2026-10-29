@@ -15,7 +15,7 @@ test('recorded notification delivery follows a confirmed action and preserves re
   expect(confirmed.status()).toBe(200);
   expect((await confirmed.json()).receipt.outcome).toBe('succeeded');
   await expect(command.getByTestId('command-state')).toHaveText('succeeded');
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
   const delivery=page.waitForResponse(response=>response.url().endsWith('/notifications')&&response.request().method()==='GET');
   await page.getByTestId('open-notifications').click();
   expect((await delivery).status()).toBe(200);

@@ -59,7 +59,14 @@ export function nextStep(ticket) {
   if(ticket.status==='resolved')return 'The bank marked this resolved. If something is still wrong, raise a new request or use Talk to a person.';
   if(ticket.status==='closed')return 'Closed. Nothing more is needed from you.';
   if(ticket.overdue)return `This is past the ${ticket.owner_team.toLowerCase()}'s target time. Use Talk to a person to ask your relationship manager to follow up.`;
-  return `No action needed from you. The ${ticket.owner_team.toLowerCase()} decides and will update this request.`;
+  const team=/^your /i.test(ticket.owner_team)?ticket.owner_team:`The ${ticket.owner_team.toLowerCase()}`;
+  return `No action needed from you. ${team} will review it and update this request.`;
+}
+// What the request is about, in the client's words; internal wording from automatic handovers is replaced.
+export function ticketSummary(ticket) {
+  const text=ticket.summary||'';
+  if(/^An assistant section was withheld/i.test(text))return 'Part of an answer from the assistant could not be checked, so it was passed to your relationship manager.';
+  return text.replace(/^Client question for you:\s*/i,'');
 }
 
 // Which raisable category a chat question points to; null when none clearly does.

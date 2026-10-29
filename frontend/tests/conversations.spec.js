@@ -109,7 +109,7 @@ test('saved customer v2 unavailable section stays withheld after refresh and the
   await expect(page.getByTestId('command-state')).toHaveText('succeeded');
   await expect(page.getByTestId('command-receipt')).toHaveCount(1);
   await expect(page.getByTestId('review-command')).toHaveCount(0);
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
   await page.reload();
   await expect(handoff).toContainText('There is no staffed queue');
 });

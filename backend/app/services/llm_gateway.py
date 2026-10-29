@@ -1,4 +1,4 @@
-"""LLM Gateway (docs/architecture/system-architecture.md §5.11): the one model client for the planner and all agents.
+"""LLM Gateway (docs/architecture.md §5.11): the one model client for the planner and all agents.
 Strict JSON output, timeout, limited retries, per-request token budget, one `llm` LangSmith run per call
 (LangChain nests the provider call under it) and one model-call record for the audit log.
 Failures raise LLMError and are reported; they are never replaced with a sample answer."""

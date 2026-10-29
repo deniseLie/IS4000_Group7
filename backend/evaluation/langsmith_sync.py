@@ -1,4 +1,4 @@
-"""Mirror the committed live case files into LangSmith datasets (docs/evaluation/langsmith-evals-plan.md §3).
+"""Mirror the committed live case files into LangSmith datasets (docs/evaluation/README.md §3).
 Git is the source of truth: example ids derive from case ids, so re-running updates instead of duplicating,
 cases removed from a file leave its dataset (LangSmith keeps earlier versions), and every sync tags the
 latest dataset version with the file hash. Offline validator cases stay local.

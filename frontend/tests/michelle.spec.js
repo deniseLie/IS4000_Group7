@@ -37,7 +37,7 @@ test('michelle corrects and submits documents',async({page})=>{
  await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai',{timeout:170000});
  await item.getByTestId('document-upload-file').setInputFiles(fixture.valid_file);
  await item.getByTestId('document-upload-submit').click();
- await expect(item.getByTestId('precheck-result')).toHaveAttribute('data-precheck-status','no_issues',{timeout:170000});
+ await expect(item.getByTestId('item-sent')).toBeVisible({timeout:170000});
  await expect(item.getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
  await expect(workspace.getByTestId('submission-receipt')).toBeVisible();
  await expect(workspace).not.toContainText('Accepted by bank');
@@ -86,12 +86,11 @@ test('michelle corrects and submits documents',async({page})=>{
 test('rechecks expired Michelle upload before a new submission',async({page})=>{
  await seedSession(page);await page.goto('/');
  await page.getByTestId('open-compliance').click();
- const workspace=page.getByTestId('compliance-workspace'),result=workspace.getByTestId('precheck-result');
- await expect(result).toHaveAttribute('data-precheck-status','expired');
- await expect(result).toContainText(/expired/i);
- await expect(result).not.toContainText('No issues found');
+ const workspace=page.getByTestId('compliance-workspace');
+ // An expired passing check is not shown; the client just checks and sends the last upload again.
+ await expect(workspace.getByTestId('precheck-result')).toHaveCount(0);
  await workspace.getByTestId('check-current-upload').click();
- await expect(result).toHaveAttribute('data-precheck-status','no_issues',{timeout:170000});
+ await expect(workspace.getByTestId('item-sent')).toBeVisible({timeout:170000});
  await expect(workspace.getByTestId('submission-receipt')).toBeVisible();
  await expect(workspace.getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
  await page.reload();await page.getByTestId('open-compliance').click();

@@ -12,12 +12,12 @@ test('recorded action review confirms, rejects, expires and preserves real recei
     await expect(dialog.locator('[data-command-id]')).toHaveCount(5);
     const handoff=page.locator(`[data-command-id="${fixture.handoff_command_id}"]`);
     await expect(handoff.getByTestId('command-state')).toHaveText('succeeded');
-    await expect(handoff.getByTestId('command-receipt')).toBeVisible();
+    await expect(handoff.getByTestId('command-receipt')).toHaveCount(1);
     await expect(handoff.getByTestId('review-command')).toHaveCount(0);
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/action-review-${width}.png`,fullPage:true});
-    await page.getByRole('button',{name:'Close actions',exact:true}).click();
+    await page.getByTestId('open-chat').first().click();
     await expect(page.getByTestId('open-account-menu')).toBeFocused();
   }
   await openMenuItem(page,'open-actions');
@@ -53,7 +53,7 @@ test('recorded action review confirms, rejects, expires and preserves real recei
   await changed.getByTestId('acknowledge-command').check();
   await changed.getByTestId('confirm-command').click();
   await expect(changed.getByTestId('command-state')).toHaveText('failed');
-  await expect(changed.getByTestId('command-receipt')).toBeVisible();
+  await expect(changed.getByTestId('command-receipt')).toHaveCount(1);
 });
 
 test('recorded action empty scope and guest access stay separate',async({page,browser})=>{

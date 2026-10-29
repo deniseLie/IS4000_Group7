@@ -10,7 +10,7 @@ const TICKET={ticket_id:'3c063770-db29-48f4-bbfd-4c45c7e1093a',reference:'TCK-00
 test('tickets parse with their plain-language next step and reject tampered data',()=>{
   const [ticket]=parseTickets({data:[TICKET]});
   assert.equal(ticket.reference,'TCK-001001');
-  assert.match(nextStep(ticket),/No action needed from you\. The operations team decides/);
+  assert.match(nextStep(ticket),/No action needed from you\. The operations team will review it/);
   assert.match(nextStep({...ticket,status:'waiting_on_client',last_update:{...ticket.last_update,note:'Please upload proof of address.'}}),/proof of address/);
   assert.match(nextStep({...ticket,overdue:true}),/past the operations team's target time/);
   assert.throws(()=>parseTickets({data:[{...TICKET,status:'approved'}]}));

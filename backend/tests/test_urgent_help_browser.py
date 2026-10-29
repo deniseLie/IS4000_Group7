@@ -1,6 +1,6 @@
 """Workflow 1 end to end (Part B, impossible travel: block and dispute decisions with one staff case summary): normal UI, personal v2 with the real planner and agents, native JWT/RLS data.
 
-Run from backend/: TEST_BROWSER_LOCAL=1 TEST_WORKFLOW1_LIVE=1 ../.venv/bin/python -m pytest tests/test_workflow1_browser.py -q
+Run from backend/: TEST_BROWSER_LOCAL=1 TEST_WORKFLOW1_LIVE=1 ../.venv/bin/python -m pytest tests/test_urgent_help_browser.py -q
 Needs the native Data API (see test_data_api_local.py), frontend npm dependencies and a configured provider.
 A signed local session replaces the password step; the hosted config covers real login (decline only).
 """

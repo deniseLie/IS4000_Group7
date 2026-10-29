@@ -43,8 +43,8 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
     if(result.receipt?.outcome!=='succeeded')throw new Error('The item or file changed. Your document was not submitted. Reload before retrying.');
     if(mounted.current){setReceipt(result.receipt.receipt_id);onSubmitted?.({case_id:report.case_id,receipt_id:result.receipt.receipt_id});}
    }
+   // Stay where the client is (Compliance page or the review under the chat); the chat is used only when they ask.
    const result=await loadWorkspace(access);if(mounted.current)snapshot(result);
-   if(mounted.current&&onAsk)await onAsk('Please explain the recorded preliminary check for the document I just checked, including any corrections and its actual submission status.',{kind:'document',case_id:report.case_id,item_id:report.item_id,document_id:report.document_id,check_id:report.check_id});
   }catch(failure){if(mounted.current)setError(failure.message+' The file may already be recorded. Reload before retrying.');}
   finally{if(mounted.current)setBusy(false);}
  }
@@ -60,9 +60,10 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
  const icon=item=>/address/i.test(item.label)?'pin':/statement/i.test(item.label)?'document':/tax/i.test(item.label)?'bank':'card';
  const help=selection=>onSupport&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onSupport(selection)}><Icon name="support"/>{selection.request_id?'Get help with this request':selection.item_id?'Get help with this document':'Get help with this review'}</button>;
  return <section className={`compliance-workspace cw ${onPage?'cw-page':''}`} data-testid="compliance-workspace" aria-label="Your compliance review">
+  {onPage&&<header className="page-header"><div><span className="eyebrow">Compliance</span><h1>Compliance review</h1><p>Documents requested by the bank for your periodic review.</p></div>
+   <div className="page-header-actions"><button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Refresh</button></div></header>}
   <div className="cw-top"><div className="cw-tags">{review?<><span className="cw-notice-tag"><span className="dot"/>Formal compliance notice</span><code>Case ref: #{review.case_id.replaceAll('-','').slice(-8).toUpperCase()}</code></>:onPage?null:<h3>Your compliance review</h3>}</div>
-   <button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Refresh</button></div>
-  {onPage&&<header className="cw-title"><h1>Your compliance review</h1><p>Upload what the bank asked for. Each file gets a preliminary check before it is submitted.</p></header>}
+   {!onPage&&<button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Refresh</button>}</div>
   {!onPage&&review&&<h3 className="cw-chat-title">Your compliance review</h3>}
   {busy&&<p className="cw-busy loading" role="status">Checking recorded progress…</p>}
   {busy&&!workspace&&<div className="loading-list" aria-hidden="true"><span className="skeleton-block tall"/><span className="skeleton-card large"/><span className="skeleton-card large"/></div>}
@@ -101,27 +102,34 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
    <ul className="compliance-items">{items.map(item=>{
     const current=workspace.current_documents[item.item_id],report=workspace.checks.find(report=>report.document_id===current),fresh=report&&checkIsFresh(report,now),rule=workspace.rules[item.item_id];
     const open=!closed&&item.submission_status!=='accepted';
+    const submitted=item.submission_status==='submitted_awaiting_review',accepted=item.submission_status==='accepted';
+    const problem=report&&fresh&&report.status!=='no_issues';
+    const upload=<DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/>;
     return <li key={item.item_id} data-testid="compliance-item" data-item-id={item.item_id} className={`cw-item ${tone(item)}`}>
      <div className="cw-item-head"><h4>{item.label}</h4><p data-testid="compliance-item-status" className={`cw-pill ${DONE.includes(item.submission_status)?tone(item):markTone(item)}`}><strong>{primaryStatus(item)}</strong></p><span className="cw-item-icon"><Icon name={icon(item)}/></span></div>
-     <p className="cw-instructions">{item.instructions||'Instructions unavailable. Contact support rather than guessing.'}</p>
-     {open&&<DocumentGuide template={templateFor(item,templates)}/>}
-     {rule?<details className="cw-more"><summary>How the check works</summary><p>Each upload gets a quick automatic check against the list above. It looks for the details only; it does not confirm the document is genuine, and only the bank can accept it.</p><p>A check result stays valid for {workspace.policy.validity_hours} hours.</p></details>:<p>Automatic checks are not set up for this item. Use Get help with this document.</p>}
-     {report&&<div data-testid="precheck-result" data-precheck-status={fresh?report.status:'expired'} className={`cw-check ${fresh?report.status:'expired'}`}>
-      <strong>Quick check – not bank approval</strong><p>{!fresh?'This preliminary check has expired. Check the current upload again before submitting.':report.status==='no_issues'?'Everything we look for is there.':report.status==='issues_found'?'Please fix these before submitting:':'We could not check this file.'}</p>
-      <ul>{fresh&&report.findings.map((finding,index)=><li key={index}>{findingText(finding,rule)}</li>)}</ul>
-      <p className="rm-small">Checked {formatDateTime(report.checked_at)} · valid until {report.expires_at?formatDateTime(report.expires_at):'the recorded expiry'}.</p>
-      {onAsk&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onAsk('Explain the selected preliminary document check findings and how to fix them.',{kind:'document',case_id:review.case_id,item_id:item.item_id,document_id:current,check_id:report.check_id})}>Explain findings in chat</button>}
-     </div>}
-     {open&&(DONE.includes(item.submission_status)?<details className="cw-more"><summary>Upload a replacement</summary><DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/></details>
-      :<DocumentUpload key={current||item.item_id} review={review} itemId={item.item_id} onRegistered={checkAndSubmit} disabled={busy||chatBusy}/>)}
-     <div className="cw-item-foot">
-      {!closed&&!DONE.includes(item.submission_status)?<ChecklistPreparation key={`${item.item_id}:${item.client_marked_at}`} review={review} item={item} onSaved={refresh}/>:<span/>}
-      <div className="panel-actions">{current&&open&&<button className="cw-subtle" data-testid="check-current-upload" disabled={busy||chatBusy||!rule} onClick={()=>checkAndSubmit(current,true)}>Check and submit current upload</button>}
-      {help({review_case_id:review.case_id,item_id:item.item_id})}</div>
-     </div>
+     {accepted?<p className="cw-sent ok" data-testid="item-accepted"><Icon name="check"/>Accepted by the bank.</p>
+     :submitted?<>
+      <p className="cw-sent" data-testid="item-sent"><Icon name="check"/>Sent to the bank on {formatDate(item.updated_at)} – waiting for review.</p>
+      {open&&<details className="cw-more"><summary>Need to send a different file?</summary>{upload}</details>}
+     </>:<>
+      <p className="cw-instructions">{item.instructions||'Instructions unavailable. Use Get help with this document.'}</p>
+      {open&&<DocumentGuide template={templateFor(item,templates)}/>}
+      {problem&&<div data-testid="precheck-result" data-precheck-status={report.status} className={`cw-check ${report.status}`}>
+       <strong>{report.status==='issues_found'?'Please fix these, then upload again:':'We could not check this file.'}</strong>
+       <ul>{report.findings.map((finding,index)=><li key={index}>{findingText(finding,rule)}</li>)}</ul>
+       {onAsk&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onAsk('Explain the selected preliminary document check findings and how to fix them.',{kind:'document',case_id:review.case_id,item_id:item.item_id,document_id:current,check_id:report.check_id})}>Explain in chat</button>}
+      </div>}
+      {open&&upload}
+      {!rule&&<p>Automatic checks are not set up for this item. Use Get help with this document.</p>}
+      <div className="cw-item-foot">
+       {!closed?<ChecklistPreparation key={`${item.item_id}:${item.client_marked_at}`} review={review} item={item} onSaved={refresh}/>:<span/>}
+       <div className="panel-actions">{current&&open&&rule&&!problem&&<button className="cw-subtle" data-testid="check-current-upload" disabled={busy||chatBusy} onClick={()=>checkAndSubmit(current,true)}>Check and send my last upload</button>}
+       {help({review_case_id:review.case_id,item_id:item.item_id})}</div>
+      </div>
+     </>}
     </li>;
    })}</ul>
-   {displayedReceipt&&<p role="status" data-testid="submission-receipt" className="cw-receipt">Submitted – awaiting review. Receipt: <code>{displayedReceipt}</code>. This is not bank acceptance.</p>}
+   {displayedReceipt&&<p role="status" data-testid="submission-receipt" className="cw-receipt">Sent to the bank. You'll see the outcome here and in your Inbox.</p>}
   </>}
  </section>;
 }

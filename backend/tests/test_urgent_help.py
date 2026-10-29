@@ -230,7 +230,7 @@ TUESDAY=date(2026,10,27)
 
 
 def alex_retail():
-    """Alex's retail snapshot after migration 0070 (docs/planning/synthetic-data-spec.md)."""
+    """Alex's retail snapshot after migration 0070 (docs/synthetic-data.md)."""
     from app.schemas.retail import RetailRecords
     def row(txn: str,day: str,name: str,amount: float,status: str,card: bool) -> dict[str,object]:
         return {'txn_id':txn,'date':day,'description':name,'amount':amount,'currency':'SGD','status':status,

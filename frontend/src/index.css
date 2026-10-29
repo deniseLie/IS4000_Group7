@@ -1279,3 +1279,62 @@ small{font-size:max(12px,.83em)}
 .cw-guide>strong{font-size:13px}.cw-guide ul{margin:6px 0 4px 18px;padding:0;font-size:13px;line-height:1.6}
 .cw-example{margin-top:8px;padding:12px 14px;border:1px dashed var(--line,#d0d0d0);border-radius:6px;background:#fff;font-family:'JetBrains Mono',ui-monospace,monospace}
 .cw-example p{margin:2px 0;font-size:12px;color:var(--ink,#222)}
+.cw-sent{display:flex;align-items:center;gap:8px;margin:8px 0;padding:10px 12px;border-radius:8px;background:#EAF4EC;color:var(--ok,#2F7A3D);font-weight:600;font-size:14px}
+/* Inbox sits beside Talk to a person in the header */
+.inbox-action{position:relative}.inbox-action.active{border-color:var(--ink,#1C1C1C)}
+.inbox-badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red,#E60000);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+@media (max-width:640px){.inbox-action span:not(.inbox-badge){display:none}}
+/* Activity page (full-screen Actions): day groups, one plain sentence per entry, details on demand */
+.activity-search{margin:-6px 0 6px;max-width:320px}
+.activity-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.activity-head h1{margin:6px 0 4px;font-size:28px}.activity-head p{margin:0;color:var(--muted);font-size:14px;max-width:520px}
+.activity-tools{display:flex;gap:8px}
+.activity-filters{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.activity-filters .act-search{min-width:220px;flex:0 1 280px}
+.act-chips .count{margin-left:4px;opacity:.7;font-size:11px}
+.activity-day h2{margin:22px 0 8px;font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.activity-day h2.attention{color:var(--red)}
+.activity-list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.activity-item{display:flex;gap:14px;padding:16px 18px;border-top:1px solid var(--line)}
+.activity-item:first-child{border-top:0}
+.activity-item.wait{background:#FFFBF3}
+.activity-icon{flex:0 0 36px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--chalk);color:var(--ink)}
+.activity-icon svg{width:18px;height:18px}
+.activity-icon.compliance{background:#EEF3FB;color:#2B4C7E}.activity-icon.cards{background:var(--tint);color:var(--red)}.activity-icon.support,.activity-icon.requests{background:#EEF6EF;color:var(--ok)}
+.activity-body{flex:1;min-width:0}
+.activity-line{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.activity-line h3{margin:0;font-size:15px;font-weight:600;line-height:1.4}
+.activity-line time{font-size:12px;color:var(--muted);white-space:nowrap}
+.activity-detail{margin:3px 0 0;color:var(--muted);font-size:13.5px;line-height:1.5;overflow-wrap:anywhere}
+.activity-body .act-pill{margin-top:8px}
+.activity-body .act-actions{align-items:center}.activity-body .act-actions .primary-button{flex:0 0 auto;padding:0 16px}
+.activity-body .act-detail code{font-size:11px;word-break:break-all}
+@media (max-width:640px){.activity-item{padding:14px}.activity-icon{display:none}.activity-head h1{font-size:22px}.activity-filters .act-search{flex:1 1 100%}}
+
+/* One page layout: every page uses .app-page-body + .page-header (eyebrow, 30px title, one-line subtitle, actions on the right) */
+.compliance-page{max-width:896px}
+.ov-head h1{font-size:30px;line-height:36px}
+.cw-page .cw-top{margin:0 0 16px}
+.page-header{border-bottom:0}
+
+/* Compliance page: no extra card margin or paragraph spacing around the shared header */
+.compliance-workspace.cw-page{margin:0!important}
+.app-page-body .page-header h1{margin:8px 0 6px}
+.app-page-body .page-header p{margin:0;line-height:22px}
+.app-page-body .page-header .eyebrow{margin:0}
+/* Tabs: the red underline slides in and the list fades up when switching All / Open / Resolved… */
+.page-tabs button,.ib-tabs button{position:relative;transition:color .2s ease,background-color .2s ease,border-color .2s ease}
+.page-tabs button{border-bottom-color:transparent!important}
+.page-tabs button::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;border-radius:2px;background:var(--red);transform:scaleX(0);transform-origin:center;transition:transform .25s cubic-bezier(.2,.7,.2,1)}
+.page-tabs button[aria-selected="true"]::after{transform:scaleX(1)}
+.page-tabs button:hover{color:var(--ink)}
+.page-tabs .count{transition:background-color .2s ease,color .2s ease}
+.tab-fade{animation:rise-in .22s ease-out}
+@media (prefers-reduced-motion:reduce){.page-tabs button::after,.page-tabs button,.ib-tabs button{transition:none}.tab-fade{animation:none}}
+
+/* Pages start close to the sidebar instead of centring in a wide gap */
+.app-page{padding:0 40px}
+.app-page-body{margin:0;max-width:1040px}
+.compliance-page{max-width:1040px}
+@media (max-width:1000px){.app-page{padding:0 24px}}
+@media (max-width:760px){.app-page{padding:0 16px}}

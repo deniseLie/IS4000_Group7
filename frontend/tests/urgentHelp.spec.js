@@ -2,8 +2,8 @@ import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
 
-// Workflow 1 (docs/workflows/workflow-1-alex.md) through the normal UI, personal v2 and the real provider.
-// Native: backend/tests/test_workflow1_browser.py (signed local session replaces the password step; confirm and decline).
+// Workflow 1 (docs/workflows/workflow-1-client.md) through the normal UI, personal v2 and the real provider.
+// Native: backend/tests/test_urgent_help_browser.py (signed local session replaces the password step; confirm and decline).
 // Hosted: playwright.hosted.config.js with TEST_PERSONA_FIXTURE_FILE and TEST_HOSTED_AI=1 (real login; decline only, the card is never blocked).
 // Assertions are structural and record-based, never exact model wording. Provider failures fail the run.
 const native=!!process.env.NATIVE_BROWSER_FIXTURE;
@@ -44,7 +44,7 @@ async function signIn(page) {
 }
 
 for(const decision of ['confirm','decline'])test(`workflow one ${decision}: guest, three linked problems, block and dispute, follow-ups, handover and logout`,async({page})=>{
-  test.skip(!native&&!hosted,'Run through test_workflow1_browser.py or the hosted config with TEST_HOSTED_AI=1');
+  test.skip(!native&&!hosted,'Run through test_urgent_help_browser.py or the hosted config with TEST_HOSTED_AI=1');
   test.skip(hosted&&decision==='confirm','The hosted run never blocks the shared demo card');
   test.setTimeout(900000);
   const personalReads=[];

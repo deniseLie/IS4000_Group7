@@ -21,7 +21,7 @@ for(const decision of ['confirmation','rejection'])test(`durable action workflow
   } else await command.getByTestId('reject-command').click();
   await expect(command.getByTestId('command-state')).toHaveText(decision==='confirmation'?'succeeded':'rejected');
   await expect(command.getByTestId('command-workflow')).toContainText('completed');
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
   await expect(page.locator('#chat-composer')).toBeEnabled();
   const answer=page.getByTestId('chat-message-assistant');
   await expect(answer).toHaveAttribute('data-response-origin','safety');
@@ -81,7 +81,7 @@ test('real fraud proposal uses reviewed confirmation and persists the AI answer 
   const command=page.locator('[data-command-id]');
   await expect(command).toHaveCount(1);
   await expect(command.getByTestId('command-state')).toHaveText('proposed');
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
   await expect(page.locator('#chat-composer')).toBeDisabled();
   await openMenuItem(page,'open-records');
   await expect(page.getByTestId('records-card').locator('dd').first()).toHaveText('active');
@@ -94,7 +94,7 @@ test('real fraud proposal uses reviewed confirmation and persists the AI answer 
   await expect(page.getByTestId('command-state')).toHaveCount(2);
   await expect(page.getByTestId('command-state')).toHaveText(['succeeded','succeeded']);
   await expect(page.getByTestId('command-receipt')).toHaveCount(2);
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
   const section=page.getByTestId('answer-sections').locator('section[data-domain="fraud"][data-response-origin="ai"]');
   await expect(section).toBeVisible();
   await section.getByTestId('answer-sources').locator('summary').click();

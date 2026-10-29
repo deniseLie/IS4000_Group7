@@ -37,8 +37,8 @@ test('card self-service unblock, then a declined and a confirmed permanent cance
   await expect(card.getByTestId('unblock-card')).toBeVisible();
   await card.getByTestId('unblock-card').click();
   const unblock=await decide(page,'Unblock card ending 4821',true);
-  await expect(unblock.getByTestId('command-receipt')).toBeVisible();
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await expect(unblock.getByTestId('command-receipt')).toHaveCount(1);
+  await page.getByTestId('open-chat').first().click();
 
   card=await records(page);
   await expect(card).toContainText('active');
@@ -51,7 +51,7 @@ test('card self-service unblock, then a declined and a confirmed permanent cance
   await card.getByTestId('continue-cancel-card').click();
   const declined=await decide(page,'Cancel card ending 4821 permanently',false);
   await expect(declined).toContainText('No proposed change was executed');
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
 
   card=await records(page);
   await expect(card).toContainText('active');
@@ -63,7 +63,7 @@ test('card self-service unblock, then a declined and a confirmed permanent cance
   await command.getByTestId('acknowledge-command').check();
   await command.getByTestId('confirm-command').click();
   await expect(command.getByTestId('command-state')).toHaveText('succeeded');
-  await page.getByRole('button',{name:'Close actions',exact:true}).click();
+  await page.getByTestId('open-chat').first().click();
 
   card=await records(page);
   await expect(card).toContainText('cancelled');

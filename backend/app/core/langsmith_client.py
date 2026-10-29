@@ -1,4 +1,4 @@
-"""LangSmith client for evaluation runs and opt-in local tracing (docs/evaluation/langsmith-evals-plan.md §2).
+"""LangSmith client for evaluation runs and opt-in local tracing (docs/evaluation/README.md §2).
 Every string in run inputs, outputs, metadata and errors passes through privacy.redact before upload.
 Installing the client never enables tracing: that stays with LANGSMITH_TRACING (off by default)."""
 import langsmith
