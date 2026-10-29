@@ -13,6 +13,7 @@
 | `07_catch_up_0068_0078_hosted.sql` | Catch-up. Hosted already had the repository's 0062, 0063, 0065–0067 and 0069 (applied without being recorded); this adds what was missing: 0068 card self-service (made repeatable), 0070 merchant country and login-help article v2 (Alex's rows left out), then 0075–0078 (Michelle's demo charges and pending transfer, bank decisions, statements, reminder clean-up) | Once, after 06. One transaction; safe to re-run |
 | `08_apply_0079_hosted.sql` | Clears reminders already in the Inbox that she has acted on or whose deadline is out of date, once now and whenever a due date changes | Once, after 07 |
 | `09_apply_0080_hosted.sql` | Michelle can answer the bank's questions on her review (reply box, receipt in Actions, Inbox notice); `compliance.record_request_decision` lets the bank accept an answer or ask a follow-up | Once, after 08 |
+| `10_apply_0081_hosted.sql` | Card actions become bank-only: the client can no longer block, unblock or cancel a card or send a dispute draft; reported charges go to the fraud team as an urgent ticket; lost-card, unrecognised-charge and support guidance updated | Once, after 09 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

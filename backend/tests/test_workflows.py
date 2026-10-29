@@ -65,6 +65,7 @@ def enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings,'conversation_store','database')
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 @pytest.mark.parametrize('decision',['confirm','reject'])
 def test_review_resumes_persisted_graph_once(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None,decision: str) -> None:
     import psycopg
@@ -93,6 +94,7 @@ def test_review_resumes_persisted_graph_once(local_data_api: NativeAPI,native_ap
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 @pytest.mark.parametrize('block,dispute',[('confirm','confirm'),('reject','confirm'),('confirm','reject')])
 def test_block_and_dispute_are_two_decisions_in_one_paused_turn_with_one_case_summary(local_data_api: NativeAPI,
         native_api_client: TestClient,enabled: None,block: str,dispute: str) -> None:
@@ -123,6 +125,7 @@ def test_block_and_dispute_are_two_decisions_in_one_paused_turn_with_one_case_su
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_waiting_reply_preview_is_owned_and_only_available_before_the_decision(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     ctx=context(local_data_api,1001)
     owned,command=paused(local_data_api,ctx)
@@ -139,6 +142,7 @@ def test_waiting_reply_preview_is_owned_and_only_available_before_the_decision(l
     assert native_api_client.get(f'/workflows/{owned.turn.turn_id}/preview',headers=headers(ctx)).status_code==409
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_cancel_rejects_pending_and_foreign_customer_cannot_resume(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     ctx=context(local_data_api,1001)
     owned,command=paused(local_data_api,ctx)
@@ -152,6 +156,7 @@ def test_cancel_rejects_pending_and_foreign_customer_cannot_resume(local_data_ap
     assert result['command']['state']=='rejected' and result['receipt'] is None and result['workflow']['state']=='cancelled'
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_resume_lease_excludes_competitors_and_invalidates_old_saver(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     ctx=context(local_data_api,1001)
     owned,command=paused(local_data_api,ctx)
@@ -172,6 +177,7 @@ def test_resume_lease_excludes_competitors_and_invalidates_old_saver(local_data_
         assert error.value.code=='23505'
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_corrupt_checkpoint_keeps_receipt_and_allows_explicit_retry(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     import psycopg
     ctx=context(local_data_api,1001)
@@ -190,6 +196,7 @@ def test_corrupt_checkpoint_keeps_receipt_and_allows_explicit_retry(local_data_a
     assert retried.status_code==200 and retried.json()['state']=='completed',retried.text
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_review_must_be_saved_and_expiry_still_resumes_without_a_block(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     import psycopg
     ctx=context(local_data_api,1001)
@@ -210,6 +217,7 @@ def test_review_must_be_saved_and_expiry_still_resumes_without_a_block(local_dat
     assert 'expired without changing your card' in history['messages'][-1]['redacted_text']
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_handoff_failure_preserves_confirmed_card_and_retry_deduplicates_effects(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:
     import psycopg
     ctx=context(local_data_api,1001)
@@ -251,6 +259,7 @@ def test_personal_chat_missing_provider_reads_owned_records_but_never_proposes(l
         assert db.execute('select state from conversation.turns where session_id=%s',(sid,)).fetchone()==('completed',)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 @pytest.mark.skipif(os.getenv('TEST_FRAUD_LIVE')!='1',reason='Opt in to real personal-fraud model calls')
 def test_real_model_proposal_pauses_and_confirms(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None,monkeypatch: pytest.MonkeyPatch) -> None:
     import json

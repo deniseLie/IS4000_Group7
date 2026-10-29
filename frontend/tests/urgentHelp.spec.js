@@ -2,6 +2,11 @@ import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
 
+// Retired 30 Oct 2026 (migration 0081): the client can no longer block a card or send a dispute draft, which this browser
+// journey was built around. The new flow (urgent steps, report to the fraud team with a TCK reference) is covered by
+// backend tests/test_fraud_team_report.py. Kept for history; every test in this file is skipped.
+test.skip(true,'Retired by 0081: card actions are bank-only');
+
 // Workflow 1 (docs/workflows/workflow-1-client.md) through the normal UI, personal v2 and the real provider.
 // Native: backend/tests/test_urgent_help_browser.py (signed local session replaces the password step; confirm and decline).
 // Hosted: playwright.hosted.config.js with TEST_PERSONA_FIXTURE_FILE and TEST_HOSTED_AI=1 (real login; decline only, the card is never blocked).

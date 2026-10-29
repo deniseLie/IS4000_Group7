@@ -15,6 +15,7 @@ from tests.test_staff_support import block,handoff,staff_token,staff_user
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native staff CLI integration')
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_real_staff_cli_queue_claim_unblock_cancel_close_and_retry(local_data_api: NativeAPI,native_api_client: TestClient,tmp_path: Path) -> None:
     ctx,hid=handoff(local_data_api,native_api_client,'P0')
     token=staff_token(local_data_api,staff_user(local_data_api),'aal2',{'demobank_role':'support'})

@@ -34,9 +34,9 @@ flowchart LR
 | 1 | `plan` | Splits the message into issues. Clear single-topic English messages are planned by rules (`simple_issue`); anything else goes to the planner prompt (`prompts/planner/v2`), whose output is re-checked by rules (`route_issues`). | Only when rules cannot decide |
 | 2 | `prioritise` | Turns issues into tasks with priorities: P0 fraud, P1 security/login, P2 compliance deadline, P3 the rest. A fraud flag from the guardrail always creates a P0 fraud task. Questions that need a person (advice, fee or rate requests, complaints, "talk to my RM"; rules in `services/rm_handover.py`) are marked `handover`. | No |
 | 3 | `dispatch` | Runs every task's agent at the same time (`asyncio.TaskGroup`), each with its own timeout (`AGENT_TIMEOUT_S`). A failed agent only withholds its own section. A `handover` task skips the model and gets one polite fixed line. | Yes, inside each agent |
-| 4 | `propose_actions` | Turns a fraud agent's suggestion into real proposals in the action ledger: temporary card block and, when charges are flagged, a dispute draft. Nothing changes yet. | No |
+| 4 | `propose_actions` | Nothing to offer since 0081: card actions are the bank's, so a client is never asked to confirm a block or a dispute. (The retired offers stay in `offer_card_actions` for turns saved before the change.) | No |
 | 5 | `review_actions` | Pauses the graph (LangGraph `interrupt`) and saves a signed checkpoint. The customer decides in the chat card or in Actions. | No |
-| 6 | `settle_actions` | Reads the recorded decisions and writes fixed wording ("blocked" only with a receipt). A successful block records a P0 handoff for fraud staff, which also opens a **ticket** (0071). | No |
+| 6 | `settle_actions` | For a reported charge, records one urgent P0 handoff to the fraud team with a case summary built from records; it opens a `suspected_fraud` **ticket** (0071, 0081) and the reply quotes its `TCK-` reference. | No |
 | 7 | `escalate_validation` | **RM handover.** For each `handover` task, and each answer where the agent itself said a person is needed (`needs_human`), records a support handoff with the customer's redacted question. Migration 0073 turns it into an `rm_handover` ticket owned by the RM, and the reply quotes its `TCK-` reference. Withheld (failed-validation) sections share one handoff the same way. Guests are asked to sign in. | No |
 | 8 | `compose` | Joins the sections in priority order with sources and the disclaimer. | No |
 
@@ -47,7 +47,7 @@ flowchart LR
 | Domain | Agent | Prompt | Reads | Can propose |
 |---|---|---|---|---|
 | `retail` (and small talk) | Complex Banking (`agents/retail.py`) | `retail/v6` | profile, accounts, cards, loans, transactions, knowledge | nothing (answers only) |
-| `fraud` | Fraud & Security (`agents/fraud.py`) | `fraud/v5` | cards, transactions (masked) | temporary block, dispute draft |
+| `fraud` | Fraud & Security (`agents/fraud.py`) | `fraud/v6` | cards, transactions (masked) | nothing; the backend reports the case to the fraud team |
 | `compliance` | Compliance Review (`agents/compliance.py`) | `compliance/v3` | review case, checklist, knowledge | checklist marks |
 | `document` | Document Check (`agents/document.py`) | `document/v4` | the selected upload's pre-check | nothing |
 | `relationship` | Relationship (`agents/relationship.py`) | `relationship/v5` | RM assignment, requests, slots, appointments | nothing; for a meeting it suggests free times and points to My requests → Meetings, where she books it herself |

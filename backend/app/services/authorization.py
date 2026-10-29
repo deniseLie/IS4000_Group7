@@ -17,8 +17,9 @@ CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
     'requests.create','rm.share_summary','consent.grant','consent.revoke','ticket.create'}) | CUSTOMER_CARD_CHANGES
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
+BANK_ONLY_CARD_ACTIONS = frozenset({'card.temporary_block','card.dispute','card.unblock','card.cancel_permanently'})
 AGENT_ACTIONS = {
-    'fraud':frozenset({'card.temporary_block','card.dispute','card.order_replacement'}),
+    'fraud':frozenset({'card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke'}),
 }
@@ -54,7 +55,8 @@ def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | 
             return Decision(allow=False,reasons=['customer_session_required'])
         if scope.customer_id is not None and scope.customer_id != subject.customer_id:
             return Decision(allow=False,reasons=['customer_scope_mismatch'])
-    if action in CUSTOMER_CARD_CHANGES and context.agent is not None:return Decision(allow=False,reasons=['customer_only_action'])
+    # Card actions are the bank's (0081): clients and agents cannot block, dispute, unblock or cancel; staff use scripts/staff_support.py.
+    if action in BANK_ONLY_CARD_ACTIONS:return Decision(allow=False,reasons=['bank_only_action'])
     if action in STAFF_TYPES and action not in CUSTOMER_CARD_CHANGES:return Decision(allow=False,reasons=['staff_access_required'])
     if context.agent is not None:
         allowed = action in TOOLS[context.agent] or action in AGENT_ACTIONS.get(context.agent,frozenset())

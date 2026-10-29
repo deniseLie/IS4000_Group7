@@ -18,6 +18,7 @@ import CardBlockDialog from './components/CardBlockDialog';
 import DisputeDialog from './components/DisputeDialog';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
 import {loadIntroduction,relationshipIntent} from './lib/relationshipWorkflow';
+import {followUps} from './lib/followUps';
 import {prepareComplianceSupport} from './lib/compliance';
 import TopBar from './components/TopBar';
 import Sidebar,{TabBar} from './components/Sidebar';
@@ -361,6 +362,15 @@ export default function Chat({session,onSignIn}) {
   }
   // Compliance replies end with a hand-off to the review page, plus a toggle for the in-chat review panel under the latest one.
   const lastCompliance=messages.findLastIndex(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
+  // Suggested next questions under the latest answer, for clients not sure what to ask next (fixed lists, lib/followUps.js).
+  function nextQuestions(message,index) {
+    if(index!==messages.length-1||loading||pending)return null;
+    const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
+    const list=followUps({question:messages[index-1]?.role==='user'?messages[index-1].content:'',message,signedIn:!!session&&mode==='personal',asked});
+    if(!list.length)return null;
+    return <div className="follow-ups" data-testid="follow-ups"><span>You could also ask</span>
+      {list.map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text}</button>)}</div>;
+  }
   function complianceStep(message,index) {
     if(index!==lastCompliance||!session||mode!=='personal')return null;
     return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Open compliance review<Icon name="arrow"/></button>
@@ -419,7 +429,7 @@ export default function Chat({session,onSignIn}) {
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Answer withheld'}</small>}</div>}
                 <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
-                {ticketStep(m,i)}{complianceStep(m,i)}
+                {ticketStep(m,i)}{complianceStep(m,i)}{nextQuestions(m,i)}
                 {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
               </div>
             </div>)}

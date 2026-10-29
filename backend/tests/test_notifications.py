@@ -55,6 +55,7 @@ def block(api: NativeAPI,client: TestClient) -> UUID:
     return command.command_id
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_confirmed_card_delivers_once_and_only_customer_can_read(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:
     import psycopg
     command_id=block(local_data_api,native_api_client)
@@ -94,6 +95,7 @@ def test_worker_login_has_only_narrow_function_access(local_data_api: NativeAPI,
     with pytest.raises(worker.WorkerPermissionError):asyncio.run(reject_admin())
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_competing_workers_deliver_one_inbox_record_per_event(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:
     import psycopg
     block(local_data_api,native_api_client)
@@ -104,6 +106,7 @@ def test_competing_workers_deliver_one_inbox_record_per_event(local_data_api: Na
         assert db.execute("select count(*) from events.outbox where status='done'").fetchone()==(2,)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_service_delivery_ignores_optout_and_quiet_hours(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:
     import psycopg
     with psycopg.connect(local_data_api.database_uri) as db:
@@ -135,6 +138,7 @@ def test_optional_delivery_honours_preferences(local_data_api: NativeAPI,worker_
     if preference=='quiet':assert asyncio.run(drain(worker_uri))[0].disposition=='delivered'
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_failed_template_retries_then_dead_letters_without_losing_action_receipt(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:
     import psycopg
     command=block(local_data_api,native_api_client)

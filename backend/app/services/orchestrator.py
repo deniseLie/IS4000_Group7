@@ -28,15 +28,15 @@ from app.schemas.chat import ChatRequest, Message
 from app.schemas.customer_data import CustomerTransaction
 from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan,Receipt
 from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, Source,WorkflowPausedEvent
-from app.schemas.actions import ActionOutcome
-from app.schemas.disputes import StoredDisputeTarget
+from app.schemas.actions import ActionOutcome,HandoffResult
+from app.schemas.disputes import DisputeItem,StoredDisputeTarget
 from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery,KnowledgeSection,SectionKey
 from app.services import actions,audit,case_summary,customer_data,kb, llm_gateway, prompts,rm_handover,tools,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
-from app.services.agents import compliance,document,fraud,relationship,retail,retail_checks
+from app.services.agents import compliance,document,fraud,fraud_records,relationship,retail,retail_checks
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -311,6 +311,16 @@ async def dispatch(state: Turn, runtime: Runtime[PipelineContext]) -> DispatchUp
 
 
 async def propose_actions(state: Turn,runtime: Runtime[PipelineContext]) -> ReviewUpdate:
+    """Card actions are the bank's (0081): the client is no longer offered a block or a dispute draft, so nothing waits for
+    her review. A reported charge goes to the fraud team in settle_actions instead. Turns paused before this change still
+    resume through review_actions and settle their recorded decisions as before."""
+    return {'pending_reviews':[]}
+
+
+async def offer_card_actions(state: Turn,runtime: Runtime[PipelineContext]) -> ReviewUpdate:
+    """Retired by 0081: the client-confirmed block and dispute offers. Not wired into the graph. Kept because turns saved
+    before 0081 can still be waiting on these decisions, and tests use it to exercise the paused-turn machinery
+    (tests/legacy_card_actions.py)."""
     owned=runtime.context.workflow
     reviews: list[PendingReview]=[]
     cards: set[str]=set()
@@ -380,7 +390,64 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
             idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
         handoff=await actions.propose_for_workflow(command,handoff_id,owned,ctx.model_copy(update={'agent':'fraud'}))
         if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
+    if owned is not None and not state['pending_reviews']:sections+=await report_to_fraud_team(state,ctx,owned)
     return {'decision_sections':sections}
+
+
+FRAUD_TEAM=('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card ending {last4} if needed '
+    'and review the charges. Don’t wait for them if your card is at risk: call the fraud line on the back of your card or use the '
+    'report function in the official app now. I can’t block the card or reverse a charge from here. You can follow it in My requests.')
+
+
+async def report_to_fraud_team(state: Turn,ctx: RequestContext,owned: OwnedWorkflow) -> list[AnswerSection]:
+    """One urgent fraud-team handoff per reported card, with the staff case summary built from records; the reply quotes its ticket."""
+    sections: list[AnswerSection]=[]
+    reported: set[str]=set()
+    disputes=state.get('disputes') or [None]*len(state['proposals'])
+    for task,proposal,flagged in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
+        if proposal is None or proposal.card_id in reported:continue
+        reported.add(proposal.card_id)
+        records=await fraud_records.load(ctx.model_copy(update={'agent':'fraud'}))
+        card=next(item for item in records.cards if item.card_id==proposal.card_id)
+        ids=set(flagged.transaction_ids if flagged is not None and flagged.card_id==proposal.card_id else [proposal.transaction_id])
+        items=[DisputeItem(transaction_id=row.txn_id,date=row.date,merchant=row.description,amount=row.amount,currency=row.currency)
+            for row in records.transactions if row.txn_id in ids and row.amount<0]
+        summary=await staff_summary_for(state,task.task_id,card.last4,proposal.transaction_id,items,ctx)
+        handoff_id=task.task_id+'_fraud_team'
+        command=ActionCommand(command_id=uuid5(owned.turn.case_id,handoff_id+':handoff.create'),type='handoff.create',
+            target={'reason':'card_verification','priority':'P0','summary':summary},
+            idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
+        current=ctx.model_copy(update={'agent':None})
+        outcome=await actions.propose_for_workflow(command,handoff_id,owned,current)
+        if outcome.receipt is None or outcome.receipt.outcome!='succeeded' or not isinstance(outcome.receipt.result,HandoffResult):
+            raise ActionIntegrityError('The fraud team handoff did not return a successful receipt')
+        reference=await rm_handover.ticket_reference(outcome.receipt.result.handoff_id,current)
+        sections.append(AnswerSection(task_id=task.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',
+            answer=FRAUD_TEAM.format(reference=f' (reference {reference})' if reference else '',last4=card.last4),
+            sources=[Source(id='action-receipt-'+handoff_id,title='Recorded report to the fraud team',url=None,version='v1',publisher='DemoBank action ledger'),
+                Source.model_validate(source(INDEX['unrecognised-charge']))],
+            needs_human=True,response_origin='safety',prompt_version=None))
+    return sections
+
+
+async def staff_summary_for(state: Turn,task_id: str,last4: str,reported_id: str,items: list[DisputeItem],ctx: RequestContext) -> str:
+    """The fraud team's case summary (0081): the reported and flagged charges, other issues raised and her own words; no client decisions."""
+    transfers,due,lockout=await other_issues(state,ctx)
+    return case_summary.build(last4=last4,reported_id=reported_id,items=items,block=None,dispute=None,possession=None,
+        transfers=transfers,due=due,lockout=lockout,customer_words=state['risk'].redacted_message)
+
+
+async def other_issues(state: Turn,ctx: RequestContext) -> tuple[list[CustomerTransaction],object,bool]:
+    tasks=state['plan'].by_priority()
+    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
+    transfer=[task for task in tasks if task.domain=='retail' and retail_checks.TRANSFER.search(str(task.entities.get('question','')))
+        and 'linked' not in task.entities]
+    pending=[]
+    if transfer:
+        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
+        pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
+    due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
+    return pending,due,any(task.entities.get('linked')=='card_fraud' for task in tasks)
 
 
 async def staff_summary(state: Turn,task_id: str,block: ActionOutcome,dispute: ActionOutcome | None,ctx: RequestContext) -> str:

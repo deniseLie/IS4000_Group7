@@ -46,6 +46,7 @@ def block(client: TestClient,ctx: RequestContext,task: str) -> None:
     assert response.status_code==200 and response.json()['receipt']['outcome']=='succeeded',response.text
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_staff_claim_unblock_cancel_close_replay_and_customer_receipts(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     ctx,hid=handoff(local_data_api,native_api_client,'P0')
@@ -86,6 +87,7 @@ def test_staff_claim_unblock_cancel_close_replay_and_customer_receipts(local_dat
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_staff_role_mfa_signature_and_customer_entry_points_are_enforced(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     ctx,hid=handoff(local_data_api,native_api_client,'P1')
@@ -118,7 +120,7 @@ def test_staff_role_mfa_signature_and_customer_entry_points_are_enforced(local_d
             'p_idempotency_key':f'{ctx.case_id}:direct:card.unblock'}).execute()
         assert denied.value.code=='42501'
     assert native_api_client.post('/commands',headers=headers(ctx),json={'command_id':str(uuid4()),'case_id':str(ctx.case_id),
-        'task_id':'staff','type':'card.unblock','target':{'handoff_id':str(hid),'card_id':'card_10011'}}).status_code==422
+        'task_id':'staff','type':'card.unblock','target':{'handoff_id':str(hid),'card_id':'card_10011'}}).status_code in (403,422)  # bank-only since 0081
     with psycopg.connect(local_data_api.database_uri) as db:assert db.execute('select count(*) from actions.staff_commands').fetchone()==(0,)
 
 
@@ -202,6 +204,7 @@ def test_staff_change_and_receipt_roll_back_with_audit_or_outbox_failure(local_d
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_staff_effects_deliver_canonical_customer_notifications(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:
     from tests.test_notifications import drain
     ctx,hid=handoff(local_data_api,native_api_client,'P0')

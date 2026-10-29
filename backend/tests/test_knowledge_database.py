@@ -49,7 +49,7 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(26,)  # 0071 adds card-limit-change; 0077 adds statements v2
+    assert database.execute('select count(*) from kb.articles').fetchone()==(29,)  # 0071 card-limit-change; 0077 statements v2; 0081 lost-card v3, unrecognised-charge v3, support v4
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:
@@ -157,8 +157,8 @@ def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', que
 
 def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
-    assert database.execute("select article_id,version from kb.articles where article_id in ('lost-card','support') and status='published' order by 1").fetchall()==[('lost-card',2),('support',3)]
-    assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={2}
+    assert database.execute("select article_id,version from kb.articles where article_id in ('lost-card','support') and status='published' order by 1").fetchall()==[('lost-card',3),('support',4)]  # 0081
+    assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={3}
     assert database.execute("select article_id from public.kb_get_section('support',1,'main')").fetchall()==[('support',)]
     assert database.execute("select * from public.kb_get_fact('savings.fall_below_fee')").fetchall()==[(2,'SGD','kb:savings-fees@v1#main')]
 
@@ -176,6 +176,6 @@ def test_unexpected_code_guidance_publishes_login_recovery_v2(database: 'Connect
 def test_workflow_one_part_b_guidance_is_published(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     assert database.execute("select article_id,version from kb.articles where article_id in ('unrecognised-charge','transfer-timing','account-security-after-fraud') and status='published' order by 1").fetchall()==[
-        ('account-security-after-fraud',1),('transfer-timing',1),('unrecognised-charge',2)]
+        ('account-security-after-fraud',1),('transfer-timing',1),('unrecognised-charge',3)]  # 0081
     assert 'transfer-timing' in [row[1] for row in search(database,"my rent transfer still says pending, will it make it",[],4)]
     assert database.execute("select article_id from public.kb_get_section('unrecognised-charge',1,'urgent-steps')").fetchall()==[('unrecognised-charge',)]

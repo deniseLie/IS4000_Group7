@@ -1400,3 +1400,10 @@ small{font-size:max(12px,.83em)}
 .cw-alert-icon.wait{border-color:#c58a12;color:#8a5a00}.cw-alert-icon.ok{border-color:#2f7a3d;color:#2f7a3d}
 .cw-answer{white-space:pre-wrap;padding:8px 12px;border-left:3px solid var(--line);color:var(--ink-2,var(--ink));background:#fff;border-radius:6px}
 .cw-sent-at{display:block;margin-top:8px;color:var(--muted);font-size:12px}
+
+/* Suggested next questions under the latest answer. */
+.follow-ups{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.follow-ups>span{width:100%;font-size:12px;color:var(--muted)}
+.follow-ups button{padding:7px 12px;border:1px solid var(--line-2,var(--line));border-radius:99px;background:#fff;color:var(--ink);font:inherit;font-size:13px;cursor:pointer;text-align:left;transition:border-color .15s,background .15s}
+.follow-ups button:hover:not(:disabled){border-color:var(--red);background:#FFF5F3}
+.follow-ups button:disabled{opacity:.5;cursor:default}

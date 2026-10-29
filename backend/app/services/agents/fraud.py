@@ -12,7 +12,7 @@ from app.services.agents import fraud_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
-PROMPT='v5'
+PROMPT='v6'
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
 URGENT='If you do not recognise a charge, contact your bank now through the official fraud line on the back of your card or its official app. Never share your PIN, password, one-time code or full card number.'
 
@@ -107,13 +107,13 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     flagged=bool(FRAUD.search(question) or FRAUD.search(latest) or travel is not None)
     pv=prompts.load('fraud',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
-    if flagged and len(pairs)==1:system+='\nRecords-derived offers for review: temporary card block and dispute draft'
+    if flagged and len(pairs)==1:system+='\nThe case goes to the fraud team as urgent (the customer cannot block the card here)'
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
     system+='\nEligible pairs: '+json.dumps([item.model_dump() for item in pairs])
     response=await llm_gateway.call(pv,system,[(m.role,m.content) for m in history],schema_for(evidence))
     decision=decision_for(task,json.dumps(response.data,ensure_ascii=False),evidence,pairs,pv['id'],flagged)
-    # The dispute draft, like the guaranteed block offer, comes from records for a flagged report, never from model text.
+    # The flagged charges for the fraud team's summary come from records for a flagged report, never from model text.
     if flagged and decision.proposal is not None:
         decision=decision.model_copy(update={'dispute':fraud_records.dispute_for(records,decision.proposal)})
     return decision,evidence

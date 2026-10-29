@@ -6,14 +6,12 @@ import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
 import {formatAmount as amount,formatDate,formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
-import {cardChanges,proposeCardChange} from '../lib/cardChanges';
 
 // Names and amounts stay exactly as recorded here (card and loan currencies are not recorded); dates use the shared format.
 function label(value) {return value.replaceAll('_',' ');}
 function recordedDate(value) {return value===null?'Not recorded':formatDate(value);}
 
 export default function RecordsPanel({onClose,onReviewActions}) {
-  const [warning,setWarning]=useState(null),[changing,setChanging]=useState(false),[changeError,setChangeError]=useState('');
   const [records,setRecords]=useState(null);
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(false);
@@ -37,18 +35,6 @@ export default function RecordsPanel({onClose,onReviewActions}) {
     }
     load();return ()=>controller.abort();
   },[revision,query]);
-  // A card change is only proposed here; nothing changes until the customer confirms it in Actions.
-  async function change(card,type) {
-    setChanging(true);setChangeError('');
-    try {
-      const {data,error:sessionError}=await supabase.auth.getSession();
-      if(sessionError)throw sessionError;
-      if(!data.session)throw new Error('Please sign in again to change your card.');
-      await proposeCardChange(card.card_id,type,data.session.access_token);
-      setWarning(null);onReviewActions();
-    } catch(failure) {setChangeError(failure.message);}
-    finally {setChanging(false);}
-  }
   function refresh(event) {
     event.preventDefault();
     setQuery({from_date:from||null,to_date:to||null,filters:status?{status}:null});setRevision(value=>value+1);
@@ -71,17 +57,8 @@ export default function RecordsPanel({onClose,onReviewActions}) {
       <section><h3>Cards</h3>{records.cards.data.length===0&&<p>No cards recorded.</p>}
         {records.cards.data.map(row=><article key={row.card_id} data-testid="records-card"><h4>{row.name} · ****{row.last4}</h4>
           <dl className="sharing-details record-table"><dt>Status</dt><dd>{label(row.status)}</dd><dt>Credit limit</dt><dd>{amount(row.limit)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Minimum payment</dt><dd>{amount(row.minimum_payment)}</dd><dt>Due date</dt><dd>{recordedDate(row.due_date)}</dd></dl>
-          {onReviewActions&&cardChanges(row.status).length>0&&<div className="card-manage" data-testid="manage-card">
-            {cardChanges(row.status).includes('card.unblock')&&<button className="bank-chat-logout" data-testid="unblock-card" disabled={changing} onClick={()=>change(row,'card.unblock')}>Unblock card</button>}
-            {cardChanges(row.status).includes('card.cancel_permanently')&&<button className="bank-chat-logout card-cancel" data-testid="cancel-card" disabled={changing} onClick={()=>setWarning(row.card_id)}>Cancel card permanently…</button>}
-            {row.status==='temporarily_blocked'&&<p className="source-notice">Unblocking lets new payments through again. If the card was blocked for a suspicious charge, unblock it only if you are sure it is safe.</p>}
-          </div>}
-          {warning===row.card_id&&<div className="card-cancel-warning" role="alert" data-testid="cancel-card-warning">
-            <p><strong>This cannot be undone.</strong> Cancelling permanently closes the card ending {row.last4}; it can never be reactivated. A replacement card is a separate request to the bank. You review and confirm the cancellation in Actions; nothing changes until you confirm.</p>
-            <div className="panel-actions"><button className="primary-button" data-testid="continue-cancel-card" disabled={changing} onClick={()=>change(row,'card.cancel_permanently')}>Continue to review</button>
-              <button className="bank-chat-logout" disabled={changing} onClick={()=>setWarning(null)}>Keep my card</button></div></div>}</article>)}
-        {changing&&<p className="loading" role="status">Preparing the card change for review…</p>}
-        {changeError&&<p role="alert" data-testid="card-change-error">{changeError}</p>}</section>
+          {row.status!=='active'&&<p className="source-notice" data-testid="card-bank-only">Only the bank can unblock or cancel a card. Contact the fraud team, or ask your relationship manager.</p>}</article>)}
+</section>
       <section><h3>Loans</h3>{records.loans.data.length===0&&<p data-testid="records-loans-empty">No loans recorded.</p>}
         {records.loans.data.map(row=><article key={row.loan_id} data-testid="records-loan"><h4>{label(row.type)} · {label(row.status)}</h4>
           <dl className="sharing-details record-table"><dt>Original amount</dt><dd>{amount(row.principal)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Next payment</dt><dd>{amount(row.next_amount)}</dd><dt>Due date</dt><dd>{recordedDate(row.next_payment)}</dd></dl></article>)}

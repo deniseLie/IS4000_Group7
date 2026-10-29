@@ -32,15 +32,19 @@ def test_workflow_one_questions_retrieve_demo_guidance(question,expected):
     article=knowledge.INDEX[expected]
     assert article.reference_url is None and not answers.URL.search(article.content)
 
-def test_part_b_guidance_has_no_invented_times_and_names_the_dispute_draft():
+def test_part_b_guidance_has_no_invented_times_and_names_the_fraud_team():
     assert 'transfer-timing' in [a.id for a in knowledge.search("my rent transfer still says pending, will it make it")]
     for key in ('transfer-timing','account-security-after-fraud'):
         assert not re.search(r'[0-9]',knowledge.INDEX[key].content)
-    assert 'dispute draft' in knowledge.INDEX['unrecognised-charge'].content and 'not proof of fraud' in knowledge.INDEX['unrecognised-charge'].content
+    assert 'fraud team' in knowledge.INDEX['unrecognised-charge'].content and 'not proof of fraud' in knowledge.INDEX['unrecognised-charge'].content
 
-def test_revised_guidance_describes_confirmed_block_and_recorded_handoff():
-    assert 'only after you confirm' in knowledge.INDEX['lost-card'].content and 'cannot block a card from this reply' in knowledge.INDEX['lost-card'].content
-    assert 'records a support handoff' in knowledge.INDEX['support'].content and 'no staffed queue' in knowledge.INDEX['support'].content
+def test_guidance_says_only_the_bank_blocks_cards_and_where_reports_go():
+    # 0081: card actions are the bank's; the assistant passes reports to the fraud team and other questions to the RM.
+    for key in ('lost-card','unrecognised-charge','support'):
+        text=knowledge.INDEX[key].content
+        assert 'only after you confirm' not in text and 'dispute draft' not in text and 'can offer a temporary block' not in text
+    assert 'cannot block, unblock or cancel a card; only the bank can' in knowledge.INDEX['lost-card'].content
+    assert 'fraud team' in knowledge.INDEX['support'].content and 'relationship manager' in knowledge.INDEX['support'].content
 
 @pytest.mark.parametrize('change',[
  {'review_due':'2000-01-01'}, {'checked_on':'2099-01-01'},

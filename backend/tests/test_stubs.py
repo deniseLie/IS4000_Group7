@@ -19,10 +19,9 @@ def test_stub_signatures(fn,params):assert list(inspect.signature(fn).parameters
 def test_decide_rules():
     c=ctx()
     assert isinstance(policy.decide(c.principal,'kb.search',None,c),Decision)
-    assert 'require:confirmation' in policy.decide(c.principal,'card.temporary_block',None,c).obligations
-    assert 'require:confirmation' in policy.decide(c.principal,'card.dispute',None,c).obligations
+    for tool in ['card.temporary_block','card.dispute']:assert policy.decide(c.principal,tool,None,c).reasons==['bank_only_action']  # 0081
     assert policy.decide(c.principal,'handoff.create',None,c).obligations==[]
     for level in ['aal1','aal2']:
         customer=ctx(aal=level)
         assert not policy.decide(customer.principal,'handoff.claim',None,customer).allow
-        assert 'require:confirmation' in policy.decide(customer.principal,'card.unblock',None,customer).obligations
+        assert policy.decide(customer.principal,'card.unblock',None,customer).reasons==['bank_only_action']

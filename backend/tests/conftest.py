@@ -1,6 +1,6 @@
 import os
 
-pytest_plugins=['tests.database_support','tests.data_api_support','tests.langsmith_support']
+pytest_plugins=['tests.database_support','tests.data_api_support','tests.langsmith_support','tests.legacy_card_actions']
 
 os.environ['LANGSMITH_TRACING']='false'  # tests must never send runs to LangSmith, even when the root .env traces
 os.environ['AUDIT_STORE']='0'  # nor audit events (append-only, cannot be cleaned up)

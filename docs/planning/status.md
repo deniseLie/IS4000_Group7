@@ -36,7 +36,7 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 
 ## Persona 1 (client) – open items
 
-- **Hosted project:** run `07`, `08` and `09` from `backend/supabase/hosted/` in order (01–06 are done).
+- **Hosted project:** run `07`, `08`, `09` and `10` from `backend/supabase/hosted/` in order (01–06 are done).
 - **Reminders:** off until the worker runs. README step 5: create the `demobank_reminders` login, set `WORKER_DATABASE_URL` and `RUN_WORKER_IN_API=true`.
 - **Run the 10 test cases** and record the results (F22 evidence).
 - **Assign owners** in the backlog and in `test-cases.md`.
@@ -48,6 +48,8 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Meetings with her RM (CR18):** My requests → Meetings (free times, hold, confirm, cancel); meeting questions are no longer turned into RM tickets; prompt `relationship/v5`.
 - **Statements (CR15, 0077):** Overview → Statements, last 3 full months for her account and card, printable; older or certified copies via a statement copy request; the assistant points to either.
 - **Answering the bank's questions (CR6, 0080):** reply box on *The bank asked you*; answer sent with a receipt and Inbox notice, then "Sent to the bank on … – waiting for review"; the bank accepts or asks a follow-up with `compliance.record_request_decision`.
+- **Suggested next questions in the chat:** up to 3 tappable follow-ups under the latest answer, from fixed topic lists.
+- **Card actions are bank-only (CR12, 0081, 30 Oct):** no block, unblock, cancel or dispute draft for the client; unrecognised charges get urgent steps and an urgent fraud-team ticket with a `TCK-` reference. Fraud prompt v6.
 - **Test cases (QA1):** Michelle C01–C10 in `docs/evaluation/test-cases.md`.
 - Compliance review stays on its page after an upload; the chat is used only when the client clicks *Explain in chat*. Submitted items show one line, "Sent to the bank on … – waiting for review", with a *Need to send a different file?* link.
 - Inbox moved to the header beside *Talk to a person*.

@@ -49,6 +49,7 @@ def propose(client: TestClient,ctx: RequestContext,command: ActionCommand) -> Ac
     return ActionOutcome.model_validate(response.json())
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_card_proposal_waits_for_confirmation_and_concurrent_retries_share_one_receipt(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     ctx=owned_case(local_data_api,context(local_data_api,1001))
@@ -83,6 +84,7 @@ def test_card_proposal_waits_for_confirmation_and_concurrent_retries_share_one_r
     assert native_api_client.post(f'/commands/{command.command_id}/confirm',headers=headers(ctx)).json()==result.model_dump(mode='json')
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_rejection_expiry_and_target_change_never_claim_success(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     ctx=owned_case(local_data_api,context(local_data_api,1001))
@@ -109,6 +111,7 @@ def test_rejection_expiry_and_target_change_never_claim_success(local_data_api: 
         assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('cancelled',)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_scope_policy_and_direct_table_writes_are_enforced(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     ctx=owned_case(local_data_api,context(local_data_api,1001))
     command=card_command(ctx,'scope')
@@ -193,6 +196,7 @@ def test_changed_idempotency_parameters_and_direct_credential_writes_are_rejecte
         assert db.execute('select count(*) from support.handoffs').fetchone()==(1,)
 
 
+@pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 @pytest.mark.parametrize('failure',['audit','outbox'])
 def test_execution_and_ledger_roll_back_together(local_data_api: NativeAPI,native_api_client: TestClient,failure: str) -> None:
     import psycopg

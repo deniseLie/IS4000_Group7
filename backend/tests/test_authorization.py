@@ -55,8 +55,8 @@ def test_resource_scope_is_validated_and_cannot_override_identity(scope):
 
 @pytest.mark.parametrize('agent,allowed,forbidden',[
     ('retail','customer.get_accounts','compliance.get_case'),
-    ('fraud','card.temporary_block','customer.get_loans'),
-    ('compliance','compliance.update_checklist_item','card.temporary_block'),
+    ('fraud','customer.get_credit_cards','customer.get_loans'),
+    ('compliance','compliance.update_checklist_item','customer.get_credit_cards'),
     ('document','docs.precheck','customer.get_profile'),
     ('relationship','rm.share_summary','customer.get_transactions'),
 ])
@@ -76,17 +76,17 @@ def test_obligations_and_staff_restrictions():
         elevated=ctx.model_copy(update={'principal':ctx.principal.model_copy(update={'aal':level})})
         for tool in ['handoff.claim','handoff.close']:
             assert decide(elevated.principal,tool,None,elevated).reasons==['staff_access_required']
-        # The customer's own card changes are allowed for the customer, always behind confirmation; staff keep a separate path.
-        for tool in ['card.unblock','card.cancel_permanently']:
-            assert decide(elevated.principal,tool,{'customer_id':1001},elevated).obligations==['require:confirmation']
+        # Card actions are the bank's since 0081: a customer cannot block, dispute, unblock or cancel; staff keep a separate path.
+        for tool in ['card.temporary_block','card.dispute','card.unblock','card.cancel_permanently']:
+            assert decide(elevated.principal,tool,{'customer_id':1001},elevated).reasons==['bank_only_action']
             assert decide(elevated.principal,tool,{'customer_id':1003},elevated).reasons==['customer_scope_mismatch']
 
 
 @pytest.mark.parametrize('agent',['fraud','retail','relationship','compliance','document'])
-def test_no_agent_may_propose_a_customer_card_change(agent: str):
+def test_no_agent_may_propose_a_card_action(agent: str):
     ctx=customer(agent)
-    for tool in ['card.unblock','card.cancel_permanently']:
-        assert decide(ctx.principal,tool,{'customer_id':1001},ctx).reasons==['customer_only_action']
+    for tool in ['card.temporary_block','card.dispute','card.unblock','card.cancel_permanently']:
+        assert decide(ctx.principal,tool,{'customer_id':1001},ctx).reasons==['bank_only_action']
     guest=Principal(kind='guest')
     assert not decide(guest,'card.unblock',None,RequestContext(session_id=uuid4(),principal=guest)).allow
 

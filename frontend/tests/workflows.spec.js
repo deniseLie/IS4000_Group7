@@ -2,6 +2,11 @@ import {openMenu,openMenuItem} from './menu.js';
 import {test,expect} from '@playwright/test';
 import {fixture,seedSession} from './nativeSession';
 
+// Retired 30 Oct 2026 (migration 0081): the client can no longer block a card or send a dispute draft, which this browser
+// journey was built around. The new flow (urgent steps, report to the fraud team with a TCK reference) is covered by
+// backend tests/test_fraud_team_report.py. Kept for history; every test in this file is skipped.
+test.skip(true,'Retired by 0081: card actions are bank-only');
+
 async function open(page) {
   await seedSession(page);
   await page.addInitScript(({user_id,session_id})=>localStorage.setItem(`demobank.active.${user_id}`,JSON.stringify({session_id,guest_token:null})),fixture);

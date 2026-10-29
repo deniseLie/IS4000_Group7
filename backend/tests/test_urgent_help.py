@@ -214,7 +214,7 @@ def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions
 def test_personal_retail_and_fraud_use_the_new_prompt_versions() -> None:
     task=Task(task_id='t1',domain='retail',intent='answer_question',entities={'question':'car loan'})
     assert task_prompt_id(task,personal())==prompts.load('retail','v6')['id']
-    assert task_prompt_id(task.model_copy(update={'domain':'fraud'}),personal())==prompts.load('fraud','v5')['id']
+    assert task_prompt_id(task.model_copy(update={'domain':'fraud'}),personal())==prompts.load('fraud','v6')['id']
     assert prompts.current('planner')['version']=='v2'
 
 
@@ -358,7 +358,7 @@ def test_linked_otp_and_lock_get_the_unexpected_code_guidance_by_id() -> None:
     assert asyncio.run(linked_evidence(task.model_copy(update={'entities':{'question':'locked out'}}),ctx))==[]
     system=prompts.load('retail','v6')['system']
     assert 'likely linked to the card charges' in system and 'Never say that DemoBank or its systems detected' in system
-    assert 'Never say that DemoBank or its systems detected a sign-in' in prompts.load('fraud','v5')['system']
+    assert 'Never say that DemoBank or its systems detected a sign-in' in prompts.load('fraud','v6')['system']
 
 
 def test_card_payment_figures_are_supported_by_alexs_record_without_a_currency() -> None:

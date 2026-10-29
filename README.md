@@ -26,7 +26,7 @@ backend/
     core/           config, auth/JWT gateway, Data API client, logging, LangSmith client
     services/       the logic: orchestrator, guardrail, validators, document checks, tickets…
       agents/       the five agents: retail, fraud, compliance, document, relationship
-      actions/      every change goes through here (card block, handoff, ticket, upload…)
+      actions/      every change goes through here (handoff, ticket, meeting, upload, answer…)
     prompts/        prompts by agent and version (never edit a released version)
     schemas/        Pydantic models
   supabase/

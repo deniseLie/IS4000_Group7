@@ -75,19 +75,19 @@ The orchestrator steps are the 8 graph nodes: plan → prioritise → dispatch �
 | Field | Value |
 |---|---|
 | Persona / category / type / priority | Michelle / Fraud / Normal (urgent) / Must |
-| Backlog story / UBS feedback | CR12 / urgent steps first; act only after the client confirms |
+| Backlog story / UBS feedback | CR12 / urgent steps first; only the bank blocks a card |
 | Owner | _to assign_ |
 | Setup | Signed in. Demo data `0075`: on 27 Oct card 7310 was used in Singapore at 12:40 pm and in London at 2:05 pm (SGD 1.00) and 2:21 pm (SGD 3,850.00). |
 | Input | `I don't recognise the London charges on my card` |
-| Orchestrator steps | plan (fraud flag) → prioritise (P0 fraud task) → dispatch fraud agent → propose_actions (temporary block, dispute draft) → review_actions (waits for her confirmation) → settle_actions (block receipt, P0 handoff, ticket) → compose. |
-| Specialist agents / tools | Fraud agent (`fraud/v5`) / cards, transactions (masked) |
+| Orchestrator steps | plan (fraud flag) → prioritise (P0 fraud task) → dispatch fraud agent → propose_actions (nothing to offer since 0081) → settle_actions (P0 fraud-team handoff and ticket, reference read back) → compose. No pause. |
+| Specialist agents / tools | Fraud agent (`fraud/v6`) / cards, transactions (masked) |
 | Agent-level checks | Names the two London charges and the impossible-travel pattern; the small SGD 1.00 charge before a larger one is called a possible card test, not proof. |
 | Priority order and escalation | P0 first in the reply; fraud operations, not the RM. |
-| Expected output | Urgent steps first; offers a temporary block of card 7310 and a dispute draft listing both charges; after she confirms, says the block is active with a receipt and gives a `TCK-` reference. |
-| Must not happen | "Blocked" before confirmation; a promised refund; cancelling the card; the full card number. |
+| Expected output | Urgent steps first (fraud line on the back of the card, report or freeze in the official app); names both London charges; says it has been passed to the fraud team as urgent with a `TCK-` reference, and that the fraud team will contact her and block the card if needed. |
+| Must not happen | Any offer to block, unblock or cancel the card, or a dispute draft; saying the card is blocked; a promised refund; the full card number. |
 | Hand-off | P0 handoff to fraud operations, with a ticket. |
-| Pass criteria | Block only after confirm; receipt in Actions; ticket visible in My requests. |
-| Automated cover | `tests/test_bank_decisions.py::test_michelle_has_her_own_suspicious_charges_and_pending_transfer`, `tests/test_card_dispute.py`, `tests/test_fraud.py` |
+| Pass criteria | No block or dispute buttons; one urgent fraud ticket in My requests with the quoted reference; card 7310 still active until the bank acts. |
+| Automated cover | `tests/test_bank_decisions.py::test_michelle_has_her_own_suspicious_charges_and_pending_transfer`, `tests/test_fraud_team_report.py`, `tests/test_card_self_service.py`, `tests/test_fraud.py` |
 
 ## C04 – Higher card limit for a trip
 
