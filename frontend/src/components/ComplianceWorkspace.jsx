@@ -65,7 +65,7 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
   <div className="cw-top"><div className="cw-tags">{review?<><span className="cw-notice-tag"><span className="dot"/>Formal compliance notice</span><code>Case ref: #{review.case_id.replaceAll('-','').slice(-8).toUpperCase()}</code></>:onPage?null:<h3>Your compliance review</h3>}</div>
    {!onPage&&<button className="bank-chat-logout" disabled={busy} onClick={refresh}><Icon name="refresh"/>Refresh</button>}</div>
   {!onPage&&review&&<h3 className="cw-chat-title">Your compliance review</h3>}
-  {busy&&<p className="cw-busy loading" role="status">Checking recorded progress…</p>}
+  {busy&&<p className="cw-busy loading" role="status">Checking your compliance review…</p>}
   {busy&&!workspace&&<div className="loading-list" aria-hidden="true"><span className="skeleton-block tall"/><span className="skeleton-card large"/><span className="skeleton-card large"/></div>}
   {error&&<p role="alert" data-testid="compliance-workspace-error">{error}</p>}
   {workspace&&!review&&<div className="cw-none" data-testid="compliance-none"><span><Icon name="check"/></span><div><h4>No review needed</h4><p>There is nothing for you to do right now. If the bank needs documents or information, you will see it here and in your Inbox.</p></div></div>}

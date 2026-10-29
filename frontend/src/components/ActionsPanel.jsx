@@ -252,7 +252,7 @@ export default function ActionsPanel({onWorkflowChange}) {
     <nav className="page-tabs" role="tablist" aria-label="Filter actions">{FILTERS.map(([key,label])=>{const count=all.filter(item=>inFilter(item,key)).length;
       return (key==='all'||count>0)&&<button key={key} role="tab" aria-selected={filter===key} onClick={()=>setFilter(key)}>{label}<span className="count">{count}</span></button>;})}</nav>
     {all.length>0&&<label className="act-search activity-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Search actions" value={query} onChange={event=>setQuery(event.target.value)}/></label>}
-    {busy&&<p className="loading" role="status">{deciding?'Saving your decision…':items?'Updating…':'Loading your activity…'}</p>}
+    {busy&&<p className="loading" role="status">{deciding?'Saving your decision…':items?'Updating…':'Loading your actions…'}</p>}
     {busy&&!items&&!deciding&&<div className="loading-list" aria-hidden="true">{[0,1,2].map(key=><span key={key} className="skeleton-card large"/>)}</div>}
     {error&&<p role="alert" data-testid="actions-error">{error} Refresh, then try again.</p>}
     {items?.length===0&&<p className="act-empty" data-testid="actions-empty">Nothing yet. Uploads, requests and anything you approve will show up here.</p>}
