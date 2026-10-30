@@ -41,6 +41,18 @@ export const CONFIRM_REPORT='Yes, report it';
 export function followUps({question,message,signedIn,asked=[]}) {
   if(!message||message.role!=='assistant'||message.error||!message.content)return [];
   if(signedIn&&message.content.includes(`“${CONFIRM_REPORT}”`))return [CONFIRM_REPORT];
+  // CR17: free meeting times offer one tap each; a held time offers "Confirm booking".
+  if(signedIn&&message.content.includes('Tap “Confirm booking”'))return ['Confirm booking'];
+  if(signedIn&&message.content.includes('and I’ll hold it for you')) {
+    const times=[...message.content.matchAll(/• ((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}, \d{1,2}:\d{2} (?:am|pm))/g)].map(match=>`Book ${match[1]}`);
+    // One button for every time listed (the reply lists at most six), so the text and the buttons always match.
+    if(times.length)return times.slice(0,6);
+  }
+  // "Which card's ... do you mean: your Signature Card ending 7310 or your Travel Card ending 5592?" → one tap per card.
+  if(signedIn&&/^Which card['’]s .+ do you mean:/.test(message.content)) {
+    const cards=[...message.content.matchAll(/your ([A-Z][A-Za-z ]{1,40}?) ending (\d{4})/g)].map(match=>`${match[1]} ending ${match[2]}`);
+    if(cards.length>1)return [...cards.slice(0,3),'Both cards'].slice(0,4);
+  }
   const seen=new Set([question,...asked].map(text=>String(text||'').trim().toLowerCase()));
   const topic=topicOf(question,message);
   const pool=message.needs_human?HANDED_OVER:(TOPICS.find(entry=>entry.key===topic)?.ask||GENERAL);

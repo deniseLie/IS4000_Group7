@@ -10,7 +10,7 @@ from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
 from app.schemas.retail import RetailRecords
 from app.services import kb,knowledge,llm_gateway,prompts
-from app.services.agents import retail_checks,retail_records
+from app.services.agents import card_answers,retail_checks,retail_records,transaction_answers
 from app.services.agents.answer import draft_schema,validate_draft
 
 PROMPT='v7'
@@ -48,6 +48,12 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     if not isinstance(question,str):raise ValueError('Retail task question must be text')
     records=await retail_records.load(ctx)
     evidence=[*public_evidence,*evidence_for(records)]
+    # Card figures and "which card?" come straight from her records (no model call, never withheld).
+    direct=card_answers.respond(task.task_id,question,history,records)
+    if direct is None:
+        latest=history[-1].content if history and history[-1].role=='user' else question
+        direct=transaction_answers.respond(task.task_id,question,latest,records)
+    if direct is not None:return direct,evidence,prompts.load('retail',PROMPT)['id']
     today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
     if retail_checks.relevant(records,question,today):
         computed=retail_checks.checks(records,question,today,await fall_below_threshold(ctx))

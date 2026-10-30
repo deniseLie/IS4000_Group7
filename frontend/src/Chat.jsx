@@ -368,7 +368,7 @@ export default function Chat({session,onSignIn}) {
     const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
     const list=followUps({question:messages[index-1]?.role==='user'?messages[index-1].content:'',message,signedIn:!!session&&mode==='personal',asked});
     if(!list.length)return null;
-    return <div className="follow-ups" data-testid="follow-ups"><span>{list[0]===CONFIRM_REPORT?'Are these the charges?':'You could also ask'}</span>
+    return <div className="follow-ups" data-testid="follow-ups"><span>{list[0]===CONFIRM_REPORT?'Are these the charges?':list.includes('Both cards')?'Which card?':list[0]==='Confirm booking'||list[0].startsWith('Book ')?'Book a time':'You could also ask'}</span>
       {list.map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text}</button>)}</div>;
   }
   function complianceStep(message,index) {

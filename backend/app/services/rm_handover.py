@@ -173,6 +173,25 @@ async def open_ticket_for(topic: str,ctx: RequestContext) -> str | None:
         and topic_of(ticket.summary)==topic),None)
 
 
+async def topic_of_reference(reference: str,ctx: RequestContext) -> str | None:
+    read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
+    tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    return next((topic_of(ticket.summary) for ticket in tickets if ticket.reference==reference),None)
+
+
+async def open_separate(summary: str,ctx: RequestContext) -> str:
+    """A new RM ticket in this chat for a question on another topic; a retried turn gets the same ticket back."""
+    current=ctx.model_copy(update={'agent':None})
+    if current.case_id is None:raise ActionIntegrityError('A separate RM ticket needs this chat')
+    require_permission(current.principal,'tickets.open_rm',{'customer_id':current.principal.customer_id},current)
+    with data_api.connect(current) as db:
+        response=await data_api.execute(lambda:db.rpc('customer_open_rm_ticket',{'p_customer_id':current.principal.customer_id,
+            'p_case_id':str(current.case_id),'p_summary':summary[:SUMMARY_LIMIT]}).execute(),'tickets.open_rm')
+    reference=response.data.get('reference') if isinstance(response.data,dict) else None
+    if not isinstance(reference,str) or not reference.startswith('TCK-'):raise ActionIntegrityError('No ticket reference was returned')
+    return reference
+
+
 async def follow_up(reference: str,question: str,ctx: RequestContext) -> bool:
     """Adds the client's new question to her open RM ticket as a visible update; a repeated note is not added twice."""
     current=ctx.model_copy(update={'agent':None})
@@ -232,8 +251,10 @@ async def recorded(question: str,priority: Priority,ctx: RequestContext,task_id:
         with data_api.connect(current) as db:outcome=await action_store.load(command.command_id,current,db)
     except ActionNotFound:return None
     if outcome.receipt is None or outcome.receipt.outcome!='succeeded' or not isinstance(outcome.receipt.result,HandoffResult):return None
-    return Handover(reference=await ticket_reference(outcome.receipt.result.handoff_id,current),topic=topic_for(question),
-        reused=not outcome.receipt.result.created)
+    reference=await ticket_reference(outcome.receipt.result.handoff_id,current)
+    # The chat's handover was on another topic: this question got (or gets) its own ticket, found again by route().
+    if reference is None or await topic_of_reference(reference,current)!=topic_for(question):return None
+    return Handover(reference=reference,topic=topic_for(question),reused=not outcome.receipt.result.created)
 
 
 async def route(question: str,priority: Priority,ctx: RequestContext,owned: OwnedWorkflow | None,task_id: str,
@@ -248,10 +269,14 @@ async def route(question: str,priority: Priority,ctx: RequestContext,owned: Owne
         if reference is not None:await follow_up(reference,question,ctx)
         else:
             _,reference,created=await hand_over(question,priority,ctx,owned,task_id,history)
-            # This chat already had an open handover on another question: add this one to that ticket too.
+            # This chat already had an open handover. Same topic: add this question to it. A different topic is a
+            # different request, so it gets its own ticket (0085).
             if not created and reference is not None:
-                reused=True
-                await follow_up(reference,question,ctx)
+                if await topic_of_reference(reference,ctx)==topic:
+                    reused=True
+                    await follow_up(reference,question,ctx)
+                else:
+                    reference=await open_separate(summary_for(question,history),ctx)
         if reference is not None and document_ids:await attach(reference,document_ids,ctx)
         return Handover(reference=reference,topic=topic,reused=reused)
     except HANDOVER_ERRORS as error:

@@ -33,10 +33,10 @@ from app.schemas.disputes import DisputeItem,StoredDisputeTarget
 from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery,KnowledgeSection,SectionKey
-from app.services import actions,audit,case_summary,customer_data,fraud_reports,kb, llm_gateway, prompts,rm_handover,tools,workflow_store
+from app.services import actions,audit,case_summary,customer_data,fraud_reports,kb, llm_gateway, prompts,rm_handover,tools,typos,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
-from app.services.agents import compliance,document,fraud,fraud_records,relationship,retail,retail_checks
+from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -54,7 +54,9 @@ CHARGE = re.compile(r'\bcharges?\b',re.I)
 RELATED = re.compile(r'\b(?:related|connected|linked|because of|caused by)\b',re.I)
 DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)',re.I)
 TOPICS: dict[Domain, re.Pattern[str]] = {
-    'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode)\b',re.I),
+    'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode'
+        # A charge, fee or spending question is a records question; disowned charges are caught as fraud first (topic_domain).
+        r'|charged|charges?|fees?|transactions?|spent|spend|spending|purchases?)\b',re.I),
     'compliance':re.compile(r'\b(?:compliance|review|checklist|notice)\b|\bletter\b[^.!?]{0,100}\b(?:update|provide|send)\b[^.!?]{0,80}\b(?:info(?:rmation)?|documents?|details)\b',re.I),
     'document':re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b',re.I),
     'relationship':re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b|\bRMs?\b|\bmeet (?:her|him|them|my)\b'
@@ -133,8 +135,10 @@ def simple_issue(question: str, language: str) -> PlannedIssue | None:
     if language == 'English' and re.fullmatch(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', question, re.I):
         return PlannedIssue(domain='smalltalk', question=question)
     if language != 'English' or MULTIPLE.search(question):return None
-    if rm_handover.needs_person(question) and not FRAUD.search(question):return PlannedIssue(domain='relationship',question=question)
-    domain = topic_domain(question)
+    # Rules match a typo-tolerant copy ("wats my crad bal"); the client's own words are what is planned and answered.
+    probe = typos.normalise(question)
+    if rm_handover.needs_person(probe) and not FRAUD.search(probe):return PlannedIssue(domain='relationship',question=question)
+    domain = topic_domain(probe)
     if domain is not None:return PlannedIssue(domain=domain,question=question)
     return None
 
@@ -151,6 +155,10 @@ async def plan(state: Turn) -> PlanUpdate:
         return {'issues':[PlannedIssue(domain='document' if req.record_context.kind=='document' else 'compliance',question=question)]}
     # A plain yes to the charge list we just showed (CR12): report exactly those charges, no planner call.
     if req.mode=='personal' and fraud_reports.pending(state['history']):return {'issues':[PlannedIssue(domain='fraud',question=question)]}
+    # A reply to our "which card do you mean?" goes back to the card answer, however short ("the travel one").
+    if req.mode=='personal' and card_answers.awaiting_card(state['history']):return {'issues':[PlannedIssue(domain='retail',question=question)]}
+    # Picking or confirming a meeting time we just offered goes back to the meeting flow (CR17).
+    if req.mode=='personal' and meeting_answers.awaiting(state['history']):return {'issues':[PlannedIssue(domain='relationship',question=question)]}
     single = simple_issue(question, req.language)
     if single is not None:return {'issues':[single]}
     pv = prompts.current('planner')

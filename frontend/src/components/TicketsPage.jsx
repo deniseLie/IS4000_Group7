@@ -42,11 +42,13 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
     {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions} onSupport={onSupport}/>}
     <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}
       <button role="tab" data-testid="tab-meetings" aria-selected={tab==='meetings'} onClick={()=>setTab('meetings')}>Meetings</button></nav>
-    {busy&&!tickets&&<p className="loading" role="status">Loading your requests…</p>}
+    {/* The Meetings tab has its own loading state; the requests list is not shown there. */}
+    {busy&&!tickets&&tab!=='meetings'&&<p className="loading" role="status">Loading your requests…</p>}
     {error&&<p role="alert">{error}</p>}
     {tab==='meetings'&&<div className="tab-fade" key="meetings"><Meetings rmName={rmName}/></div>}
     {tab!=='meetings'&&tickets&&!shown.length&&<p className="page-empty">No requests here.</p>}
-    <ul className="ticket-list tab-fade" key={tab}>{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
+    {/* The list must not share the key "meetings" with the Meetings panel: duplicate sibling keys made React repeat the panel. */}
+    {tab!=='meetings'&&<ul className="ticket-list tab-fade" key={`list-${tab}`}>{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
       <div className="ticket-head"><strong>{ticket.category_label}</strong><span className={`ticket-status ${ticket.status}${ticket.overdue?' overdue':''}`}>{STATUSES[ticket.status]}{ticket.overdue?' · past target time':''}</span></div>
       {ticketTopic(ticket)&&<span className="ticket-topic" data-testid="ticket-topic">{ticketTopic(ticket)}</span>}
       <p>{ticketSummary(ticket)}</p>
@@ -54,7 +56,7 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
       <p className="ticket-next"><Icon name="info"/>{nextStep(ticket)}</p>
       <small>Reference <code>{ticket.reference}</code> · {ticket.owner_team} · raised {formatDateTime(ticket.created_at)}{ticket.last_update?` · updated ${formatDateTime(ticket.last_update.at)}`:''}</small>
       {ticket.status==='waiting_on_client'&&onSupport&&<p><button className="bank-chat-logout" onClick={onSupport}>Talk to a person</button></p>}
-    </li>)}</ul>
+    </li>)}</ul>}
     <p className="page-note"><Icon name="shield"/>Demo service: references and statuses are synthetic. No real bank team works these requests.</p>
   </div>;
 }

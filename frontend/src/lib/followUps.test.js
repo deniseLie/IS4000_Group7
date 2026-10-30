@@ -41,3 +41,17 @@ test('the fraud charge list offers only the one-tap confirmation (CR12)', () => 
   assert.deepEqual(followUps({question:'I do not recognise these charges',message,signedIn:true}),['Yes, report it']);
   assert.notDeepEqual(followUps({question:'I do not recognise these charges',message,signedIn:false}),['Yes, report it']);
 });
+
+test('a which-card question offers one tap per card and both', () => {
+  const message={role:'assistant',content:'Which card’s outstanding balance do you mean: your Signature Card ending 7310 or your Travel Card ending 5592? You can also say “both”.'};
+  assert.deepEqual(followUps({question:'whats my card balance',message,signedIn:true}),['Signature Card ending 7310','Travel Card ending 5592','Both cards']);
+});
+
+test('free meeting times offer one tap each, and a held time offers Confirm booking (CR17)', () => {
+  const listed={role:'assistant',content:'Here are free 30-minute times with your relationship manager (Singapore time):\n• Mon 2 Nov, 10:00 am\n• Tue 3 Nov, 2:30 pm\nTap a time below, or type a day and time, and I’ll hold it for you.'};
+  assert.deepEqual(followUps({question:'book a meeting',message:listed,signedIn:true}),['Book Mon 2 Nov, 10:00 am','Book Tue 3 Nov, 2:30 pm']);
+  const six={...listed,content:listed.content.replace('• Tue','• Mon 2 Nov, 10:30 am\n• Mon 2 Nov, 11:00 am\n• Mon 2 Nov, 11:30 am\n• Mon 2 Nov, 12:00 pm\n• Tue')};
+  assert.equal(followUps({question:'book a meeting',message:six,signedIn:true}).length,6);
+  const held={role:'assistant',content:'I’ve held Mon 2 Nov, 10:00 am (video call) with your relationship manager for 10 minutes. Tap “Confirm booking” to book it.'};
+  assert.deepEqual(followUps({question:'Book Mon 2 Nov, 10:00 am',message:held,signedIn:true}),['Confirm booking']);
+});

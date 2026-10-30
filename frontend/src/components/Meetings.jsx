@@ -50,10 +50,11 @@ export default function Meetings({rmName}) {
   const days=[];for(const slot of slots||[]){const day=slotDay(slot.starts_at),last=days[days.length-1];if(last&&last[0]===day)last[1].push(slot);else days.push([day,[slot]]);}
   const who=rmName?displayName(rmName):'your relationship manager';
   return <section className="meetings" data-testid="meetings" aria-label="Meetings with your relationship manager">
-    {busy&&<p className="loading" role="status">Loading meetings…</p>}
+    {/* Only the first load shows a loading line; later refreshes keep the page in place (buttons are disabled while busy). */}
+    {busy&&(slots===null||meetings===null)&&<p className="loading" role="status">Loading meetings…</p>}
     {error&&<p role="alert">{error}</p>}
     {notice&&<p role="status" className="meetings-notice"><Icon name="check"/>{notice}</p>}
-    <h2 className="meetings-title">Your meetings</h2>
+    {meetings!==null&&<h2 className="meetings-title">Your meetings</h2>}
     {meetings&&!upcoming.length&&<p className="page-empty" data-testid="meetings-empty">No upcoming meetings.</p>}
     <ul className="meetings-list" data-testid="meetings-upcoming">{upcoming.map(item=><li key={item.appointment_id} className={`meeting ${item.status}`} data-appointment-id={item.appointment_id}>
       <span className="meeting-icon" aria-hidden="true"><Icon name="calendar"/></span>
@@ -64,12 +65,13 @@ export default function Meetings({rmName}) {
         {item.status==='held'&&<button className="primary-button" data-testid="confirm-meeting" disabled={busy} onClick={()=>decide(item,'appointment.confirm','Meeting booked. You will also see it in your Inbox.')}>Confirm booking</button>}
         <button className="bank-chat-logout" data-testid="cancel-meeting" disabled={busy} onClick={()=>decide(item,'appointment.cancel',item.status==='held'?'Time released.':'Meeting cancelled.')}>{item.status==='held'?'Release':'Cancel meeting'}</button>
       </div></li>)}</ul>
+    {slots!==null&&<>
     <h2 className="meetings-title">Book a meeting with {who}</h2>
     <label className="meetings-format">Meeting type <select data-testid="meeting-format" value={format} disabled={busy} onChange={event=>setFormat(event.target.value)}>
       {Object.entries(FORMATS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
     {slots&&!slots.length&&<p className="page-empty">No free times in the next 14 days. Use Talk to a person to ask for another time.</p>}
     <div className="meeting-days">{days.map(([day,list])=><div key={day} className="meeting-day"><h3>{day}</h3>
-      <div className="meeting-slots">{list.map(slot=><button key={slot.starts_at} className="bank-chat-logout" data-testid="meeting-slot" disabled={busy||upcoming.some(item=>item.status==='held')} onClick={()=>hold(slot)}>{slotTime(slot.starts_at)}</button>)}</div></div>)}</div>
+      <div className="meeting-slots">{list.map(slot=><button key={slot.starts_at} className="bank-chat-logout" data-testid="meeting-slot" disabled={busy||upcoming.some(item=>item.status==='held')} onClick={()=>hold(slot)}>{slotTime(slot.starts_at)}</button>)}</div></div>)}</div></>}
     {past.length>0&&<details className="act-more"><summary>Past and cancelled</summary><ul className="meetings-list past">{past.map(item=><li key={item.appointment_id} className="meeting"><div><strong>{appointmentTime(item.starts_at)}</strong><small>{FORMATS[item.format]}</small></div><span className="act-pill muted">{LABEL[item.status]||item.status}</span></li>)}</ul></details>}
   </section>;
 }

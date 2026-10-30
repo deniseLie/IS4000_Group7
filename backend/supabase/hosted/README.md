@@ -16,6 +16,8 @@
 | `10_apply_0081_hosted.sql` | Card actions become bank-only: the client can no longer block, unblock or cancel a card or send a dispute draft; reported charges go to the fraud team as an urgent ticket; lost-card, unrecognised-charge and support guidance updated | Once, after 09 |
 | `11_apply_0082_hosted.sql` | Code-review follow-ups: a question on a topic that already has an open RM ticket is added to that ticket instead of opening a duplicate; documents selected in the chat can be attached to RM tickets; a lost or stolen card reported by a signed-in client opens an urgent fraud ticket (`card_lost`); Michelle's second card (Travel Card 5592) and sample fees | Once, after 10 |
 | `12_apply_0083_hosted.sql` | Cards and loans get a recorded currency (SGD for every demo card and loan), so the assistant says "SGD 316.20" instead of "currency unrecorded" | Once, after 11 |
+| `13_apply_0084_hosted.sql` | Michelle's two sample fees get their own names ("Annual card fee", "Telegraphic transfer fee") so fee questions can tell them apart | Once, after 12 |
+| `14_apply_0085_hosted.sql` | A different question for the RM in the same chat opens its own ticket (`customer_open_rm_ticket`); approved how-to article for sending money overseas | Once, after 13 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

@@ -8,6 +8,7 @@ from app.schemas.chat import ChatRequest
 from app.schemas.contracts import FixedResponse, Redaction, RedactionType, RiskAssessment, RiskFlag
 from app.services.privacy import redact_details
 from app.services.safety import is_lost_card
+from app.services.typos import normalise
 
 HUMAN = re.compile(r'\b(talk|speak|connect)\b.*\b(person|human|staff|agent)\b', re.I)
 PERSONAL = re.compile(r'\b(my|mine)\b.*\b(balance|transactions|due|limit|account number)\b', re.I)
@@ -31,11 +32,13 @@ def assess_request(req: ChatRequest) -> RiskAssessment:
             counts[redaction.type] = counts.get(redaction.type, 0) + redaction.count
     flags: list[RiskFlag] = []
     if counts:flags.append('secret_shared')
-    lost = is_lost_card(question)
+    # Typos must not hide urgency: "i lsot my crad" is a lost card. The forgiving copy is only used to match.
+    probe = normalise(question)
+    lost = is_lost_card(question) or is_lost_card(probe)
     if lost:flags.append('lost_card')
-    fraud = bool(FRAUD.search(question))
+    fraud = bool(FRAUD.search(question) or FRAUD.search(probe))
     if fraud:flags.append('fraud_suspected')
-    human = bool(HUMAN.search(question))
+    human = bool(HUMAN.search(question) or HUMAN.search(probe))
     if human:flags.append('human_requested')
     fixed: FixedResponse | None = None
     if counts:fixed = FixedResponse(code='secrets', needs_human=True)

@@ -11,7 +11,7 @@ from app.schemas.events import Source
 from app.schemas.relationship_records import RelationshipRecords
 from app.services import llm_gateway,prompts
 from app.core.observability import log_event
-from app.services.agents import relationship_records
+from app.services.agents import relationship_records,meeting_answers
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.privacy import redact
 
@@ -76,7 +76,11 @@ def validate_result(task: Task,raw: str,evidence: list[Evidence]) -> AgentResult
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Relationship task question must be text')
-    evidence=[*public_evidence,*evidence_for(await relationship_records.load(ctx))]
+    records=await relationship_records.load(ctx)
+    evidence=[*public_evidence,*evidence_for(records)]
+    # Free times, holding one and confirming it come straight from the records (CR17), never withheld.
+    direct=await meeting_answers.respond(task.task_id,question,history,records,ctx)
+    if direct is not None:return direct,evidence,prompts.load('relationship',PROMPT)['id']
     pv=prompts.load('relationship',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
