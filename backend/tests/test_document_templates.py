@@ -126,3 +126,19 @@ def test_templates_route_needs_no_sign_in() -> None:
     from app.main import app
     response=TestClient(app).get('/documents/templates')
     assert response.status_code==200 and response.json()[0]['key']=='proof_address'
+
+
+def test_identity_copies_and_translations_need_a_certification() -> None:
+    """CR5: a copy that must be certified, or an English translation, is flagged until it carries a certification."""
+    passport=['REPUBLIC OF EXAMPLE','Passport','Name: MICHELLE NG','Date of expiry: 14 Mar 2031']
+    _,plain=run('identity',passport)
+    assert ('missing_field',templates.CERTIFICATION) in codes(plain)
+    _,certified=run('identity',[*passport,'Certified true copy of the original, signed by A. Lim, Notary Public, 20 Oct 2026'])
+    assert ('missing_field',templates.CERTIFICATION) not in codes(certified)
+    _,translated=run('proof_address',[*BILL,'English translation of the original bill'])
+    assert ('missing_field',templates.TRANSLATOR) in codes(translated)
+    _,sworn=run('proof_address',[*BILL,'English translation of the original bill. I hereby certify that this translation is true and complete.'])
+    assert ('missing_field',templates.TRANSLATOR) not in codes(sworn)
+    _,form=run('tax_residency',['Tax residency self-certification','Name: MICHELLE NG','Country of tax residence: Singapore',
+        'Date: 20 Oct 2026','Signature: M Ng'])
+    assert not any(field in (templates.CERTIFICATION,templates.TRANSLATOR) for _,field in codes(form))

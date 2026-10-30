@@ -32,7 +32,13 @@ export function parseTicket(value) {
   return {ticket_id:id(value.ticket_id),reference:value.reference,category:key(value.category),category_label:text(value.category_label,80),summary:text(value.summary,500),
     details:details(value.details),urgency:value.urgency,status:value.status,owner_team:text(value.owner_team,80),decided_by:text(value.decided_by,120),source:value.source,
     created_at:time(value.created_at),updated_at:time(value.updated_at),target_at:time(value.target_at),overdue:value.overdue,
-    last_update:update&&{at:time(update.at),status:update.status,note:update.note}};
+    last_update:update&&{at:time(update.at),status:update.status,note:update.note},attachments:attachments(value.attachments)};
+}
+// Documents attached to an RM ticket (0082): id and file name only. Older servers send none.
+function attachments(value) {
+  if(value===undefined||value===null)return [];
+  if(!Array.isArray(value)||value.length>20)throw invalid();
+  return value.map(item=>({document_id:id(item?.document_id),file_name:text(item?.file_name,255)}));
 }
 export function parseTickets(value) {
   if(!Array.isArray(value?.data)||value.data.length>200)throw invalid();
@@ -63,10 +69,21 @@ export function nextStep(ticket) {
   return `No action needed from you. ${team} will review it and update this request.`;
 }
 // What the request is about, in the client's words; internal wording from automatic handovers is replaced.
+// Handover tickets (0082) start with a topic and may end with her earlier messages for the RM; she sees her question.
 export function ticketSummary(ticket) {
   const text=ticket.summary||'';
   if(/^An assistant section was withheld/i.test(text))return 'Part of an answer from the assistant could not be checked, so it was passed to your relationship manager.';
-  return text.replace(/^Client question for you:\s*/i,'');
+  return text.replace(/^\[[^\]]{1,60}\]\s*/,'').replace(/^Client question for you:\s*/i,'').split(' | Earlier in this chat:')[0];
+}
+// The topic an RM handover ticket was opened with, shown as a small label; null for other tickets.
+export function ticketTopic(ticket) {
+  const found=/^\[([^\]]{1,60})\]/.exec(ticket?.summary||'');
+  return ticket?.category==='rm_handover'&&found?found[1]:null;
+}
+// What the client sees when a request could not be recorded (CR9): nothing was sent, and another way to get help.
+export function requestFailed(failure) {
+  const detail=failure?.message&&!/^(?:Failed to fetch|NetworkError|Load failed)/i.test(failure.message)?` (${failure.message.replace(/\.$/,'')})`:'';
+  return `We couldn't record your request just now${detail}, so nothing has been sent. Please try again in a few minutes, or use Talk to a person to reach your relationship manager.`;
 }
 
 // Which raisable category a chat question points to; null when none clearly does.

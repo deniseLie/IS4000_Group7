@@ -1407,3 +1407,8 @@ small{font-size:max(12px,.83em)}
 .follow-ups button{padding:7px 12px;border:1px solid var(--line-2,var(--line));border-radius:99px;background:#fff;color:var(--ink);font:inherit;font-size:13px;cursor:pointer;text-align:left;transition:border-color .15s,background .15s}
 .follow-ups button:hover:not(:disabled){border-color:var(--red);background:#FFF5F3}
 .follow-ups button:disabled{opacity:.5;cursor:default}
+
+/* CR5: the label on every preliminary document check result. CR8/CR9: handover topic and ticket attachments. */
+.cw-check-label{margin:0 0 .35rem;font-size:.78rem;font-weight:600;letter-spacing:.01em;opacity:.85}
+.ticket-topic{display:inline-block;margin:.25rem 0 0;padding:.1rem .5rem;border-radius:999px;font-size:.75rem;background:rgba(127,127,127,.14)}
+.ticket-attachments{display:flex;align-items:center;gap:.35rem;font-size:.85rem;opacity:.85}

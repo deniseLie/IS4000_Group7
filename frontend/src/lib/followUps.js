@@ -36,8 +36,11 @@ export function topicOf(question,message) {
   return TOPICS.find(topic=>topic.match.test(message?.content||''))?.key||null;
 }
 
+// The fraud charge list (CR12) asks for a plain yes; offer it as a one-tap reply instead of other suggestions.
+export const CONFIRM_REPORT='Yes, report it';
 export function followUps({question,message,signedIn,asked=[]}) {
   if(!message||message.role!=='assistant'||message.error||!message.content)return [];
+  if(signedIn&&message.content.includes(`“${CONFIRM_REPORT}”`))return [CONFIRM_REPORT];
   const seen=new Set([question,...asked].map(text=>String(text||'').trim().toLowerCase()));
   const topic=topicOf(question,message);
   const pool=message.needs_human?HANDED_OVER:(TOPICS.find(entry=>entry.key===topic)?.ask||GENERAL);

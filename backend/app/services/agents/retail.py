@@ -13,15 +13,20 @@ from app.services import kb,knowledge,llm_gateway,prompts
 from app.services.agents import retail_checks,retail_records
 from app.services.agents.answer import draft_schema,validate_draft
 
-PROMPT='v6'
+PROMPT='v7'
 LINKED='\nLinked context (DemoBank rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
+
+
+def currency_note(rows: list) -> str:
+    """Card and loan currencies are recorded from migration 0083; an older database says so instead of guessing."""
+    return '' if all(getattr(row,'currency',None) for row in rows) else '; currency unrecorded for some rows'
 
 
 def evidence_for(records: RetailRecords) -> list[Evidence]:
     rows=[('profile','Authenticated synthetic profile',records.profile.model_dump_json()),
         ('accounts','Authenticated synthetic accounts',json.dumps([row.model_dump(mode='json') for row in records.accounts])),
-        ('cards','Authenticated synthetic cards; currency unrecorded',json.dumps([row.model_dump(mode='json') for row in records.cards])),
-        ('loans','Authenticated synthetic loans; currency unrecorded',json.dumps([row.model_dump(mode='json') for row in records.loans])),
+        ('cards','Authenticated synthetic cards'+currency_note(records.cards),json.dumps([row.model_dump(mode='json') for row in records.cards])),
+        ('loans','Authenticated synthetic loans'+currency_note(records.loans),json.dumps([row.model_dump(mode='json') for row in records.loans])),
         ('transactions','Authenticated synthetic recent transactions',json.dumps([row.model_dump(mode='json') for row in records.transactions]))]
     return [Evidence(id='retail-'+key,text='{"records":'+text+'}',publisher='DemoBank synthetic records',
         scope='Own customer records from separate audited reads; at most 200 per collection. Transactions cover the last 90 days through today in Singapore. No product catalogue.',

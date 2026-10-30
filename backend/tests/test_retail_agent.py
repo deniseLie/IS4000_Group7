@@ -94,10 +94,10 @@ def test_real_retail_provider_uses_owned_account_currency(local_data_api: Native
 
 
 @pytest.mark.skipif(os.getenv('TEST_RETAIL_LIVE')!='1',reason='Opt in to actual personal retail model calls')
-def test_real_retail_provider_does_not_infer_unrecorded_loan_currency(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+def test_real_retail_provider_states_the_recorded_loan_currency(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+    """0083 records loan currency (SGD for every synthetic loan); the answer gives it rather than calling it unrecorded."""
     task=Task(task_id='live2',domain='retail',intent='answer_question',entities={'question':'What is the recorded currency of my loan?'})
     result,_,_=asyncio.run(retail.respond(task,[],'English',context(local_data_api,1001).model_copy(update={'agent':'retail'}),[]))
     assert result.status in {'ok','needs_human'} and result.answer_kind=='banking',result.model_dump_json()
-    assert re.search(r'unrecorded|not (?:recorded|specified|provided|available)',result.text,re.I),result.text
-    assert not re.search(r'\b(?:SGD|USD|EUR|GBP|AUD)\b',result.text),result.text
+    assert 'SGD' in result.text and not re.search(r'unrecorded|not recorded',result.text,re.I),result.text
     assert {item.source_id for item in result.citations}=={'retail-loans'}

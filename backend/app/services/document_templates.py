@@ -31,6 +31,12 @@ UTILITIES=('sp services','sp group','singapore power','geneco','senoko','tuas po
 BANKS=('dbs','posb','ocbc','uob','united overseas bank','maybank','standard chartered','hsbc','citibank','bank of china','icbc',
     'rhb','cimb','trust bank','gxs','boc','bank')
 SIGNATURE=re.compile(r'\bsign(?:ed|ature)\b|\bsigned\s+by\b',re.I)
+# A certifier's statement on a copy or a translation (CR5). "Self-certification" (a form's title) is not one.
+CERTIFIED=re.compile(r'\bcertified\s+(?:true\s+|as\s+a\s+true\s+)?(?:copy|translation)\b|\b(?<!self-)certifi(?:ed|cation)\s+by\b'
+    r'|\bI\s+(?:hereby\s+)?certify\b|\bnotar(?:y|ised|ized|ial)\b|\bcommissioner\s+for\s+oaths\b|\bsworn\s+translat|\battested\s+by\b',re.I)
+TRANSLATED=re.compile(r'\btranslat(?:ed|ion)\s+(?:from|of)\b|\benglish\s+translation\b|\btranslator\b',re.I)
+CERTIFICATION='A certification on the copy (for example “certified true copy”, signed and dated by the certifier)'
+TRANSLATOR='The translator’s certification that the translation is true and complete'
 
 
 def all_dates(text: str) -> list[date]:
@@ -75,6 +81,7 @@ class Template:
     must_show: tuple[str,...]
     example: tuple[str,...]
     tips: tuple[str,...]=field(default=())
+    certified: bool=False  # the bank needs a certified copy, not a plain scan
 
 
 TEMPLATES=(
@@ -101,8 +108,10 @@ TEMPLATES=(
          'Date: 20 Oct 2026','Signature: ____________'),
         ('List every country where you pay tax.',)),
     Template('identity','Identity document',re.compile(r'\b(?:passport|identity|nric|id card|identification)\b',re.I),
-        ('Your full name','An expiry date that has not passed'),('REPUBLIC OF EXAMPLE  ·  Passport','Name: TAN MEI LING','Date of expiry: 14 Mar 2031'),
-        ('Scan the photo page in colour as a PDF.',)),
+        ('Your full name','An expiry date that has not passed',CERTIFICATION),
+        ('REPUBLIC OF EXAMPLE  ·  Passport','Name: TAN MEI LING','Date of expiry: 14 Mar 2031',
+         'Certified true copy of the original — signed and dated by (certifier’s name and role), 20 Oct 2026'),
+        ('Scan the photo page in colour as a PDF.','Have the copy certified (for example by a lawyer or notary) before you upload it.'),certified=True),
 )
 
 
@@ -154,6 +163,9 @@ def check(template: Template,text: str,pages: int | None,name: str,today: date,p
     if labels and len({b for _,b in labels})==1 and pages is not None and pages<labels[0][1]<=20:
         absent_pages=set(range(1,labels[0][1]+1))-{a for a,_ in labels}
         if absent_pages:findings.append(Finding(code='missing_pages',field=', '.join(str(n) for n in sorted(absent_pages))))
+    certified=bool(CERTIFIED.search(text))
+    if template.certified and not certified:missing(CERTIFICATION)
+    elif TRANSLATED.search(text) and not certified:missing(TRANSLATOR)
     if needs_translation(text):findings.append(Finding(code='translation_needed'))
     return requirements,findings[:12]
 

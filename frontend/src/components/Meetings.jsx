@@ -7,7 +7,7 @@ import {appointmentTime,slotDay,slotTime} from '../lib/appointmentData';
 import {FORMATS} from '../lib/relationshipWorkflow';
 import {displayName,formatTime} from '../lib/format';
 
-// CR18: book a meeting with the relationship manager. Free times come from the RM's working hours (migrations 0034-0036);
+// CR17: book a meeting with the relationship manager. Free times come from the RM's working hours (migrations 0034-0036);
 // picking one holds it for 10 minutes, and it is booked only when the client confirms. Two bookings can never share a slot.
 function range(days=14) {
   const now=new Date(Date.now()+8*60*60*1000);

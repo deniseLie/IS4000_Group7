@@ -80,7 +80,7 @@ The orchestrator steps are the 8 graph nodes: plan → prioritise → dispatch �
 | Setup | Signed in. Demo data `0075`: on 27 Oct card 7310 was used in Singapore at 12:40 pm and in London at 2:05 pm (SGD 1.00) and 2:21 pm (SGD 3,850.00). |
 | Input | `I don't recognise the London charges on my card` |
 | Orchestrator steps | plan (fraud flag) → prioritise (P0 fraud task) → dispatch fraud agent → propose_actions (nothing to offer since 0081) → settle_actions (P0 fraud-team handoff and ticket, reference read back) → compose. No pause. |
-| Specialist agents / tools | Fraud agent (`fraud/v6`) / cards, transactions (masked) |
+| Specialist agents / tools | Fraud agent (`fraud/v7`) / cards, transactions (masked) |
 | Agent-level checks | Names the two London charges and the impossible-travel pattern; the small SGD 1.00 charge before a larger one is called a possible card test, not proof. |
 | Priority order and escalation | P0 first in the reply; fraud operations, not the RM. |
 | Expected output | Urgent steps first (fraud line on the back of the card, report or freeze in the official app); names both London charges; says it has been passed to the fraud team as urgent with a `TCK-` reference, and that the fraud team will contact her and block the card if needed. |
@@ -99,7 +99,7 @@ The orchestrator steps are the 8 graph nodes: plan → prioritise → dispatch �
 | Setup | Signed in. Signature Card limit SGD 20,000. |
 | Input | `Can you increase my credit card limit to 30k for my Japan trip?` |
 | Orchestrator steps | plan (cards topic) → prioritise (P3) → dispatch retail → compose. The chat adds *Raise a card limit request*. |
-| Specialist agents / tools | Retail agent (`retail/v6`) / cards, knowledge (`card-limit-change`) |
+| Specialist agents / tools | Retail agent (`retail/v7`) / cards, knowledge (`card-limit-change`) |
 | Agent-level checks | Uses her real limit; asks only for what is missing (temporary or permanent, end date, reason). |
 | Priority order and escalation | P3; the cards team decides. |
 | Expected output | Explains the request and the possible proof of income; the button opens My requests with the card limit form prefilled; after she submits, a `TCK-` reference with status. |
@@ -229,7 +229,13 @@ The orchestrator steps are the 8 graph nodes: plan → prioritise → dispatch �
 | Story | Check | Automated cover |
 |---|---|---|
 | CR15 Statements | Overview → Statements → card 7310, September 2026 → *View statement*: owed at end SGD 1,250.40. *Print or save as PDF* prints only the statement. Ask `how do I get my statement?` → *Go to Statements*; ask `I need a certified statement from 2024` → *Request a statement copy*. | `frontend/src/lib/statements.test.js`, `tests/test_statements.py` |
-| CR18 Meetings | `can I book a meeting with my RM?` → free times, no ticket → *Book a time with your RM* → hold, confirm, cancel in My requests → Meetings. | `tests/test_meetings.py`, `tests/test_rm_handover.py` |
+| CR17 Meetings | `can I book a meeting with my RM?` → free times, no ticket → *Book a time with your RM* → hold, confirm, cancel in My requests → Meetings. | `tests/test_meetings.py`, `tests/test_rm_handover.py` |
+| CR12 Confirm charges | `I don't recognise the London charges on my card` → urgent steps and a list of the charges with refs → no ticket yet → tap *Yes, report it* → urgent `TCK-` reference; replying *No, only the second one* sends nothing. | `tests/test_fraud_confirmation.py`, `tests/test_fraud_team_report.py` |
+| CR12 Lost card | Signed in: `I lost my card` → urgent steps plus an urgent fraud ticket reference; asking again in a new chat quotes the same reference. | `tests/test_fraud_confirmation.py` (reply wording) |
+| CR8/CR9 RM ticket reuse | `Can you waive my annual fee?` in one chat, `Can you lower my interest rate?` in a new chat → same `TCK-` reference, second question shown as "You added: …" on the ticket. `I want to transfer 500,000 SGD to my family trust` → handed to the RM. | `tests/test_rm_handover.py` |
+| CR14 Two cards | `What is my card balance?` → asks which card (ending 7310 or 5592). | Manual (live model) |
+| CR15 Fees | `Why was I charged S$25 on 3 Oct?` → the incoming telegraphic transfer fee from her records. | Manual (live model) |
+| CR16 Loans | `What loans do you offer?`, `Am I eligible for a personal loan?`, `How do I apply for a car loan?`, `Will my home loan be approved?`, `Which loan should I take?` → approved information only, no eligibility or approval promise, bank decides, no recommendation. Car loans are the only DemoBank product with details. | Manual (live model) |
 | CR6 Answer the bank | On Compliance review, type an answer under *The bank asked you* → *Send to the bank* → "Sent to the bank on … – waiting for review", a receipt in Actions and an Inbox notice. Then `record_request_decision(...,'accepted')` → "Accepted by bank". | `tests/test_request_answers.py`, `frontend/src/lib/actions.test.js` |
 | CR7 Reminders | With the worker on, a correction due in 3 days reaches the Inbox within a minute; after she uploads the new file it disappears from the Inbox. | `tests/test_bank_decisions.py::test_a_correction_due_this_week_gets_a_reminder`, `tests/test_reminders_cleared.py`, `tests/test_notifications.py` |
 

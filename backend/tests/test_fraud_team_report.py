@@ -1,5 +1,6 @@
-"""Charges the client does not recognise go to the fraud team (0081): no block or dispute offer, no paused turn, one urgent
-fraud-team handoff and ticket per reported card, and the reply quotes its reference. Native PostgreSQL/PostgREST, real graph nodes.
+"""Charges the client does not recognise go to the fraud team (0081, 0082): no block or dispute offer, no paused turn. The first
+turn lists the charges for her to confirm and records nothing; after her "Yes, report it" one urgent fraud-team handoff and
+ticket per confirmed card are recorded and the reply quotes its reference. Native PostgreSQL/PostgREST, real graph nodes.
 
 The fixture starts after dispatch with safety-origin text, as tests/test_workflows.py does; it does not test model wording.
 """
@@ -33,7 +34,7 @@ def enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings,'conversation_store','database')
 
 
-async def report(db: SyncPostgrestClient,api: NativeAPI,again: bool=False) -> dict:
+async def report(db: SyncPostgrestClient,api: NativeAPI,again: bool=False,confirmed: bool=True) -> dict:
     ctx=context(api,1002)
     access=ConversationAccess(session_id=uuid4(),guest_token=None)
     await conversations.create(CreateConversation(session_id=access.session_id,mode='personal',language='English'),access,ctx,db)
@@ -43,7 +44,8 @@ async def report(db: SyncPostgrestClient,api: NativeAPI,again: bool=False) -> di
     req=ChatRequest(messages=[{'role':'user','content':QUERY}],mode='personal')
     graph=build_graph(PostgrestCheckpointSaver(db,access,current,turn.turn,signing_key()))
     config={'configurable':{'thread_id':str(turn.turn.case_id)}}
-    task=Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',entities={'question':QUERY})
+    entities={'question':QUERY,**({'fraud_confirmed':'7310:txn_100215,txn_100216'} if confirmed else {})}
+    task=Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',entities=entities)
     await graph.aupdate_state(config,{'request':req,'history':req.messages,'history_count':1,'risk':assess_request(req),
         'workflow_version':'v2-actions-v1','plan':TaskPlan(tasks=[task]),
         'results':[AgentResult(task_id='t1',agent='fraud',status='needs_human',text='Call the fraud line on the back of your card now.',answer_kind='conversation')],
@@ -56,11 +58,11 @@ async def report(db: SyncPostgrestClient,api: NativeAPI,again: bool=False) -> di
     return result
 
 
-def run(api: NativeAPI,again: bool=False) -> dict:
+def run(api: NativeAPI,again: bool=False,confirmed: bool=True) -> dict:
     ctx=context(api,1002)
     with SyncPostgrestClient(api.url) as db:
         db.auth(ctx.principal.jwt.get_secret_value())
-        return asyncio.run(report(db,api,again))
+        return asyncio.run(report(db,api,again,confirmed))
 
 
 def test_reported_charges_go_to_the_fraud_team_without_a_pause_or_a_block(local_data_api: NativeAPI,native_api_client,enabled: None) -> None:
@@ -85,3 +87,13 @@ def test_a_retried_turn_reuses_the_same_report(local_data_api: NativeAPI,native_
     run(local_data_api,again=True)
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select count(*) from support.handoffs where customer_id=1002 and reason='card_verification'").fetchone()==(1,)
+
+
+def test_the_first_turn_lists_the_charges_and_sends_nothing(local_data_api: NativeAPI,native_api_client,enabled: None) -> None:
+    result=run(local_data_api,confirmed=False)
+    answer=result['answer'].answer
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert db.execute("select count(*) from support.handoffs where customer_id=1002").fetchone()==(0,)
+        assert db.execute("select count(*) from support.tickets where customer_id=1002 and category='suspected_fraud'").fetchone()==(0,)
+    assert 'card ending 7310' in answer and 'MAYFAIR AUDIO LONDON' in answer and 'LUXEHAUS LONDON' in answer
+    assert '(ref. 100215)' in answer and '(ref. 100216)' in answer and 'Yes, report it' in answer and 'TCK-' not in answer

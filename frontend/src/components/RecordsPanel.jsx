@@ -7,7 +7,8 @@ import {loadRecords} from '../lib/customerData';
 import {formatAmount as amount,formatDate,formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 
-// Names and amounts stay exactly as recorded here (card and loan currencies are not recorded); dates use the shared format.
+// Names and amounts stay exactly as recorded here; card and loan amounts carry their recorded currency (0083). Dates use the shared format.
+const cardAmount=(row,value)=>`${row.currency?row.currency+' ':''}${amount(value)}`;
 function label(value) {return value.replaceAll('_',' ');}
 function recordedDate(value) {return value===null?'Not recorded':formatDate(value);}
 
@@ -56,13 +57,13 @@ export default function RecordsPanel({onClose,onReviewActions}) {
         {records.accounts.data.map(row=><article key={row.account_id} data-testid="records-account"><h4>{label(row.type)} · {row.number}</h4><p>{row.currency} {amount(row.balance)} · {label(row.status)}</p></article>)}</section>
       <section><h3>Cards</h3>{records.cards.data.length===0&&<p>No cards recorded.</p>}
         {records.cards.data.map(row=><article key={row.card_id} data-testid="records-card"><h4>{row.name} · ****{row.last4}</h4>
-          <dl className="sharing-details record-table"><dt>Status</dt><dd>{label(row.status)}</dd><dt>Credit limit</dt><dd>{amount(row.limit)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Minimum payment</dt><dd>{amount(row.minimum_payment)}</dd><dt>Due date</dt><dd>{recordedDate(row.due_date)}</dd></dl>
+          <dl className="sharing-details record-table"><dt>Status</dt><dd>{label(row.status)}</dd><dt>Credit limit</dt><dd>{cardAmount(row,row.limit)}</dd><dt>Outstanding</dt><dd>{cardAmount(row,row.outstanding)}</dd><dt>Minimum payment</dt><dd>{cardAmount(row,row.minimum_payment)}</dd><dt>Due date</dt><dd>{recordedDate(row.due_date)}</dd></dl>
           {row.status!=='active'&&<p className="source-notice" data-testid="card-bank-only">Only the bank can unblock or cancel a card. Contact the fraud team, or ask your relationship manager.</p>}</article>)}
 </section>
       <section><h3>Loans</h3>{records.loans.data.length===0&&<p data-testid="records-loans-empty">No loans recorded.</p>}
         {records.loans.data.map(row=><article key={row.loan_id} data-testid="records-loan"><h4>{label(row.type)} · {label(row.status)}</h4>
-          <dl className="sharing-details record-table"><dt>Original amount</dt><dd>{amount(row.principal)}</dd><dt>Outstanding</dt><dd>{amount(row.outstanding)}</dd><dt>Next payment</dt><dd>{amount(row.next_amount)}</dd><dt>Due date</dt><dd>{recordedDate(row.next_payment)}</dd></dl></article>)}
-        <p className="source-notice">Currency is not recorded for card and loan amounts.</p></section>
+          <dl className="sharing-details record-table"><dt>Original amount</dt><dd>{cardAmount(row,row.principal)}</dd><dt>Outstanding</dt><dd>{cardAmount(row,row.outstanding)}</dd><dt>Next payment</dt><dd>{cardAmount(row,row.next_amount)}</dd><dt>Due date</dt><dd>{recordedDate(row.next_payment)}</dd></dl></article>)}
+        {[...records.cards.data,...records.loans.data].some(row=>!row.currency)&&<p className="source-notice">Currency is not recorded for some card or loan amounts.</p>}</section>
       <section><h3>Transactions</h3><p>Latest {records.transactions.data.length} matching records, up to 200. Dates use Singapore time.</p>
         {records.transactions.data.length===0&&<p data-testid="records-transactions-empty">No matching transactions.</p>}
         {records.transactions.data.map(row=><article key={row.txn_id} data-testid="records-transaction"><h4>{row.description}</h4><p>{row.txn_at?formatDateTime(row.txn_at):formatDate(row.date)} · {row.currency} {amount(row.amount)} · {row.status}{row.card_last4&&` · Card ****${row.card_last4}`}{row.merchant_country?` · ${row.merchant_country}`:''}{row.is_overseas&&' · Overseas'}</p>{row.failure_reason&&<p>{row.failure_reason}</p>}</article>)}</section>

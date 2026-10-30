@@ -12,7 +12,7 @@ from app.services.agents import fraud_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
-PROMPT='v6'
+PROMPT='v7'
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
 URGENT='If you do not recognise a charge, contact your bank now through the official fraud line on the back of your card or its official app. Never share your PIN, password, one-time code or full card number.'
 
@@ -107,7 +107,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     flagged=bool(FRAUD.search(question) or FRAUD.search(latest) or travel is not None)
     pv=prompts.load('fraud',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
-    if flagged and len(pairs)==1:system+='\nThe case goes to the fraud team as urgent (the customer cannot block the card here)'
+    if flagged and len(pairs)==1:system+='\nThe charges are listed for the customer to confirm before the case goes to the fraud team as urgent (the customer cannot block the card here)'
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
     system+='\nEligible pairs: '+json.dumps([item.model_dump() for item in pairs])

@@ -13,6 +13,8 @@ function day(value) {
 }
 function timestamp(value) {match(value,/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/);if(!Number.isFinite(Date.parse(value)))throw invalid();return value;}
 function nullable(value,parse) {return value===null?null:parse(value);}
+// Card and loan currency is recorded from migration 0083; an older backend sends none.
+function currency(value) {return value===undefined||value===null?null:match(value,/^[A-Z]{3}$/);}
 function rows(value,parse,key) {
   if(!Array.isArray(value)||value.length>200)throw invalid();
   const result=value.map(parse);
@@ -30,11 +32,11 @@ function account(value) {
 }
 function card(value) {
   return {card_id:match(value?.card_id,/^card_[1-9][0-9]{0,17}$/),name:text(value?.name),last4:match(value?.last4,/^[0-9]{4}$/),
-    status:choice(value?.status,['active','temporarily_blocked','cancelled','blocked','expired']),limit:number(value?.limit),
+    status:choice(value?.status,['active','temporarily_blocked','cancelled','blocked','expired']),currency:currency(value?.currency),limit:number(value?.limit),
     outstanding:number(value?.outstanding),minimum_payment:number(value?.minimum_payment),due_date:nullable(value?.due_date,day)};
 }
 function loan(value) {
-  return {loan_id:match(value?.loan_id,/^loan_[1-9][0-9]{0,17}$/),type:choice(value?.type,['home','car','personal','securities_backed']),
+  return {loan_id:match(value?.loan_id,/^loan_[1-9][0-9]{0,17}$/),type:choice(value?.type,['home','car','personal','securities_backed']),currency:currency(value?.currency),
     principal:number(value?.principal),outstanding:number(value?.outstanding),next_amount:number(value?.next_amount),
     next_payment:nullable(value?.next_payment,day),status:choice(value?.status,['active','paid_off'])};
 }

@@ -54,9 +54,9 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
             :<p className="ov-empty">You have no open accounts.</p>}</article>
         {cards.length>0&&<article className="ov-card"><h2>Cards</h2><ul className="ov-rows">{cards.map(row=><li key={row.card_id}><span className="ov-icon"><Icon name="card"/></span>
           <div><strong>{row.name}</strong><small>•••• {row.last4}{row.status!=='active'?` · ${row.status.replaceAll('_',' ')}`:''}{row.due_date?` · Due ${formatDate(row.due_date)}`:''}</small></div>
-          <b>{money(row.outstanding)}<small>of {money(row.limit)} limit</small></b></li>)}</ul></article>}
+          <b>{money(row.outstanding,row.currency||undefined)}<small>of {money(row.limit,row.currency||undefined)} limit</small></b></li>)}</ul></article>}
         {loans.length>0&&<article className="ov-card"><h2>Loans</h2><ul className="ov-rows">{loans.map(row=><li key={row.loan_id}><span className="ov-icon"><Icon name="loan"/></span>
-          <div><strong>{LOAN[row.type]}</strong><small>Next payment {money(row.next_amount)}{row.next_payment?` on ${formatDate(row.next_payment)}`:''}</small></div><b>{money(row.outstanding)}<small>outstanding</small></b></li>)}</ul></article>}
+          <div><strong>{LOAN[row.type]}</strong><small>Next payment {money(row.next_amount,row.currency||undefined)}{row.next_payment?` on ${formatDate(row.next_payment)}`:''}</small></div><b>{money(row.outstanding,row.currency||undefined)}<small>outstanding</small></b></li>)}</ul></article>}
         <article className="ov-card"><h2>Recent activity</h2>
           {recent.length?<ul className="ov-rows ov-txns">{recent.map(row=><li key={row.txn_id}><div><strong>{row.description}</strong><small>{formatDate(row.date)}{row.card_last4?` · Card •••• ${row.card_last4}`:''}{row.status!=='posted'?` · ${row.status}`:''}</small></div>
             <b className={row.amount<0?'out':'in'}>{row.amount<0?'−':'+'}{money(Math.abs(row.amount),row.currency)}</b></li>)}</ul>

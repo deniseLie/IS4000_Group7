@@ -49,7 +49,7 @@ export function parseAction(value) {
       canonical={...canonical,from_status:target.from_status};
     }
   } else if(command.type==='handoff.create') {
-    if(!target||!['card_verification','card_dispute','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
+    if(!target||!['card_verification','card_dispute','card_lost','general_support'].includes(target.reason)||!PRIORITIES.includes(target.priority)||typeof target.summary!=='string'||!target.summary.trim()||target.summary.length>1000)throw invalid();
     canonical={reason:target.reason,priority:target.priority,summary:target.summary};
   } else if(command.type==='card.dispute')canonical=parseDisputeTarget(target);
   else if(command.type==='appointment.hold')canonical=parseSlotTarget(target);

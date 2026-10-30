@@ -33,7 +33,7 @@ from app.schemas.disputes import DisputeItem,StoredDisputeTarget
 from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery,KnowledgeSection,SectionKey
-from app.services import actions,audit,case_summary,customer_data,kb, llm_gateway, prompts,rm_handover,tools,workflow_store
+from app.services import actions,audit,case_summary,customer_data,fraud_reports,kb, llm_gateway, prompts,rm_handover,tools,workflow_store
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
 from app.services.agents import compliance,document,fraud,fraud_records,relationship,retail,retail_checks
@@ -149,6 +149,8 @@ async def plan(state: Turn) -> PlanUpdate:
     question = state['risk'].redacted_message
     if req.record_context is not None:
         return {'issues':[PlannedIssue(domain='document' if req.record_context.kind=='document' else 'compliance',question=question)]}
+    # A plain yes to the charge list we just showed (CR12): report exactly those charges, no planner call.
+    if req.mode=='personal' and fraud_reports.pending(state['history']):return {'issues':[PlannedIssue(domain='fraud',question=question)]}
     single = simple_issue(question, req.language)
     if single is not None:return {'issues':[single]}
     pv = prompts.current('planner')
@@ -173,6 +175,12 @@ def task_priority(issue: PlannedIssue) -> Priority:
 def prioritise(state: Turn) -> PriorityUpdate:
     risk=state['risk']
     issues=state['issues']
+    request=state.get('request')
+    confirmations=fraud_reports.pending(state.get('history') or []) if request is not None and request.mode=='personal' else []
+    if confirmations and [issue.domain for issue in issues]==['fraud']:
+        # One urgent report per confirmed card; the charges come from our own previous list, never from the model.
+        return {'plan':TaskPlan(tasks=[Task(task_id=f't{i+1}',domain='fraud',intent='answer_question',priority='P0',
+            entities={'question':issues[0].question,'fraud_confirmed':item.encoded()}) for i,item in enumerate(confirmations)])}
     if {'fraud_suspected','lost_card'}.intersection(risk.risk_flags) and not any(issue.domain=='fraud' for issue in issues):
         # The planner's own charge question becomes the fraud task, so the charge is not answered twice.
         charge=next((i for i,issue in enumerate(issues) if CHARGE.search(issue.question) and not LOGIN.search(issue.question)),None)
@@ -280,6 +288,9 @@ def can_hand_over(ctx: RequestContext) -> bool:
 async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
     """Bound the whole task and withhold expected provider/data failures without releasing its evidence."""
     agent=AGENT_FOR[task.domain]
+    if task.entities.get('fraud_confirmed'):
+        result,proposal,dispute=await fraud_reports.confirmed(task,ctx)
+        return {'result':result,'evidence':[],'proposal':proposal,'dispute':dispute,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
     if task.entities.get('handover')=='rm':
         # No model call: a fixed, polite line; escalate_validation records the handover and adds the reference.
         text=rm_handover.SORRY if can_hand_over(ctx) else rm_handover.GUEST
@@ -390,8 +401,27 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
             idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
         handoff=await actions.propose_for_workflow(command,handoff_id,owned,ctx.model_copy(update={'agent':'fraud'}))
         if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
-    if owned is not None and not state['pending_reviews']:sections+=await report_to_fraud_team(state,ctx,owned)
+    if owned is not None and not state['pending_reviews']:
+        sections+=await ask_to_confirm(state,ctx)
+        sections+=await report_to_fraud_team(state,ctx,owned)
     return {'decision_sections':sections}
+
+
+async def ask_to_confirm(state: Turn,ctx: RequestContext) -> list[AnswerSection]:
+    """CR12: before anything is sent, list the reported card's charges from records and ask the client to confirm them.
+    Nothing is recorded on this turn; her "Yes, report it" on the next turn sends exactly these charges."""
+    sections: list[AnswerSection]=[]
+    asked: set[str]=set()
+    disputes=state.get('disputes') or [None]*len(state['proposals'])
+    for task,proposal,flagged in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
+        if proposal is None or task.entities.get('fraud_confirmed') or proposal.card_id in asked:continue
+        asked.add(proposal.card_id)
+        text=await fraud_reports.ask_to_confirm(task,proposal,flagged,ctx)
+        if text is None:continue
+        sections.append(AnswerSection(task_id=task.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',answer=text,
+            sources=[fraud_reports.records_source(ctx),Source.model_validate(source(INDEX['unrecognised-charge']))],
+            needs_human=True,response_origin='safety',prompt_version=None))
+    return sections
 
 
 FRAUD_TEAM=('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card ending {last4} if needed '
@@ -400,12 +430,13 @@ FRAUD_TEAM=('I’ve passed this to our fraud team as urgent{reference}. They wil
 
 
 async def report_to_fraud_team(state: Turn,ctx: RequestContext,owned: OwnedWorkflow) -> list[AnswerSection]:
-    """One urgent fraud-team handoff per reported card, with the staff case summary built from records; the reply quotes its ticket."""
+    """One urgent fraud-team handoff per confirmed card, with the staff case summary built from records; the reply quotes its ticket."""
     sections: list[AnswerSection]=[]
     reported: set[str]=set()
     disputes=state.get('disputes') or [None]*len(state['proposals'])
     for task,proposal,flagged in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
-        if proposal is None or proposal.card_id in reported:continue
+        # Only charges the client confirmed on this turn are sent (ask_to_confirm lists them first).
+        if proposal is None or not task.entities.get('fraud_confirmed') or proposal.card_id in reported:continue
         reported.add(proposal.card_id)
         records=await fraud_records.load(ctx.model_copy(update={'agent':'fraud'}))
         card=next(item for item in records.cards if item.card_id==proposal.card_id)
@@ -433,8 +464,12 @@ async def report_to_fraud_team(state: Turn,ctx: RequestContext,owned: OwnedWorkf
 async def staff_summary_for(state: Turn,task_id: str,last4: str,reported_id: str,items: list[DisputeItem],ctx: RequestContext) -> str:
     """The fraud team's case summary (0081): the reported and flagged charges, other issues raised and her own words; no client decisions."""
     transfers,due,lockout=await other_issues(state,ctx)
+    words=state['risk'].redacted_message
+    history=state.get('history') or []
+    # After "Yes, report it" the staff need her original report, which came just before our charge list.
+    if len(history)>=3 and history[-3].role=='user' and fraud_reports.pending(history):words=history[-3].content
     return case_summary.build(last4=last4,reported_id=reported_id,items=items,block=None,dispute=None,possession=None,
-        transfers=transfers,due=due,lockout=lockout,customer_words=state['risk'].redacted_message)
+        transfers=transfers,due=due,lockout=lockout,customer_words=words)
 
 
 async def other_issues(state: Turn,ctx: RequestContext) -> tuple[list[CustomerTransaction],object,bool]:
@@ -496,6 +531,12 @@ def dispute_text(state: str,receipt: str | None,target: object) -> str:
     return 'The dispute draft was not recorded because a listed charge changed. Nothing was sent.'
 
 
+def selected_documents(state: Turn) -> list[UUID]:
+    """The document the client selected in the chat (CR9: relevant attachments go with the RM ticket)."""
+    selection=state['request'].record_context
+    return [selection.document_id] if selection is not None and selection.document_id is not None else []
+
+
 async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
     """Hand questions that need a person, and withheld sections, to the client's relationship manager.
 
@@ -516,9 +557,10 @@ async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> 
             and not rm_handover.MEETING.search(str(task.entities.get('question',''))))
         if not asked:continue
         task_id=rm_handover.task_key(task.task_id+'_rm',owned.turn.turn_id if owned is not None else ctx.case_id)
-        _,reference=await rm_handover.hand_over(str(task.entities.get('question','')),task.priority,ctx,owned,task_id)
+        handover=await rm_handover.route(str(task.entities.get('question','')),task.priority,ctx,owned,task_id,
+            history=state['history'],document_ids=selected_documents(state))
         sections.append(AnswerSection(task_id=task.task_id+'_decision',domain=task.domain,priority=task.priority,answer_kind='conversation',
-            answer=rm_handover.handed_over(reference),sources=[receipt_source(task_id)],needs_human=True,response_origin='safety',prompt_version=None))
+            answer=handover.reply(),sources=[] if handover.failed else [receipt_source(task_id)],needs_human=True,response_origin='safety',prompt_version=None))
     failed=[task for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True)
         if result.status=='error' and meta.origin=='validation']
     if not failed:return {'decision_sections':sections}

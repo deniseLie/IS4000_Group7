@@ -159,7 +159,7 @@ A question the bank asks (for example "Please explain the source of the SGD 120,
 
 Only the bank closes a question; the assistant and her answer cannot. Tests: `test_request_answers.py`, `actions.test.js`.
 
-## Meetings with her RM (CR18)
+## Meetings with her RM (CR17)
 
 **My requests → Meetings** lists free times for the next 14 days from her RM's working hours. Picking one holds it for 10 minutes; *Confirm booking* books it and *Cancel meeting* releases it. Each is an action with a receipt in Actions. Two bookings can never share a time. In the chat, "can I book a meeting with my RM?" is not handed over as a ticket: the relationship agent (`relationship/v5`) suggests up to 3 free times and the reply ends with *Book a time with your RM*. Tests: `test_meetings.py`, `test_rm_handover.py`.
 
@@ -172,6 +172,8 @@ Older months, certified or paper copies are a *Statement or document copy* reque
 ## Urgent card help and payments (CR12, CR13)
 
 > **Changed 30 Oct 2026 (migration 0081, fraud prompt v6): card actions are the bank's.** Michelle can no longer block, unblock or cancel a card, or send a dispute draft, from the chat or Records. When she reports charges she does not recognise, the assistant gives the urgent steps (fraud line on the back of the card, report or freeze in the official app), names the flagged charges, and passes the case to the fraud team as an urgent `suspected_fraud` ticket (a P0 `card_verification` handoff with a case summary built from records). The reply quotes the `TCK-` reference; the fraud team contacts her, blocks the card if needed and reviews the charges. Nothing pauses for her confirmation. The block, dispute and self-service steps described below are history: they are kept for the record of how Part B was built and tested. Tests: `test_fraud_team_report.py`, `test_card_self_service.py`.
+
+> **Changed 30 Oct 2026 (migration 0082, fraud prompt v7): she confirms the charges first.** The reply now lists the charges from her records (date, merchant, amount, `ref.` number) and asks her to reply "Yes, report it"; nothing is sent on that turn. Her plain yes on the next turn records the P0 handoff without a model call and quotes the `TCK-` reference. A lost or stolen card reported while signed in opens an urgent `card_lost` fraud ticket at once. Tests: `test_fraud_confirmation.py`, `test_fraud_team_report.py`.
 
 > **Michelle's demo (0075):** on 27 Oct her card 7310 was used at Orchard Bistro, Singapore (12:40 pm) and then at two London merchants, SGD 1.00 at 2:05 pm and SGD 3,850.00 at 2:21 pm, which the impossible-travel rule flags. A SGD 12,000 FAST transfer to Lim Interiors from 28 Oct is still pending. Try "I don't recognise the London charges on my card" and "did my transfer to Lim Interiors go through?". The walkthrough below was recorded earlier with test customer Alex (card 4821); the steps and rules are the same.
 

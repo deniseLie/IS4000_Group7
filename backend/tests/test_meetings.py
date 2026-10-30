@@ -1,4 +1,4 @@
-"""CR18: Michelle can see her RM's free times, hold one and book it (native PostgREST, real JWT/RLS)."""
+"""CR17: Michelle can see her RM's free times, hold one and book it (native PostgREST, real JWT/RLS)."""
 import os
 from datetime import datetime,timedelta
 from uuid import uuid4

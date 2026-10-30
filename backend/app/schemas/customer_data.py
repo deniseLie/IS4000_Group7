@@ -44,6 +44,7 @@ class CreditCard(BaseModel):
     network: Literal['visa','mastercard']
     last4: Last4
     status: Literal['active','temporarily_blocked','cancelled','blocked','expired']
+    currency: Currency | None=None  # recorded from 0083
     limit: Money
     outstanding: Money
     minimum_payment: Money
@@ -54,6 +55,7 @@ class CustomerLoan(BaseModel):
     model_config=ConfigDict(extra='ignore')
     loan_id: Annotated[str,StringConstraints(strict=True,pattern=r'^loan_[1-9][0-9]{0,17}$')]
     type: Literal['home','car','personal','securities_backed']
+    currency: Currency | None=None  # recorded from 0083
     principal: Money
     outstanding: Money
     next_payment: date | None

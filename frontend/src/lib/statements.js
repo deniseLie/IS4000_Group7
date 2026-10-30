@@ -49,5 +49,5 @@ export function buildStatement({kind,source},transactions,month) {
   const money_in=round(entries.filter(row=>row.amount>0).reduce((sum,row)=>sum+row.amount,0));
   const money_out=round(-entries.filter(row=>row.amount<0).reduce((sum,row)=>sum+row.amount,0));
   const pending=mine.filter(row=>row.status==='pending'&&row.date>=first&&row.date<=last);
-  return {kind,month,first,last,currency:kind==='card'?'SGD':source.currency,opening,closing,money_in,money_out,lines,pending};
+  return {kind,month,first,last,currency:kind==='card'?(source.currency||'SGD'):source.currency,opening,closing,money_in,money_out,lines,pending};
 }

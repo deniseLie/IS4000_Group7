@@ -135,7 +135,7 @@ function exportCsv(items) {
 
 
 // Plain-language activity: one sentence of what happened, one line of detail, and a status only when it is not simply done.
-const QUESTION=/^Client question for you:\s*/;
+const QUESTION=/^(?:\[[^\]]{1,60}\]\s*)?Client question for you:\s*/;
 function activity(command) {
   const t=command.target;
   switch(command.type) {
@@ -145,8 +145,9 @@ function activity(command) {
     case 'compliance.update_checklist_item':return ['check',`Marked ${t.item_label} as ${t.client_mark==='prepared'?'ready':'not ready'}`,'Your own checklist mark. It does not send anything to the bank.'];
     case 'handoff.create':{
       const summary=t.summary||'';
+      if(t.reason==='card_lost')return ['shield','Lost or stolen card reported to the fraud team','They will contact you, block the card if needed and arrange a replacement.'];
       if(t.reason==='card_verification'||t.reason==='card_dispute')return ['shield','Card case sent to the fraud team','They will check your identity and the charges.'];
-      if(QUESTION.test(summary))return ['people','Asked your relationship manager',`“${summary.replace(QUESTION,'')}”`];
+      if(QUESTION.test(summary))return ['people','Asked your relationship manager',`“${summary.replace(QUESTION,'').split(' | Earlier in this chat:')[0]}”`];
       if(/withheld/i.test(summary))return ['people','Passed a question to your relationship manager',"Part of an answer couldn't be checked, so your relationship manager will follow up."];
       if(/compliance/i.test(summary))return ['people','Asked for help with your compliance review','Your relationship manager will follow up.'];
       return ['people','Asked to talk to a person','Your relationship manager will follow up.'];
@@ -175,7 +176,7 @@ function meaning(item) {
   if(!receipt)return '';
   if(receipt.outcome==='failed')return 'Nothing changed, because the record changed before this could run.';
   switch(command.type) {
-    case 'document.register':return 'Your file is saved privately. It goes to the bank only after its quick check passes.';
+    case 'document.register':return 'Your file is saved privately. It goes to the bank only after its preliminary check passes (Preliminary Check – Not Formal Compliance Approval).';
     case 'document.submit':return 'The bank has the file. Only the bank can accept it; you will see the outcome in Compliance review and your Inbox.';
     case 'compliance.update_checklist_item':return 'Only your own checklist mark changed.';
     case 'compliance.answer_request':return 'Your answer was sent to the bank. The bank decides whether it is enough.';

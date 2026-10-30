@@ -79,6 +79,13 @@ class TicketUpdate(BaseModel):
     note: str | None
 
 
+class TicketAttachment(BaseModel):
+    """A document the client attached to an RM ticket (0082): its id and file name only, never a storage path."""
+    model_config=ConfigDict(extra='ignore')
+    document_id: UUID
+    file_name: str
+
+
 class CustomerTicket(BaseModel):
     model_config=ConfigDict(extra='ignore')
     ticket_id: UUID
@@ -98,3 +105,4 @@ class CustomerTicket(BaseModel):
     target_at: AwareDatetime
     overdue: StrictBool
     last_update: TicketUpdate | None
+    attachments: list[TicketAttachment]=Field(default_factory=list,max_length=20)

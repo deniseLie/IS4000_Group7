@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nextStep,parseCategories,parseTicketResult,parseTicketTarget,parseTickets,ticketIntent,ticketResultMatches} from './ticketData.js';
+import {nextStep,parseCategories,parseTicketResult,parseTicketTarget,parseTickets,requestFailed,ticketIntent,ticketResultMatches,ticketSummary,ticketTopic} from './ticketData.js';
 
 const TICKET={ticket_id:'3c063770-db29-48f4-bbfd-4c45c7e1093a',reference:'TCK-001001',category:'statement_request',category_label:'Statement or document copy',
   summary:'Copy of the June statement.',details:{period:'June 2026'},urgency:'normal',status:'in_review',owner_team:'Operations team',
@@ -38,4 +38,25 @@ test('categories keep their fields and chat questions map to a category',()=>{
   assert.equal(ticketIntent('I need a certified statement for my visa application'),'statement_request');
   assert.equal(ticketIntent('Can I get my statements from 2024?'),'statement_request');
   assert.equal(ticketIntent('Which bank statements do I upload for my review?'),null);
+});
+
+test('handover tickets show the client her question, the topic and attachments (0082)', () => {
+  const summary='[Fees or rates] Client question for you: Can you waive the annual fee? | Earlier in this chat: “my card was charged”';
+  assert.equal(ticketSummary({summary}),'Can you waive the annual fee?');
+  assert.equal(ticketTopic({category:'rm_handover',summary}),'Fees or rates');
+  assert.equal(ticketTopic({category:'statement_request',summary}),null);
+  assert.equal(ticketSummary({summary:'Client question for you: older ticket'}),'older ticket');
+});
+
+test('a failed request says nothing was sent and offers Talk to a person (CR9)', () => {
+  const text=requestFailed(new Error('Failed to fetch'));
+  assert.match(text,/nothing has been sent/);assert.match(text,/Talk to a person/);assert.doesNotMatch(text,/Failed to fetch/);
+  assert.match(requestFailed(new Error('This request category cannot be raised by a customer.')),/cannot be raised by a customer\)/);
+});
+
+test('attachments on a ticket are parsed by file name and tampered ones are rejected', () => {
+  const [ticket]=parseTickets({data:[{...TICKET,attachments:[{document_id:'3c063770-db29-48f4-bbfd-4c45c7e1093b',file_name:'proof-of-address.pdf'}]}]});
+  assert.deepEqual(ticket.attachments.map(item=>item.file_name),['proof-of-address.pdf']);
+  assert.deepEqual(parseTickets({data:[TICKET]})[0].attachments,[]);
+  assert.throws(()=>parseTickets({data:[{...TICKET,attachments:[{document_id:'x',file_name:'a.pdf'}]}]}));
 });

@@ -18,7 +18,7 @@ import CardBlockDialog from './components/CardBlockDialog';
 import DisputeDialog from './components/DisputeDialog';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
 import {loadIntroduction,relationshipIntent} from './lib/relationshipWorkflow';
-import {followUps} from './lib/followUps';
+import {CONFIRM_REPORT,followUps} from './lib/followUps';
 import {prepareComplianceSupport} from './lib/compliance';
 import TopBar from './components/TopBar';
 import Sidebar,{TabBar} from './components/Sidebar';
@@ -353,7 +353,7 @@ export default function Chat({session,onSignIn}) {
     // CR15: a statement question ends with a way to the Statements section, or to a statement copy request for older ones.
     if(intent==='statements')return <button className="primary-button rm-handoff" data-testid="statement-handoff" onClick={()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});}}>Go to Statements<Icon name="arrow"/></button>;
     if(intent==='statement_request')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>requestStatement(redact(asked).slice(0,500))}>Request a statement copy<Icon name="arrow"/></button>;
-    // CR18: a meeting question ends with a button to the Meetings tab, where she picks a free time.
+    // CR17: a meeting question ends with a button to the Meetings tab, where she picks a free time.
     if(relationshipIntent(asked)==='meeting')return <button className="primary-button rm-handoff" data-testid="meeting-handoff" onClick={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}>Book a time with your RM<Icon name="arrow"/></button>;
     // A question handed to the relationship manager: its reference is in the reply; follow it in My requests.
     if(message.needs_human&&/My requests/.test(message.content))
@@ -368,7 +368,7 @@ export default function Chat({session,onSignIn}) {
     const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
     const list=followUps({question:messages[index-1]?.role==='user'?messages[index-1].content:'',message,signedIn:!!session&&mode==='personal',asked});
     if(!list.length)return null;
-    return <div className="follow-ups" data-testid="follow-ups"><span>You could also ask</span>
+    return <div className="follow-ups" data-testid="follow-ups"><span>{list[0]===CONFIRM_REPORT?'Are these the charges?':'You could also ask'}</span>
       {list.map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text}</button>)}</div>;
   }
   function complianceStep(message,index) {

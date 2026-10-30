@@ -41,11 +41,25 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Run the 10 test cases** and record the results (F22 evidence).
 - **Assign owners** in the backlog and in `test-cases.md`.
 
+## Done on 30 Oct (code review follow-ups, migration 0082, fraud prompt v7)
+
+- **No duplicate RM tickets (CR9):** each handover gets a topic (complaint, complex transfer, fees or rates, advice, request to contact you). A question on a topic that already has an open RM ticket is added to that ticket as "You added: …" and she gets the same reference.
+- **Complex transfers go to the RM (CR8):** large sums, trusts, holding companies and overseas moves. "How do I…" and pending/failed transfer questions stay with the assistant.
+- **Context for the RM (CR8):** the ticket carries the topic, her redacted question and up to three of her earlier messages in the chat (never the assistant's replies), within 500 characters.
+- **Attachments (CR9):** a document selected in the chat is attached to the RM ticket; My requests lists it by file name.
+- **Helpful failures (CR9):** if the handover or a lost-card report fails, she is told nothing was sent and pointed to Talk to a person or the fraud line; the request form shows *Try again* and *Talk to a person*.
+- **Confirm before reporting (CR12):** the first turn lists the charges from her records and asks for "Yes, report it" (one-tap button); only then does the urgent fraud ticket open. Fraud prompt v7.
+- **Lost or stolen card (CR12):** a signed-in client in a saved chat gets an urgent fraud ticket at once (handoff reason `card_lost`); an open lost-card ticket is reused.
+- **Certification checks (CR5):** identity documents need a certification line; translations need the translator's certification. Every result is labelled *Preliminary Check – Not Formal Compliance Approval*.
+- **Demo data (CR14, CR15):** Michelle's Travel Card ending 5592 (annual fee and one purchase) so card questions ask which card; a S$25 transfer fee on her account.
+- **Card and loan currency (CR14, 0083, retail prompt v7):** cards and loans now record their currency (SGD), so the assistant answers "SGD 316.20" instead of saying the currency is unrecorded, and Overview, Records and statements use the recorded currency.
+- **Still open:** CR16 has DemoBank product details for car loans only; home and personal loans need approved product information before CR16 can be marked done. Hosted: apply `backend/supabase/hosted/11_apply_0082_hosted.sql`.
+
 ## Done on 29 Oct
 
 - **Michelle's own demo data (CR12, CR13, 0075):** card 7310 used in Singapore then London on 27 Oct; a pending SGD 12,000 transfer.
 - **The bank's decision on a document (CR3, CR6, 0076):** `compliance.record_bank_decision` accepts a file or asks for a correction, which shows on her review and closes when she resubmits; a near due date also triggers a reminder. Reminders she has already acted on disappear from her Inbox (0078).
-- **Meetings with her RM (CR18):** My requests → Meetings (free times, hold, confirm, cancel); meeting questions are no longer turned into RM tickets; prompt `relationship/v5`.
+- **Meetings with her RM (CR17):** My requests → Meetings (free times, hold, confirm, cancel); meeting questions are no longer turned into RM tickets; prompt `relationship/v5`.
 - **Statements (CR15, 0077):** Overview → Statements, last 3 full months for her account and card, printable; older or certified copies via a statement copy request; the assistant points to either.
 - **Answering the bank's questions (CR6, 0080):** reply box on *The bank asked you*; answer sent with a receipt and Inbox notice, then "Sent to the bank on … – waiting for review"; the bank accepts or asks a follow-up with `compliance.record_request_decision`.
 - **Suggested next questions in the chat:** up to 3 tappable follow-ups under the latest answer, from fixed topic lists.

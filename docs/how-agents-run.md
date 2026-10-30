@@ -46,8 +46,8 @@ flowchart LR
 
 | Domain | Agent | Prompt | Reads | Can propose |
 |---|---|---|---|---|
-| `retail` (and small talk) | Complex Banking (`agents/retail.py`) | `retail/v6` | profile, accounts, cards, loans, transactions, knowledge | nothing (answers only) |
-| `fraud` | Fraud & Security (`agents/fraud.py`) | `fraud/v6` | cards, transactions (masked) | nothing; the backend reports the case to the fraud team |
+| `retail` (and small talk) | Complex Banking (`agents/retail.py`) | `retail/v7` | profile, accounts, cards, loans, transactions, knowledge | nothing (answers only) |
+| `fraud` | Fraud & Security (`agents/fraud.py`) | `fraud/v7` | cards, transactions (masked) | nothing; the backend lists the charges for her to confirm, then reports the case to the fraud team |
 | `compliance` | Compliance Review (`agents/compliance.py`) | `compliance/v3` | review case, checklist, knowledge | checklist marks |
 | `document` | Document Check (`agents/document.py`) | `document/v4` | the selected upload's pre-check | nothing |
 | `relationship` | Relationship (`agents/relationship.py`) | `relationship/v5` | RM assignment, requests, slots, appointments | nothing; for a meeting it suggests free times and points to My requests → Meetings, where she books it herself |

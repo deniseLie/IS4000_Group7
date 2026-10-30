@@ -35,3 +35,9 @@ test('no suggestion would itself be handed over to the RM as a ticket', async ()
   const handover=/\b(?:should|would you recommend)\b[^.?!]{0,40}\b(?:invest|buy|sell)\b|\b(?:talk|speak|connect)\b[^.?!]{0,25}\b(?:rm|relationship manager|advisor)\b|\b(?:waive|negotiate|refund)\b|\bcall\s+me\b/i;
   for(const text of all)assert.ok(!handover.test(text),text);
 });
+
+test('the fraud charge list offers only the one-tap confirmation (CR12)', () => {
+  const message={role:'assistant',content:'…If they are, reply “Yes, report it” and I’ll pass them to the fraud team as urgent.'};
+  assert.deepEqual(followUps({question:'I do not recognise these charges',message,signedIn:true}),['Yes, report it']);
+  assert.notDeepEqual(followUps({question:'I do not recognise these charges',message,signedIn:false}),['Yes, report it']);
+});

@@ -7,6 +7,8 @@ import {formatDate,formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 import DocumentUpload from './DocumentUpload';
 import BankRequest from './BankRequest';
+// CR5: every preliminary result carries this label; only the bank's review decides.
+export const PRECHECK_LABEL='Preliminary Check – Not Formal Compliance Approval';
 
 // What each kind of document must show, with a made-up example (GET /documents/templates; public, synthetic).
 function DocumentGuide({template}){
@@ -98,7 +100,7 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
     review={review} request={item} disabled={busy||chatBusy} onAnswered={refresh}
     onAsk={onAsk&&(()=>onAsk('Please explain the selected recorded request for additional information and how I should answer it.',{kind:'information_request',case_id:review.case_id,request_id:item.request_id}))}
     help={help({review_case_id:review.case_id,request_id:item.request_id})}/>)}
-   <div className="cw-head"><div><h4>Documents to upload</h4><p className="rm-small">PDF works best (DOCX, PNG or JPEG also accepted). Each upload gets a quick check; if everything is there it goes to the bank for review.</p></div>{help({review_case_id:review.case_id})}</div>
+   <div className="cw-head"><div><h4>Documents to upload</h4><p className="rm-small">PDF works best (DOCX, PNG or JPEG also accepted). Each upload gets a preliminary check (not formal compliance approval); if everything is there it goes to the bank for review.</p></div>{help({review_case_id:review.case_id})}</div>
    <ul className="compliance-items">{items.map(item=>{
     const current=workspace.current_documents[item.item_id],report=workspace.checks.find(report=>report.document_id===current),fresh=report&&checkIsFresh(report,now),rule=workspace.rules[item.item_id];
     const open=!closed&&item.submission_status!=='accepted';
@@ -110,11 +112,13 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
      {accepted?<p className="cw-sent ok" data-testid="item-accepted"><Icon name="check"/>Accepted by the bank.</p>
      :submitted?<>
       <p className="cw-sent" data-testid="item-sent"><Icon name="check"/>Sent to the bank on {formatDate(item.updated_at)} – waiting for review.</p>
+      <p className="cw-check-label" data-testid="precheck-label">{PRECHECK_LABEL}: passed. The bank's review decides.</p>
       {open&&<details className="cw-more"><summary>Need to send a different file?</summary>{upload}</details>}
      </>:<>
       <p className="cw-instructions">{item.instructions||'Instructions unavailable. Use Get help with this document.'}</p>
       {open&&<DocumentGuide template={templateFor(item,templates)}/>}
       {problem&&<div data-testid="precheck-result" data-precheck-status={report.status} className={`cw-check ${report.status}`}>
+       <p className="cw-check-label" data-testid="precheck-label">{PRECHECK_LABEL}</p>
        <strong>{report.status==='issues_found'?'Please fix these, then upload again:':'We could not check this file.'}</strong>
        <ul>{report.findings.map((finding,index)=><li key={index}>{findingText(finding,rule)}</li>)}</ul>
        {onAsk&&<button className="bank-chat-logout" disabled={busy||chatBusy} onClick={()=>onAsk('Explain the selected preliminary document check findings and how to fix them.',{kind:'document',case_id:review.case_id,item_id:item.item_id,document_id:current,check_id:report.check_id})}>Explain in chat</button>}

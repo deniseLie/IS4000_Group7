@@ -14,6 +14,8 @@
 | `08_apply_0079_hosted.sql` | Clears reminders already in the Inbox that she has acted on or whose deadline is out of date, once now and whenever a due date changes | Once, after 07 |
 | `09_apply_0080_hosted.sql` | Michelle can answer the bank's questions on her review (reply box, receipt in Actions, Inbox notice); `compliance.record_request_decision` lets the bank accept an answer or ask a follow-up | Once, after 08 |
 | `10_apply_0081_hosted.sql` | Card actions become bank-only: the client can no longer block, unblock or cancel a card or send a dispute draft; reported charges go to the fraud team as an urgent ticket; lost-card, unrecognised-charge and support guidance updated | Once, after 09 |
+| `11_apply_0082_hosted.sql` | Code-review follow-ups: a question on a topic that already has an open RM ticket is added to that ticket instead of opening a duplicate; documents selected in the chat can be attached to RM tickets; a lost or stolen card reported by a signed-in client opens an urgent fraud ticket (`card_lost`); Michelle's second card (Travel Card 5592) and sample fees | Once, after 10 |
+| `12_apply_0083_hosted.sql` | Cards and loans get a recorded currency (SGD for every demo card and loan), so the assistant says "SGD 316.20" instead of "currency unrecorded" | Once, after 11 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

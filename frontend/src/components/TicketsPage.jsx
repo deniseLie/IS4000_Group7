@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
-import {loadCategories,loadTickets,nextStep,STATUSES,ticketSummary} from '../lib/ticketData';
+import {loadCategories,loadTickets,nextStep,requestFailed,STATUSES,ticketSummary,ticketTopic} from '../lib/ticketData';
 import {formatDateTime} from '../lib/format';
 import Meetings from './Meetings';
 
@@ -39,7 +39,7 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
       <p>Requests you have raised with the bank, their current status and your meetings.</p></div>
       <div className="page-header-actions"><button className="bank-chat-logout" onClick={refresh} disabled={busy}><Icon name="refresh"/>Refresh</button>
         <button className="primary-button" data-testid="raise-request" onClick={()=>setRaising(true)}><Icon name="plus"/>Raise a request</button></div></header>
-    {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions}/>}
+    {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions} onSupport={onSupport}/>}
     <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}
       <button role="tab" data-testid="tab-meetings" aria-selected={tab==='meetings'} onClick={()=>setTab('meetings')}>Meetings</button></nav>
     {busy&&!tickets&&<p className="loading" role="status">Loading your requests…</p>}
@@ -48,7 +48,9 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
     {tab!=='meetings'&&tickets&&!shown.length&&<p className="page-empty">No requests here.</p>}
     <ul className="ticket-list tab-fade" key={tab}>{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
       <div className="ticket-head"><strong>{ticket.category_label}</strong><span className={`ticket-status ${ticket.status}${ticket.overdue?' overdue':''}`}>{STATUSES[ticket.status]}{ticket.overdue?' · past target time':''}</span></div>
+      {ticketTopic(ticket)&&<span className="ticket-topic" data-testid="ticket-topic">{ticketTopic(ticket)}</span>}
       <p>{ticketSummary(ticket)}</p>
+      {ticket.attachments.length>0&&<p className="ticket-attachments" data-testid="ticket-attachments"><Icon name="clip"/>Attached: {ticket.attachments.map(item=>item.file_name).join(', ')}</p>}
       <p className="ticket-next"><Icon name="info"/>{nextStep(ticket)}</p>
       <small>Reference <code>{ticket.reference}</code> · {ticket.owner_team} · raised {formatDateTime(ticket.created_at)}{ticket.last_update?` · updated ${formatDateTime(ticket.last_update.at)}`:''}</small>
       {ticket.status==='waiting_on_client'&&onSupport&&<p><button className="bank-chat-logout" onClick={onSupport}>Talk to a person</button></p>}
@@ -57,7 +59,7 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
   </div>;
 }
 
-function RaiseRequest({categories,prefill,onClose,onReviewActions}) {
+function RaiseRequest({categories,prefill,onClose,onReviewActions,onSupport}) {
   const [category,setCategory]=useState(()=>categories.find(c=>c.category===prefill?.category)?.category||categories[0]?.category||'');
   const [values,setValues]=useState({});
   const [summary,setSummary]=useState(prefill?.summary||'');
@@ -73,7 +75,7 @@ function RaiseRequest({categories,prefill,onClose,onReviewActions}) {
       const scope=await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},auth);
       const details=Object.fromEntries(Object.entries(values).filter(([name,value])=>chosen.fields.some(f=>f.key===name)&&String(value).trim()));
       setOutcome(await proposeAction({command_id:crypto.randomUUID(),case_id:scope.case_id,task_id:'ticket',type:'ticket.create',target:{category,summary,urgency,details}},auth));
-    } catch(failure) {setError(failure.message);} finally {setBusy(false);}
+    } catch(failure) {setError(requestFailed(failure));} finally {setBusy(false);}
   }
   const locked=busy||!!outcome;
   return <section className="relationship-details raise-request" data-testid="raise-request-form" aria-label="Raise a request">
@@ -96,7 +98,9 @@ function RaiseRequest({categories,prefill,onClose,onReviewActions}) {
         <button className="primary-button" data-testid="prepare-ticket" disabled={locked||!summary.trim()}>Review request</button></div>
     </form>
     {busy&&<p className="loading" role="status">Preparing your request for review…</p>}
-    {error&&<p role="alert" data-testid="ticket-error">{error}</p>}
+    {error&&<div role="alert" data-testid="ticket-error"><p>{error}</p>
+      <div className="panel-actions"><button type="button" className="bank-chat-logout" onClick={prepare} disabled={busy||!summary.trim()}>Try again</button>
+        {onSupport&&<button type="button" className="primary-button" data-testid="ticket-error-support" onClick={onSupport}>Talk to a person</button>}</div></div>}
     {outcome&&<div data-testid="ticket-proposal"><p>Ready for review. Confirm or reject the exact details in Actions; nothing is recorded until you confirm.</p>
       <button className="primary-button" data-testid="review-ticket-actions" onClick={onReviewActions}>Review in Actions</button></div>}
   </section>;

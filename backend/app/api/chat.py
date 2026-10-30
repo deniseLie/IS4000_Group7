@@ -26,7 +26,7 @@ from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
 from app.services.orchestrator import answer_personal,answer_public
-from app.services import rm_handover
+from app.services import fraud_reports,rm_handover
 from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
 
 router=APIRouter()
@@ -135,9 +135,16 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                 elif settings.knowledge_store=='database':result=(await make_database_answer(req,current_context,ctx)).model_dump(mode='json')
                 else:result=await make_answer(req,current_context)
                 if risk.fixed_response is not None and risk.fixed_response.code=='human_support' and p.kind=='customer' and prepared is not None:
-                    # "Talk to a person" in a signed-in saved chat goes straight to the client's RM (migration 0073); no model call.
-                    _,reference=await rm_handover.hand_over(risk.redacted_message,'P2',ctx,None,rm_handover.task_key('person',turn.turn.turn_id))
-                    result.update(answer='Of course. '+rm_handover.handed_over(reference),needs_human=True)
+                    # "Talk to a person" in a signed-in saved chat goes straight to the client's RM (migrations 0073, 0082); no model call.
+                    # An open RM ticket on the same topic is reused; a failure is explained instead of a generic error (CR9).
+                    selected=[req.record_context.document_id] if req.record_context is not None and req.record_context.document_id else []
+                    handover=await rm_handover.route(risk.redacted_message,'P2',ctx,None,rm_handover.task_key('person',turn.turn.turn_id),
+                        history=req.messages,document_ids=selected)
+                    result.update(answer=handover.reply() if handover.failed else 'Of course. '+handover.reply(),needs_human=True)
+                elif 'lost_card' in risk.risk_flags and p.kind=='customer' and prepared is not None:
+                    # A signed-in client's lost or stolen card goes to the fraud team as an urgent ticket at once (CR12, 0082).
+                    report=await fraud_reports.report_lost_card(risk.redacted_message,ctx,rm_handover.task_key('lost_card',turn.turn.turn_id))
+                    result.update(answer=result['answer']+'\n\n'+report.reply(),needs_human=True)
                 if prepared is not None:
                     turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)
                     yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}
