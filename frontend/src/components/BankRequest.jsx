@@ -26,12 +26,12 @@ export default function BankRequest({review,request,disabled,onAnswered,onAsk,he
   }
   if(request.status==='closed')return <article className="cw-alert done" data-testid="bank-request" data-status="closed">
     <span className="cw-alert-icon ok" aria-hidden="true">✓</span>
-    <div className="cw-alert-body"><div className="cw-alert-head"><span className="eyebrow">You answered the bank</span>
+    <div className="cw-alert-body"><div className="cw-alert-head"><span className="cw-alert-kicker">Your answer to the bank</span>
       <span className="cw-pill ok">{request.outcome==='more_info'?'The bank asked a follow-up question':'Accepted by bank'}</span></div>
       <p><strong>{request.question}</strong></p>{request.response&&<p className="cw-answer">{request.response}</p>}</div></article>;
   if(request.status==='responded')return <article className="cw-alert waiting" data-testid="bank-request" data-status="responded">
     <span className="cw-alert-icon wait" aria-hidden="true">…</span>
-    <div className="cw-alert-body"><div className="cw-alert-head"><span className="eyebrow">You answered the bank</span>
+    <div className="cw-alert-body"><div className="cw-alert-head"><span className="cw-alert-kicker">Your answer to the bank</span>
       <span className="cw-pill wait">Sent to the bank on {formatDate(request.responded_at)} – waiting for review</span></div>
       <p><strong>{request.question}</strong></p>{request.response&&<p className="cw-answer">{request.response}</p>}</div></article>;
   return <article className="cw-alert" data-testid="bank-request" data-status="open">

@@ -1,6 +1,6 @@
 # DemoBank system architecture (v4, as built)
 
-Status: **as built** (2026-10-27). This document describes the system that is in the code today, using the component names of the v3.1 proposal (the draw.io diagram "DemoBank — Proposed Multi-Agent Architecture"). Every place where the build differs from that proposal is listed in [§10](#10-differences-from-the-v31-proposal). `chatbot-architecture.md` describes the original single-path (v1) answer flow; `multi-capability-architecture.md` describes the intent-router step. The stories are in [the product backlog](planning/product-backlog.xlsx); the two workflows (client, relationship manager) are in `docs/workflows/`. Coursework demo with synthetic data only.
+Status: **as built** (2026-10-31; client view CR1–CR17 refined to the finalised product backlog, see §5.1.1). This document describes the system that is in the code today, using the component names of the v3.1 proposal (the draw.io diagram "DemoBank — Proposed Multi-Agent Architecture"). Every place where the build differs from that proposal is listed in [§10](#10-differences-from-the-v31-proposal). `chatbot-architecture.md` describes the original single-path (v1) answer flow; `multi-capability-architecture.md` describes the intent-router step. The stories are in [the product backlog](planning/product-backlog.xlsx); the two workflows (client, relationship manager) are in `docs/workflows/`. Coursework demo with synthetic data only.
 
 v4 changes from v3.1: the document now records what was built rather than what was planned. The overall shape is unchanged (one FastAPI process, the same components and contracts), but the orchestrator has eight nodes instead of four, agents read their data in code and make one model call instead of calling tools themselves, only the Fraud & Security agent proposes actions, most other changes start from forms in the Web Client, the Background Worker sends notifications only, and the multi-agent pipeline is switched on with `PIPELINE=v2` (v1 is still the default).
 
@@ -210,6 +210,43 @@ Five fields per component: **Category**, **Responsibility & boundaries**, **Inpu
 - **Inputs / outputs:** Out: `POST /chat`, `POST /commands`, `POST /commands/{id}/confirm|reject`, `POST /workflows/{turn}/resume`, record and form routes (`/customer/*`, `/relationship/*`, `/documents/*`, `/consent/*`, `/notifications/*`, `/conversations/*`), `POST /auth/session-end`, each with bearer JWT; direct Storage uploads with the user's JWT. In: SSE stream; Realtime inbox channel.
 - **Infrastructure / pattern:** React + Vite. SSE is read with `fetch()` + `ReadableStream` and a small parser, because `EventSource` supports only `GET` without an `Authorization` header.
 - **Dependencies:** ↓ Identity Provider, API Gateway Layer, Document Storage, Notification Service (Realtime).
+
+#### 5.1.1 Client view (Michelle) by story — finalised backlog, 31 Oct 2026
+
+The client stories are all implemented. The RM stories (RM1–RM16) are **not built yet**, so the RM side of handovers,
+ticket status and meetings is the shared database record plus the support staff queue (`scripts/staff_support.py`).
+
+| Story | Where it lives in the client | How it decides |
+|---|---|---|
+| CR1 Login | `Login.jsx` (masked password, Show/Hide, Forgot password guidance, one neutral error); sign in from the header, the sidebar and every locked page; sign out from the sidebar | Supabase Auth; personal pages locked without a session |
+| CR2 General help | Assistant (guest mode); "Go to …" page buttons (`lib/pageLinks.js`) | Approved articles only; personal questions ask her to sign in |
+| CR3–CR6 Compliance | Compliance review: checklist marks, upload, preliminary check, bank status | Her mark, the system's "Submitted", and the bank's decision are separate fields; only the bank sets Accepted/Correction |
+| CR7 Reminders | Inbox | Recorded deadlines only |
+| CR8–CR10 Handover and tickets | Assistant preview ("Here's what I'd send…") with Send to my RM / Add to TCK / Open a new request / Cancel; My requests | Rules choose RM vs specialist; nothing is sent until she chooses; fraud never goes to the RM |
+| CR11 Card limit | Assistant explanation + request form (latest stated amount) | Cards and credit team decides |
+| CR12–CR13 Fraud, lost card, pending | Assistant: urgent steps, charge list + "Yes, report it"; lost card "Yes, report my card" | Rules from records; urgent fraud ticket only after she confirms |
+| CR14–CR15 Cards and account | Assistant (records answers, "which card?", follow-ups), Overview | Figures copied from records |
+| CR16 Loans | Assistant (home, personal, car loan articles) | No eligibility, rate or approval promises |
+| CR17 Meetings | Assistant (free times → hold → Confirm booking) and My requests > Meetings | Same hold and confirm actions in both places |
+
+**Rules versus AI.** Actions and safety (handover, fraud and lost-card reports, bookings, confirmations) are decided by rules,
+with her explicit confirmation. Explanations are written by the AI from approved articles and her records and checked by the
+Response Validator. Several record questions (card figures, transactions, fees, card limit) are currently answered by rules
+because the validator withheld correct AI answers; moving them back to AI wording with record facts is the planned next step.
+
+#### 5.1.2 UI conventions (web client)
+
+- **Buttons:** three kinds only. *Primary* (`.primary-button`, red) for the one main action on a screen; *secondary*
+  (`.bank-chat-logout`, outline) for everything else; *icon* (`.icon-button`, round) for icon-only actions with an
+  `aria-label`. All share one height (38 px), radius (8 px), weight, hover, press (scale .97) and keyboard focus ring.
+  One-tap replies in the chat (`.follow-ups button`) are pills.
+- **Signing in and out** are offered in the same places: header (Sign in), sidebar session area (Sign in when signed out,
+  Sign out when signed in) and every locked page.
+- **Motion:** pages settle in when opened (`.page-enter`, 0.3 s, children staggered); replies and one-tap replies rise in;
+  loading shows a moving red bar with pulsing text (`.loading`) or shimmering skeletons for lists and cards. All motion is
+  switched off under `prefers-reduced-motion`.
+- **Colours** are unchanged (`--red`, `--ink`, `--line`, `--canvas`, `--tint`); new tokens are only `--btn-h`,
+  `--btn-radius`, `--ease-out` and `--focus-ring`.
 
 ### 5.2 Identity Provider
 - **Category:** OAuth2 / OIDC identity provider.

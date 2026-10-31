@@ -1463,3 +1463,151 @@ small{font-size:max(12px,.83em)}
 .quality-span-time { color: var(--muted); }
 .quality-answer { max-height: 240px; overflow: auto; white-space: pre-wrap; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 12px; }
 .link-button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ===================================================================================================================
+   UI refresh (31 Oct 2026): one button system, page motion and livelier loading states. Colours stay as they are.
+   This block comes last on purpose so it settles the earlier, layered button rules in one place.
+   =================================================================================================================== */
+:root{--btn-h:38px;--btn-radius:8px;--ease-out:cubic-bezier(.2,.8,.2,1);--focus-ring:0 0 0 3px rgba(230,0,0,.18)}
+
+/* Buttons: primary (red), secondary (outline), icon (round). Same height, radius, weight, focus ring and press feel. */
+.primary-button,.bank-chat-logout,.sidebar-signin{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--btn-h);
+  padding:8px 16px;border-radius:var(--btn-radius);font:inherit;font-size:13px;font-weight:600;line-height:1.2;cursor:pointer;
+  transition:background-color .15s var(--ease-out),border-color .15s var(--ease-out),color .15s var(--ease-out),transform .12s var(--ease-out),box-shadow .15s var(--ease-out)}
+.primary-button{border:1px solid var(--red);background:var(--red);color:#fff}
+.primary-button:hover:not(:disabled){background:var(--red-dark);border-color:var(--red-dark)}
+.bank-chat-logout{border:1px solid var(--line);background:#fff;color:var(--ink)}
+.bank-chat-logout:hover:not(:disabled){background:var(--chalk);border-color:var(--ink)}
+.icon-button{width:var(--btn-h);height:var(--btn-h);padding:9px;transition:background-color .15s var(--ease-out),transform .12s var(--ease-out),box-shadow .15s var(--ease-out)}
+.primary-button:active:not(:disabled),.bank-chat-logout:active:not(:disabled),.icon-button:active:not(:disabled),.follow-ups button:active:not(:disabled){transform:scale(.97)}
+.primary-button:focus-visible,.bank-chat-logout:focus-visible,.icon-button:focus-visible,.follow-ups button:focus-visible,
+.bank-sidebar nav button:focus-visible,.tab-bar button:focus-visible{outline:none;box-shadow:var(--focus-ring);border-color:var(--red)}
+.primary-button:disabled,.bank-chat-logout:disabled,.icon-button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.primary-button svg,.bank-chat-logout svg{width:16px;height:16px;transition:transform .15s var(--ease-out)}
+.primary-button:hover:not(:disabled) svg,.bank-chat-logout:hover:not(:disabled) svg{transform:translateX(2px)}
+
+/* Sidebar session: sign in where you signed out. */
+.sidebar-session{flex-wrap:wrap}
+.sidebar-signin{width:100%;margin-top:10px}
+.sidebar-signout{margin-left:auto}
+
+/* Sidebar navigation: the current page indicator slides in; rows respond to hover. */
+.bank-sidebar nav button{transition:background-color .15s var(--ease-out),color .15s var(--ease-out)}
+.bank-sidebar nav button.sidebar-current{animation:nav-select .25s var(--ease-out)}
+@keyframes nav-select{from{background-position:-8px 0;opacity:.6}to{opacity:1}}
+
+/* Page motion: each page settles in when opened; returning to the assistant fades in too. */
+.page-enter{animation:page-in .32s var(--ease-out) both}
+.page-enter>*{animation:page-in .38s var(--ease-out) both}
+.page-enter>*:nth-child(2){animation-delay:.04s}.page-enter>*:nth-child(3){animation-delay:.08s}.page-enter>*:nth-child(4){animation-delay:.12s}
+.chat-workspace:not([hidden]){animation:fade-in .25s var(--ease-out)}
+@keyframes page-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* Loading: a red DemoBank card swipes through a reader slot (chosen 31 Oct). Skeletons still shimmer for lists. */
+.loading{position:relative;display:flex!important;align-items:center;min-height:36px;padding:6px 0 6px 84px;color:var(--muted);font-size:13px;animation:none}
+.loading::after{content:"";position:absolute;left:0;top:50%;width:70px;height:6px;margin-top:2px;border-radius:99px;background:var(--line);border:0;animation:none}
+.loading::before{content:"";position:absolute;left:0;top:50%;width:30px;height:20px;margin-top:-10px;border:0;border-radius:4px;z-index:1;
+  background:linear-gradient(#F4D27A,#F4D27A) 5px 5px/7px 5px no-repeat,linear-gradient(rgba(255,255,255,.65),rgba(255,255,255,.65)) 5px 13px/19px 2px no-repeat,var(--red);
+  box-shadow:0 2px 4px rgba(0,0,0,.12);animation:card-swipe 1.5s cubic-bezier(.6,0,.4,1) infinite}
+@keyframes card-swipe{0%{transform:translateX(-6px);opacity:0}15%{opacity:1}75%{transform:translateX(40px);opacity:1}100%{transform:translateX(46px);opacity:0}}
+.skeleton-card,.skeleton-block,.skeleton-line,.skeleton-text{background:linear-gradient(90deg,#F1F1EE 0,#E6E5E0 45%,#F1F1EE 90%) #F1F1EE;
+  background-size:800px 100%;animation:shimmer 1.2s linear infinite}
+.skeleton-card{animation:shimmer 1.2s linear infinite,fade-in .3s var(--ease-out)}
+
+/* Header brand: wordmark, then the product name with a quiet note underneath (no pill). */
+.brand-caption{display:flex;flex-direction:column;justify-content:center;gap:1px;padding-left:16px;border-left:1px solid var(--line)}
+.brand-caption strong{font-size:14px;font-weight:600;color:var(--ink);letter-spacing:0}
+.brand-caption .demo-badge{display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;border-radius:0;font-size:11px;font-weight:500;color:var(--muted)}
+.brand-caption .demo-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--red)}
+
+/* Chat: replies and one-tap replies arrive with a small rise; the typing dots already bounce. */
+.follow-ups button{transition:border-color .15s var(--ease-out),background .15s var(--ease-out),transform .12s var(--ease-out)}
+.follow-ups button{animation:rise-in .3s var(--ease-out) both}
+.follow-ups button:nth-of-type(2){animation-delay:.05s}.follow-ups button:nth-of-type(3){animation-delay:.1s}
+.follow-ups button:nth-of-type(4){animation-delay:.15s}.follow-ups button:nth-of-type(n+5){animation-delay:.2s}
+.rm-handoff{animation:rise-in .3s var(--ease-out) both .1s}
+
+@media (prefers-reduced-motion:reduce){
+  .page-enter,.page-enter>*,.chat-workspace:not([hidden]),.follow-ups button,.rm-handoff,.loading,.loading::before{animation:none!important}
+  .primary-button svg,.bank-chat-logout svg{transition:none}
+}
+
+/* Compliance items: calmer submitted state (no green banner), small replace link. */
+.cw-sent.compact{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:12px 0 0;padding:0;background:none;border:0;color:var(--ok);font-size:13px;font-weight:500}
+.cw-sent.compact svg{width:14px;height:14px}
+.cw-sent-note{color:var(--muted);font-size:12px;font-weight:400}
+.cw-sent-note::before{content:"";display:inline-block;width:3px;height:3px;margin:0 8px 2px 0;border-radius:50%;background:var(--line);vertical-align:middle}
+.cw-item .cw-more{margin-top:8px}
+.cw-item .cw-more>summary{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;list-style:none}
+.cw-item .cw-more>summary::-webkit-details-marker{display:none}
+.cw-item .cw-more>summary::before{content:"›";transition:transform .15s var(--ease-out)}
+.cw-item .cw-more[open]>summary::before{transform:rotate(90deg)}
+.cw-item .cw-more>summary:hover{color:var(--red)}
+.cw-item+.cw-item{margin-top:12px}
+
+/* Compliance review, option A (31 Oct): one summary card with progress, then one calm row per document.
+   The duplicate "Your required actions / With the bank" lists are hidden; each row already shows its status. */
+.compliance-progress{display:none!important}
+.cw-overview .cw-summary{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.cw-overview .cw-progress{min-width:220px;flex:1;max-width:360px}
+.cw-overview .cw-bar{height:6px;border-radius:99px;overflow:hidden}
+.cw-overview .cw-bar span{transition:width .6s var(--ease-out)}
+ul.compliance-items{list-style:none;margin:16px 0 0;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+ul.compliance-items>.cw-item{margin:0!important;border:0;border-top:1px solid var(--line);border-radius:0;padding:14px 18px;transition:background-color .15s var(--ease-out)}
+ul.compliance-items>.cw-item:first-child{border-top:0}
+ul.compliance-items>.cw-item:hover{background:var(--chalk)}
+ul.compliance-items>.cw-item .cw-item-head{gap:10px}
+ul.compliance-items>.cw-item .cw-item-head h4{font-size:15px!important}
+ul.compliance-items>.cw-item.todo,ul.compliance-items>.cw-item.bad{box-shadow:inset 3px 0 0 var(--red)}
+ul.compliance-items>.cw-item .cw-item-foot{border-top:0!important;padding-top:6px!important;margin-top:6px!important}
+
+/* Small screens (phones, narrow windows): stack everything, full-width controls, comfortable tap targets. */
+@media (max-width:720px){
+  .app-page{padding:16px 14px 96px!important}
+  .brand-caption{display:none}
+  .chat-actions .bank-chat-logout span{display:none}
+  .chat-actions .bank-chat-logout{min-width:var(--btn-h);padding:8px 10px}
+  .cw-overview .cw-summary{flex-direction:column;align-items:stretch}
+  .cw-overview .cw-progress{max-width:none}
+  .cw-card-head{flex-direction:column;align-items:flex-start;gap:4px}
+  ul.compliance-items>.cw-item{padding:14px}
+  ul.compliance-items>.cw-item .cw-item-head{flex-wrap:wrap}
+  .cw-item-icon{display:none}
+  .cw-item-foot{flex-direction:column;align-items:stretch!important}
+  .cw-item-foot .primary-button,.cw-item-foot .bank-chat-logout,.cw-item .cw-more .primary-button{width:100%}
+  .primary-button,.bank-chat-logout{min-height:44px}
+  .ticket-list li,.panel-actions{flex-wrap:wrap}
+  .follow-ups button{font-size:14px}
+}
+
+/* Bank questions you have answered: quiet card, question as the title, your answer as a quote, status as a small tag. */
+.cw-alert.done,.cw-alert.waiting{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;padding:16px 18px;
+  border:1px solid var(--line);border-left:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:none}
+.cw-alert.done .cw-alert-icon,.cw-alert.waiting .cw-alert-icon{width:28px;height:28px;border:0;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600}
+.cw-alert.done .cw-alert-icon{background:#E7F2E9;color:var(--ok)}
+.cw-alert.waiting .cw-alert-icon{background:#FBF1D9;color:#8A6100}
+.cw-alert.done .cw-alert-head,.cw-alert.waiting .cw-alert-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin:0 0 4px}
+.cw-alert-kicker{font-size:12px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0}
+.cw-alert.done .cw-pill,.cw-alert.waiting .cw-pill{font-size:12px;padding:2px 10px}
+.cw-alert.done p strong,.cw-alert.waiting p strong{display:block;font-size:15px;font-weight:600;color:var(--ink);line-height:1.4}
+.cw-alert.done .cw-answer,.cw-alert.waiting .cw-answer{margin:8px 0 0;padding:10px 12px;border-radius:8px;background:var(--chalk);border:0;font-size:14px;color:var(--ink);line-height:1.5}
+.cw-alert.done .cw-answer::before,.cw-alert.waiting .cw-answer::before{content:"“";color:var(--muted);margin-right:2px}
+.cw-alert.done .cw-answer::after,.cw-alert.waiting .cw-answer::after{content:"”";color:var(--muted);margin-left:1px}
+@media (max-width:720px){.cw-alert.done,.cw-alert.waiting{grid-template-columns:1fr}.cw-alert.done .cw-alert-icon,.cw-alert.waiting .cw-alert-icon{display:none}}
+
+/* Talk to a person: a non-RM topic shows where it goes instead of the RM summary. */
+.handoff-route{margin:4px 0 12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--chalk);animation:rise-in .25s var(--ease-out)}
+.handoff-route strong{display:block;font-size:14px;color:var(--ink);margin-bottom:4px}
+.handoff-route p{margin:0;font-size:13px;line-height:1.55;color:var(--muted)}
+
+/* Panel footers: note on its own line, then one row of buttons, right-aligned and never split mid-label. */
+.panel-footer{flex-direction:column;align-items:stretch;gap:12px}
+.panel-footer>span{font-size:12px;color:var(--muted)}
+.panel-footer .panel-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.panel-footer .panel-actions button{white-space:nowrap;min-height:var(--btn-h);padding:8px 16px}
+@media (max-width:480px){.panel-footer .panel-actions button{flex:1 1 100%}}
+
+/* The drafted message to the RM: an editable letter, not a grey label summary. */
+.rm-message textarea{width:100%;min-height:120px;margin-top:6px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;font:inherit;font-size:14px;line-height:1.55;color:var(--ink);resize:vertical;transition:border-color .15s var(--ease-out),box-shadow .15s var(--ease-out)}
+.rm-message textarea:focus{outline:none;border-color:var(--red);box-shadow:var(--focus-ring)}
+.rm-message small{display:block;margin-top:6px;font-size:12px;color:var(--muted);font-weight:400}

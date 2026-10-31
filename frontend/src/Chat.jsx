@@ -47,6 +47,16 @@ const ERRORS = {
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
 const PAGES=['chat','overview','inbox','compliance','requests','actions','quality'];  // one client view (the RM pages are not shown); 'quality' is team-only (lib/quality.isTeam)
+// CR8 routing for "Talk to a person". Michelle is a private-banking client, so her relationship manager is her person for
+// general, account and compliance questions (the RM coordinates with the compliance team). Fraud and lost cards go
+// straight to the urgent fraud flow; card limit changes go to the cards and credit team's request form.
+// [title, explanation, secondary [label, action] or null, primary [label, action] where 'send' = send to the RM]
+const HELP_ROUTES={
+  general:['Your relationship manager can help','Tip: the assistant answers most general questions instantly from approved bank information.',['Ask the assistant','chat'],['Send to my relationship manager','send']],
+  fraud:['Report it to the fraud team now','This goes straight to the fraud team as urgent, not to your relationship manager. You’ll see the details to confirm before anything is sent. If money is at risk, also call the fraud line on the back of your card.',['Lost or stolen card','lost'],['Charge I don’t recognise','charge']],
+  card:['Card requests go to the cards and credit team','Limit changes and other card requests are decided by the cards and credit team. Raise the request and you’ll get a reference to follow in My requests.',null,['Open a card request','card']],
+  compliance:['Your review is handled by the compliance team','Your relationship manager can pass your question to the compliance team. Your documents, checks and the bank’s questions are on Compliance review.',['Open Compliance review','compliance'],['Send to my relationship manager','send']],
+};
 const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Advice, fees or something else for my relationship manager']];
 // Guests can open every page's address too; they see a sign-in prompt instead of records (Actions is a drawer once signed in).
 function pageFromHash(session) {const page=location.hash.slice(1);return PAGES.includes(page)||!session&&page==='actions'?page:'chat';}
@@ -90,7 +100,8 @@ export default function Chat({session,onSignIn}) {
   const [blockAction,setBlockAction]=useState(null);
   const [rmIntro,setRmIntro]=useState(null),[profileName,setProfileName]=useState(session?null:'');  // null while the name is loading
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
-  const [helpTopic,setHelpTopic]=useState('general'),[attachSummary,setAttachSummary]=useState(true);
+  const [rmMessage,setRmMessage]=useState(''),rmEdited=useRef(false);
+  const [helpTopic,setHelpTopic]=useState('relationship'),[attachSummary,setAttachSummary]=useState(true);
   const [unread,setUnread]=useState(0),[chatCount,setChatCount]=useState(null);
   const [view,setView]=useState(()=>pageFromHash(session));
   const [pageKey,setPageKey]=useState(0);
@@ -347,8 +358,9 @@ export default function Chat({session,onSignIn}) {
       const prepared=await prepareComplianceSupport(selection,token);setSupportScope(prepared.case_id);setSummary(prepared.summary);setHandoff({saving:false,outcome:null,error:''});
     }catch(error){setNotice(error.message);setHandoff({saving:false,outcome:null,error:error.message});}
   }
-  function prepareSummary() { if(session&&(view==='compliance'||view==='chat'&&showCompliance)&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;} setSupportScope(null);setAttachSummary(true);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic('general'); }
+  function prepareSummary() { rmEdited.current=false; if(session&&(view==='compliance'||view==='chat'&&showCompliance)&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;} setSupportScope(null);setAttachSummary(true);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic('general'); }
   async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
+    if(!rmMessage.trim()){setHandoff({saving:false,outcome:null,error:'Write a short message for your relationship manager first.'});return;}
     setHandoff({saving:true,outcome:null,error:''});
     try {
       const {data,error}=await supabase.auth.getSession();
@@ -358,14 +370,45 @@ export default function Chat({session,onSignIn}) {
       const scope=supportScope?{case_id:supportScope}:await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},token);
       const urgent=messages.some(m=>m.sections?.some(section=>section.priority==='P0'));
       const saved=await proposeAction({command_id:crypto.randomUUID(),task_id:'handoff',case_id:scope.case_id,type:'handoff.create',
-        target:{reason:'general_support',priority:urgent?'P0':'P2',summary:handoffText}},token);
+        target:{reason:'general_support',priority:urgent?'P0':'P2',summary:redact(rmMessage.trim()||handoffText).slice(0,1000)}},token);
       if(saved.receipt?.outcome!=='succeeded')throw new Error('Your question could not be sent. Please try again.');
       setHandoff({saving:false,outcome:saved,error:''});
       setNotice('Sent to your relationship manager. You can follow it in My requests.');
     } catch(failure) {setHandoff({saving:false,outcome:null,error:failure.message});}
   }
   const topicLabel=HELP_TOPICS.find(entry=>entry[0]===helpTopic)[1];
-  const handoffText=summary===null?null:supportScope?summary:`${attachSummary?summary:'Customer asked for a person.'} Requested help: ${topicLabel}.`;  // fixed labels only
+  const route=HELP_ROUTES[helpTopic]||null;
+  // Opened from Compliance review she starts on that topic, but can still pick any other; the review-specific summary
+  // is then replaced by the chat summary used everywhere else.
+  function changeTopic(value) {
+    setHelpTopic(value);
+    if(supportScope&&value!=='compliance'){setSupportScope(null);setAttachSummary(true);setSummary(handoffSummary(messages));}
+  }
+  function followRoute(action) {
+    if(action==='send')return sendHandoff();
+    setSummary(null);
+    if(action==='card'){setTicketPrefill({category:'card_limit_change',key:Date.now()});navigate('requests');}
+    else if(action==='overview')navigate('overview');
+    else if(action==='compliance')navigate('compliance');
+    else {
+      navigate('chat');
+      // Fraud starts the assistant's urgent report straight away; she still confirms the details before it is sent (CR12).
+      if(action==='charge')send(null,'I don’t recognise a charge on my card');
+      else if(action==='lost')send(null,'I lost my card');
+    }
+  }
+  // Plain words for the RM: what she asked for first, then the earlier topics of this chat (labels only, never her text).
+  // Topic labels without the internal "×2" counts (how many times a topic came up), which mean nothing to her or the RM.
+  const earlierTopics=summary&&attachSummary?((/Topics: ([^.]+)\./.exec(summary)||[])[1]||'').replace(/\s*×\d+/g,'')||null:null;
+  const handoffText=summary===null?null:supportScope?summary:`Asked to talk to a person about: ${topicLabel}.${earlierTopics?` Earlier in this chat: ${earlierTopics}.`:''}`;
+  // CR8: the assistant drafts the message to the RM in plain words; she reads it, edits or adds to it, then sends it.
+  const lastQuestion=[...messages].reverse().find(item=>item.role==='user'&&item.content&&!/^talk to a person$/i.test(item.content.trim()))?.content;
+  const rmFirst=rmIntro?.current?displayName(rmIntro.current.name).split(' ')[0]:null;
+  const rmDraft=summary===null?'':[`Hi${rmFirst?` ${rmFirst}`:''}, I’d like help with ${supportScope?'my compliance review':topicLabel.charAt(0).toLowerCase()+topicLabel.slice(1)}.`,
+    lastQuestion?`My question: “${redact(lastQuestion).slice(0,300)}”`:'',
+    earlierTopics?`Earlier in the chat I asked about: ${earlierTopics.toLowerCase()}.`:'',
+    'Thank you.'].filter(Boolean).join('\n');
+  useEffect(()=>{if(!rmEdited.current)setRmMessage(rmDraft);},[rmDraft]);  // fixed labels only
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of complex banking needs.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
@@ -490,7 +533,7 @@ export default function Chat({session,onSignIn}) {
     <a className="skip-link" href="#chat-composer">Skip to message</a>
     <TopBar session={session} onSupport={prepareSummary} onSignIn={onSignIn} unread={unread} inboxOpen={view==='inbox'} onInbox={()=>{closeOverlays();navigate('inbox');}}/>
     <div className="bank-chat-layout">
-      <Sidebar session={session} name={profileName} menu={menu} current={current} pages={pages} onSignOut={signOut}/>
+      <Sidebar session={session} name={profileName} menu={menu} current={current} pages={pages} onSignOut={signOut} onSignIn={onSignIn}/>
       <TabBar current={current} pages={pages}/>
       <main className="chat-workspace" hidden={view!=='chat'}>
         <div className="chat-toolbar">
@@ -538,7 +581,7 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>
       {view==='chat'&&savedChats&&<SavedChats closing={historyClosing} current={conversation?.session_id} onLoaded={setChatCount} onClose={closeHistory} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
-      {view!=='chat'&&<main className="app-page">
+      {view!=='chat'&&<main className="app-page page-enter" key={view}>
         {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
         {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
@@ -549,12 +592,19 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>}
     </div>
-    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={rmIntro?.current?`Your relationship manager, ${displayName(rmIntro.current.name)}, will pick this up and reply to you.`:'Your relationship manager will pick this up and reply to you.'} onClose={()=>setSummary(null)}
+    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={route&&route[3][1]!=='send'?(helpTopic==='fraud'?'The fraud team handles this as urgent.':'The cards and credit team decides card requests.'):rmIntro?.current?`Your relationship manager, ${displayName(rmIntro.current.name)}, will pick this up and reply to you.`:'Your relationship manager will pick this up and reply to you.'} onClose={()=>setSummary(null)}
       footer={<><span>IS4000 · Coursework demo · No real banking services</span>{handoff.outcome?<div className="panel-actions"><button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button><button className="primary-button" data-testid="handoff-open-requests" onClick={()=>{setSummary(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button></div>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button>
-        <button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to my relationship manager<Icon name="arrow"/></button></div>}</>}>
-      <label className="form-field">What do you need help with?<select data-testid="handoff-topic" value={helpTopic} disabled={handoff.saving||!!handoff.outcome||!!supportScope} onChange={e=>setHelpTopic(e.target.value)}>{HELP_TOPICS.map(([value,text])=><option key={value} value={value}>{text}</option>)}</select></label>
-      {!supportScope&&<label className="sp-attach"><input type="checkbox" checked={attachSummary} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setAttachSummary(e.target.checked)}/><span><strong>Attach a short summary of this chat</strong><small>Topic labels only. Passwords, OTPs and card numbers are never included.</small></span></label>}
-      <div className="form-field"><span>What your relationship manager will see</span><p className="handoff-summary" data-testid="handoff-summary">{handoffText}</p></div>
+        {route?.[2]&&<button className="bank-chat-logout" data-testid="handoff-route-secondary" onClick={()=>followRoute(route[2][1])}>{route[2][0]}</button>}
+        <button className="primary-button" data-testid={route&&route[3][1]!=='send'?'handoff-route':'approve-handoff'} disabled={handoff.saving}
+          onClick={()=>route?followRoute(route[3][1]):sendHandoff()}>{route?route[3][0]:'Send to my relationship manager'}<Icon name="arrow"/></button></div>}</>}>
+      <label className="form-field">What do you need help with?<select data-testid="handoff-topic" value={helpTopic} disabled={handoff.saving||!!handoff.outcome} onChange={e=>changeTopic(e.target.value)}>{HELP_TOPICS.map(([value,text])=><option key={value} value={value}>{text}</option>)}</select></label>
+      {route&&<div className="handoff-route" data-testid="handoff-route-info"><strong>{route[0]}</strong><p>{route[1]}</p></div>}
+      {(!route||route[3][1]==='send')&&!supportScope&&<label className="sp-attach"><input type="checkbox" checked={attachSummary} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setAttachSummary(e.target.checked)}/><span><strong>Attach a short summary of this chat</strong><small>Topic labels only. Passwords, OTPs and card numbers are never included.</small></span></label>}
+      {(!route||route[3][1]==='send')&&<label className="form-field rm-message">Your message to your relationship manager
+        <textarea data-testid="handoff-message" rows={5} value={rmMessage} maxLength={1000} disabled={handoff.saving||!!handoff.outcome}
+          onChange={e=>{rmEdited.current=true;setRmMessage(e.target.value);}}/>
+        <small>Drafted for you. Change or add anything before sending. Don’t include passwords, PINs or card numbers; they’re removed if you do.</small>
+        <span className="sr-only" data-testid="handoff-summary">{handoffText}</span></label>}
       <p className="security-note"><Icon name="shield"/>Never share your PIN, password or OTP. If you suspect fraud or a lost card, use the official bank fraud channel immediately. This chat can help prepare a report but cannot block the card.</p>
       {handoff.saving&&<p className="loading" role="status">Sending…</p>}
       {handoff.error&&<p role="alert">{handoff.error}</p>}

@@ -111,8 +111,8 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
      <div className="cw-item-head"><h4>{item.label}</h4><p data-testid="compliance-item-status" className={`cw-pill ${DONE.includes(item.submission_status)?tone(item):markTone(item)}`}><strong>{primaryStatus(item)}</strong></p><span className="cw-item-icon"><Icon name={icon(item)}/></span></div>
      {accepted?<p className="cw-sent ok" data-testid="item-accepted"><Icon name="check"/>Accepted by the bank.</p>
      :submitted?<>
-      <p className="cw-sent" data-testid="item-sent"><Icon name="check"/>Sent to the bank on {formatDate(item.updated_at)} – waiting for review.</p>
-      <p className="cw-check-label" data-testid="precheck-label">{PRECHECK_LABEL}: passed. The bank's review decides.</p>
+      {/* One quiet line: the status pill above already says "awaiting review". */}
+      <p className="cw-sent compact" data-testid="item-sent"><Icon name="check"/>Sent on {formatDate(item.updated_at)}<span className="cw-sent-note" data-testid="precheck-label" title={PRECHECK_LABEL}>{PRECHECK_LABEL}: passed</span></p>
       {open&&<details className="cw-more"><summary>Need to send a different file?</summary>{upload}</details>}
      </>:<>
       <p className="cw-instructions">{item.instructions||'Instructions unavailable. Use Get help with this document.'}</p>

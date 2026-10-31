@@ -7,7 +7,7 @@ function label(page) {return page.locked?`${page.label} (sign in required)`:page
 function marker(page) {return page.locked?<span className="nav-lock"><Icon name="lock"/></span>:page.badge>0?<span className="nav-badge" aria-hidden="true">{page.badge}</span>:null;}
 
 // The profile at the bottom opens the account menu (records, data sharing, saved chats, Actions, sign out).
-export default function Sidebar({session,name,current,pages,menu,onSignOut}) {
+export default function Sidebar({session,name,current,pages,menu,onSignOut,onSignIn}) {
   // name is null while it loads: a placeholder holds its place instead of generic text that later changes
   const profile=<>{session&&name?<span className="session-avatar initials" aria-hidden="true">{initials(name)}</span>:<span className="session-avatar"><Icon name="user"/></span>}
     <span className="sidebar-who">{session&&name===null?<><span className="skeleton-text" aria-hidden="true"/><small className="skeleton-text short" aria-hidden="true"/><span className="sr-only">Loading your profile</span></>
@@ -19,7 +19,9 @@ export default function Sidebar({session,name,current,pages,menu,onSignOut}) {
     </nav>
     <div className="sidebar-session" data-testid="sidebar-profile">
       {session&&menu?<AccountMenu className="sidebar-account" placement="up" label={profile} items={menu}/>:<div className="sidebar-account static">{profile}</div>}
-      {session&&onSignOut&&<button className="icon-button sidebar-signout" aria-label="Sign out" onClick={onSignOut}><Icon name="logout"/></button>}</div>
+      {session&&onSignOut&&<button className="icon-button sidebar-signout" aria-label="Sign out" title="Sign out" onClick={onSignOut}><Icon name="logout"/></button>}
+      {/* Signing in is offered in the same place as signing out, so the sidebar never leaves a guest stuck. */}
+      {!session&&onSignIn&&<button className="primary-button sidebar-signin" data-testid="sidebar-sign-in" onClick={onSignIn}>Sign in<Icon name="arrow"/></button>}</div>
   </aside>;
 }
 
