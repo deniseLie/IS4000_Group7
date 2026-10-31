@@ -6,21 +6,35 @@ Usage: python -m evaluation.langsmith_sync [--dataset demobank-focused] [--dry-r
 import argparse
 import json
 import os
+from fnmatch import fnmatch
 from hashlib import sha256
 from pathlib import Path
+from typing import get_args
 from uuid import NAMESPACE_URL,uuid5
 import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
+from app.schemas.contracts import AgentName
 from app.services.knowledge import INDEX
+from app.services.tools import TOOLS
 
 HERE=Path(__file__).parent
-DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.json','demobank-safety':'safety_cases.json'}
+DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.json','demobank-safety':'safety_cases.json',
+          'demobank-qa1-client':'qa1_client_cases.json','demobank-qa1-rm':'qa1_rm_cases.json'}
 DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection, corrections and unsupported facts.',
               'demobank-focused':'Source-checked public questions plus the three Workflow 1 public questions.',
-              'demobank-safety':'Fixed safety routes that must answer without a model call.'}
+              'demobank-safety':'Fixed safety routes that must answer without a model call.',
+              'demobank-qa1-client':'QA1 test cases C01-C10 (Michelle, client): schema, competency and trajectory checks.',
+              'demobank-qa1-rm':'QA1 test cases R01-R10 (Sophie, relationship manager): the spec until F12/F14 and the RM assistant exist.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
-EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human')
-OWNED=('case_id','dataset')
+# QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
+EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
+          'reply_has','reply_lacks','ticket','schema','trajectory','must_not','handoff')
+OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state')
+# QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
+NODES=('plan','prioritise','dispatch','propose_actions','review_actions','settle_actions','escalate_validation','compose')
+AGENTS=(*get_args(AgentName),'answer')
+PLANNED_AGENTS=('rm_assistant',)
+PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
 
 def load(dataset):
     path=HERE/DATASETS[dataset]
@@ -29,15 +43,28 @@ def load(dataset):
 def example_id(dataset,case_id):
     return str(uuid5(NAMESPACE_URL,f'demobank-eval/{dataset}/{case_id}'))
 
+def check_trajectory(name,case):
+    """Every node, agent and tool a QA1 case names must exist, so a renamed piece fails the sync instead of the run."""
+    t=case['trajectory'];spec=case['state']=='spec'
+    agents=AGENTS+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
+    problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in NODES]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
+    problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
+    problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
+    if problems:raise ValueError(f'{name}: unknown or inconsistent {problems[0]}')
+
 def to_example(dataset,case):
     """inputs are what a target sends to the pipeline; outputs are reference expectations only."""
-    inputs={'question':case['question'],'history':case.get('history',[]),'language':case.get('language','English'),'mode':'public'}
+    name=f'{dataset}/{case["id"]}'
+    if 'turns' in case:  # QA1: a persona's whole conversation (typed messages, taps, forms, uploads)
+        inputs={'turns':case['turns'],'persona':case['persona'],'mode':'public' if case['persona']=='guest' else 'personal'}
+        check_trajectory(name,case)
+    else:inputs={'question':case['question'],'history':case.get('history',[]),'language':case.get('language','English'),'mode':'public'}
     # Only secrets cases may carry (synthetic) private-looking details; anything else is a mistake in the file.
     if case.get('expected_route')!='secrets' and langsmith_client.scrub(inputs)!=inputs:
-        raise ValueError(f'{dataset}/{case["id"]}: private-looking detail outside a secrets case')
-    if unknown:=[i for i in case.get('cites_any',[]) if i not in INDEX]:raise ValueError(f'{dataset}/{case["id"]}: unknown article {unknown[0]}')
+        raise ValueError(f'{name}: private-looking detail outside a secrets case')
+    if unknown:=[i for i in case.get('cites_any',[]) if i not in INDEX]:raise ValueError(f'{name}: unknown article {unknown[0]}')
     return {'id':example_id(dataset,case['id']),'inputs':inputs,'outputs':{k:case[k] for k in EXPECTED if k in case},
-            'metadata':{'case_id':case['id'],'dataset':dataset}}
+            'metadata':{'case_id':case['id'],'dataset':dataset}|{k:case[k] for k in OWNED[2:] if k in case}}
 
 def examples(dataset,cases):
     ids=[c['id'] for c in cases]
@@ -57,7 +84,7 @@ def sync(client,dataset,dry_run=False):
     if client.has_dataset(dataset_name=dataset):ds=client.read_dataset(dataset_name=dataset)
     elif dry_run:ds=None
     else:ds=client.create_dataset(dataset,description=DESCRIPTIONS[dataset],metadata={'source':f'backend/evaluation/{DATASETS[dataset]}'})
-    remote={str(e.id):{'inputs':e.inputs,'outputs':e.outputs or {},'metadata':{k:(e.metadata or {}).get(k) for k in OWNED}}
+    remote={str(e.id):{'inputs':e.inputs,'outputs':e.outputs or {},'metadata':{k:v for k in OWNED if (v:=(e.metadata or {}).get(k)) is not None}}
             for e in client.list_examples(dataset_id=ds.id)} if ds else {}
     create,update,delete=plan(local,remote)
     summary={'dataset':dataset,'cases':len(local),'create':len(create),'update':len(update),'delete':len(delete),'tag':f'sha-{digest[:12]}','dry_run':dry_run}

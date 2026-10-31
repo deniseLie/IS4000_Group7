@@ -32,7 +32,7 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F26 | LangSmith tracing and evaluation | **Partly** | Tracing and dataset sync done; run and score the experiments. |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
-| QA1 | Test case set (20 cases) | **Half** | Michelle C01–C10 in [test-cases.md](../evaluation/test-cases.md) with an owner column to assign and a run record. Sophie R01–R10 when Workflow 2 starts. |
+| QA1 | Test case set (20 cases) | **Written** | All 20 in [test-cases.md](../evaluation/test-cases.md) and as eval data (`qa1_client_cases.json`, `qa1_rm_cases.json`, LangSmith `demobank-qa1-*`). Sophie R01–R10 are the Workflow 2 spec (need F12, F14 and the RM assistant). Still to do: assign owners, sync the datasets, run C01–C10 and fill the run record. |
 
 ## Persona 1 (client) – open items
 
