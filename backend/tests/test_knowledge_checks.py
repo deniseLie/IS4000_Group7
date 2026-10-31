@@ -32,6 +32,24 @@ def test_workflow_one_questions_retrieve_demo_guidance(question,expected):
     article=knowledge.INDEX[expected]
     assert article.reference_url is None and not answers.URL.search(article.content)
 
+@pytest.mark.parametrize('question,expected',[
+ ('can i get a home loan','home-loans'),('what do i need to refinance my mortgage','home-loans'),
+ ('how do i apply for a personal loan','personal-loans'),('can i borrow for a renovation with a cash loan','personal-loans'),
+])
+def test_loan_questions_retrieve_their_product_guidance(question,expected):
+    # CR16 (0086): every DemoBank loan type has its own demo article; the bank decides and no terms are invented.
+    assert knowledge.search(question)[0].id==expected
+    article=knowledge.INDEX[expected]
+    assert article.reference_url is None and not answers.URL.search(article.content)
+    assert 'final decision' in article.content and 'not supplied in this demo' in article.content
+    assert set(re.findall(r'[0-9]+',article.content))<={'21'}
+
+def test_unclear_loan_question_names_the_loan_types_and_asks_which():
+    assert [a.id for a in knowledge.search('i want a loan')]==['loans']
+    text=knowledge.INDEX['loans'].content
+    assert all(kind in text for kind in ('home loans','personal loans','loans to buy a new or used car')) and 'ask which one' in text
+    assert 'cannot see loan applications' in text and 'relationship manager' in text
+
 def test_part_b_guidance_has_no_invented_times_and_names_the_fraud_team():
     assert 'transfer-timing' in [a.id for a in knowledge.search("my rent transfer still says pending, will it make it")]
     for key in ('transfer-timing','account-security-after-fraud'):

@@ -71,18 +71,19 @@ The LLM Gateway is the only model client: per-agent versioned prompts (`app/prom
 
 ## 5. Tools and MCP (F25)
 
-Agents and the orchestrator call tools through `services/tools.py`:
+Agents and the orchestrator read knowledge and the customer's records only through `services/tools.py`:
 
 ```python
 found = await tools.call('knowledge_search', {'query': question, 'k': 4}, ctx)
+cards = await tools.read('my_cards', {}, ctx)   # the reader's ToolResult: data, call_id, as_of
 ```
 
-- `TOOL_TRANSPORT=direct` (default): the tool function runs directly.
-- `TOOL_TRANSPORT=mcp`: the same call is an MCP `tools/call` to the in-process server in `app/mcp_server.py` (needs `pip install './backend[mcp]'`).
-- Either way, the tool itself checks policy (`require_permission`), uses the caller's JWT so RLS applies, and writes audit events. The model never chooses who the customer is.
+- `TOOL_TRANSPORT=mcp` (default): every call is an MCP `tools/call` to the in-process server in `app/mcp_server.py`. If the tool fails, the caller gets the tool's own exception (permission, integrity or provider error), so a failed agent read withholds only its section, as with direct calls.
+- `TOOL_TRANSPORT=direct`: the same tool function runs without MCP.
+- Either way, the tool itself checks policy (`require_permission`, including the calling agent's allow-list in `agents/registry.py`), uses the caller's JWT so RLS applies, and writes audit events. The model never chooses who the customer is. Each call is a `tool_call` LangSmith span with the tool, transport, agent and `request_id`.
 - External MCP clients can use the same tools over stdio: `python -m scripts.mcp_server` (guest), or with `DEMOBANK_ACCESS_TOKEN` for a signed-in customer.
 
-Tools today: `knowledge_search`, `request_categories`, `my_tickets`, `my_cards`, `my_transactions`. All are read-only; changes only happen through the Action Service.
+Tools today: `knowledge_search`, `request_categories`; customer data `my_profile`, `my_accounts`, `my_cards`, `my_loans`, `my_transactions`; tickets `my_tickets`; compliance and documents `my_compliance_case`, `my_documents`, `my_document_checks`; relationship and calendar `my_relationship_manager`, `my_rm_introduction`, `my_requests`, `my_appointments`, `free_slots`. All are read-only; changes only happen through the Action Service. Retail, fraud, compliance, document and relationship agents load their records through these tools. Action, upload and handover paths keep their own audited service calls. RM tools come with the RM read functions (F14).
 
 ## 6. Actions, decisions and tickets
 

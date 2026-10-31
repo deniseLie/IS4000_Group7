@@ -20,7 +20,7 @@ const TOPICS=[
   {key:'cards',match:/\b(?:card|credit|minimum payment|interest|annual fee)\b/i,ask:[
     ['When is my card payment due?',true],['Does paying only the minimum avoid interest?',false],['Can I increase my credit limit?',false]]},
   {key:'loans',match:/\b(?:loan|mortgage|borrow)\b/i,ask:[
-    ['What is the difference between a secured and unsecured loan?',false],['Can I get a car loan?',false],['What do I need to apply for a loan?',false]]},
+    ['Which loans does DemoBank offer?',false],['What do I need to apply for a home loan?',false],['What is the difference between a secured and unsecured loan?',false]]},
   {key:'accounts',match:/\b(?:account|balance|savings?|fee|deposit|withdraw)\b/i,ask:[
     ['What is my account balance?',true],['Show my recent transactions',true],['Are there fees on my savings account?',false]]},
 ];

@@ -4,7 +4,7 @@ from app.schemas.agents import Evidence
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
-from app.services import llm_gateway,prechecks,prompts,compliance_selection
+from app.services import llm_gateway,prechecks,prompts,compliance_selection,tools
 from app.services.agents.answer import draft_schema,validate_draft
 
 
@@ -15,7 +15,7 @@ def report_evidence(report):
 
 
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
-    snapshot=await prechecks.workspace(ctx)
+    snapshot=await tools.read('my_document_checks',{},ctx)
     workspace=prechecks.Workspace.model_validate(snapshot.data)
     chosen=compliance_selection.selection.get()
     if chosen is not None:compliance_selection.validate(chosen,workspace)

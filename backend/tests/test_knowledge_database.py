@@ -49,7 +49,7 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(30,)  # 0085 overseas-transfers; 0071 card-limit-change; 0077 statements v2; 0081 lost-card v3, unrecognised-charge v3, support v4
+    assert database.execute('select count(*) from kb.articles').fetchone()==(33,)  # 0086 home-loans, personal-loans; 0087 loans v2; 0085 overseas-transfers; 0071 card-limit-change; 0077 statements v2; 0081 lost-card v3, unrecognised-charge v3, support v4
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:
@@ -153,6 +153,17 @@ def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', que
     database.execute('set local role anon')
     rows=search(database,query,[],4)
     assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
+
+
+@pytest.mark.parametrize('query,expected',[('can i get a home loan','home-loans'),('refinance my mortgage','home-loans'),
+ ('how do i apply for a personal loan','personal-loans'),('which loans do you offer','loans')])
+def test_loan_guidance_is_searchable(database: 'Connection[SqlRow]', query: str, expected: str) -> None:
+    # CR16: home and personal loans (0086) join car loans; the general article v2 (0087) replaces v1, which stays citable.
+    database.execute('set local role anon')
+    rows=search(database,query,[],4)
+    assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
+    assert database.execute("select version from kb.articles where article_id='loans' and status='published'").fetchall()==[(2,)]
+    assert database.execute("select article_id from public.kb_get_section('loans',1,'main')").fetchall()==[('loans',)]
 
 
 def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connection[SqlRow]') -> None:

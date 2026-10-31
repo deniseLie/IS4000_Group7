@@ -26,7 +26,8 @@ def test_native_rls_isolates_personas_without_code_filters(database: 'Connection
     for table in ['banking.credit_cards','banking.transactions','banking.loans','compliance.cases','rm.assignments','notify.preferences']:
         rows=database.execute(f'select customer_id from {table}').fetchall()
         assert all(row[0]==customer_id for row in rows)
-    assert database.execute('select * from consent.grants').fetchall()==[]
+    # 0088: David's own grant for the handover note he shared with Sophie; nobody sees another customer's grants.
+    assert [row[0] for row in database.execute('select customer_id from consent.grants')]==([1003] if customer_id==1003 else [])
 
 
 def test_unlinked_user_sees_no_customer_rows(database: 'Connection[SqlRow]') -> None:

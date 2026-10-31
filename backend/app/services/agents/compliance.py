@@ -6,12 +6,12 @@ from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.customer_data import ComplianceCase,CustomerEnvelope
 from app.schemas.events import Source
-from app.services import customer_data,llm_gateway,prompts,compliance_selection
+from app.services import customer_data,llm_gateway,prompts,compliance_selection,tools
 from app.services.agents.answer import draft_schema,validate_draft
 
 
 async def load(ctx: RequestContext) -> CustomerEnvelope[ComplianceCase | None]:
-    result=await customer_data.get_compliance_case(ctx)
+    result=await tools.read('my_compliance_case',{},ctx)
     return CustomerEnvelope[ComplianceCase | None].model_validate({'customer_id':ctx.principal.customer_id,
         'call_id':result.call_id,'as_of':result.as_of,'data':result.data})
 

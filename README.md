@@ -71,7 +71,7 @@ Keep `PIPELINE=v2` and `CONVERSATION_STORE=database`. Never use a service-role k
 **2. Install (first time).**
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e './backend[dev,mcp]'
+.venv/bin/python -m pip install -e './backend[dev]'
 cd frontend && npm ci && cd ..
 ```
 
@@ -105,7 +105,7 @@ Reminders are sent from 7 days before a due date, only for documents she still h
 | What happens | What to check |
 |---|---|
 | `vite: command not found` | Run `npm ci` in `frontend/` (the zip has no `node_modules`). |
-| `No module named …` | Recreate `.venv` and run `pip install -e './backend[dev,mcp]'`. |
+| `No module named …` | Recreate `.venv` and run `pip install -e './backend[dev]'`. |
 | "Document checks are not switched on yet" | `DOCUMENT_PRECHECK_SIGNING_KEY` missing or wrong in `backend/.env`; restart the backend. |
 | The assistant doesn't use Michelle's records | `PIPELINE=v2` and `CONVERSATION_STORE=database` in `backend/.env`; restart the backend. |
 | Browser can't reach the backend | Both terminals running; frontend started with `VITE_API_URL=/api BACKEND_PORT=5001`. |

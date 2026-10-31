@@ -7,7 +7,7 @@ from decimal import Decimal
 from pydantic import TypeAdapter
 from app.schemas.fraud import DisputeProposal,FraudProposal,SecurityCard,SecurityRecords,SecurityTransaction
 from app.schemas.contracts import RequestContext
-from app.services import customer_data
+from app.services import tools
 from app.services.source_checks import unit_matches,unit_values
 
 TRAVEL_HOURS=4
@@ -16,8 +16,8 @@ SGT=ZoneInfo('Asia/Singapore')
 
 async def load(ctx: RequestContext) -> SecurityRecords:
     today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
-    cards=await customer_data.get_credit_cards(ctx)
-    transactions=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,None)
+    cards=await tools.read('my_cards',{},ctx)
+    transactions=await tools.read('my_transactions',{'from_date':(today-timedelta(days=90)).isoformat(),'to_date':today.isoformat()},ctx)
     return SecurityRecords(cards=TypeAdapter(list[SecurityCard]).validate_python(cards.data),
         transactions=TypeAdapter(list[SecurityTransaction]).validate_python(transactions.data),captured_at=datetime.now(timezone.utc))
 

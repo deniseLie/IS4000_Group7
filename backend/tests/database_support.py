@@ -19,6 +19,9 @@ def persona_id(customer_id: int) -> UUID:
     return uuid5(NAMESPACE_URL,f'demobank-test-persona:{customer_id}')
 
 
+SOPHIE_LOGIN=uuid5(NAMESPACE_URL,'demobank-test-persona:sophie')  # RM login, linked by rm.staff_logins (0088)
+
+
 @pytest.fixture(scope='session')
 def local_postgres(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     if os.getenv('TEST_DATABASE_LOCAL')!='1':pytest.skip('Opt in to native PostgreSQL with TEST_DATABASE_LOCAL=1')
@@ -31,6 +34,7 @@ def local_postgres(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             db.execute(Path(__file__).with_name('local_bootstrap.sql').read_text())
             for customer_id,name in [(1001,'alex'),(1002,'michelle'),(1003,'david')]:
                 db.execute('insert into auth.users(id,email) values (%s,%s)',(persona_id(customer_id),f'demo.{name}@example.com'))
+            db.execute('insert into auth.users(id,email) values (%s,%s)',(SOPHIE_LOGIN,'demo.sophie@example.com'))
             for migration in sorted((Path(__file__).parents[1]/'supabase'/'migrations').glob('*.sql')):
                 db.execute(migration.read_text())
         yield uri

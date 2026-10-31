@@ -487,7 +487,7 @@ async def other_issues(state: Turn,ctx: RequestContext) -> tuple[list[CustomerTr
         and 'linked' not in task.entities]
     pending=[]
     if transfer:
-        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
+        read=await tools.read('my_transactions',{'from_date':(today-timedelta(days=90)).isoformat(),'to_date':today.isoformat(),'status':'pending'},ctx)
         pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
     due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
     return pending,due,any(task.entities.get('linked')=='card_fraud' for task in tasks)
@@ -505,7 +505,7 @@ async def staff_summary(state: Turn,task_id: str,block: ActionOutcome,dispute: A
         and 'linked' not in task.entities]
     pending=[]
     if transfer:
-        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
+        read=await tools.read('my_transactions',{'from_date':(today-timedelta(days=90)).isoformat(),'to_date':today.isoformat(),'status':'pending'},ctx)
         pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
     due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
     return case_summary.build(last4=block.command.target.last4,reported_id=proposal.transaction_id if proposal else '',items=items,

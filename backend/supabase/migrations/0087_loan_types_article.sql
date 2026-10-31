@@ -1,0 +1,9 @@
+-- CR16: the general loan article v2 names DemoBank's three loan types (car 0055, home and personal 0086), so an unclear
+-- loan question gets a clarifying question, and says this chat cannot see loan applications and where to ask instead.
+-- Demo kind only: no rates, fees, amounts, external URLs or real contact numbers. v1 stays readable as a retired citation (0011).
+
+update kb.articles set status='retired' where article_id='loans' and version=1 and status='published';
+insert into kb.articles(article_id,version,title,categories,publisher,scope,kind,status,reference_url,checked_on,review_due) values
+  ('loans',2,'Demo loan enquiries',array['retail'],'DemoBank coursework project','Fictional demo guidance; not a live bank policy.','demo','published',null,null,null);
+insert into kb.sections(article_id,version,anchor,heading,body,keywords) values
+  ('loans',2,'main','Demo loan enquiries','The fictional DemoBank offers three kinds of loan in this demo: home loans, personal loans, and loans to buy a new or used car. If it is not clear which loan a question is about, ask which one before describing eligibility or how to apply. Loan product records describe eligibility and application steps. Any comparison with a synthetic customer profile is preliminary guidance only. Ask for missing details instead of treating them as eligible. Only the bank can decide on an actual application. Sign in to see the outstanding amount and status of a loan you already have. This chat cannot see loan applications; for an application in progress, contact the bank through its official app or website or ask your relationship manager. The chatbot cannot submit an application or promise approval. This is general information, not advice or a contract.','loan borrow eligibility eligible application income repayment which types offer existing');
