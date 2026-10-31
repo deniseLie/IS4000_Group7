@@ -76,6 +76,9 @@ async def saved_validation(db: SyncPostgrestClient,ctx: RequestContext) -> tuple
 @pytest.fixture
 def enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
+    # These tests cover the recording path: withheld-answer tickets and handovers without the confirmation step.
+    monkeypatch.setenv('VALIDATION_HANDOFF','1')
+    monkeypatch.setenv('RM_HANDOVER_CONFIRM','0')
 
 
 def test_mixed_validation_handoff_is_durable_deduplicated_and_owned(local_data_api: NativeAPI,native_api_client: TestClient,enabled: None) -> None:

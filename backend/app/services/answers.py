@@ -9,6 +9,7 @@ from app.schemas.events import AnswerEvent,Source
 from app.schemas.knowledge import KnowledgeQuery
 from app.core import data_api
 from app.services.knowledge import search, source, INDEX, ARTICLES, is_current
+from app.services.retrieval_context import retrieval_query
 from app.services.privacy import redact
 from app.services.guardrail import assess_request
 from app.services.source_checks import check_sources, numbers
@@ -19,7 +20,7 @@ EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
 
 NOTICE='General information only, not advice or a contract. Demo records are synthetic. Only the bank can confirm fees or approve a loan.'
 URL=re.compile(r'https?://',re.I)
-ACTION_CLAIM=re.compile(r'\b(?:I have|I\x27ve|we have|successfully)\s+(?:blocked|transferred|approved|submitted|refunded|reversed|cancell?ed|disputed|investigated|expedited|sped up)',re.I)
+ACTION_CLAIM=re.compile(r'\b(?:I have|I\x27ve|we have|successfully)\s+(?:blocked|transferred|approved|submitted|refunded|reversed|cancell?ed|disputed|investigated|expedited|sped up|passed|forwarded|escalated|opened|created|sent)',re.I)
 
 def clean_history(messages):
     history=[Message(role=m.role,content=redact(m.content)[0]) for m in messages]
@@ -31,9 +32,15 @@ def decide(info,route):
     info['route']=route
     add_span('route','agent',route=route,risk_flags=info['risk_flags'],priority=info['priority'])
 
+
 def retrieve(question,history,language):
     with span('retrieve','tool') as a:
         articles=search(question)
+        # Only expand a follow-up when the direct query retrieved no evidence.
+        # A new topic must never replay earlier evidence.
+        if not articles:
+            expanded=retrieval_query(question,history)
+            if expanded!=question:articles=search(expanded)
         # A greeting or insult must not be forced into an earlier banking topic.
         # The library is small: give the model current guidance for ambiguous
         # follow-ups and let it respond to the latest message in context.

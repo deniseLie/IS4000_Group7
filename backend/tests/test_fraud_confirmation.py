@@ -44,3 +44,13 @@ def test_lost_card_reply_quotes_the_reference_and_never_claims_a_block() -> None
     assert 'TCK-001234' in sent and 'fraud team as urgent' in sent and 'My requests' in sent and 'is blocked' not in sent
     assert 'already have an open lost-card report' in fraud_reports.LostCardReport(reference='TCK-001234',reused=True).reply()
     assert 'nothing has been sent' in fraud_reports.LostCardReport(reference=None,failed=True).reply()
+
+
+def test_lost_card_is_reported_only_after_she_confirms() -> None:
+    """CR12: safety steps first; the urgent ticket waits for "Yes, report my card"; "No" reports nothing."""
+    offer='Call the fraud line now…\n\n'+fraud_reports.LOST_OFFER
+    history=lambda reply:[Message(role='user',content='i lost my card'),Message(role='assistant',content=offer),Message(role='user',content=reply)]
+    assert fraud_reports.lost_pending(history('Yes, report my card'))==('i lost my card',True)
+    assert fraud_reports.lost_pending(history('yes'))==('i lost my card',True)
+    assert fraud_reports.lost_pending(history('no'))==('i lost my card',False)
+    assert fraud_reports.lost_pending(history('what is my balance')) is None

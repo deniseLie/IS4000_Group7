@@ -52,7 +52,7 @@ def test_named_card_questions_are_answered_from_records(question: str,expected: 
     assert result is not None and result.status=='ok' and expected in result.text,result
 
 
-@pytest.mark.parametrize('question',['whats my balance','can i increase my card limit','i lost my card',
+@pytest.mark.parametrize('question',['whats my balance','i lost my card',
     'what did i spend on my card last month','i dont recognise a charge on my card','can you waive my annual fee','hello'])
 def test_other_questions_are_left_to_their_own_flow(question: str) -> None:
     assert ask(question) is None
@@ -121,3 +121,43 @@ def test_a_meeting_reply_is_only_kept_in_the_booking_when_it_is_about_the_times(
     history=[Message(role='user',content='in person'),Message(role='assistant',content=listed+' It will be an in-person meeting.'),
         Message(role='user',content='Book Mon 2 Nov, 9:30 am')]
     assert meeting_answers.asked_format(history)=='in_person'
+
+
+def test_a_follow_up_stays_on_the_card_just_discussed() -> None:
+    """CR14: "what about the due date?" after a Travel Card answer is about the Travel Card; a new topic is not."""
+    answered=ask('whats my travel card balance').text
+    follow=ask('whats my travel card balance',answered,'what about the due date?')
+    assert follow is not None and follow.status=='ok' and 'Travel Card ending 5592' in follow.text and '25 Nov 2026' in follow.text
+    assert ask('whats my travel card balance',answered,'whats my balance') is None  # the account, not a card
+
+
+def test_a_handover_is_previewed_and_only_sent_on_her_choice() -> None:
+    from app.services import rm_handover
+    shown=rm_handover.preview('Can you waive my annual fee?',[Message(role='user',content='Can you waive my annual fee?')])
+    assert rm_handover.PREVIEW_MARK in shown and '• Topic: Fees or rates' in shown and '“Send to my RM”' in shown
+    reply=lambda text,offered=shown:rm_handover.pending_choice([Message(role='assistant',content=offered),Message(role='user',content=text)])
+    assert reply('Send to my RM')==('Can you waive my annual fee?','send',None)
+    assert reply('cancel')[1]=='cancel' and reply('what is my balance') is None
+    existing=rm_handover.preview('Can you waive my annual fee?',[],'TCK-001050')
+    assert reply('Add to TCK-001050',existing)[1:]==('add','TCK-001050') and reply('Open a new request',existing)[1]=='new'
+    assert 'talk to a person' in rm_handover.WITHHELD
+
+
+@pytest.mark.parametrize('question,amount',[('i wan to raise my card limit to 15000','SGD 15,000'),('increase my credit limit to $20k','SGD 20,000'),
+    ('can i increase my card limit','')])
+def test_card_limit_change_is_explained_without_a_model(question: str,amount: str) -> None:
+    result=ask(question)
+    assert result is not None
+    if amount:
+        assert result.status=='needs_clarification' and amount.replace('SGD ','') in result.text
+        assert 'temporary or permanent' in result.text and result.question==result.text
+    else:
+        assert result.status=='ok' and 'Raise a card limit request' in result.text and 'approval isn’t guaranteed' in result.text
+
+
+def test_waive_it_and_buttons_in_handover_context() -> None:
+    from app.services import rm_handover
+    assert rm_handover.needs_person('can you waive it') and rm_handover.topic_for('can you waive it')=='Fees or rates'
+    history=[Message(role='user',content='my card was charged an annual fee'),Message(role='user',content='Confirm booking'),
+        Message(role='user',content='can you waive it')]
+    assert rm_handover.earlier_messages('can you waive it',history)==['my card was charged an annual fee']

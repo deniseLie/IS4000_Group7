@@ -10,10 +10,10 @@ from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
 from app.schemas.retail import RetailRecords
 from app.services import kb,knowledge,llm_gateway,prompts
-from app.services.agents import card_answers,retail_checks,retail_records,transaction_answers
-from app.services.agents.answer import draft_schema,validate_draft
+from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers
+from app.services.agents.answer import checked_model_answer
 
-PROMPT='v7'
+PROMPT='v10'
 LINKED='\nLinked context (DemoBank rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
 
 
@@ -46,10 +46,17 @@ async def fall_below_threshold(ctx: RequestContext) -> tuple[Decimal,str] | None
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Retail task question must be text')
+    # Read existing request status from its authoritative ticket service *before*
+    # card-limit intake or LLM generation. Errors are handled by orchestrator.
+    status=await request_status_answers.respond(task.task_id,question,ctx)
+    if status is not None:
+        result,record_evidence=status
+        return result,[*public_evidence,*record_evidence],prompts.load('retail',PROMPT)['id']
     records=await retail_records.load(ctx)
     evidence=[*public_evidence,*evidence_for(records)]
     # Card figures and "which card?" come straight from her records (no model call, never withheld).
-    direct=card_answers.respond(task.task_id,question,history,records)
+    direct=account_answers.respond(task.task_id,question,records,public_evidence)
+    if direct is None:direct=card_answers.respond(task.task_id,question,history,records)
     if direct is None:
         latest=history[-1].content if history and history[-1].role=='user' else question
         direct=transaction_answers.respond(task.task_id,question,latest,records)
@@ -63,5 +70,5 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     if task.entities.get('linked')=='card_fraud':system+=LINKED
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
-    response=await llm_gateway.call(pv,system,[(m.role,m.content) for m in history],draft_schema(evidence))
-    return validate_draft(task,json.dumps(response.data,ensure_ascii=False),evidence),evidence,pv['id']
+    result=await checked_model_answer(task,system,history,evidence,pv)
+    return result,evidence,pv['id']

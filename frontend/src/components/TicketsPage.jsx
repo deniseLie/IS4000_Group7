@@ -61,15 +61,16 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
   </div>;
 }
 
-function RaiseRequest({categories,prefill,onClose,onReviewActions,onSupport}) {
+export function RaiseRequest({categories,prefill,onClose,onReviewActions,onSupport,inChat=false}) {
   const [category,setCategory]=useState(()=>categories.find(c=>c.category===prefill?.category)?.category||categories[0]?.category||'');
-  const [values,setValues]=useState({});
+  const [values,setValues]=useState(()=>prefill?.details||{});
   const [summary,setSummary]=useState(prefill?.summary||'');
   const [urgency,setUrgency]=useState('normal');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [outcome,setOutcome]=useState(null);
   const chosen=categories.find(c=>c.category===category);
+  const needsUntil=category==='card_limit_change'&&values.duration==='temporary';
   async function prepare(event) {
     event.preventDefault();setBusy(true);setError('');
     try {
@@ -86,16 +87,17 @@ function RaiseRequest({categories,prefill,onClose,onReviewActions,onSupport}) {
       <label>What is it about? <select data-testid="ticket-category" value={category} disabled={locked} onChange={event=>{setCategory(event.target.value);setValues({});}}>
         {categories.map(c=><option key={c.category} value={c.category}>{c.label}</option>)}</select></label>
       {chosen&&<p>{chosen.description} <strong>Who decides:</strong> {chosen.decided_by}{chosen.documents.length?<> <strong>You may need:</strong> {chosen.documents.join('; ')}.</>:null}</p>}
-      {chosen?.fields.map(field=><label key={field.key}>{field.label}{field.required?'':' (optional)'}
-        {field.kind==='choice'?<select data-testid={`ticket-field-${field.key}`} required={field.required} value={values[field.key]||''} disabled={locked} onChange={event=>setValues({...values,[field.key]:event.target.value})}>
+      {prefill?.selectedCardLabel&&category==='card_limit_change'&&<p>Selected in chat: <strong>{prefill.selectedCardLabel}</strong>. Enter the card’s last four digits to verify the card before submitting.</p>}
+      {chosen?.fields.map(field=><label key={field.key}>{field.label}{field.required||field.key==='until'&&needsUntil?'':' (optional)'}
+        {field.kind==='choice'?<select data-testid={`ticket-field-${field.key}`} required={field.required} value={values[field.key]||''} disabled={locked} onChange={event=>setValues({...values,[field.key]:event.target.value, ...(field.key==='duration'&&event.target.value==='permanent'?{until:''}:{})})}>
             <option value="">Choose…</option>{field.choices.map(choice=><option key={choice}>{choice}</option>)}</select>
-          :<input data-testid={`ticket-field-${field.key}`} required={field.required} disabled={locked} value={values[field.key]||''}
+          :<input data-testid={`ticket-field-${field.key}`} required={field.required||field.key==='until'&&needsUntil} disabled={locked} value={values[field.key]||''}
             type={field.kind.startsWith('date')?'date':'text'} inputMode={['amount','card'].includes(field.kind)?'decimal':undefined}
             pattern={field.kind==='card'?'[0-9]{4}':field.kind==='amount'?'[0-9]{1,9}(\\.[0-9]{1,2})?':undefined} maxLength={field.kind==='card'?4:300}
             onChange={event=>setValues({...values,[field.key]:event.target.value})}/>}</label>)}
       <label className="request-details-field">Short summary <textarea data-testid="ticket-summary" required maxLength={500} value={summary} disabled={locked} onChange={event=>setSummary(event.target.value)}/></label>
       <label>Urgency <select value={urgency} disabled={locked} onChange={event=>setUrgency(event.target.value)}>{['low','normal','high'].map(value=><option key={value}>{value}</option>)}</select></label>
-      <p>Never type a password, PIN, one-time code or full card number. You review the exact request in Actions before it is recorded.</p>
+      <p>Never type a password, PIN, one-time code or full card number. You review and explicitly confirm the exact request before it is recorded.</p>
       <div className="panel-actions"><button type="button" className="bank-chat-logout" onClick={onClose} disabled={busy}>Cancel</button>
         <button className="primary-button" data-testid="prepare-ticket" disabled={locked||!summary.trim()}>Review request</button></div>
     </form>
@@ -103,7 +105,7 @@ function RaiseRequest({categories,prefill,onClose,onReviewActions,onSupport}) {
     {error&&<div role="alert" data-testid="ticket-error"><p>{error}</p>
       <div className="panel-actions"><button type="button" className="bank-chat-logout" onClick={prepare} disabled={busy||!summary.trim()}>Try again</button>
         {onSupport&&<button type="button" className="primary-button" data-testid="ticket-error-support" onClick={onSupport}>Talk to a person</button>}</div></div>}
-    {outcome&&<div data-testid="ticket-proposal"><p>Ready for review. Confirm or reject the exact details in Actions; nothing is recorded until you confirm.</p>
-      <button className="primary-button" data-testid="review-ticket-actions" onClick={onReviewActions}>Review in Actions</button></div>}
+    {outcome&&<div data-testid="ticket-proposal"><p>Ready for review. Confirm or reject the exact details; nothing is recorded until you confirm.</p>
+      <button className="primary-button" data-testid="review-ticket-actions" onClick={onReviewActions}>{inChat?"Review and confirm here":"Review in Actions"}</button></div>}
   </section>;
 }

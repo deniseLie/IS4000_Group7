@@ -55,3 +55,25 @@ test('free meeting times offer one tap each, and a held time offers Confirm book
   const held={role:'assistant',content:'I’ve held Mon 2 Nov, 10:00 am (video call) with your relationship manager for 10 minutes. Tap “Confirm booking” to book it.'};
   assert.deepEqual(followUps({question:'Book Mon 2 Nov, 10:00 am',message:held,signedIn:true}),['Confirm booking']);
 });
+
+test('a handover preview offers send/cancel, or add/new/cancel when a request is open (CR8)', () => {
+  const preview={role:'assistant',content:'Of course. Here’s what I’d send to your relationship manager:\n• Topic: Fees or rates\nReply “Send to my RM” to send it.'};
+  assert.deepEqual(followUps({question:'waive my fee',message:preview,signedIn:true}),['Send to my RM','Cancel']);
+  const open={...preview,content:preview.content+' Reply “Add to TCK-001050” to add this question to it'};
+  assert.deepEqual(followUps({question:'waive my fee',message:open,signedIn:true}),['Add to TCK-001050','Open a new request','Cancel']);
+});
+
+test('the lost-card offer asks before reporting (CR12)', () => {
+  const message={role:'assistant',content:'Call the fraud line now.\n\nWould you like me to report this to our fraud team as urgent now? Reply “Yes, report my card” or “No”.'};
+  assert.deepEqual(followUps({question:'i lost my card',message,signedIn:true}),['Yes, report my card','No']);
+});
+
+test('card-limit follow-up provides quick replies only for listed authorised cards',()=>{
+  const message=answer({content:'Your requested new limit is 12,000. Which card is this for: Signature Card ending 7310, Travel Card ending 5592?'});
+  assert.deepEqual(followUps({question:'Actually make it $12,000',message,signedIn:true}),['Signature Card ending 7310','Travel Card ending 5592']);
+});
+
+
+test('natural-language report keeps security follow-up category',()=>{
+  assert.equal(topicOf('Someone used my card without permission',answer()),'fraud');
+});

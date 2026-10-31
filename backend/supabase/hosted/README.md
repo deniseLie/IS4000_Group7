@@ -18,7 +18,6 @@
 | `12_apply_0083_hosted.sql` | Cards and loans get a recorded currency (SGD for every demo card and loan), so the assistant says "SGD 316.20" instead of "currency unrecorded" | Once, after 11 |
 | `13_apply_0084_hosted.sql` | Michelle's two sample fees get their own names ("Annual card fee", "Telegraphic transfer fee") so fee questions can tell them apart | Once, after 12 |
 | `14_apply_0085_hosted.sql` | A different question for the RM in the same chat opens its own ticket (`customer_open_rm_ticket`); approved how-to article for sending money overseas | Once, after 13 |
-| `15_apply_0087_0088_hosted.sql` | The general loan article v2 naming car, home and personal loans (CR16; 0086 home and personal loans is already applied); Persona 2 seed (F4): Michelle's adviser record becomes Sophie Lim, two more synthetic clients in Sophie's book and one with Priya, internal `rm.meeting_notes`, `rm.staff_logins`, seven open tickets (rows for David are skipped where he no longer exists) | Once, after 14. Then create the Auth user `demo.sophie@example.com`, set its app_metadata to `{"demobank_role":"rm","rm_id":"00000000-0000-4000-8000-100200000002"}` and re-run the last statement of 0088 to link it |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

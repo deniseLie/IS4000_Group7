@@ -138,13 +138,16 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     # "Talk to a person" in a signed-in saved chat goes straight to the client's RM (migrations 0073, 0082); no model call.
                     # An open RM ticket on the same topic is reused; a failure is explained instead of a generic error (CR9).
                     selected=[req.record_context.document_id] if req.record_context is not None and req.record_context.document_id else []
-                    handover=await rm_handover.route(risk.redacted_message,'P2',ctx,None,rm_handover.task_key('person',turn.turn.turn_id),
-                        history=req.messages,document_ids=selected)
-                    result.update(answer=handover.reply() if handover.failed else 'Of course. '+handover.reply(),needs_human=True)
+                    if rm_handover.confirm_first():
+                        # CR8: show what would be sent; her "Send to my RM" on the next turn records it.
+                        result.update(answer='Of course. '+await rm_handover.offer(risk.redacted_message,req.messages,ctx),needs_human=True)
+                    else:
+                        handover=await rm_handover.route(risk.redacted_message,'P2',ctx,None,rm_handover.task_key('person',turn.turn.turn_id),
+                            history=req.messages,document_ids=selected)
+                        result.update(answer=handover.reply() if handover.failed else 'Of course. '+handover.reply(),needs_human=True)
                 elif 'lost_card' in risk.risk_flags and p.kind=='customer' and prepared is not None:
-                    # A signed-in client's lost or stolen card goes to the fraud team as an urgent ticket at once (CR12, 0082).
-                    report=await fraud_reports.report_lost_card(risk.redacted_message,ctx,rm_handover.task_key('lost_card',turn.turn.turn_id))
-                    result.update(answer=result['answer']+'\n\n'+report.reply(),needs_human=True)
+                    # CR12: the safety steps come first; she confirms before the urgent fraud ticket is opened (her next turn).
+                    result.update(answer=result['answer']+'\n\n'+fraud_reports.LOST_OFFER,needs_human=True)
                 if prepared is not None:
                     turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)
                     yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}

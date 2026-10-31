@@ -31,7 +31,8 @@ from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
 from app.services.agents import fraud_records
 from app.services.privacy import redact
-from app.services.rm_handover import OPEN,ticket_reference
+# Imported as a module (not names) so the order in which modules load can never leave a name half-defined.
+from app.services import rm_handover
 
 CONFIRM_REPLY='Yes, report it'
 ASK_HEADER=re.compile(r'charges you don[’\']t recognise on your card ending ([0-9]{4}):')
@@ -127,13 +128,34 @@ def records_source(ctx: RequestContext) -> Source:
 
 
 # Lost or stolen card ----------------------------------------------------------------------------------------------
-LOST_SENT=('I’ve also passed this to our fraud team as urgent{reference}. They will contact you, block the card if it is still '
+LOST_SENT=('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card if it is still '
     'active and arrange a replacement. Don’t wait for them: call the fraud line on the back of your card or use the official '
     'app now. You can follow it in My requests.')
 LOST_REUSED=('You already have an open lost-card report with our fraud team{reference}, so I haven’t opened another one. Don’t '
     'wait for them: call the fraud line on the back of your card or use the official app now. You can follow it in My requests.')
 LOST_FAILED=('I couldn’t pass this to our fraud team just now, so nothing has been sent from here. Please call the fraud line on '
     'the back of your card or use the report function in the official app straight away.')
+
+
+# CR12: she confirms before the lost-card report is sent; the safety steps above it never wait for her answer.
+LOST_REPLY='Yes, report my card'
+LOST_OFFER=('Would you like me to report this to our fraud team as urgent now? They will contact you, block the card if '
+    f'needed and arrange a replacement. Reply “{LOST_REPLY}” or “No”.')
+DECLINE=re.compile(r"^\s*(?:no|nope|not now|don['’]?t|do not|never ?mind|nvm)\b",re.I)
+
+
+def lost_pending(history: Sequence[Message]) -> tuple[str,bool] | None:
+    """(her original words, reported?) when her latest message answers our lost-card offer."""
+    if len(history)<2 or history[-1].role!='user' or history[-2].role!='assistant' or LOST_REPLY not in history[-2].content:return None
+    reply=history[-1].content.strip()
+    words=history[-3].content if len(history)>=3 and history[-3].role=='user' else 'Card reported lost or stolen.'
+    if DECLINE.search(reply):return words,False
+    if len(reply)<=80 and AFFIRM.search(reply) and not NEGATION.search(reply):return words,True
+    return None
+
+
+LOST_DECLINED=('Okay, I haven’t reported it. If the card is lost or stolen, please call the fraud line on the back of your card or '
+    'use the official app now so it can be blocked.')
 
 
 @dataclass(frozen=True)
@@ -157,7 +179,7 @@ def lost_summary(question: str,records: SecurityRecords) -> str:
 async def open_lost_card_ticket(ctx: RequestContext) -> str | None:
     read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
     tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
-    return next((ticket.reference for ticket in tickets if ticket.category=='suspected_fraud' and ticket.status in OPEN
+    return next((ticket.reference for ticket in tickets if ticket.category=='suspected_fraud' and ticket.status in rm_handover.OPEN
         and ticket.summary.startswith(LOST_TITLE)),None)
 
 
@@ -173,7 +195,7 @@ async def report_lost_card(question: str,ctx: RequestContext,task_id: str) -> Lo
             try:
                 with data_api.connect(current) as db:outcome=await action_store.load(command_id,current,db)
                 if outcome.receipt is not None and isinstance(outcome.receipt.result,HandoffResult):
-                    return LostCardReport(reference=await ticket_reference(outcome.receipt.result.handoff_id,current))
+                    return LostCardReport(reference=await rm_handover.ticket_reference(outcome.receipt.result.handoff_id,current))
             except action_store.ActionNotFound:pass
             return LostCardReport(reference=existing,reused=True)
         records=await fraud_records.load(ctx.model_copy(update={'agent':'fraud'}))
@@ -184,7 +206,7 @@ async def report_lost_card(question: str,ctx: RequestContext,task_id: str) -> Lo
         with data_api.connect(current) as db:outcome=await action_store.load(command.command_id,current,db)
         if not isinstance(receipt,Receipt) or receipt.outcome!='succeeded' or outcome.receipt is None or not isinstance(outcome.receipt.result,HandoffResult):
             raise ActionIntegrityError('The lost-card report did not return a successful receipt')
-        return LostCardReport(reference=await ticket_reference(outcome.receipt.result.handoff_id,current),
+        return LostCardReport(reference=await rm_handover.ticket_reference(outcome.receipt.result.handoff_id,current),
             reused=not outcome.receipt.result.created)
     except HANDOFF_ERRORS as error:
         code=data_api.database_code(error) if isinstance(error,APIError) else None

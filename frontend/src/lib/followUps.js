@@ -3,7 +3,7 @@
 // or route without raising a ticket. Order matters: the first topic whose words match the question wins.
 // Personal ones ("my review", "my card") are only offered when signed in. At most three, never one already asked.
 const TOPICS=[
-  {key:'fraud',match:/\b(?:unrecogni[sz]ed|don'?t recogni[sz]e|suspicious|fraud|stolen|lost (?:my )?card|block(?:ed)? (?:my )?card|london charges?)\b/i,ask:[
+  {key:'fraud',match:/\b(?:unrecogni[sz]ed|don'?t recogni[sz]e|suspicious|fraud|stolen|lost (?:my )?card|block(?:ed)? (?:my )?card|london charges?|(?:someone|somebody) (?:has )?used my card|used my card without permission)\b/i,ask:[
     ['What happens after I report a charge?',false],['Will I get my money back?',false],['How do I get a replacement card?',false]]},
   {key:'document',match:/\b(?:upload|proof of address|utility bill|document|declaration|tax residency|not accepted|rejected|correction)\b/i,ask:[
     ['What does a proof of address need to show?',false],['What do I still need to send for my review?',true],['How do I answer the bank\'s question?',true]]},
@@ -39,14 +39,28 @@ export function topicOf(question,message) {
 // The fraud charge list (CR12) asks for a plain yes; offer it as a one-tap reply instead of other suggestions.
 export const CONFIRM_REPORT='Yes, report it';
 export function followUps({question,message,signedIn,asked=[]}) {
-  if(!message||message.role!=='assistant'||message.error||!message.content)return [];
+  if(!message||message.role!=='assistant'||!message.content)return [];
+  // A charge list to confirm keeps its button even when another part of the reply was withheld (CR12).
   if(signedIn&&message.content.includes(`“${CONFIRM_REPORT}”`))return [CONFIRM_REPORT];
+  if(message.error)return [];
+  // CR12: the lost-card offer asks before reporting.
+  if(signedIn&&message.content.includes('Reply “Yes, report my card”'))return ['Yes, report my card','No'];
+  // CR8: a handover preview offers its choices as one tap each; nothing is sent until she picks one.
+  if(signedIn&&message.content.includes('Here’s what I’d send to your relationship manager:')) {
+    const offered=/“Add to (TCK-\d{6,})”/.exec(message.content);
+    return offered?[`Add to ${offered[1]}`,'Open a new request','Cancel']:['Send to my RM','Cancel'];
+  }
   // CR17: free meeting times offer one tap each; a held time offers "Confirm booking".
   if(signedIn&&message.content.includes('Tap “Confirm booking”'))return ['Confirm booking'];
   if(signedIn&&message.content.includes('and I’ll hold it for you')) {
     const times=[...message.content.matchAll(/• ((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}, \d{1,2}:\d{2} (?:am|pm))/g)].map(match=>`Book ${match[1]}`);
     // One button for every time listed (the reply lists at most six), so the text and the buttons always match.
     if(times.length)return times.slice(0,6);
+  }
+  // CR11: the active card-limit intake asks for a card without restarting the request.
+  if(signedIn&&/\bWhich card is this for:/.test(message.content)) {
+    const cards=[...message.content.matchAll(/(?:Signature|Travel) Card ending \d{4}/g)].map(match=>match[0]);
+    if(cards.length>1)return cards.slice(0,3);
   }
   // "Which card's ... do you mean: your Signature Card ending 7310 or your Travel Card ending 5592?" → one tap per card.
   if(signedIn&&/^Which card['’]s .+ do you mean:/.test(message.content)) {

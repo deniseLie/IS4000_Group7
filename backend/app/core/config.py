@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     pipeline: Literal['v1', 'v2'] = 'v1'
     knowledge_store: Literal['memory','database'] = 'memory'
     conversation_store: Literal['off','database'] = 'off'
-    tool_transport: Literal['direct','mcp'] = 'mcp'  # agent tool calls go through app/mcp_server.py; direct skips MCP
+    tool_transport: Literal['direct','mcp'] = 'direct'  # mcp: agent tool calls go through app/mcp_server.py
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     prompt_version: str = "v3"
-    prompt_versions: dict[str, str] = {'planner':'v2','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
+    prompt_versions: dict[str, str] = {'planner':'v5','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
 
     # LLM Gateway limits (services/llm_gateway.py)
     llm_timeout_s: float = 30

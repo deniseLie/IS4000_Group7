@@ -1,6 +1,7 @@
 """Versioned demo guidance and curated Singapore banking education."""
 from dataclasses import dataclass
 import re
+from difflib import SequenceMatcher
 from datetime import date
 from urllib.parse import urlsplit
 
@@ -49,6 +50,8 @@ ARTICLES = [
     Article('support', 'Getting human support', 'When you are signed in, Talk to a person shows a short summary; approving it passes your question to your relationship manager with a reference to follow in My requests. Charges you do not recognise go to the fraud team as urgent instead. As a guest you can review, edit and copy a summary for your own use; copying does not send anything. For a real issue, contact your bank using its official app or website. The assistant cannot make payments, block or cancel cards, close accounts, dispute, refund or reverse charges, or change banking records.', ('human','person','support','staff','contact','close','dispute','transfer','refund','handoff'), version='2026-10-30'),
     Article('savings-fees', 'Savings account fees', 'The fictional DemoBank Everyday Savings account has no monthly account fee (SGD 0). A fall-below fee of SGD 2 per month applies when the average daily balance in a month is below SGD 1,000. These are synthetic demo terms, not a live bank price list.', ('savings','saving','acc','monthly fee','fee','fall-below','minimum balance'), version='2026-10-24'),
     Article('app-login-recovery', 'Mobile app login recovery', 'If you are locked out of the mobile app: 1. Close and reopen the official app and check that it is updated. 2. On the sign-in screen choose Forgot password and follow the steps; a one-time code is sent only to your registered phone. 3. Enter that code only in the official app, never in chat, email or a phone call. 4. If the app says your access is locked after several attempts, wait for the stated time or use the official app’s Help service to unlock it. 5. If you did not try to sign in yourself, treat it as a security issue and contact your bank through its official app or website. This chat never needs your password, PIN or one-time code. If you received a one-time code (OTP) by SMS that you did not request, someone else may have tried to sign in to your account with your details. If the app then says your account is locked for your security, the lock is protecting you: it stops further sign-in attempts and is not a penalty. If card charges you do not recognise appeared around the same time, the two are likely linked; report both to the bank. Reset your password only inside the official DemoBank app with Forgot password. Never use a link in an SMS, email or chat message, even one that looks like it is from DemoBank. Never share a one-time code with anyone, including callers, bank staff and this chat; DemoBank never asks for it. This chat cannot see sign-in attempts, devices or where a sign-in came from.', ('locked','locked out','lockout','app','mobile','login','log in','forgot password','unlock','otp','one-time code','sms','account locked'), version='2026-10-27'),
+    Article('home-loans', 'Home loans', 'The fictional DemoBank offers home loans to buy a private property or HDB flat, or to refinance an existing home loan. A home loan is secured on the property and repaid in monthly instalments over an agreed term. Interest rates, fees, maximum loan amounts and loan-to-value limits are not supplied in this demo. Applicants generally need to be at least 21 years old and provide identification, proof of income (for example payslips, tax assessments or, if self-employed, business accounts) and the option to purchase or sales agreement for the property. To apply in this demo, use Loans in the official DemoBank app or website, or ask your relationship manager. The bank assesses each application and makes the final decision; the assistant cannot confirm eligibility, approval, rates or disbursement dates. This is general information, not advice.', ('home loan','housing loan','mortgage','hdb loan','property loan','refinance','home'), version='2026-10-31'),
+    Article('personal-loans', 'Personal loans', 'The fictional DemoBank offers unsecured personal loans for planned expenses such as renovation, education or a wedding, repaid in fixed monthly instalments over an agreed term. Interest rates, fees and maximum loan amounts are not supplied in this demo. Applicants generally need to be at least 21 years old, have a regular income and provide identification and proof of income. To apply in this demo, use Loans in the official DemoBank app or website, or ask your relationship manager. The bank assesses each application and makes the final decision; the assistant cannot confirm eligibility, approval, rates or disbursement dates. Borrow only what you can repay. This is general information, not advice.', ('personal loan','renovation loan','education loan','wedding loan','unsecured loan','personal'), version='2026-10-31'),
     Article('car-loans', 'Car loans', 'The fictional DemoBank offers car loans for new and used cars, repaid in fixed monthly instalments over an agreed term. A car loan is usually secured on the car. Interest rates, fees and maximum loan amounts are not supplied in this demo. Applicants generally need to be at least 21 years old, have a regular income and provide identification and proof of income. Meeting these general points does not mean an application will be approved. The bank makes the final decision on every application after its own checks. Apply through the official DemoBank app or website under Loans, then Car loan, or ask a relationship manager. The chatbot cannot submit an application or promise approval. This is general information, not advice or a contract.', ('car loan','car','auto loan','vehicle','car financing'), version='2026-10-24'),
     Article('unrecognised-charge', 'Unrecognised card charge', 'If you do not recognise a card charge, act now: 1. Call the official fraud line printed on the back of your card, or use the report function in the official app. 2. Freeze the card in the official app if it offers that control. 3. Check your other recent transactions. 4. Never share your PIN, password, one-time code or full card number. When you are signed in, the assistant passes the charges to the fraud team as urgent and gives you a reference to follow in My requests. The fraud team contacts you, blocks the card if needed and reviews the charges. The assistant cannot block a card, investigate, decide or reverse a charge. Several small charges from the same merchant shortly before a larger one can be a sign that someone is testing a stolen card number. A pattern like this is a reason to check the charges with the bank, not proof of fraud. Include every charge you do not recognise when you report them. Only the bank blocks or cancels a card. A block stops new card payments but does not cancel the card or reverse any charge. Identity verification and permanent cancellation are done by bank staff. After staff confirm the card should be cancelled, the bank issues a replacement card with a new number to your registered address.', ('unrecognised','unrecognized','unfamiliar','dont recognise','don’t recognise','not mine','suspicious','fraud','charge','replacement card','card testing','small charges'), version='2026-10-30'),
     Article('overseas-transfers', 'Sending money overseas', 'In this demo, you send money overseas from the official DemoBank app or website: choose Pay and transfer, then Overseas transfer, add the recipient (name, bank, SWIFT/BIC code and account number or IBAN, and their address), choose the currency and amount, and check the fees and exchange rate shown before you confirm. Overseas (telegraphic) transfers usually arrive within one to three business days, depending on the countries and banks involved. Send only to people you know, and never because someone in a call or message tells you to. Large transfers, transfers to a trust or company, or moving funds between countries can be discussed with your relationship manager. The assistant cannot send or confirm a transfer. These are synthetic demo terms, not a live bank service standard.', ('overseas transfer','international transfer','send money overseas','send money abroad','telegraphic','swift','wire transfer','remittance'), version='2026-10-30'),
@@ -82,11 +85,61 @@ INDEX = {a.id: a for a in ARTICLES}
 # Memory-mode mirror of approved kb.facts (migration 0055): value, unit, article.
 FACTS = {'savings.fall_below_threshold': (1000, 'SGD', 'savings-fees')}
 
+# Lightweight lexical + semantic-alias retrieval for the approved *local* KB.
+# No unchecked web answers and no external vector index are introduced.
+# The database-backed knowledge RPC remains the authoritative store in DB mode.
+ALIASES={
+    'statement':('statement','e-statement','download','pdf','account document','bank record'),
+    'card':('card','credit','plastic','visa','mastercard'),
+    'limit':('limit','ceiling','maximum','spending allowance'),
+    'fees':('fee','charge','cost','pricing','monthly charge'),
+    'loan':('loan','borrow','financing','mortgage'),
+    'login':('login','log in','sign in','access','locked out','password'),
+    'transaction':('transaction','payment','transfer','purchase','spending'),
+    'fraud':('fraud','unrecognised','unauthorised','suspicious','stolen','scam'),
+    'appointment':('meeting','appointment','book','schedule','calendar'),
+    'compliance':('compliance','review','kyc','documents','notice'),
+}
+WORDS=re.compile(r"[a-z0-9]+")
+STOP={'the','what','when','how','can','could','please','would','about','for','this','that',
+      'and','your','with','from','into','which','there','my','i','you','me','to','of','a','an',
+      'is','are','do','does','it','on','in','if','be','want','need','get','have','where'}
+
+
+def terms(text: str) -> set[str]:
+    """Index natural wording, including aliases and spelling variants, without an LLM call."""
+    query=text.casefold()
+    for typo,word in {'crad':'card','balnce':'balance','acount':'account','transction':'transaction','laon':'loan',
+                      'statment':'statement','credt':'credit','wats':'what is'}.items():
+        query=re.sub(r'\b'+typo+r'\b',word,query)
+    tokens={word for word in WORDS.findall(query) if len(word)>2 and word not in STOP}
+    for concept,phrases in ALIASES.items():
+        if any(re.search(r'(?<!\w)'+re.escape(alias)+r'(?!\w)',query) for alias in phrases):
+            tokens.add(concept)
+    return tokens
+
+
 def search(text: str) -> list[Article]:
-    query = text.lower()
-    for typo,word in {'crad':'card','balnce':'balance','acount':'account','transction':'transaction','laon':'loan'}.items():query=query.replace(typo,word)
-    scores = [(sum(bool(re.search(r'\b'+re.escape(k)+r's?\b',query)) for k in a.keywords),a) for a in ARTICLES if is_current(a)]
-    return [a for score,a in sorted(scores,key=lambda x:x[0],reverse=True) if score][:4]
+    """Rank reviewed sources using keyword phrases, meaning aliases and lexical overlap.
+
+    Exact approved phrases win over fuzzy matches, which prevents broad matching
+    from displacing product-specific policy articles. No evidence means no result.
+    """
+    query=text.casefold()
+    qterms=terms(query)
+    scored=[]
+    for article in ARTICLES:
+        if not is_current(article):continue
+        direct=sum(bool(re.search(r'(?<!\w)'+re.escape(keyword)+r's?(?!\w)',query)) for keyword in article.keywords)
+        # Keep broad matching subordinate to directly named product/term guidance.
+        keyterms=terms(' '.join(article.keywords)+' '+article.title)
+        overlap=len(qterms & keyterms)
+        # Similar wording can help retrieve a relevant FAQ without inventing facts.
+        fuzzy=sum(1 for token in qterms-keyterms if len(token)>4 and
+            any(SequenceMatcher(None,token,candidate).ratio()>=.88 for candidate in keyterms))
+        score=direct*25 + overlap*2 + fuzzy
+        if score>0:scored.append((score,direct,article))
+    return [article for _,_,article in sorted(scored,key=lambda row:(row[0],row[1]),reverse=True)[:4]]
 
 def source(article: Article) -> dict:
     return {'id':article.id,'title':article.title,'url':f'/knowledge/{article.id}','version':article.version,'publisher':article.publisher,'reference_url':article.reference_url,'checked_on':article.checked_on,'review_due':article.review_due,'current':is_current(article)}

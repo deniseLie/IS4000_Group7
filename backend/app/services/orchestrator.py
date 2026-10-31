@@ -33,13 +33,15 @@ from app.schemas.disputes import DisputeItem,StoredDisputeTarget
 from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
 from app.schemas.knowledge import KnowledgeQuery,KnowledgeSection,SectionKey
-from app.services import actions,audit,case_summary,customer_data,fraud_reports,kb, llm_gateway, prompts,rm_handover,tools,typos,workflow_store
+from app.services import actions,audit,case_summary,customer_data,fraud_reports,kb, llm_gateway, prompts,rm_handover,tools,typos,workflow_store,limit_context,client_intents
+from app.services.llm_gateway import LLMError
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
 from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
+from app.services.retrieval_context import retrieval_query
 from app.services.knowledge import INDEX,source
 from app.services.guardrail import FRAUD
 from app.services.authorization import require_permission
@@ -144,9 +146,38 @@ def simple_issue(question: str, language: str) -> PlannedIssue | None:
 
 
 def route_issues(issues: list[PlannedIssue]) -> list[PlannedIssue]:
-    """Apply deterministic topic boundaries to planner questions without modifying the plan input."""
-    return [PlannedIssue(domain=topic_domain(issue.question) or issue.domain,question=issue.question) for issue in issues]
+    """Trust model classification except for clear security and explicit human routing.
 
+    Ordinary product keywords must not override a context-aware LLM decision.
+    Deterministic restrictions still take priority for fraud/login and explicit
+    requests to an RM, independent of the model's confidence.
+    """
+    routed=[]
+    for issue in issues:
+        text=typos.normalise(issue.question)
+        if FRAUD.search(text) and not (LOGIN.search(text) and RELATED.search(text)):
+            domain='fraud'
+        elif LOGIN.search(text):
+            domain='retail'
+        elif RM_REQUEST.search(text) or rm_handover.needs_person(text):
+            domain='relationship'
+        else:
+            domain=issue.domain
+        routed.append(PlannedIssue(domain=domain,question=issue.question))
+    return routed
+
+
+def critical_route(question: str,language: str) -> PlannedIssue | None:
+    """Only urgent/safety/greeting questions can bypass LLM intent understanding."""
+    if language!='English' or MULTIPLE.search(question):return None
+    if re.fullmatch(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*',question,re.I):
+        return PlannedIssue(domain='smalltalk',question=question)
+    probe=typos.normalise(question)
+    if FRAUD.search(probe):return PlannedIssue(domain='fraud',question=question)
+    if LOGIN.search(probe):return PlannedIssue(domain='retail',question=question)
+    if RM_REQUEST.search(probe) or rm_handover.needs_person(probe):
+        return PlannedIssue(domain='relationship',question=question)
+    return None
 
 async def plan(state: Turn) -> PlanUpdate:
     req = state['request']
@@ -155,20 +186,44 @@ async def plan(state: Turn) -> PlanUpdate:
         return {'issues':[PlannedIssue(domain='document' if req.record_context.kind=='document' else 'compliance',question=question)]}
     # A plain yes to the charge list we just showed (CR12): report exactly those charges, no planner call.
     if req.mode=='personal' and fraud_reports.pending(state['history']):return {'issues':[PlannedIssue(domain='fraud',question=question)]}
+    # A request-status question is a read, even in an active card-limit draft.
+    # This must precede limit-context continuation and the LLM planner, so a
+    # bank-decision question never starts another limit-change application.
+    if req.mode=='personal' and client_intents.request_status(question):
+        return {'issues':[PlannedIssue(domain='retail',question=question)]}
     # A reply to our "which card do you mean?" goes back to the card answer, however short ("the travel one").
-    if req.mode=='personal' and card_answers.awaiting_card(state['history']):return {'issues':[PlannedIssue(domain='retail',question=question)]}
+    # Her answer to "here's what I'd send to your RM" (CR8): carried out by rules, never re-planned.
+    if req.mode=='personal' and (lost:=fraud_reports.lost_pending(state['history'])):
+        return {'issues':[PlannedIssue(domain='fraud',question=lost[0])]}
+    if req.mode=='personal' and (choice:=rm_handover.pending_choice(state['history'])):
+        return {'issues':[PlannedIssue(domain='relationship',question=choice[0])]}
+    if req.mode=='personal' and not MULTIPLE.search(question) and (card_answers.awaiting_card(state['history']) or limit_context.active(state['history'])):
+        return {'issues':[PlannedIssue(domain='retail',question=question)]}
     # Picking or confirming a meeting time we just offered goes back to the meeting flow (CR17).
     if req.mode=='personal' and meeting_answers.awaiting(state['history']):return {'issues':[PlannedIssue(domain='relationship',question=question)]}
-    single = simple_issue(question, req.language)
-    if single is not None:return {'issues':[single]}
+    # Model-first for everyday client intents, including multi-intent requests and
+    # follow-ups; avoid a brittle keyword-to-answer mapping. Preserve the old
+    # rule-based mode for offline comparison and constrained deployments.
+    single=simple_issue(question,req.language)
+    critical=critical_route(question,req.language)
+    if critical is not None:return {'issues':[critical]}
+    if settings.client_intent_routing=='rules' and single is not None:return {'issues':[single]}
     pv = prompts.current('planner')
     schema = {'title':'issue_plan','type':'object','additionalProperties':False,'properties':{
         'issues':{'type':'array','items':{'type':'object','additionalProperties':False,'properties':{
             'domain':{'type':'string','enum':['retail','fraud','compliance','document','relationship','smalltalk']},
             'question':{'type':'string'}},'required':['domain','question']}}},'required':['issues']}
-    result = await llm_gateway.call(pv, pv['system'], [(m.role,m.content) for m in state['history']], schema)
-    draft = PlannerDraft.model_validate(result.data)
+    try:
+        result = await llm_gateway.call(pv, pv['system'], [(m.role,m.content) for m in state['history']], schema)
+        draft = PlannerDraft.model_validate(result.data)
+    except (LLMError,ValidationError) as error:
+        # A clear, single-domain utterance may safely fall back to classification
+        # rules if the planner is unavailable. Never fabricate an answer.
+        if single is None:raise
+        log_event('intent_fallback',reason=type(error).__name__,domain=single.domain)
+        return {'issues':[single]}
     issues = route_issues(draft.issues) if req.language=='English' else draft.issues
+    issues = client_intents.reconcile(question,issues) if req.language=='English' else issues
     return {'issues':issues}
 
 
@@ -184,6 +239,15 @@ def prioritise(state: Turn) -> PriorityUpdate:
     risk=state['risk']
     issues=state['issues']
     request=state.get('request')
+    lost=fraud_reports.lost_pending(state.get('history') or []) if request is not None and request.mode=='personal' else None
+    if lost and [issue.domain for issue in issues]==['fraud']:
+        return {'plan':TaskPlan(tasks=[Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',
+            entities={'question':lost[0],'lost_card':'report' if lost[1] else 'declined'})])}
+    chosen=rm_handover.pending_choice(state.get('history') or []) if request is not None and request.mode=='personal' else None
+    if chosen and [issue.domain for issue in issues]==['relationship']:
+        question,choice,reference=chosen
+        return {'plan':TaskPlan(tasks=[Task(task_id='t1',domain='relationship',intent='answer_question',priority='P2',
+            entities={'question':question,'handover':'rm','handover_choice':choice,'handover_reference':reference or ''})])}
     confirmations=fraud_reports.pending(state.get('history') or []) if request is not None and request.mode=='personal' else []
     if confirmations and [issue.domain for issue in issues]==['fraud']:
         # One urgent report per confirmed card; the charges come from our own previous list, never from the model.
@@ -200,7 +264,7 @@ def prioritise(state: Turn) -> PriorityUpdate:
         priority=task_priority(issue), entities={'question':issue.question,
             **({'linked':'card_fraud'} if fraud_reported and issue.domain=='retail' and LOGIN.search(issue.question) else {}),
             # Advice, fee/rate negotiation, complaints and asks for the RM go to the RM; the model never answers them.
-            **({'handover':'rm'} if issue.domain!='fraud' and rm_handover.needs_person(issue.question) else {})})
+            **({'handover':'rm'} if issue.domain!='fraud' and rm_handover.needs_person(issue.question) and rm_handover.needs_person(risk.redacted_message) else {})})
         for i,issue in enumerate(issues)]
     return {'plan':TaskPlan(tasks=tasks)}
 
@@ -212,7 +276,7 @@ def task_evidence(task: Task, history: list[Message], language: str) -> list[Evi
     return [Evidence(id=a.id, text=a.content, publisher=a.publisher, scope=a.notice, source=Source.model_validate(source(a))) for a in articles]
 
 
-async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
+async def database_evidence(task: Task,ctx: RequestContext,history: list[Message] | None=None) -> list[Evidence]:
     """Retrieve only the latest planned question; never replace a no-match with unrelated articles.
 
     Goes through the tool layer, so with TOOL_TRANSPORT=mcp this is an MCP tools/call (F21)."""
@@ -220,6 +284,11 @@ async def database_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     # The supervisor retrieves shared evidence; this is not an agent-initiated tool call.
     found=await tools.call('knowledge_search',{'query':query.query,'k':query.k},ctx)
     sections=TypeAdapter(list[KnowledgeSection]).validate_python(found['items'])
+    if not sections and history:
+        expanded=retrieval_query(query.query,history)
+        if expanded!=query.query:
+            fallback=await tools.call('knowledge_search',{'query':expanded,'k':query.k},ctx)
+            sections=TypeAdapter(list[KnowledgeSection]).validate_python(fallback['items'])
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
 
 
@@ -256,8 +325,13 @@ def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
 
 async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
     """One independent task owns its evidence; only the later proposal node can write actions."""
-    if settings.knowledge_store=='database':
-        evidence=await database_evidence(task,ctx)
+    # Bank-request status is sourced only from customer-owned ticket records,
+    # and must not depend on the product knowledge database being available.
+    status_lookup=(state['request'].mode=='personal' and task.domain=='retail' and
+        client_intents.request_status(str(task.entities.get('question',''))))
+    if status_lookup:evidence=[]
+    elif settings.knowledge_store=='database':
+        evidence=await database_evidence(task,ctx,state['history'])
     else:evidence=task_evidence(task,state['history'],state['request'].language)
     if state['request'].mode=='personal':
         known={item.id for item in evidence}
@@ -296,12 +370,22 @@ def can_hand_over(ctx: RequestContext) -> bool:
 async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
     """Bound the whole task and withhold expected provider/data failures without releasing its evidence."""
     agent=AGENT_FOR[task.domain]
+    if task.entities.get('lost_card'):
+        # Her answer to our lost-card offer (CR12): no model call; the report is idempotent per turn.
+        if task.entities['lost_card']=='report':
+            report=await fraud_reports.report_lost_card(str(task.entities.get('question','')),ctx,
+                rm_handover.task_key('lost_card',ctx.case_id))
+            text=report.reply()
+        else:text=fraud_reports.LOST_DECLINED
+        return {'result':AgentResult(task_id=task.task_id,agent='fraud',status='needs_human',answer_kind='conversation',text=text),
+            'evidence':[],'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
     if task.entities.get('fraud_confirmed'):
         result,proposal,dispute=await fraud_reports.confirmed(task,ctx)
         return {'result':result,'evidence':[],'proposal':proposal,'dispute':dispute,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
     if task.entities.get('handover')=='rm':
         # No model call: a fixed, polite line; escalate_validation records the handover and adds the reference.
         text=rm_handover.SORRY if can_hand_over(ctx) else rm_handover.GUEST
+        if task.entities.get('handover_choice'):text='Okay.' if task.entities['handover_choice']=='cancel' else 'Thank you.'
         return {'result':AgentResult(task_id=task.task_id,agent=agent,status='needs_human',answer_kind='conversation',text=text),
             'evidence':[],'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
     try:
@@ -313,6 +397,15 @@ async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
         fields={'task_id':task.task_id,'agent':agent,'error_type':type(error).__name__,'db_code':code}
         log_event('agent_failed',**fields)
         audit.add('agent','agent.failed','failed',details=fields)
+        # A status lookup is a read, not a model-generated banking answer.
+        # Explain unavailability without guessing approval or creating an RM ticket.
+        if (state['request'].mode=='personal' and task.domain=='retail' and
+                client_intents.request_status(str(task.entities.get('question','')))):
+            text=("I couldn't retrieve your request status right now. Please check My Requests "
+                  "or try again later. I can't confirm an approval without a bank-recorded decision.")
+            return {'result':AgentResult(task_id=task.task_id,agent=agent,status='ok',
+                answer_kind='conversation',text=text),'evidence':[],
+                'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
         text=fraud.URGENT+' '+WITHHELD if task.domain=='fraud' else WITHHELD
         return {'result':AgentResult(task_id=task.task_id,agent=agent,status='error',text=text),'evidence':[],
             'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='validation',prompt_id=task_prompt_id(task,state['request']))}
@@ -561,18 +654,33 @@ async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> 
     receipt_source=lambda task_id:Source(id='action-receipt-'+task_id,title='Recorded handover to your relationship manager',url=None,version='v1',publisher='DemoBank action ledger')
     for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True):
         # Rule-matched questions, and answers where the agent itself said a person is needed (not fraud: it has its own handoffs).
-        asked=task.entities.get('handover')=='rm' or (result.status=='needs_human' and meta.origin=='ai' and task.domain!='fraud'
-            and not rm_handover.MEETING.search(str(task.entities.get('question',''))))
+        # A model's needs_human status is guidance, NOT permission to open or
+        # propose an RM ticket. Only an explicitly recognised RM request can.
+        asked=task.entities.get('handover')=='rm'
         if not asked:continue
         task_id=rm_handover.task_key(task.task_id+'_rm',owned.turn.turn_id if owned is not None else ctx.case_id)
-        handover=await rm_handover.route(str(task.entities.get('question','')),task.priority,ctx,owned,task_id,
-            history=state['history'],document_ids=selected_documents(state))
+        question=str(task.entities.get('question',''))
+        if task.entities.get('handover_choice'):
+            # Her choice on our preview: the summary uses the chat as it was when she saw the preview.
+            text=await rm_handover.choose(question,str(task.entities['handover_choice']),task.entities.get('handover_reference') or None,
+                ctx,owned,task_id,history=state['history'][:-2],document_ids=selected_documents(state))
+            sources=[receipt_source(task_id)] if text not in (rm_handover.FAILED,) and task.entities['handover_choice']!='cancel' else []
+        elif rm_handover.confirm_first():
+            text,sources=await rm_handover.offer(question,state['history'],ctx),[]
+        else:
+            handover=await rm_handover.route(question,task.priority,ctx,owned,task_id,history=state['history'],document_ids=selected_documents(state))
+            text,sources=handover.reply(),[] if handover.failed else [receipt_source(task_id)]
         sections.append(AnswerSection(task_id=task.task_id+'_decision',domain=task.domain,priority=task.priority,answer_kind='conversation',
-            answer=handover.reply(),sources=[] if handover.failed else [receipt_source(task_id)],needs_human=True,response_origin='safety',prompt_version=None))
+            answer=text,sources=sources,needs_human=True,response_origin='safety',prompt_version=None))
     failed=[task for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True)
         if result.status=='error' and meta.origin=='validation']
     if not failed:return {'decision_sections':sections}
     task=failed[0]
+    if not rm_handover.validation_handoff():
+        # Fraud keeps its urgent steps and charge list; the RM suggestion would send her the wrong way (CR12).
+        if task.domain=='fraud':return {'decision_sections':sections}
+        # CR9: a general answer never creates a ticket by itself. She can rephrase or ask for a person (with a preview).
+        return {'decision_sections':sections}  # Error section already contains the safe fallback. Do not show it twice.
     task_id='validation_handoff'
     command=ActionCommand(command_id=uuid5(ctx.case_id,task_id+':handoff.create'),type='handoff.create',
         target={'reason':'general_support','priority':task.priority,

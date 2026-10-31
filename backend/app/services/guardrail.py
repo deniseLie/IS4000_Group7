@@ -17,6 +17,12 @@ FRAUD = re.compile(
     r"|\b(?:don['’]?t|do not|didn['’]?t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b.{0,80}\b(?:charge|transaction|payment|transfer)s?\b"
     r"|\b(?:charge|transaction|payment|transfer)s?\b.{0,80}\b(?:don['’]?t|do not|didn['’]?t|did not)\s+(?:recognise|recognize|authorise|authorize|make)\b"
     r"|\b(?:charge|transaction|payment)s?\b.{0,40}\bnot mine\b"
+    # Informal reports of a card being used by somebody else, even without the word "transaction".
+    r"|\b(?:someone|somebody|another person|a stranger)\s+(?:has\s+(?:been\s+)?|had\s+|is\s+|might\s+have\s+|may\s+have\s+|could\s+have\s+|was\s+)?(?:used|using|spent\s+on|made\s+(?:purchases|payments)\s+(?:with|on))\b.{0,55}\b(?:my|our)\s+(?:credit\s+|debit\s+)?card\b"
+    r"|\b(?:my|our)\s+(?:credit\s+|debit\s+)?card\s+(?:has\s+been\s+|was\s+|is\s+)?(?:used|being\s+used|charged)\b.{0,65}\b(?:without\s+(?:my\s+)?(?:permission|consent)|by\s+(?:someone|somebody|another\s+person)|not\s+(?:me|mine))\b"
+    r"|\b(?:someone|somebody)\s+(?:has\s+|might\s+have\s+)?(?:used|using)\s+(?:my\s+)?(?:credit\s+|debit\s+)?card\b"
+    r"|\b(?:my|our)\s+(?:credit\s+|debit\s+)?card\b.{0,55}\b(?:without\s+(?:my\s+)?permission|compromised|misused)\b"
+    r"|\bi\s+wasn['’]?t\s+(?:even\s+)?(?:there|at\s+(?:that\s+)?(?:shop|store|place))\b.{0,75}\b(?:charge|payment|transaction)s?\b"
     # An alibi after a charge ("why is there a $2,400 charge?? i was in singapore the whole night") disowns it too.
     r"|\b(?:charge|transaction|payment)s?\b.{0,80}\bi\s+(?:was\s+(?:in|at)\b[^.!?]{0,40}\b(?:whole|all)\s+(?:night|day|evening|weekend)"
     r"|wasn['’]?t\s+(?:even\s+)?(?:there|overseas|abroad))\b", re.I)

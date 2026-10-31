@@ -39,6 +39,7 @@ ADVICE=re.compile(
     r"|\bwhich\s+(?:funds?|stocks?|shares|bonds?|investments?|insurance|policy)\b",re.I)
 FEES=re.compile(
     r"\b(?:waive|waiver|negotiate|reverse|refund)\b[^.?!]{0,30}\b(?:fees?|charges?|interest|rates?)\b"
+    r"|\b(?:waive|waiver)\b"
     r"|\b(?:lower|reduce|better|preferential|special)\s+(?:my\s+|the\s+)?(?:interest\s+)?(?:rates?|fees?|pricing)\b",re.I)
 COMPLAINT=re.compile(r"\b(?:complain|complaint|unhappy with (?:the )?(?:service|bank))\b",re.I)
 CONTACT=re.compile(
@@ -114,24 +115,120 @@ def compact(text: str) -> str:
     return ' '.join(redact(text)[0].split())
 
 
+# One-tap replies (booking, card choice, confirmations) carry no context for the RM.
+BUTTON=re.compile(r'^(?:Book .+|Confirm booking|Send to my RM|Cancel|Open a new request|Add to TCK-\d+|Yes, report it|Yes, report my card|No|'
+    r'Both cards|.+ ending \d{4}|more times)$',re.I)
+
+
 def earlier_messages(question: str,history: Sequence[Message]) -> list[str]:
     """The client's own earlier messages in this chat (never the assistant's replies or records), newest last."""
-    messages=[compact(item.content) for item in history if item.role=='user']
+    messages=[compact(item.content) for item in history if item.role=='user' and not BUTTON.match(item.content.strip())]
     if messages and messages[-1]==compact(question):messages=messages[:-1]
     return [item for item in messages if item][-3:]
 
 
-def summary_for(question: str,history: Sequence[Message]=()) -> str:
+def summary_for(question: str,history: Sequence[Message]=(),context: str='') -> str:
     """Topic, the client's redacted question and, room permitting, her earlier messages; at most 500 characters,
     so the whole summary fits the ticket the RM opens (support.tickets.summary)."""
     text=compact(question)[:QUESTION_LIMIT] or 'The client asked to speak with their relationship manager.'
     summary=f'[{topic_for(question)}] Client question for you: {text}'
+    if context and len(summary)+len(context)+3<=SUMMARY_LIMIT-60:summary+=' | '+context
     earlier=[item if len(item)<=EARLIER_LIMIT else item[:EARLIER_LIMIT-1]+'…' for item in earlier_messages(question,history)]
     while earlier:
         candidate=summary+' | Earlier in this chat: '+' / '.join(f'“{item}”' for item in earlier)
         if len(candidate)<=SUMMARY_LIMIT:return candidate
         earlier=earlier[1:]
     return summary[:SUMMARY_LIMIT]
+
+
+import os
+WITHHELD=('Try asking in a different way, or say “talk to a person” and I’ll show you what I would send to your relationship '
+    'manager before anything is sent.')
+
+
+def confirm_first() -> bool:
+    """CR8: the client confirms a handover before it is sent. RM_HANDOVER_CONFIRM=0 records at once (used by native tests)."""
+    return os.getenv('RM_HANDOVER_CONFIRM','1')!='0'
+
+
+def validation_handoff() -> bool:
+    """CR9: withheld answers create no ticket unless VALIDATION_HANDOFF=1 (the original F19 behaviour, kept for its tests)."""
+    return os.getenv('VALIDATION_HANDOFF')=='1'
+
+
+# Confirm before sending (CR8, CR9) ---------------------------------------------------------------------------------
+# The client sees exactly what would go to her RM and chooses: send it, add it to her open request on the same topic,
+# open a new request anyway, or cancel. Nothing is recorded until she chooses; her choice is read back by rules.
+PREVIEW_MARK='Here’s what I’d send to your relationship manager:'
+SEND_REPLY='Send to my RM'
+NEW_REPLY='Open a new request'
+CANCEL_REPLY='Cancel'
+QUOTED=re.compile(r'• Your question: “(.+?)”')
+OFFERED=re.compile(r'“Add to (TCK-[0-9]{6,})”')
+SEND=re.compile(r'^\s*(?:yes|yep|ok|okay|sure)?[,.! ]*(?:please )?(?:send(?: it)?(?: to (?:my )?(?:rm|relationship manager))?|go ahead)\b',re.I)
+ADD=re.compile(r'^\s*(?:yes[,.! ]*)?add\b',re.I)
+NEW=re.compile(r'^\s*(?:open|create|raise|make|start)\s+(?:a\s+)?(?:new|separate|another)\b|^\s*new (?:request|ticket)\b',re.I)
+CANCEL=re.compile(r"^\s*(?:cancel|no|nope|don['’]?t send|do not send|never ?mind|nvm|forget it)\b",re.I)
+
+
+def preview(question: str,history: Sequence[Message]=(),existing: str | None=None,context: str='') -> str:
+    """What would be sent, in the client's own (redacted) words; the choices to make are fixed phrases."""
+    text=compact(question)[:QUESTION_LIMIT]
+    if not text or (len(text)<60 and re.match(r'^\s*(?:can i |i want to |i need to |please )?(?:talk|speak|connect|chat)\b',text,re.I)):
+        text='You asked to speak with your relationship manager.'
+    lines=[PREVIEW_MARK,f'• Topic: {topic_for(question)}',f'• Your question: “{text}”']
+    earlier=[item if len(item)<=EARLIER_LIMIT else item[:EARLIER_LIMIT-1]+'…' for item in earlier_messages(question,history)]
+    if earlier:lines.append('• Earlier in this chat: '+' / '.join(f'“{item}”' for item in earlier))
+    if context:lines.append(f'• {context}')
+    if existing:
+        lines.append(f'You already have an open request about this ({existing}). Reply “Add to {existing}” to add this question to it, '
+            f'“{NEW_REPLY}” to send it separately, or “{CANCEL_REPLY}”.')
+    else:
+        lines.append(f'Reply “{SEND_REPLY}” to send it, or “{CANCEL_REPLY}” if you’d rather not. Nothing is sent until you choose.')
+    return '\n'.join(lines)
+
+
+def pending_choice(history: Sequence[Message]) -> tuple[str,str,str | None] | None:
+    """(question, send|add|new|cancel, offered reference) when her latest message answers our preview."""
+    if len(history)<2 or history[-1].role!='user' or history[-2].role!='assistant' or PREVIEW_MARK not in history[-2].content:return None
+    found=QUOTED.search(history[-2].content)
+    if not found:return None
+    reply=history[-1].content
+    offered=OFFERED.search(history[-2].content)
+    reference=offered.group(1) if offered else None
+    if CANCEL.search(reply):choice='cancel'
+    elif ADD.search(reply) and reference:choice='add'
+    elif NEW.search(reply):choice='new'
+    elif SEND.search(reply):choice='new' if reference else 'send'
+    else:return None
+    return found.group(1),choice,reference
+
+
+async def offer(question: str,history: Sequence[Message],ctx: RequestContext) -> str:
+    """The preview; an open RM ticket on the same topic is offered rather than silently reused."""
+    try:existing=await open_ticket_for(topic_for(question),ctx)
+    except HANDOVER_ERRORS:existing=None
+    return preview(question,history,existing,await open_requests_line(ctx))
+
+
+async def choose(question: str,choice: str,reference: str | None,ctx: RequestContext,owned: OwnedWorkflow | None,task_id: str,
+        history: Sequence[Message]=(),document_ids: Sequence[UUID]=()) -> str:
+    """Carries out her choice. history is the chat before our preview, so the summary matches what she was shown."""
+    if choice=='cancel':return 'No problem, nothing has been sent to your relationship manager.'
+    try:
+        if choice=='add' and reference:
+            await follow_up(reference,question,ctx)
+            if document_ids:await attach(reference,document_ids,ctx)
+            return handed_over(reference,reused=True)
+        done=await recorded(question,'P2',ctx,task_id)
+        if done is not None:return done.reply()
+        _,new_reference,created=await hand_over(question,'P2',ctx,owned,task_id,history)
+        if not created:new_reference=await open_separate(summary_for(question,history,await open_requests_line(ctx)),ctx)
+        if new_reference and document_ids:await attach(new_reference,document_ids,ctx)
+        return handed_over(new_reference)
+    except HANDOVER_ERRORS as error:
+        log_event('handover_failed',error_type=type(error).__name__)
+        return FAILED
 
 
 def task_key(name: str,turn: UUID) -> str:
@@ -157,6 +254,20 @@ class Handover:
 
     def reply(self) -> str:
         return FAILED if self.failed else handed_over(self.reference,self.reused)
+
+
+STATUS_WORDS={'submitted':'sent','in_review':'in review','waiting_on_client':'waiting on client'}
+
+
+async def open_requests_line(ctx: RequestContext) -> str:
+    """CR8: previous actions and ticket status for the RM: her open requests (reference, topic or category, status)."""
+    try:
+        read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
+        tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    except HANDOVER_ERRORS:return ''
+    open_items=[f'{ticket.reference} {topic_of(ticket.summary) or ticket.category_label} ({STATUS_WORDS.get(ticket.status,ticket.status)})'
+        for ticket in tickets if ticket.status in OPEN][:3]
+    return ('Open requests: '+'; '.join(open_items)) if open_items else 'No other open requests'
 
 
 async def ticket_reference(handoff_id: UUID,ctx: RequestContext) -> str | None:
@@ -219,10 +330,10 @@ async def attach(reference: str,document_ids: Sequence[UUID],ctx: RequestContext
     return int(response.data.get('attached') or 0)
 
 
-def command_for(question: str,priority: Priority,ctx: RequestContext,task_id: str,history: Sequence[Message]=()) -> ActionCommand:
+def command_for(question: str,priority: Priority,ctx: RequestContext,task_id: str,history: Sequence[Message]=(),context: str='') -> ActionCommand:
     if ctx.case_id is None:raise ActionIntegrityError('A handover needs an owned conversation case')
     return ActionCommand(command_id=uuid5(ctx.case_id,task_id+':handoff.create'),type='handoff.create',
-        target={'reason':'general_support','priority':priority,'summary':summary_for(question,history)},
+        target={'reason':'general_support','priority':priority,'summary':summary_for(question,history,context)},
         idempotency_key=f'{ctx.case_id}:{task_id}:handoff.create')
 
 
@@ -230,8 +341,8 @@ async def hand_over(question: str,priority: Priority,ctx: RequestContext,owned: 
         history: Sequence[Message]=()) -> tuple[Receipt,str | None,bool]:
     """One deduplicated handoff per task id (callers include the turn, so retries reuse it); returns its receipt,
     the RM ticket reference and whether the handoff was newly created (False: this chat already had one open)."""
-    command=command_for(question,priority,ctx,task_id,history)
     current=ctx.model_copy(update={'agent':None})
+    command=command_for(question,priority,ctx,task_id,history,await open_requests_line(current))
     if owned is not None:
         outcome=await actions.propose_for_workflow(command,task_id,owned,current)
         receipt=actions.receipt_for(outcome)
