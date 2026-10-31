@@ -1413,7 +1413,6 @@ small{font-size:max(12px,.83em)}
 .ticket-topic{display:inline-block;margin:.25rem 0 0;padding:.1rem .5rem;border-radius:999px;font-size:.75rem;background:rgba(127,127,127,.14)}
 .ticket-attachments{display:flex;align-items:center;gap:.35rem;font-size:.85rem;opacity:.85}
 
-
 /* Assistant inline service request — no drawer or composer-level generic button. */
 .inline-request-card{margin-top:16px;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff;line-height:1.5;box-shadow:0 2px 12px #00000008}
 .inline-request-title{display:flex;align-items:center;gap:10px;margin-bottom:14px}
@@ -1439,3 +1438,28 @@ small{font-size:max(12px,.83em)}
 .inline-request-receipt{padding:12px;border:1px solid #c4dbcb;border-radius:8px;background:#f1f7f2;font-size:12px}
 .inline-request-receipt p{margin:7px 0}
 @media(max-width:640px){.inline-request-card{padding:14px}.inline-request-fields{grid-template-columns:1fr}.inline-request-summary>div{grid-template-columns:minmax(90px,40%) minmax(0,1fr)}.inline-request-buttons{justify-content:stretch}.inline-request-buttons button{flex:1}}
+
+/* Team-only Quality page (LangSmith read-back) */
+.quality-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.quality-tabs button { padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }
+.quality-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; }
+.quality-toolbar select { max-width: 100%; margin-left: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+.quality-toolbar .bank-chat-logout { min-height: 32px; padding: 6px 12px; text-decoration: none; }
+.quality-meta, .quality-summary { margin: 4px 0 10px; color: var(--muted); font-size: 12px; }
+.quality-summary { color: var(--ink); font-weight: 600; }
+.quality-table-wrap { overflow-x: auto; }
+.quality-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.quality-table th, .quality-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.quality-table th { color: var(--muted); font-weight: 500; }
+.quality-row { cursor: pointer; }
+.quality-row:hover { background: rgba(0,0,0,.03); }
+.quality-detail td { background: rgba(0,0,0,.02); }
+.quality-status { display: inline-block; min-width: 44px; padding: 1px 8px; border-radius: 999px; font-size: 11px; text-align: center; background: #ececE4; color: var(--ink); }
+.quality-pass, .quality-success { background: #dcefdc; color: #1f5a1f; }
+.quality-fail, .quality-error { background: #f6dcd8; color: #8a2a1c; }
+.quality-skipped, .quality-n\/a { background: #ecece4; color: var(--muted); }
+.quality-checks, .quality-spans { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 4px; }
+.quality-span-type { display: inline-block; min-width: 44px; color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.quality-span-time { color: var(--muted); }
+.quality-answer { max-height: 240px; overflow: auto; white-space: pre-wrap; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 12px; }
+.link-button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }

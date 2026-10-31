@@ -47,7 +47,7 @@ The QA1 case set (F29): ten cases per persona, each in the agreed template. Mich
 - **Pass:** every line under *Pass criteria* holds and nothing under *Must not happen* occurs. A model answer can word things differently; judge the meaning.
 - **Record:** add a row to the run record at the end with the date, commit, result and LangSmith run link. Re-run a case after any fix that touches its path.
 - **Automated cover:** the tests listed under each case run with `TEST_DATABASE_LOCAL=1 TEST_DATA_API_LOCAL=1 pytest`. They check the data, rules and actions without a model; the chat wording needs the manual run.
-- **LangSmith:** `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset demobank-qa1-rm` uploads the cases (example ids come from the case ids, so re-running updates them). The scored runner (README §6 steps 3–5) is not built yet; until then, score S/C/T by hand from the LangSmith trace of a manual run and fill the run record.
+- **LangSmith:** `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset demobank-qa1-rm` uploads the cases (example ids come from the case ids, so re-running updates them). `python -m evaluation.langsmith_run --dataset demobank-qa1-client [--case C03] [--judge]` plays each ready case through the real app and scores S and T automatically (C with `--judge`); see README §6. Steps it cannot play (forms, uploads, other buttons) and the RM spec cases still need a manual run scored by hand from the LangSmith trace.
 
 The orchestrator steps are the 8 graph nodes: plan → prioritise → dispatch → propose_actions → review_actions → settle_actions → escalate_validation → compose (see [how-agents-run.md](../how-agents-run.md)).
 
