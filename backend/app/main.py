@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from starlette.exceptions import HTTPException
 
-from app.api import actions, auth, chat, consent, conversations, customer, documents, knowledge, notifications, relationship, tickets
+from app.api import actions, auth, chat, consent, conversations, customer, documents, knowledge, notifications, quality, relationship, tickets
 from app.core.config import settings
 from app.core.errors import http_error
 from app.core.gateway import GatewayMiddleware
@@ -38,6 +38,7 @@ app.include_router(notifications.router)
 app.include_router(customer.router)
 app.include_router(documents.router)
 app.include_router(tickets.router)
+app.include_router(quality.router)
 
 
 @app.get("/health")
