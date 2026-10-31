@@ -60,5 +60,16 @@ def test_summary_carries_the_clients_earlier_messages_within_the_ticket_limit() 
         Message(role='user',content='Can you waive the annual fee on my card?')]
     summary=rm_handover.summary_for('Can you waive the annual fee on my card?',history)
     assert summary.startswith('[Fees or rates] Client question for you: Can you waive the annual fee on my card?')
-    assert 'Earlier in this chat:' in summary and len(summary)<=500
+    assert 'Earlier in this chat:' not in summary and len(summary)<=500
     assert '4111 1111 1111 1111' not in summary and '5,169.60' not in summary  # redacted; never the assistant's replies
+
+
+def test_handover_preview_does_not_reuse_unrelated_earlier_private_topics():
+    from app.schemas.chat import Message
+    history=[Message(role='user',content='I want to cancel a card limit request.'),
+        Message(role='assistant',content='I can help.'),
+        Message(role='user',content='Please ask my RM about my account fees.')]
+    text=rm_handover.preview('Please ask my RM about my account fees.',history,context='Open requests: TCK-001234')
+    assert 'account fees' in text
+    assert 'card limit' not in text
+    assert 'TCK-001234' not in text

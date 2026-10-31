@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {limitRequestPrefill,nextStep,parseCategories,parseTicketResult,parseTicketTarget,parseTickets,requestFailed,ticketIntent,ticketResultMatches,ticketSummary,ticketTopic,limitSummary,isLimitWorkflowReply,isExistingRequestStatus} from './ticketData.js';
+import {limitRequestPrefill,nextStep,parseCategories,parseTicketResult,parseTicketTarget,parseTickets,requestFailed,ticketIntent,ticketResultMatches,ticketSummary,ticketTopic,limitSummary,isLimitWorkflowReply,isExistingRequestStatus,statementRequestPrefill} from './ticketData.js';
 
 const TICKET={ticket_id:'3c063770-db29-48f4-bbfd-4c45c7e1093a',reference:'TCK-001001',category:'statement_request',category_label:'Statement or document copy',
   summary:'Copy of the June statement.',details:{period:'June 2026'},urgency:'normal',status:'in_review',owner_team:'Operations team',
@@ -191,4 +191,28 @@ test('approval and request-status questions never become a new card-limit applic
   assert.equal(isExistingRequestStatus('How do I get approved for a higher credit limit?'),false);
   assert.equal(ticketIntent('I want to increase my credit limit'),'card_limit_change');
   assert.equal(ticketIntent('What does a credit limit mean?'),null);
+});
+
+
+test('current-year recent statement does not incorrectly become a manual copy request',()=>{
+  // This assertion uses a dynamically recent full month, not today's partial month.
+  const current=new Date();const singapore=new Date(current.getTime()+8*3600*1000);
+  const month=new Date(Date.UTC(singapore.getUTCFullYear(),singapore.getUTCMonth()-1,1));
+  const text=`I need my ${month.toLocaleDateString('en-SG',{month:'long',year:'numeric',timeZone:'UTC'})} statement for tax filing.`;
+  assert.equal(ticketIntent(text),'statements');
+  assert.equal(ticketIntent('Can I get a statement from last year?'),'statement_request');
+});
+
+
+test('inline statement copy prefill extracts only confirmed month/year',()=>{
+  assert.deepEqual(statementRequestPrefill('I need my June 2025 statement.'),{period:'June 2025'});
+  assert.deepEqual(statementRequestPrefill('Can I get an older statement?'),{});
+  assert.deepEqual(statementRequestPrefill('Can I get a statement from 2024?'),{});
+});
+
+
+test('personal details and delayed request questions use the right workflows',()=>{
+  assert.equal(ticketIntent('I want to update my contact number.'),'personal_details_update');
+  assert.equal(ticketIntent('Why is my request taking so long?'),'status');
+  assert.equal(ticketIntent('I want to cancel my previous request.'),'status');
 });

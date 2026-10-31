@@ -11,6 +11,21 @@ from app.services.safety import is_lost_card
 from app.services.typos import normalise
 
 HUMAN = re.compile(r'\b(talk|speak|connect)\b.*\b(person|human|staff|agent)\b', re.I)
+# An explicit request to obtain *another person's* private banking data is not
+# a request for the signed-in customer's own records. Refuse before tool access.
+THIRD_PARTY = re.compile(
+    r"\b(?:another|other|different)\s+(?:client|customer|person|user)(?:['’]s)?\b.{0,65}\b(?:account|balance|statement|transactions?|card|loan|profile|information|details|income|assets)\b"
+    r"|\b(?:someone|somebody|anyone)\s+else(?:['’]s)?\b.{0,65}\b(?:account|balance|statement|transactions?|card|loan|profile|information|details|income|assets)\b"
+    r"|\b(?:my\s+)?(?:friend|colleague|neighbour|neighbor)(?:['’]s)?\b.{0,55}\b(?:account|balance|statement|transactions?|card|loan)\b",
+    re.I)
+# Reject direct attempts to override the banking approval/access rules, without
+# mistaking general questions about security or prompt injection for instructions.
+OVERRIDE = re.compile(
+    r"\b(?:ignore|disregard|override|bypass)\b.{0,90}\b(?:rules|instructions|safety|security|guardrails|restrictions)\b"
+    r".{0,110}\b(?:approve|authori[sz]e|grant|release|transfer|loan|access|balance)\b"
+    r"|\b(?:approve|grant|authori[sz]e)\s+(?:my|this|the)\s+(?:loan|application|credit|limit)\b"
+    r".{0,100}\b(?:ignore|bypass|without\s+checks)\b", re.I)
+BANK_DECISION = re.compile(r"\b(?:please\s+)?(?:approve|authori[sz]e|grant)\s+(?:my|this|the)\s+(?:loan|loan\s+application|credit|card\s+limit|mortgage|banking\s+request)\b",re.I)
 PERSONAL = re.compile(r'\b(my|mine)\b.*\b(balance|transactions|due|limit|account number)\b', re.I)
 FRAUD = re.compile(
     r"\b(?:unrecognised|unrecognized|unfamiliar|unauthorised|unauthorized|suspicious|fraudulent)\s+(?:(?:card|bank)\s+)?(?:charge|transaction|payment|transfer)s?\b"
@@ -49,6 +64,8 @@ def assess_request(req: ChatRequest) -> RiskAssessment:
     fixed: FixedResponse | None = None
     if counts:fixed = FixedResponse(code='secrets', needs_human=True)
     elif lost:fixed = FixedResponse(code='lost_card', needs_human=True)
+    elif THIRD_PARTY.search(probe):fixed = FixedResponse(code='other_customer_data', needs_human=False)
+    elif OVERRIDE.search(probe) or BANK_DECISION.search(probe):fixed = FixedResponse(code='instruction_override', needs_human=False)
     elif human:fixed = FixedResponse(code='human_support', needs_human=True)
     elif req.mode == 'public' and PERSONAL.search(question):
         fixed = FixedResponse(code='guest_balance', needs_human=False)

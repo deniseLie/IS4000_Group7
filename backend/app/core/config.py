@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     pipeline: Literal['v1', 'v2'] = 'v1'
     knowledge_store: Literal['memory','database'] = 'memory'
     conversation_store: Literal['off','database'] = 'off'
+    client_intent_routing: Literal['adaptive','rules'] = 'adaptive'  # LLM-first for ordinary client intents; critical deterministic safeguards remain
     tool_transport: Literal['direct','mcp'] = 'direct'  # mcp: agent tool calls go through app/mcp_server.py
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False

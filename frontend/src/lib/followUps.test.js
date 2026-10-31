@@ -77,3 +77,9 @@ test('card-limit follow-up provides quick replies only for listed authorised car
 test('natural-language report keeps security follow-up category',()=>{
   assert.equal(topicOf('Someone used my card without permission',answer()),'fraud');
 });
+
+
+test('rejected replies do not invent new banking follow-up actions',()=>{
+  const failed={role:'assistant',content:'I could not verify this.',response_origin:'validation',source_check:'rejected'};
+  assert.deepEqual(followUps({question:'Can I see my balance?',message:failed,signedIn:true}),[]);
+});

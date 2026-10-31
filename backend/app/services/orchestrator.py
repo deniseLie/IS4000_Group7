@@ -37,7 +37,7 @@ from app.services import actions,audit,case_summary,customer_data,fraud_reports,
 from app.services.llm_gateway import LLMError
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
-from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks
+from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks,client_guidance
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -190,6 +190,20 @@ async def plan(state: Turn) -> PlanUpdate:
     # This must precede limit-context continuation and the LLM planner, so a
     # bank-decision question never starts another limit-change application.
     if req.mode=='personal' and client_intents.request_status(question):
+        return {'issues':[PlannedIssue(domain='retail',question=question)]}
+    if client_guidance.PERSONAL_DETAILS.search(question) or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
+        return {'issues':[PlannedIssue(domain='retail',question=question)]}
+    if client_guidance.UNCLEAR_HELP.search(question):
+        return {'issues':[PlannedIssue(domain='retail',question=question)]}
+    # An explicit, non-specific compliance help request is a clarification,
+    # not a document inspection or an active card-limit continuation. Preserve
+    # multi-intent requests for the planner instead of swallowing other work.
+    if (req.mode=='personal' and req.language=='English' and
+            not MULTIPLE.search(question) and compliance.general_help(question)):
+        return {'issues':[PlannedIssue(domain='compliance',question=question)]}
+    # A new explicit request or a topical question must not inherit card-limit
+    # context from the preceding assistant answer.
+    if re.search(r"\b(?:raise|open|start|create)\s+(?:a\s+)?(?:new\s+)?(?:service\s+)?request\b",question,re.I):
         return {'issues':[PlannedIssue(domain='retail',question=question)]}
     # A reply to our "which card do you mean?" goes back to the card answer, however short ("the travel one").
     # Her answer to "here's what I'd send to your RM" (CR8): carried out by rules, never re-planned.
@@ -580,7 +594,7 @@ async def other_issues(state: Turn,ctx: RequestContext) -> tuple[list[CustomerTr
         and 'linked' not in task.entities]
     pending=[]
     if transfer:
-        read=await tools.read('my_transactions',{'from_date':(today-timedelta(days=90)).isoformat(),'to_date':today.isoformat(),'status':'pending'},ctx)
+        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
         pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
     due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
     return pending,due,any(task.entities.get('linked')=='card_fraud' for task in tasks)
@@ -598,7 +612,7 @@ async def staff_summary(state: Turn,task_id: str,block: ActionOutcome,dispute: A
         and 'linked' not in task.entities]
     pending=[]
     if transfer:
-        read=await tools.read('my_transactions',{'from_date':(today-timedelta(days=90)).isoformat(),'to_date':today.isoformat(),'status':'pending'},ctx)
+        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
         pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
     due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
     return case_summary.build(last4=block.command.target.last4,reported_id=proposal.transaction_id if proposal else '',items=items,

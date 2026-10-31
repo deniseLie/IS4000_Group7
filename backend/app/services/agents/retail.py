@@ -10,7 +10,7 @@ from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
 from app.schemas.retail import RetailRecords
 from app.services import kb,knowledge,llm_gateway,prompts
-from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers
+from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers,client_guidance
 from app.services.agents.answer import checked_model_answer
 
 PROMPT='v10'
@@ -52,6 +52,9 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     if status is not None:
         result,record_evidence=status
         return result,[*public_evidence,*record_evidence],prompts.load('retail',PROMPT)['id']
+    guide=client_guidance.respond(task.task_id,question,public_evidence,ctx.received_at)
+    if guide is not None:
+        return guide,public_evidence,prompts.load('retail',PROMPT)['id']
     records=await retail_records.load(ctx)
     evidence=[*public_evidence,*evidence_for(records)]
     # Card figures and "which card?" come straight from her records (no model call, never withheld).

@@ -74,6 +74,6 @@ export function handoffSummary(messages) {
 }
 
 export function supportSummary(messages) {
-  const questions=messages.filter(m => m.role==='user' && !m.error).slice(-5).map(m=>'- '+redact(m.content));
+  const questions=messages.filter(m => m.role==='user' && !m.error).slice(-1).map(m=>'- '+redact(m.content));
   return `Draft support summary — not sent\n\nRecent customer questions:\n${questions.join('\n') || '- No question entered yet.'}\n\nWhat still needs help:\n[Please describe the unresolved issue.]\n\nPlease review and remove any private details before sharing.`;
 }

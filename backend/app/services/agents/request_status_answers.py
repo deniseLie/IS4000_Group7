@@ -27,11 +27,31 @@ async def respond(task_id: str,question: str,ctx):
     elif CARD_REQUEST.search(question):
         rows=[row for row in rows if row.category=='card_limit_change']
     rows=sorted(rows,key=lambda row:row.created_at,reverse=True)
+    listing=bool(client_intents.LIST_REQUESTS.search(question))
+    cancel=bool(client_intents.CANCEL_TICKET.search(question))
+    if listing:
+        rows=[row for row in rows if row.status in ('submitted','in_review','waiting_on_client')]
+    if listing and not rows:
+        return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',
+            text='I cannot find any open service requests in your authorised My Requests records.'),[]
     if not rows:
         kind='card-limit change ' if CARD_REQUEST.search(question) else ''
-        text=f"I couldn't find a recorded {kind}request matching your question in your authorised My Requests records. No approval is confirmed. Check My Requests or provide the reference number."
+        text=(f"I couldn't find a recorded {kind}request matching your question in your authorised My Requests records. "
+              +('No request has been cancelled. ' if cancel else 'No approval is confirmed. ')
+              +'Check My Requests or provide the reference number.')
         return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',text=text),[]
-    if len(rows)>1 and not reference:
+    if listing:
+        lines=[f'{row.reference}: {row.category_label} — {STATUS_LABELS.get(row.status,"Status unavailable")}' for row in rows[:8]]
+        text='Here are your open requests from the authorised records: '+ '; '.join(lines)+'. For full details and updates, open My Requests.'
+    elif cancel and len(rows)>1 and not reference:
+        text='Which request would you like to cancel? Please give its ticket reference. '+ '; '.join(
+            f'{row.reference}: {row.category_label}' for row in rows[:5])+'. Nothing has been cancelled.'
+    elif cancel:
+        text=('I found your request '+rows[0].reference+'. ' if rows else '')+(
+            'This chatbot does not currently support cancellation of submitted service tickets. '
+            'Please check My Requests or contact the responsible team through the official support channel. '
+            'No ticket has been cancelled.')
+    elif len(rows)>1 and not reference:
         lines=[f'{row.reference}: {row.category_label} — {STATUS_LABELS.get(row.status,"Status unavailable")}' for row in rows[:5]]
         text='I found more than one matching request. Which reference do you mean? '+ '; '.join(lines)+'. These are recorded workflow statuses, not approval decisions.'
     else:

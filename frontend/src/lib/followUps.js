@@ -42,7 +42,7 @@ export function followUps({question,message,signedIn,asked=[]}) {
   if(!message||message.role!=='assistant'||!message.content)return [];
   // A charge list to confirm keeps its button even when another part of the reply was withheld (CR12).
   if(signedIn&&message.content.includes(`“${CONFIRM_REPORT}”`))return [CONFIRM_REPORT];
-  if(message.error)return [];
+  if(message.error||message.response_origin==='validation'||message.source_check==='rejected')return [];
   // CR12: the lost-card offer asks before reporting.
   if(signedIn&&message.content.includes('Reply “Yes, report my card”'))return ['Yes, report my card','No'];
   // CR8: a handover preview offers its choices as one tap each; nothing is sent until she picks one.

@@ -75,8 +75,13 @@ def reconcile(question: str, issues: list) -> list:
 
 # Status enquiries are *reads of existing bank tickets*, not permissions to
 # initiate another request. Approval/rejection is not inferred from resolution.
+LIST_REQUESTS = re.compile(
+    r"\b(?:show|list|display|view|see|check|find)\b.{0,45}\b(?:my|our)\s+(?:(?:open|active|pending|recent|all)\s+)?(?:requests?|tickets?|cases?)\b"
+    r"|\b(?:my|our)\s+(?:open|active|pending)\s+(?:requests?|tickets?|cases?)\b", re.I)
+CANCEL_TICKET = re.compile(
+    r"\b(?:cancel|withdraw|stop)\b.{0,45}\b(?:my|the|that|previous|existing)\s+(?:\w+\s+){0,2}(?:requests?|tickets?|cases?)\b",re.I)
 STATUS_QUESTION = re.compile(
-    r"\b(?:status|progress|update(?:s)?|outcome|decision|approved|rejected|accepted|processed|completed|"
+    r"\b(?:status|progress|update(?:s)?|outcome|decision|approved|rejected|accepted|processed|completed|delayed|overdue|"
     r"gone\s+through|heard\s+back)\b", re.I)
 EXISTING_REQUEST = re.compile(
     r"\b(?:my|our|the|that|previous|existing|earlier)\b.{0,85}\b(?:requests?|tickets?|cases?|"
@@ -87,6 +92,7 @@ EXISTING_REQUEST = re.compile(
 def request_status(question: str) -> bool:
     """Recognise an enquiry about an *existing* request, not product eligibility."""
     text=question.strip()
+    if LIST_REQUESTS.search(text) or CANCEL_TICKET.search(text) or (re.search(r"\b(?:taking\s+so\s+long|still\s+waiting|not\s+heard\s+back)\b",text,re.I) and re.search(r"\b(?:request|ticket|case)\b",text,re.I)):return True
     if not text or not STATUS_QUESTION.search(text):return False
     if re.search(r"\b(?:how\s+(?:can|do)\s+i|what\s+(?:is|are)\s+(?:the\s+)?requirements?)\b",text,re.I) and not re.search(r"\bmy\s+(?:request|ticket|case)\b",text,re.I):
         return False

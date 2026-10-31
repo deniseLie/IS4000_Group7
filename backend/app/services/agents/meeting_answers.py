@@ -70,12 +70,14 @@ def spread(slots,limit: int=6,per_day: int=2) -> list:
     return sorted(chosen[:limit],key=lambda item:item.starts_at)
 
 
+NEXT_DAY = re.compile(r"\b(?:next|this)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",re.I)
+WEEKDAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 MORE=re.compile(r'\b(?:other|another|more|different|later|earlier)\b[^.?!]{0,20}\b(?:times?|slots?|days?|dates?)\b|\bnone of (?:these|those|them)\b',re.I)
 
 
 def replying(text: str) -> bool:
     """Her message is about the times we offered: a day or time, a meeting format, a confirmation or other times."""
-    return bool(DAY.search(text) or TIME.search(text) or CONFIRM.search(text) or MORE.search(text)
+    return bool(DAY.search(text) or TIME.search(text) or NEXT_DAY.search(text) or CONFIRM.search(text) or MORE.search(text)
         or any(key in text for key in FORMAT))
 
 
@@ -141,6 +143,14 @@ async def respond(task_id: str,question: str,history: list[Message],records,ctx:
                 f'for 10 minutes. {HELD} You can also confirm it in My requests > Meetings.')
         shown=slots
         if previous and MORE.search(text):shown=[slot for slot in slots if slot_label(slot.starts_at) not in previous] or slots
+        day_match=NEXT_DAY.search(text)
+        if day_match:
+            today=now.astimezone(SGT).date()
+            delta=(WEEKDAYS.index(day_match.group(1).lower())-today.weekday())%7 or 7
+            target=today+timedelta(days=delta)
+            shown=[s for s in slots if s.starts_at.astimezone(SGT).date()==target]
+            if not shown:
+                return result(task_id,f'I cannot find a free RM meeting slot for {target:%d %B %Y} in the available schedule. You can ask for other available times.')
         if 'next week' in text:
             start,end=next_week(now.astimezone(SGT).date())
             shown=[slot for slot in slots if start<=slot.starts_at.astimezone(SGT).date()<=end] or slots

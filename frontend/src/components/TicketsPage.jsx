@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
-import {createActionCase,proposeAction} from '../lib/actions';
+import {prepareTicketAction} from '../lib/ticketWorkflow';
 import {loadCategories,loadTickets,nextStep,requestFailed,STATUSES,ticketSummary,ticketTopic} from '../lib/ticketData';
 import {formatDateTime} from '../lib/format';
 import Meetings from './Meetings';
@@ -75,9 +75,7 @@ export function RaiseRequest({categories,prefill,onClose,onReviewActions,onSuppo
     event.preventDefault();setBusy(true);setError('');
     try {
       const auth=await token();
-      const scope=await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},auth);
-      const details=Object.fromEntries(Object.entries(values).filter(([name,value])=>chosen.fields.some(f=>f.key===name)&&String(value).trim()));
-      setOutcome(await proposeAction({command_id:crypto.randomUUID(),case_id:scope.case_id,task_id:'ticket',type:'ticket.create',target:{category,summary,urgency,details}},auth));
+      setOutcome(await prepareTicketAction({category:chosen,summary,urgency,values},auth));
     } catch(failure) {setError(requestFailed(failure));} finally {setBusy(false);}
   }
   const locked=busy||!!outcome;

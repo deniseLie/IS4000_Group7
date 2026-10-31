@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon';
 import Panel from './components/Panel';
 import Answer from './components/Answer';
-import TicketsPage,{RaiseRequest} from './components/TicketsPage';
-import {limitRequestPrefill,ticketIntent,isLimitWorkflowReply,isConceptQuestion,loadCategories} from './lib/ticketData';
+import TicketsPage from './components/TicketsPage';
+import InlineRequestCard from './components/InlineRequestCard';
+import {limitRequestPrefill,ticketIntent,isLimitWorkflowReply,isConceptQuestion,statementRequestPrefill} from './lib/ticketData';
 import CompliancePage from './components/CompliancePage';
 import OverviewPage from './components/OverviewPage';
 import {displayName,firstName} from './lib/format';
@@ -29,7 +30,7 @@ import { supabase } from './lib/supabase';
 import { boundedHistory, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
 import {loadWorkflowPreview,parsePausedWorkflow,parsePreview} from './lib/workflows';
-import {createActionCase,proposeAction} from './lib/actions';
+import {createActionCase,proposeAction,rejectAction} from './lib/actions';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const GUEST_SESSION = globalThis.crypto?.randomUUID?.();  // needs a secure context (https or localhost); correlation id for guest requests; signed-in sessions use the token's session_id
@@ -92,25 +93,16 @@ export default function Chat({session,onSignIn}) {
   const [view,setView]=useState(()=>pageFromHash(session));
   const [pageKey,setPageKey]=useState(0);
   const [ticketPrefill,setTicketPrefill]=useState(null);  // manual My Requests workflow
-  const [inlineRequest,setInlineRequest]=useState(null);  // same request form, available in the Assistant
-  const [inlineCategories,setInlineCategories]=useState(null);
-  const [inlineError,setInlineError]=useState('');
-  const [inlineActions,setInlineActions]=useState(false);
-  useEffect(()=>{
-    if(!inlineRequest||!session)return;
-    const controller=new AbortController();setInlineCategories(null);setInlineError('');
-    (async()=>{try{const {data,error}=await supabase.auth.getSession();if(error)throw error;
-      if(!data.session)throw new Error('Please sign in to prepare a request.');
-      const categories=await loadCategories(data.session.access_token,controller.signal);
-      if(!controller.signal.aborted)setInlineCategories(categories.filter(c=>c.customer_raisable));
-    }catch(error){if(!controller.signal.aborted&&error.name!=='AbortError')setInlineError(error.message);}})();
-    return ()=>controller.abort();
-  },[inlineRequest?.key,session?.user?.id]);
+  // A draft is anchored to the assistant reply that created it, never a drawer.
+  const [inlineRequest,setInlineRequest]=useState(null);
+  const [freshDraftReply,setFreshDraftReply]=useState(null); // auto card only on a newly generated reply, not a saved transcript
+
   const [overviewFocus,setOverviewFocus]=useState(null);  // section to scroll to when Overview opens from the assistant
   const messageList=useRef(null);
   const composer=useRef(null);
   const recall=useRef(null);
   const request=useRef(null);
+  const pendingInlineProposal=useRef(null);
   const version=useRef(0);
   useEffect(()=>{
     const list=messageList.current;
@@ -207,7 +199,7 @@ export default function Chat({session,onSignIn}) {
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
     setWorkflow(history.workflow);
     setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
-    setSummary(null);setArticle(null);closeHistory();setRecordsOpen(false);
+    setSummary(null);setArticle(null);setInlineRequest(null);setFreshDraftReply(null);closeHistory();setRecordsOpen(false);
     setNotice(preview?'This saved reply is waiting for your card decisions in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!preview&&!history.workflow&&!history.history_trimmed);
   }
 
@@ -233,13 +225,14 @@ export default function Chat({session,onSignIn}) {
   }
 
   function reset() {
+    if(pendingInlineProposal.current){setNotice('A request is awaiting your decision. Cancel that draft in the chat or Actions before starting a new chat.');return false;}
     if(store==='database') {
       try {clearActive(session?.user.id||null);}
       catch(failure) {setBootError(failure.message);return false;}
     }
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setMode(session?'personal':'public');setNotice('New chat started.',true);
-    setSummary(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
+    setSummary(null);setInlineRequest(null);setFreshDraftReply(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
     setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);if(store!==null)setBootError('');
     return true;
   }
@@ -258,10 +251,23 @@ export default function Chat({session,onSignIn}) {
     if(safe!==question) {
       setInput('');setNotice('Private details were removed. Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. Please ask again without them. If your real card is lost or stolen, contact your bank immediately through its official app or website.');return;
     }
+    // A newly typed correction invalidates the old pending proposal before it
+    // can be submitted. Never leave a stale ticket draft behind in Actions.
+    if(pendingInlineProposal.current) {
+      try {
+        const commandId=pendingInlineProposal.current;
+        const access=await sessionHeaders();
+        await rejectAction(commandId,access.Authorization.replace(/^Bearer /,''));
+        pendingInlineProposal.current=null;
+      }catch(error) {
+        setNotice(`Please cancel the pending request review before continuing. ${error.message}`);
+        return;
+      }
+    }
     const visible=[...messages,{role:'user',content:safe}];
     const history=boundedHistory(visible);
     if(history.length<visible.filter(m=>!m.error).length)setNotice('Older messages are no longer sent. Please restate any older details that still matter.');
-    setMessages([...visible,{role:'assistant',content:''}]);setInput('');setLoading(true);
+    setInlineRequest(null);setFreshDraftReply(null);setMessages([...visible,{role:'assistant',content:''}]);setInput('');setLoading(true);
     const epoch=version.current;const controller=new AbortController();request.current=controller;
     try {
       const headers={'Content-Type':'application/json',...(GUEST_SESSION&&{'X-Session-Id':GUEST_SESSION})};
@@ -290,7 +296,7 @@ export default function Chat({session,onSignIn}) {
         }
         if(type==='answer') {
           const result=JSON.parse(data);
-          setMessages([...visible,{role:'assistant',content:result.answer,...result}]);
+          setFreshDraftReply(visible.length);setMessages([...visible,{role:'assistant',content:result.answer,...result}]);
         }
         if(type==='workflow_paused') {
           const body=JSON.parse(data);
@@ -364,14 +370,42 @@ export default function Chat({session,onSignIn}) {
     {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
   ];
 
-  function openInlineRequest(prefill={}) {
-    setInlineActions(false);setInlineRequest({...prefill,key:Date.now()});
+  function openInlineRequest(prefill={},index=null) {
+    const anchor=index??messages.findLastIndex(item=>item.role==='assistant');
+    setInlineRequest({...prefill,index:anchor,key:Date.now()});
+    navigate('chat');
+    requestAnimationFrame(()=>messageList.current?.scrollTo({top:messageList.current.scrollHeight,behavior:'smooth'}));
   }
-  function requestStatement(summary) {openInlineRequest({category:'statement_request',summary});}
+  function requestStatement(summary,index=null) {openInlineRequest({category:'statement_request',summary,details:statementRequestPrefill(summary)},index);}
+  function readyForInlineCard(prefill) {
+    const d=prefill?.details||{};
+    return !!(d.new_limit&&d.duration&&(d.duration==='permanent'||d.until)&&prefill.selectedCardLabel);
+  }
+  function inlineCardFor(message,index) {
+    if(!session||mode!=='personal'||message.role!=='assistant'||!message.content||message.error||message.response_origin==='validation'||message.source_check==='rejected')return null;
+    const chosen=inlineRequest?.index===index?inlineRequest:null;
+    if(chosen?.dismissed)return null;
+    const latest=index===messages.length-1&&!loading&&!pending;
+    const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';
+    const intent=ticketIntent(asked);
+    const validLimit=!isConceptQuestion(asked)&&intent!=='status'&&(intent==='card_limit_change'||isLimitWorkflowReply(message));
+    const guessed=validLimit?{category:'card_limit_change',...limitRequestPrefill(messages.slice(0,index).filter(item=>['user','assistant'].includes(item.role)))}:null;
+    const automatic=latest&&freshDraftReply===index&&guessed&&readyForInlineCard(guessed)?guessed:null;
+    const selected=chosen||automatic;
+    if(!selected)return null;
+    return <InlineRequestCard key={chosen?.key||`automatic-${conversation?.session_id||'new'}-${index}`}
+      prefill={selected} onDismiss={()=>setInlineRequest({index,key:Date.now(),dismissed:true})}
+      onProposalChange={id=>{pendingInlineProposal.current=id;}} onSuccess={()=>setPageKey(k=>k+1)}/>;
+  }
   // Request categories (CL1/TK1/TK2): a matching question, or a reply handed to the RM, ends with a button to My requests.
   function ticketStep(message,index) {
     if(message.role!=='assistant'||!message.content||!session||mode!=='personal')return null;
-    const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';const intent=ticketIntent(asked);
+    const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';
+    let intent=ticketIntent(asked);
+    if(!intent&&/\b(?:actually|instead|rather)\b[^.?!]{0,40}\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(asked)) {
+      const prior=messages.slice(0,index-1).filter(item=>item.role==='user').slice(-2);
+      if(prior.some(item=>['statements','statement_request'].includes(ticketIntent(item.content))))intent='statements';
+    }
     // Definitions and comparisons are information requests, never automatic service intake.
     const concept=isConceptQuestion(asked);
     // A bank decision/status enquiry can only read an existing ticket; it must
@@ -383,16 +417,27 @@ export default function Chat({session,onSignIn}) {
     // on the latest fraud response; confirmation offers have their own one-tap reply.
     if(canStartFraudReport({message,signedIn:!!session&&mode==='personal',latest:index===messages.length-1}))return <button type="button" className="primary-button rm-handoff" data-testid="fraud-report-entry" onClick={()=>send(null,'I suspect an unauthorised card transaction. Please help me identify the affected card and charge so I can review and confirm an urgent fraud report.')}>Report suspicious transaction<Icon name="arrow"/></button>;
     if(intent==='status')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See verified request status<Icon name="arrow"/></button>;
-    if(!concept&&(intent==='card_limit_change'||isLimitWorkflowReply(message))&&!message.error&&message.source_check!=='rejected'&&!/Answer withheld|couldn’t confirm|couldn't verify/i.test(message.content))return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>openInlineRequest({category:'card_limit_change',...limitRequestPrefill(messages.slice(0,index).filter(item=>['user','assistant'].includes(item.role)))})}>Review card limit request<Icon name="arrow"/></button>;
+    if(!concept&&(intent==='card_limit_change'||isLimitWorkflowReply(message))&&!message.error&&message.source_check!=='rejected'&&!/Answer withheld|couldn’t confirm|couldn't verify/i.test(message.content)) {
+      const prefill={category:'card_limit_change',...limitRequestPrefill(messages.slice(0,index).filter(item=>['user','assistant'].includes(item.role)))};
+      // When enough has been gathered, the inline card renders automatically after
+      // the reply. Incomplete requests can be opened here to fill missing fields.
+      if(readyForInlineCard(prefill)||inlineRequest?.index===index)return null;
+      return <button type="button" className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>openInlineRequest(prefill,index)}>Review request details<Icon name="arrow"/></button>;
+    }
+    // The client can ask to start another service request in the chat itself.
+    if(!concept&&/\b(?:raise|open|create|submit|start)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:service\s+)?request\b/i.test(asked)&&intent!=='status'&&message.response_origin!=='validation'&&!message.error)
+      return <button type="button" className="primary-button rm-handoff" onClick={()=>openInlineRequest({},index)}>Prepare a request in chat<Icon name="arrow"/></button>;
     // CR15: a statement question ends with a way to the Statements section, or to a statement copy request for older ones.
     if(intent==='statements')return <button className="primary-button rm-handoff" data-testid="statement-handoff" onClick={()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});}}>Go to Statements<Icon name="arrow"/></button>;
-    if(intent==='statement_request')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>requestStatement(redact(asked).slice(0,500))}>Request a statement copy<Icon name="arrow"/></button>;
+    if(intent==='personal_details_update'&&message.response_origin!=='validation')return <button className="primary-button rm-handoff" data-testid="personal-details-entry" onClick={()=>openInlineRequest({category:'personal_details_update',summary:redact(asked).slice(0,500)},index)}>Prepare details update<Icon name="arrow"/></button>;
+    if(intent==='statement_request')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>requestStatement(redact(asked).slice(0,500),index)}>Request a statement copy<Icon name="arrow"/></button>;
     // CR17: a meeting question ends with a button to the Meetings tab, where she picks a free time.
     if(relationshipIntent(asked)==='meeting')return <button className="primary-button rm-handoff" data-testid="meeting-handoff" onClick={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}>Book a time with your RM<Icon name="arrow"/></button>;
     // A question handed to the relationship manager: its reference is in the reply; follow it in My requests.
     if(message.needs_human&&/My requests/.test(message.content))
       return <button className="bank-chat-logout rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button>;
     // CR2: otherwise a way to the page the question was about (not on previews, choices or withheld answers).
+    if(index===lastCompliance)return null; // One compliance navigation action; the optional inline review is separate.
     const link=!message.error&&message.source_check!=='rejected'&&message.response_origin!=='validation'&&!/Here’s what I’d send|Answer withheld|couldn’t confirm|couldn.t verify/i.test(message.content)?pageLink(asked):null;
     if(!link)return null;
     const go={meetings:()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');},requests:()=>{setTicketPrefill(null);navigate('requests');},
@@ -412,11 +457,11 @@ export default function Chat({session,onSignIn}) {
       {list.map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text}</button>)}</div>;
   }
   function complianceStep(message,index) {
-    if(index!==lastCompliance||!session||mode!=='personal')return null;
-    return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Open compliance review<Icon name="arrow"/></button>
+    if(index!==lastCompliance||!session||mode!=='personal'||message.error||message.response_origin==='validation')return null;
+    return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Go to Compliance review<Icon name="arrow"/></button>
       <button className="bank-chat-logout rm-handoff" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>{showCompliance?'Hide review here':'Show review here'}</button></div>;
   }
-  const showCompliance=complianceOpen??messages.some(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
+  const showCompliance=complianceOpen===true;
   const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · No real banking services</span></footer>;  // who is signed in is shown by the sidebar profile
   function openActions() {closeOverlays();navigate('actions');}
   const review={label:'Review in Actions',onSelect:openActions},requests={label:'Open My requests',onSelect:()=>navigate('requests')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
@@ -469,13 +514,18 @@ export default function Chat({session,onSignIn}) {
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Could not verify'}</small>}</div>}
                 <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
-                {ticketStep(m,i)}{complianceStep(m,i)}{nextQuestions(m,i)}
+                {ticketStep(m,i)}{inlineCardFor(m,i)}{complianceStep(m,i)}{nextQuestions(m,i)}
                 {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
               </div>
             </div>)}
+            {session&&mode==='personal'&&inlineRequest?.index===-1&&!inlineRequest.dismissed&&
+              <div className="bank-chat-message assistant"><div className="bank-chat-avatar"><Icon name="spark"/></div><div className="bank-chat-bubble">
+                <div className="answer-heading">Banking assistant</div>
+                <InlineRequestCard key={inlineRequest.key} prefill={inlineRequest} onDismiss={()=>setInlineRequest(null)} onProposalChange={id=>{pendingInlineProposal.current=id;}} onSuccess={()=>setPageKey(k=>k+1)}/>
+              </div></div>}
             {view==='chat'&&session&&mode==='personal'&&showCompliance&&<ComplianceWorkspace key="compliance-workspace" submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>send(null,question,selection)}/>}
           </div>
-          <div className="composer-area">{session&&mode==='personal'&&<div className="panel-actions" style={{marginBottom:'0.5rem'}}><button type="button" className="bank-chat-logout" data-testid="assistant-raise-request" disabled={loading||booting||!!pending} onClick={()=>openInlineRequest()}>Raise or review a request <Icon name="arrow"/></button></div>}<form className="bank-chat-composer" onSubmit={send}>
+          <div className="composer-area"><form className="bank-chat-composer" onSubmit={send}>
             <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>{recall.current=null;setInput(e.target.value);}} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"
               onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}else recallSent(e);}}/>
             <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
@@ -495,14 +545,6 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>}
     </div>
-    {inlineRequest&&session&&<Panel label="Request review" closeLabel="Close request review" title="Prepare your request" size="drawer" onClose={()=>{setInlineRequest(null);setInlineActions(false);}}>
-      {!inlineActions&&(!inlineCategories?<p role="status">{inlineError||'Loading supported request categories…'}</p>:<RaiseRequest key={inlineRequest.key} categories={inlineCategories} prefill={inlineRequest} inChat
-        onClose={()=>setInlineRequest(null)} onReviewActions={()=>setInlineActions(true)} onSupport={()=>{setInlineRequest(null);prepareSummary();}}/>)}
-      {inlineActions&&<div data-testid="assistant-request-confirmation"><p>Review the exact proposed request below. Only confirmation records it in the synthetic backend.</p>
-        <button type="button" className="bank-chat-logout" onClick={()=>{setInlineRequest(null);navigate('requests');}}>See My Requests</button>
-        <ActionsPanel key={inlineRequest.key} onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}}/>
-      </div>}
-    </Panel>}
     {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={rmIntro?.current?`Your relationship manager, ${displayName(rmIntro.current.name)}, will pick this up and reply to you.`:'Your relationship manager will pick this up and reply to you.'} onClose={()=>setSummary(null)}
       footer={<><span>IS4000 · Coursework demo · No real banking services</span>{handoff.outcome?<div className="panel-actions"><button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button><button className="primary-button" data-testid="handoff-open-requests" onClick={()=>{setSummary(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button></div>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button>
         <button className="primary-button" data-testid="approve-handoff" disabled={handoff.saving} onClick={sendHandoff}>Send to my relationship manager<Icon name="arrow"/></button></div>}</>}>

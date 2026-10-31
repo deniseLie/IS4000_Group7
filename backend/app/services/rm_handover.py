@@ -133,7 +133,9 @@ def summary_for(question: str,history: Sequence[Message]=(),context: str='') -> 
     text=compact(question)[:QUESTION_LIMIT] or 'The client asked to speak with their relationship manager.'
     summary=f'[{topic_for(question)}] Client question for you: {text}'
     if context and len(summary)+len(context)+3<=SUMMARY_LIMIT-60:summary+=' | '+context
-    earlier=[item if len(item)<=EARLIER_LIMIT else item[:EARLIER_LIMIT-1]+'…' for item in earlier_messages(question,history)]
+    # Only current-request context is included by default. Historical topics can
+    # be unrelated and must not be silently forwarded to a relationship manager.
+    earlier=[]
     while earlier:
         candidate=summary+' | Earlier in this chat: '+' / '.join(f'“{item}”' for item in earlier)
         if len(candidate)<=SUMMARY_LIMIT:return candidate
@@ -177,9 +179,8 @@ def preview(question: str,history: Sequence[Message]=(),existing: str | None=Non
     if not text or (len(text)<60 and re.match(r'^\s*(?:can i |i want to |i need to |please )?(?:talk|speak|connect|chat)\b',text,re.I)):
         text='You asked to speak with your relationship manager.'
     lines=[PREVIEW_MARK,f'• Topic: {topic_for(question)}',f'• Your question: “{text}”']
-    earlier=[item if len(item)<=EARLIER_LIMIT else item[:EARLIER_LIMIT-1]+'…' for item in earlier_messages(question,history)]
-    if earlier:lines.append('• Earlier in this chat: '+' / '.join(f'“{item}”' for item in earlier))
-    if context:lines.append(f'• {context}')
+    # Context minimisation: the current question is sufficient for the default
+    # preview. Never sweep unrelated chats or ticket references into the handover.
     if existing:
         lines.append(f'You already have an open request about this ({existing}). Reply “Add to {existing}” to add this question to it, '
             f'“{NEW_REPLY}” to send it separately, or “{CANCEL_REPLY}”.')
@@ -208,7 +209,7 @@ async def offer(question: str,history: Sequence[Message],ctx: RequestContext) ->
     """The preview; an open RM ticket on the same topic is offered rather than silently reused."""
     try:existing=await open_ticket_for(topic_for(question),ctx)
     except HANDOVER_ERRORS:existing=None
-    return preview(question,history,existing,await open_requests_line(ctx))
+    return preview(question,history,existing)
 
 
 async def choose(question: str,choice: str,reference: str | None,ctx: RequestContext,owned: OwnedWorkflow | None,task_id: str,
@@ -223,7 +224,7 @@ async def choose(question: str,choice: str,reference: str | None,ctx: RequestCon
         done=await recorded(question,'P2',ctx,task_id)
         if done is not None:return done.reply()
         _,new_reference,created=await hand_over(question,'P2',ctx,owned,task_id,history)
-        if not created:new_reference=await open_separate(summary_for(question,history,await open_requests_line(ctx)),ctx)
+        if not created:new_reference=await open_separate(summary_for(question,history),ctx)
         if new_reference and document_ids:await attach(new_reference,document_ids,ctx)
         return handed_over(new_reference)
     except HANDOVER_ERRORS as error:
@@ -342,7 +343,7 @@ async def hand_over(question: str,priority: Priority,ctx: RequestContext,owned: 
     """One deduplicated handoff per task id (callers include the turn, so retries reuse it); returns its receipt,
     the RM ticket reference and whether the handoff was newly created (False: this chat already had one open)."""
     current=ctx.model_copy(update={'agent':None})
-    command=command_for(question,priority,ctx,task_id,history,await open_requests_line(current))
+    command=command_for(question,priority,ctx,task_id,history)
     if owned is not None:
         outcome=await actions.propose_for_workflow(command,task_id,owned,current)
         receipt=actions.receipt_for(outcome)

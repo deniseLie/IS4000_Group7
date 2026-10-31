@@ -30,7 +30,7 @@ from app.services import fraud_reports,rm_handover
 from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
 
 router=APIRouter()
-FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance'}
+FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance','other_customer_data','instruction_override'}
 
 def audit_model_calls(batch,trace):
     """Record real model-call metadata before either a reply or a review pause is released."""

@@ -19,7 +19,7 @@ OTHER_TOPIC = re.compile(
     r"\b(?:account balance|card balance|outstanding balance|recent transactions?|statements?|"
     r"compliance|documents?|upload|mortgage|loans?|fraud|suspicious|lost card|"
     r"book (?:a |my )?meeting|appointments?|interest rate|annual fee|waiv(?:e|er)|"
-    r"cancel (?:a |my )?card|block (?:a |my )?card|ticket status|request status|"
+    r"cancel (?:a |my )?card|block (?:a |my )?card|ticket status|request status|new (?:service )?request|"
     r"(?:what(?:'s| is)|show|check|view) my (?:current )?(?:card |credit )?limit|"
     r"current (?:credit |card )?limit)\b",re.I)
 # A continuation should be identifiable as such; do not hijack random chat messages.

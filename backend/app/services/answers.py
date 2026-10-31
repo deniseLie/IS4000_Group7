@@ -126,6 +126,14 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
         decide(info,'lost_card')
         result.update(answer=INDEX['lost-card'].content,sources=[source(INDEX['lost-card'])],needs_human=True)
         return result
+    if risk.fixed_response and risk.fixed_response.code=='other_customer_data':
+        decide(info,'other_customer_data')
+        result.update(answer="I can't access or disclose another client's account balances, transactions or records. I can only help you with information you are authorised to view.",needs_human=False)
+        return result
+    if risk.fixed_response and risk.fixed_response.code=='instruction_override':
+        decide(info,'instruction_override')
+        result.update(answer='I cannot bypass access checks or approve a loan or banking request. Only the authorised bank team can assess and decide an application. I can explain the application process or help you find the appropriate service.',needs_human=False)
+        return result
     if risk.fixed_response and risk.fixed_response.code=='human_support':
         decide(info,'human_support')
         result.update(answer=INDEX['support'].content,sources=[source(INDEX['support'])],needs_human=True)

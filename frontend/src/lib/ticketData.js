@@ -1,6 +1,7 @@
 // My requests (TK1/TK2) and request categories (F20). Tickets are created only through a reviewed ticket.create action.
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
+import {lastFullMonths} from './statements.js';
 export const STATUSES={submitted:'Submitted',in_review:'In review',waiting_on_client:'Waiting for you',resolved:'Resolved',closed:'Closed'};
 const KINDS=['text','amount','date','date_past','choice','card'];
 function invalid() {return new Error('The recorded request could not be verified. Reload My requests.');}
@@ -93,9 +94,20 @@ export function ticketIntent(question) {
   if(isExistingRequestStatus(q))return 'status';
   if(!isConceptQuestion(q)&&(/\b(?:increase|raise|higher|lower|reduce|change|up)\b[^.?!]{0,40}\b(?:credit\s+)?(?:card\s+)?limit\b|\b(?:credit\s+)?(?:card\s+)?limit\b[^.?!]{0,40}\b(?:increase|increased|raise|raised|change)\b/.test(q)))return 'card_limit_change';
   // Statements (CR15): the last 3 full months are on Overview; older, certified or paper copies are a request.
-  if(/\b(?:e-?)?statements?\b/.test(q)&&!/\b(?:review|compliance|upload|submit)\b/.test(q))
-    return /\b(?:older|old|certified|paper|copy|copies|stamped|last\s+year|(?:20[0-9]{2})|(?:[4-9]|1[0-2])\s+months?|six|twelve)\b/.test(q)?'statement_request':'statements';
-  if(/\b(?:status|update|progress)\b[^.?!]{0,30}\b(?:my\s+)?(?:ticket|request|case)s?\b|\bmy\s+(?:tickets|open requests)\b/.test(q))return 'status';
+  if(/\b(?:e-?)?statements?\b/.test(q)&&!/\b(?:review|compliance|upload|submit)\b/.test(q)) {
+    if(/\b(?:older|old|certified|paper|copy|copies|stamped|last\s+year|(?:[4-9]|1[0-2])\s+months?|six|twelve)\b/.test(q))return 'statement_request';
+    // An explicit year isn't automatically an old statement. Compare the
+    // requested month to the actual last three full Singapore calendar months.
+    const m=/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b/.exec(q);
+    const yearOnly=/\b(20\d{2})\b/.exec(q);
+    if(!m&&yearOnly&&Number(yearOnly[1])<Number(lastFullMonths()[0].slice(0,4)))return 'statement_request';
+    if(m){const mm=['january','february','march','april','may','june','july','august','september','october','november','december'].indexOf(m[1])+1;
+      const period=`${m[2]}-${String(mm).padStart(2,'0')}`;
+      return lastFullMonths().includes(period)?'statements':'statement_request';}
+    return 'statements';
+  }
+  if(/\b(?:status|update|progress)\b[^.?!]{0,30}\b(?:my\s+)?(?:ticket|request|case)s?\b|\bmy\s+(?:tickets|open requests)\b|\b(?:cancel|withdraw)\b[^.?!]{0,50}\b(?:request|ticket|case)\b|\brequest\b[^.?!]{0,40}\b(?:taking so long|delayed|overdue)\b/.test(q))return 'status';
+  if(/\b(?:update|change|correct|replace)\b[^.?!]{0,60}\b(?:my\s+)?(?:contact number|phone number|mobile number|address|email address)\b/.test(q))return 'personal_details_update';
   return null;
 }
 
@@ -251,4 +263,12 @@ export function isExistingRequestStatus(input) {
   const existing=/\b(?:my|the|that|previous|existing|earlier)\b.{0,90}\b(?:request|ticket|case|(?:card |credit )?limit (?:increase|change))\b|\b(?:request|ticket|case)s?\b.{0,60}\b(?:status|progress|approved|decision|update)\b|\btck-\d{6,}\b/.test(q);
   const specific=/\b(?:has|have|did|is|was)\s+(?:the bank\s+)?(?:my\s+)?(?:card\s+|credit\s+)?limit\s+(?:increase|change|request)\b/.test(q);
   return status&&(existing||specific)&&!/^\s*how (?:can|do) i (?:get|become) approved/.test(q);
+}
+
+// The chat may prefill only an unambiguous month and year. Other required
+// details (account and output format) are never guessed from free text.
+export function statementRequestPrefill(question) {
+  const m=/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b/i.exec(String(question||''));
+  if(!m)return {};
+  return {period:`${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}`};
 }
