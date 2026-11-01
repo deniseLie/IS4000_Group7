@@ -5,7 +5,7 @@ import {formatDate,formatTime} from '../../lib/format';
 
 function when(value) {return formatDate(value)===formatDate(new Date())?`Today, ${formatTime(value)}`:formatDate(value);}
 
-// Past RM assistant conversations, in the same history column as the client's Recent chats. Only Sophie's own.
+// Saved RM assistant conversations, in the same Recent chats column as the client app. Only Sophie's own.
 export default function RmHistory({token,current,refresh,closing,onClose,onOpen}) {
   const [items,setItems]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const column=useRef(null),heading=useRef(null);
@@ -23,9 +23,9 @@ export default function RmHistory({token,current,refresh,closing,onClose,onOpen}
     setBusy(true);
     try {await rmDelete(`/conversations/${id}`,await token());await load();}catch(failure){setError(failure.message);}finally{setBusy(false);}
   }
-  return <div ref={column} className={`chat-history-track ${closing?'closing':''}`}><aside className={`chat-history ${closing?'closing':''}`} aria-label="Past conversations" data-testid="rm-history">
-    <div className="chat-history-head"><h2 ref={heading} tabIndex={-1}><Icon name="history"/>Past conversations</h2>
-      <button className="icon-button" aria-label="Close past conversations" onClick={onClose}><Icon name="close"/></button></div>
+  return <div ref={column} className={`chat-history-track ${closing?'closing':''}`}><aside className={`chat-history ${closing?'closing':''}`} aria-label="Recent chats" data-testid="rm-history">
+    <div className="chat-history-head"><h2 ref={heading} tabIndex={-1}><Icon name="history"/>Recent chats</h2>
+      <button className="icon-button" aria-label="Close recent chats" onClick={onClose}><Icon name="close"/></button></div>
     <div className="chat-history-body">
       {!items&&!error&&<div className="loading-list" role="status" aria-label="Loading conversations">{[0,1,2].map(key=><span key={key} className="skeleton-card"/>)}</div>}
       {error&&<p role="alert">{error}</p>}

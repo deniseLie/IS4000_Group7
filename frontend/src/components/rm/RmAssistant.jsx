@@ -13,7 +13,7 @@ const STARTERS=[
 
 // The RM assistant: one conversation about one active client at a time (or the whole book). The active client is
 // always shown; choosing another client starts a clean context so nothing carries over between clients.
-export default function RmAssistant({token,onSource,messages,setMessages,context,setContext,ask,onAsked,advisor,onNavigate,conversationId,onNew,onSaved,historyOpen,onHistory,notice,onNotice}) {
+export default function RmAssistant({token,chatCount,messages,setMessages,context,setContext,ask,onAsked,advisor,onNavigate,conversationId,onNew,onSaved,historyOpen,onHistory,notice,onNotice}) {
   const [input,setInput]=useState('');
   const [busy,setBusy]=useState(false),[status,setStatus]=useState('');
   const [book,setBook]=useState([]);
@@ -33,7 +33,7 @@ export default function RmAssistant({token,onSource,messages,setMessages,context
   useEffect(()=>{const box=composer.current;if(box){box.style.height='auto';box.style.height=`${Math.min(box.scrollHeight,200)}px`;}},[input]);
 
   const clientName=id=>book.find(c=>c.customer_id===id)?.name||null;
-  // Save the conversation after each reply, so Sophie can leave and reopen it from Past conversations.
+  // Save the conversation after each reply, so Sophie can leave and reopen it from Recent chats.
   async function save(list,ctx) {
     try {await rmPut(`/conversations/${conversationId}`,conversationPayload(list,ctx),await token());onSaved?.();}
     catch(failure) {onNotice?.(`This conversation could not be saved: ${failure.message}`);}
@@ -82,7 +82,7 @@ export default function RmAssistant({token,onSource,messages,setMessages,context
       {context.draft&&<span className="rm-context-chip warn">Draft revision {context.draft.revision}</span>}
       <span className="toolbar-spacer"/>
       <button className="bank-chat-logout new-chat" data-testid="rm-new-chat" disabled={busy} onClick={onNew}><Icon name="plus"/>New conversation</button>
-      <button className={`recent-chats ${historyOpen?'active':''}`} data-testid="rm-open-history" aria-expanded={historyOpen} onClick={onHistory}><Icon name="history"/>Past conversations</button>
+      <button className={`recent-chats ${historyOpen?'active':''}`} data-testid="rm-open-history" aria-expanded={historyOpen} onClick={onHistory}><Icon name="history"/>Recent chats{chatCount!==null&&chatCount!==undefined&&<span className="count">{chatCount}</span>}</button>
     </div>
     <section className="bank-chat-window" aria-label="RM assistant conversation">
       {notice&&<p className="chat-notice-bar" role="status"><Icon name="info"/><span>{notice}</span><button className="icon-button" aria-label="Dismiss message" onClick={()=>onNotice('')}><Icon name="close"/></button></p>}
@@ -99,12 +99,11 @@ export default function RmAssistant({token,onSource,messages,setMessages,context
         {messages.map((m,i)=><div key={i} data-testid={`rm-message-${m.role}`} className={`bank-chat-message ${m.role}`}>
           {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
           <div className={`bank-chat-bubble ${m.error?'error':''}`}>
-            {m.role==='assistant'&&<div className="answer-heading">RM assistant{m.reply&&<small className="answer-origin">{m.reply.origin==='ai'?'AI-generated from records':m.reply.origin==='access_check'?'Access check':'From records'}</small>}
-              {m.client_id&&<small className="answer-origin">{clientName(m.client_id)}</small>}</div>}
+            {m.role==='assistant'&&!(m.reply?.sections?.length&&m.reply.status!=='denied')&&<div className="answer-heading">RM assistant{m.reply?.origin==='access_check'&&<small className="answer-origin">Access check</small>}</div>}
             {m.role==='user'&&<span className="answer-text">{m.content}</span>}
             {m.pending&&<span className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{status}</span>}
             {m.error&&<span className="answer-text">{m.content}</span>}
-            {m.reply&&<RmAnswer reply={m.reply} onSource={onSource} onOption={option=>choose(option,m)} token={token} latest={i===lastIndex&&!busy&&!m.restored}
+            {m.reply&&<RmAnswer reply={m.reply} onEdit={next=>{const list=messages.map((x,k)=>k===i?{...x,reply:next}:x);setMessages(list);save(list,context);}} client={m.client_id?clientName(m.client_id):null} onOption={option=>choose(option,m)} token={token} latest={i===lastIndex&&!busy&&!m.restored}
               onAsk={text=>send(text,{intent:'draft_message'})}
               onDraftChange={value=>setContext(c=>({...c,draft:value}))}
               onDocumentationChange={value=>setContext(c=>({...c,documentation:value?{...(c.documentation||{}),...value}:null,note_id:value?.note_id||c.note_id}))}/>}

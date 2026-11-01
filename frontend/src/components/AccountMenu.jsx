@@ -23,6 +23,6 @@ export default function AccountMenu({label,items,placement='down',className=''})
   }
   return <div className={`account-menu ${placement==="up"?"opens-up":""} ${className}`} ref={root} onKeyDown={move}>
     <button ref={trigger} className="account-trigger" data-testid="open-account-menu" aria-haspopup="menu" aria-label="Account" aria-expanded={open} onClick={()=>setOpen(!open)}><span>{label}</span><Icon name="chevron"/></button>
-    {open&&<div className="account-menu-list" role="menu" aria-label="Account">{items.map(item=><button key={item.testid} type="button" role="menuitem" data-testid={item.testid} aria-label={item.ariaLabel} className={[item.danger&&'danger',item.mobile&&'mobile-only'].filter(Boolean).join(' ')} onClick={()=>choose(item)}><Icon name={item.icon}/>{item.label}</button>)}</div>}
+    {open&&<div className="account-menu-list" role="menu" aria-label="Account">{items.map(item=><button key={item.testid} type="button" role="menuitem" data-testid={item.testid} aria-label={item.ariaLabel} className={[item.danger&&'danger',item.mobile&&'mobile-only',item.desktop&&'desktop-only'].filter(Boolean).join(' ')} onClick={()=>choose(item)}><Icon name={item.icon}/>{item.label}</button>)}</div>}
   </div>;
 }

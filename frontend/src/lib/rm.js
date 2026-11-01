@@ -80,6 +80,60 @@ export function ageText(hours) {
   if(hours<48)return `${hours} h`;
   return `${Math.floor(hours/24)} days`;
 }
+// "Received 26 hours ago" / "Received 4 days ago": plain words for a ticket's age.
+export function receivedText(hours) {
+  if(hours===null||hours===undefined)return '';
+  if(hours<1)return 'Received less than an hour ago';
+  if(hours<48)return `Received ${hours} hour${hours===1?'':'s'} ago`;
+  const days=Math.floor(hours/24);
+  return `Received ${days} days ago`;
+}
+
+export const REPORT_TITLES={ticket_inbox:'Ticket triage',priorities:'Follow-up priorities',reviews:'Review deadlines',schedule:'Your schedule',
+  client_overview:'Client overview',meeting_history:'Meeting history',meeting_brief:'Meeting briefing',ticket_summary:'Ticket summary',
+  draft_message:'Client message',document_interaction:'Interaction record',actions_from_note:'Follow-up actions',handover_brief:'Handover brief',help:'RM assistant'};
+
+// A reply as plain text with numbered references and a source list (for Copy).
+export function reportText(reply,client) {
+  if(!reply)return '';
+  const sources=reply.sources||[],number=new Map(sources.map((s,i)=>[s.id,i+1]));
+  const lines=[`${REPORT_TITLES[reply.intent]||'RM assistant'}${client?` – ${client}`:''}`,''];
+  if(reply.summary)lines.push(reply.summary,'');
+  for(const section of reply.sections||[]) {
+    if(section.heading)lines.push(section.heading.toUpperCase());
+    for(const item of section.items) {
+      const refs=(item.source_ids||[]).filter(id=>number.has(id)).map(id=>`[${number.get(id)}]`).join('');
+      lines.push(`- ${item.kind!=='record'?`${KIND_LABELS[item.kind]||item.kind}: `:''}${item.text}${refs?` ${refs}`:''}`);
+    }
+    lines.push('');
+  }
+  if(reply.draft)lines.push('Draft (not sent):',reply.draft.text,'');
+  if(sources.length)lines.push('Sources',...sources.map((s,i)=>`[${i+1}] ${s.title}`));
+  lines.push('','AI-generated from DemoBank demo records. Check the sources before acting.');
+  return lines.join('\n');
+}
+
+// Live search over the RM's book (names only; the server still refuses anything outside the book).
+export function filterBook(book,query) {
+  const q=(query||'').trim().toLowerCase();
+  if(!q)return book||[];
+  return (book||[]).filter(c=>c.name.toLowerCase().split(/\s+/).some(part=>part.startsWith(q))||c.name.toLowerCase().includes(q));
+}
+
+// Meetings per client per week (Mon-Sun, by the appointment date) to show where the weekly limit is reached or passed.
+export function weekStart(date) {
+  const d=new Date(`${date}T00:00:00Z`);const day=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-day);return d.toISOString().slice(0,10);
+}
+export function meetingsPerWeek(appointments) {
+  const counts=new Map();
+  for(const a of appointments||[]) {const key=`${a.customer_id}|${weekStart(a.date)}`;counts.set(key,(counts.get(key)||0)+1);}
+  return counts;
+}
+export function groupByDate(appointments) {
+  const groups=[];
+  for(const a of appointments||[]) {const last=groups.at(-1);if(last&&last.date===a.date)last.items.push(a);else groups.push({date:a.date,items:[a]});}
+  return groups;
+}
 
 // Withheld items are counted, never shown: the RM learns that something could not be verified.
 export function validationNote(validation) {

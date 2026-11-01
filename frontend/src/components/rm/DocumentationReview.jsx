@@ -45,6 +45,13 @@ export default function DocumentationReview({documentation,token,onChange,latest
   }
   const item=(key,patch)=>setEdits(e=>({...e,items:e.items.map((x,i)=>i===key?{...x,...patch}:x)}));
   const ready=saved||existingNote;
+  // Once every proposed task and request has been created, submitted, skipped or rejected, say plainly what was recorded.
+  const actionable=draft.actions.filter(a=>a.kind==='follow_up_task'||a.kind==='service_request');
+  const skipped=a=>a.kind==='follow_up_task'&&!!taskState.result&&!tasks[a.id]?.selected&&!decisions[a.id];
+  const finished=ready&&actionable.every(a=>decisions[a.id]||skipped(a));
+  const created=actionable.filter(a=>decisions[a.id]==='created'),requests=actionable.filter(a=>typeof decisions[a.id]==='object'&&decisions[a.id]);
+  const notDone=actionable.filter(a=>decisions[a.id]==='rejected'||skipped(a));
+  const remaining=draft.actions.some(a=>a.kind==='follow_up_task'&&!decisions[a.id]&&!skipped(a));
   const locked=!latest&&!saved;
   return <section className="rmw-review documentation" data-testid="rm-documentation">
     <div className="rmw-review-head"><strong><Icon name="document"/>{existingNote?'Follow-ups from a saved note':saved?'Interaction saved to the client record':'Interaction documentation – not saved'}</strong>
@@ -95,9 +102,18 @@ export default function DocumentationReview({documentation,token,onChange,latest
       {a.kind==='client_note'&&<p className="rm-small">Included in the saved interaction summary.</p>}
       {decisions[a.id]!=='created'&&typeof decisions[a.id]!=='object'&&<button type="button" className="link-button" onClick={()=>setDecisions({...decisions,[a.id]:decisions[a.id]==='rejected'?undefined:'rejected'})}>{decisions[a.id]==='rejected'?'Undo reject':'Reject'}</button>}
     </li>)}</ul>
-    {draft.actions.some(a=>a.kind==='follow_up_task')&&<div className="panel-actions">
-      {taskState.error&&<p role="alert" className="rm-error">{taskState.error}</p>}
-      {taskState.result?.duplicates?.length>0&&<p className="rm-cautions">Not created because a matching open task exists: {taskState.result.duplicates.map(d=>d.title).join('; ')}.</p>}
+    {finished&&<div className="rm-complete" role="status" data-testid="rm-documentation-complete">
+      <strong><Icon name="check"/>All done for this {existingNote?'note':'call'}. Nothing else needs your approval.</strong>
+      <ul>
+        {!existingNote&&<li>Interaction saved to {documentation.client}’s record ({edits.met_on}{edits.title?` · ${edits.title}`:''}). Find it under My clients → Meetings & notes.</li>}
+        {created.length>0&&<li>{created.length} task{created.length===1?'':'s'} created: {created.map(a=>tasks[a.id]?.title||a.title).join('; ')}. They appear in Follow-ups.</li>}
+        {requests.map(a=><li key={a.id}>Request {decisions[a.id].reference} sent to the {decisions[a.id].owner_team}. {documentation.client} sees it in My requests.</li>)}
+        {notDone.length>0&&<li>Not created: {notDone.map(a=>a.title).join('; ')}.</li>}
+        {!actionable.length&&<li>No tasks or requests were proposed from these notes.</li>}
+      </ul></div>}
+    {taskState.error&&<p role="alert" className="rm-error">{taskState.error}</p>}
+    {taskState.result?.duplicates?.length>0&&<p className="rm-cautions">Not created because a matching open task exists: {taskState.result.duplicates.map(d=>d.title).join('; ')}.</p>}
+    {remaining&&<div className="panel-actions">
       <button type="button" className="primary-button" data-testid="rm-create-tasks" disabled={!ready||taskState.busy||!draft.actions.some(a=>a.kind==='follow_up_task'&&tasks[a.id]?.selected&&!decisions[a.id])} onClick={createTasks}>{taskState.busy?'Creating…':'Create selected tasks'}</button></div>}
   </section>;
 }

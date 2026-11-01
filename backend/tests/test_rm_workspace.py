@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native temporary PostgreSQL with TEST_DATABASE_LOCAL=1')
 SOPHIE='00000000-0000-4000-8000-100200000002'
 RACHEL='00000000-0000-4000-8000-100300000001'
+PRIYA='00000000-0000-4000-8000-100100000002'
 
 
 def as_rm(db: 'Connection[SqlRow]',login=SOPHIE_LOGIN,rm_id: str=SOPHIE,role: str='rm') -> None:
@@ -24,10 +25,21 @@ def as_rm(db: 'Connection[SqlRow]',login=SOPHIE_LOGIN,rm_id: str=SOPHIE,role: st
     db.execute('set local role authenticated')
 
 
+def full_book(db: 'Connection[SqlRow]') -> None:
+    """Undo 0093 inside the test transaction: these tests exercise the 0089 rules with Sophie's original five-client book."""
+    db.execute("delete from rm.assignments where advisor_id=%s and customer_id in (1003,1004,1005) and ended_on is null",(PRIYA,))
+    db.execute("update rm.assignments set ended_on=null where advisor_id=%s and customer_id in (1003,1004,1005) "
+        "and ended_on=(select max(ended_on) from rm.assignments a where a.advisor_id=%s and a.customer_id=rm.assignments.customer_id)",(SOPHIE,SOPHIE))
+    db.execute("update rm.appointments set status=case when customer_id=1004 and format='video' then 'held' else 'confirmed' end "
+        "where advisor_id=%s and customer_id in (1003,1004,1005) and status='cancelled' and starts_at>now()",(SOPHIE,))
+    db.execute("update rm.tasks set status='open' where advisor_id=%s and customer_id in (1003,1004,1005) and status='cancelled'",(SOPHIE,))
+
+
 def call(db,sql: str,*args):return db.execute(f'select {sql}',args).fetchone()[0]
 
 
 def test_only_a_linked_rm_sees_only_her_book(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     names=[row['name'] for row in call(database,'rm_book()')['data']]
     assert names==['David Lee','Grace Koh','Hafiz Rahman','Michelle Ng','Tan Mei Ling']
@@ -48,6 +60,7 @@ def test_only_a_linked_rm_sees_only_her_book(database: 'Connection[SqlRow]') -> 
 
 
 def test_names_outside_the_book_are_refused_before_any_read(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     match=call(database,'rm_match_clients(%s)',"Show me Ong Wei Ming's transactions and David's notes")
     assert match['outside_book'] is True and match['in_book']==[{'customer_id':1003,'name':'David Lee'}]
@@ -56,6 +69,7 @@ def test_names_outside_the_book_are_refused_before_any_read(database: 'Connectio
 
 
 def test_specialist_cases_are_read_only_and_restricted_detail_is_withheld(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     tickets=call(database,'rm_tickets()')['data']
     mine={t['reference'] for t in tickets['rm_owned']}
@@ -69,6 +83,7 @@ def test_specialist_cases_are_read_only_and_restricted_detail_is_withheld(databa
 
 
 def test_consent_controls_the_handover_note_and_rm16_is_audited(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     shared=call(database,'rm_shared_summary(1007)')['data']
     assert shared['consent_active'] and len(shared['shared'])==1 and shared['excluded_revoked']==1 and shared['excluded_expired']==1
@@ -87,6 +102,7 @@ def test_consent_controls_the_handover_note_and_rm16_is_audited(database: 'Conne
 
 
 def test_previous_rm_loses_access_after_reassignment(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     rachel_login=uuid4()
     database.execute("insert into auth.users(id,email) values (%s,'demo.rachel@example.com')",(rachel_login,))
     database.execute("insert into rm.staff_logins(advisor_id,demo_email,auth_user_id) values (%s,'demo.rachel@example.com',%s)",(RACHEL,rachel_login))
@@ -95,6 +111,7 @@ def test_previous_rm_loses_access_after_reassignment(database: 'Connection[SqlRo
 
 
 def test_rm_approved_writes_are_recorded_once_and_visible_to_the_client(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     request,message,note=uuid4(),uuid4(),uuid4()
     with pytest.raises(Exception,match='identity check'):
@@ -137,6 +154,7 @@ def test_rm_approved_writes_are_recorded_once_and_visible_to_the_client(database
 
 
 def test_availability_changes_what_clients_can_book(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     before=call(database,'rm_availability()')['days']
     day=next(d for d in before if len(d['free'])>2)
@@ -156,6 +174,7 @@ def test_availability_changes_what_clients_can_book(database: 'Connection[SqlRow
 
 
 def test_followups_cover_deadlines_tasks_meetings_and_commitments(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     items=call(database,'rm_followups()')['data']
     kinds={i['kind'] for i in items}
@@ -168,6 +187,7 @@ def test_followups_cover_deadlines_tasks_meetings_and_commitments(database: 'Con
 
 
 def test_conversations_are_saved_per_rm_and_hide_clients_who_left_the_book(database: 'Connection[SqlRow]') -> None:
+    full_book(database)
     as_rm(database)
     cid=uuid4()
     turns=[{'role':'user','content':'About Mei Ling','client_id':1007},{'role':'assistant','reply':{'summary':'x'},'client_id':1007},
@@ -187,3 +207,44 @@ def test_conversations_are_saved_per_rm_and_hide_clients_who_left_the_book(datab
     assert call(database,'rm_conversations()')['data'][0]['title']=='Earlier conversation'
     set_customer(database,1002)
     with pytest.raises(Exception):database.execute('select rm_conversations()')
+
+
+def test_clients_can_book_at_most_two_meetings_a_week(database: 'Connection[SqlRow]') -> None:
+    """0092: a third meeting in one week is neither offered nor accepted; other weeks stay open."""
+    meeting=database.execute("select starts_at,advisor_id from rm.appointments where customer_id=1002 and status='confirmed' "
+        "and starts_at>now() order by starts_at limit 1").fetchone()
+    week=lambda t:database.execute("select date_trunc('week',%s::timestamptz at time zone 'Asia/Singapore')",(t,)).fetchone()[0]
+    def offered():
+        set_customer(database,1002)
+        rows=database.execute("select starts_at from appointments_find_slots(1002,(now() at time zone 'Asia/Singapore')::date,"
+            "(now() at time zone 'Asia/Singapore')::date+13,20)").fetchall()
+        database.execute('reset role')
+        return [r[0] for r in rows]
+    same_week=[s for s in offered() if week(s)==week(meeting[0])]
+    assert same_week, 'one meeting that week: still bookable'
+    database.execute("insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status) values (1002,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed')",
+        (meeting[1],same_week[0],same_week[0]))
+    assert not [s for s in offered() if week(s)==week(meeting[0])]
+    target=json.dumps({'advisor_id':str(meeting[1]),'starts_at':str(same_week[-1]),'ends_at':None})
+    database.execute('savepoint limit_check')
+    with pytest.raises(Exception,match='2 meetings with your relationship manager that week'):
+        database.execute("select actions.require_available_slot(jsonb_set(%s::jsonb,'{ends_at}',to_jsonb((%s::timestamptz+interval '30 minutes')::text)),1002)",(target,same_week[-1]))
+    database.execute('rollback to savepoint limit_check')
+    as_rm(database)
+    assert call(database,'rm_availability()')['rules']['weekly_meetings_per_client']==2
+
+
+def test_demo_book_is_michelle_and_mei_ling(database: 'Connection[SqlRow]') -> None:
+    """0093: Sophie keeps two clients; Grace and Hafiz moved to Priya, so they are refused like anyone outside her book."""
+    as_rm(database)
+    assert [row['name'] for row in call(database,'rm_book()')['data']]==['Michelle Ng','Tan Mei Ling']
+    assert call(database,'rm_client_profile(%s)',1004)['denied'] is True
+    assert {a['customer_id'] for a in call(database,'rm_appointments()')['data']}<={1002,1007}
+    assert all(b['client'] in ('Michelle Ng','Tan Mei Ling') for d in call(database,'rm_availability()')['days'] for b in d['bookings'])
+
+
+def test_clients_still_read_their_own_advisor(database: 'Connection[SqlRow]') -> None:
+    """0094: the RLS helper rm.is_my_advisor stays executable for customers after 0089's schema-wide revoke."""
+    set_customer(database,1002)
+    assert call(database,'customer_read_assignment(%s)',1002)['data']['current']['name']=='Sophie Lim (DEMO)'
+    assert call(database,'customer_read_introduction(%s)',1002)['data']['current']['name']=='Sophie Lim (DEMO)'

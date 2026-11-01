@@ -1,10 +1,10 @@
 # Workflow 2 – Relationship manager (Sophie)
 
-**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes) and `0090` (demo data). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
+**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
 
 ## Who she is
 
-Sophie Lim (DEMO), Senior Relationship Manager, Private Clients Team A. Her book: Michelle Ng (1002), David Lee (1003, local database only), Grace Koh (1004), Hafiz Rahman (1005) and Tan Mei Ling (1007, inherited from Rachel Goh on 26 Oct 2026). Ong Wei Ming (1006) and Alex Tan (1001) belong to Priya Nair and are outside her book.
+Sophie Lim (DEMO), Senior Relationship Manager, Private Clients Team A. Her book (since 0093): **Michelle Ng (1002)** and **Tan Mei Ling (1007, inherited from Rachel Goh on 26 Oct 2026)**. Two clients keep whole-book assistant questions (triage, follow-ups, schedule) small. Grace Koh (1004), Hafiz Rahman (1005) and David Lee (1003, local database only) were moved to Priya Nair by 0093; with Ong Wei Ming (1006) and Alex Tan (1001) they are outside her book, so asking about them is refused and audited. Their seeded notes and tickets stay in the database (0088/0090) and are still used by the database tests.
 
 ## How it works
 
@@ -33,7 +33,7 @@ flowchart LR
 
 ## Saved conversations (0091)
 
-Each RM conversation is saved after every reply and listed under **Past conversations** (50 most recent, redacted, Sophie's own only). Reopening shows earlier drafts and review cards read-only (ask again to approve something new). Turns about a client who is no longer in her book are not shown again, and such conversations get a neutral title. Full source records are not stored; asking again re-reads them.
+Each RM conversation is saved after every reply and listed under **Recent chats** (same name and count badge as the client app) (50 most recent, redacted, Sophie's own only). Reopening shows earlier drafts and review cards read-only (ask again to approve something new). Turns about a client who is no longer in her book are not shown again, and such conversations get a neutral title. Full source records are not stored; asking again re-reads them.
 
 ## Story map
 
@@ -45,13 +45,19 @@ Each RM conversation is saved after every reply and listed under **Past conversa
 | RM4 Meeting briefing | *Schedule* → Prepare briefing; "Brief me for my 10am with David" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
 | RM5 Interaction documentation | Paste notes in the assistant (or *Document a call* on a client) | Facts, decisions, commitments, requests separately; confirmed vs tentative; corrections by chat keep the source notes; saved only on approval |
 | RM6 Service requests | Documentation → *Review request form* | Prefilled from notes, missing fields and open duplicates checked in SQL, verification tick, reference after creation |
-| RM7 Ticket inbox | *Ticket inbox*; "What needs my attention today?" | Her tickets vs specialist-managed (read-only, client-safe status) |
+| RM7 Ticket inbox | *Ticket inbox*; "What needs my attention today?" | *My tickets* (draft a reply, summarise, details) vs *Specialist tickets* (status only: no summarise or reply, the owning team deals with the client); "Received 26 hours ago", "Due …" / "Overdue · was due …"; priority filter |
 | RM8 Ticket summary | *Summarise* on a ticket | What the bank, the chat assistant and RMs told the client; who decides; required fields present/missing; never closes the ticket |
 | RM9 Client communication | *Draft a reply*; "make it shorter" for revisions | Approve and send: on her ticket (optional status), on a non-restricted specialist ticket (message only), or to the Inbox (no ticket). Approval and result recorded; failures recorded as failed |
 | RM10 Follow-up tasks | Documentation → tasks; "turn the 2 Sep note into tasks" | Only actions quoting the notes; owner/due flagged when missing; duplicates detected; linked to the saved interaction |
 | RM11 Follow-up priorities | *Follow-ups*; *Prioritise with assistant* | Live from records; reason, date and source per item; never suggests a second meeting when one is confirmed; dismiss |
-| RM12 Availability | *Schedule* | Weekly hours and blocks for the next 14 days drive the free times Michelle books in My requests → Meetings (CR17); booked or held times cannot be blocked |
+| RM12 Availability | *Schedule* → Appointments / Availability / Working hours | Meetings grouped by day; weekly hours edited in one table (apply to all weekdays, save once); blocks drive the free times clients book (CR17); **at most 2 meetings per client per week** (0092), enforced at booking and shown with a warning for older bookings over the limit |
 | RM16 Handover brief | Inherited client → *Handover brief* | Only with a recorded reassignment; fixed eight sections; consent-filtered handover note (revoked/expired excluded); audited with the sources used |
+
+## Layout (Nov 2026 redesign)
+
+- **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.
+- **My clients** always opens on the full list; search filters as you type, clearing it shows everyone, Enter on a name outside the book is refused and recorded. A client page has a header with quick actions, tabs (*Overview*, *Requests & tickets*, *Meetings & notes*) and an *AI client overview* generated only on request.
+- **Small screens**: pages move to a bottom tab bar, the header keeps only the avatar (sign out). The client app does the same: its account menu keeps only *Sign out* on phones, and guests see one *Sign in* button.
 
 ## Demo data (0090)
 
@@ -64,11 +70,11 @@ Each RM conversation is saved after every reply and listed under **Past conversa
 ## Demo script (about 10 minutes)
 
 1. Sign in as `demo.sophie@example.com`. The workspace shows *RM assistant* with her book size.
-2. **Ticket triage**: "What needs my attention today?" → her requests first, Grace's urgent fraud case read-only with its detail restricted.
+2. **Ticket triage**: "What needs my attention today?" → Mei Ling's two requests for Sophie first, Michelle's specialist-managed requests read-only.
 3. **Outside the book**: "Show me Ong Wei Ming's recent transactions" → refused, no records read (audit: `policy.rm_client_denied`).
 4. **Overview**: My clients → Michelle → blocks with sources and gaps → *Ask for an overview*; then "what did she say about her mother?" (follow-up on the same client; the 20 Oct note is flagged as unclear).
 5. **Briefing**: Schedule → Michelle → *Prepare briefing* → then "add a question about the sale agreement" (refines the same briefing).
-6. **Documentation**: Michelle → *Document a call or meeting*, paste:
+6. **Documentation**: Michelle → *Document a call*, paste the long phone-call note in [demo-call-note-michelle.md](demo-call-note-michelle.md) (with what to expect), or this short one:
    `Notes from my call today with Michelle (phone): she will upload the sale agreement this week. She asked the compliance team to confirm whether a sale agreement in Thai with a certified English translation is acceptable for her review. She also wants a copy of her September 2026 statement. She might review her card limit in December, not decided. I'll send her fixed deposit options by Friday.`
    The summary separates facts, commitments and requests, marks the card limit as tentative, proposes a compliance question (service request), flags the statement copy as a duplicate of her open statement request, and flags the fixed deposit task as similar to the open one. Correct by chat ("Correction: the statement is for August 2026") → approve → *Review request form* on the compliance question → fill anything missing → tick verification → submit (the TCK- reference appears only now) → *Create selected tasks*.
 7. **Client message**: Ticket inbox → Michelle's statement request → *Draft a reply* → "make it warmer" → edit → tick → *Approve and send*. Sign in as Michelle: My requests shows *Latest update* and an Inbox notice.
@@ -77,7 +83,7 @@ Each RM conversation is saved after every reply and listed under **Past conversa
 
 ## Set up on the hosted project
 
-1. Apply `backend/supabase/hosted/15_apply_0087_0088_hosted.sql` (if not yet) and `16_apply_0089_0090_hosted.sql` in the SQL editor.
+1. Apply `backend/supabase/hosted/15_apply_0087_0088_hosted.sql` (if not yet) and `16_apply_0089_0090_hosted.sql` in the SQL editor. If 0089/0090 were applied by running the migration files directly (they are missing from `supabase_migrations.schema_migrations` and 16 fails with *already exists*), run `19_repair_0089_0090_hosted.sql` instead.
 2. Authentication → Users → create `demo.sophie@example.com` with a password.
 3. Set her app_metadata (SQL editor, owner role):
    ```sql

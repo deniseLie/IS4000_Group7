@@ -513,9 +513,9 @@ export default function Chat({session,onSignIn}) {
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();history.replaceState(null,'',location.pathname+location.search);try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
-    {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
-    ...(store==='database'?[{testid:'open-saved-chats',ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
-    {testid:'open-actions',ariaLabel:'Open actions',icon:'history',label:'Actions',onSelect:openActions},
+    {testid:'open-records',desktop:true,ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
+    ...(store==='database'?[{testid:'open-saved-chats',desktop:true,ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
+    {testid:'open-actions',desktop:true,ariaLabel:'Open actions',icon:'history',label:'Actions',onSelect:openActions},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
   // The sidebar and the mobile tab bar list the same pages; for guests every page but the assistant is a sign-in prompt.

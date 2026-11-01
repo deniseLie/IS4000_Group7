@@ -26,14 +26,14 @@ def set_sophie(db: 'Connection[SqlRow]') -> None:
     db.execute('set local role authenticated')
 
 
-def test_sophie_has_a_linked_login_and_a_book_of_five_clients(database: 'Connection[SqlRow]') -> None:
+def test_sophie_has_a_linked_login_and_a_book_of_two_clients(database: 'Connection[SqlRow]') -> None:
     assert database.execute('select advisor_id,demo_email,auth_user_id from rm.staff_logins').fetchall()==[(SOPHIE,'demo.sophie@example.com',SOPHIE_LOGIN)]
     assert database.execute("select full_name,role,team_name,email from rm.advisors where advisor_id=%s",(SOPHIE,)).fetchone()==(
         'Sophie Lim (DEMO)','Senior Relationship Manager','Private Clients Team A','sophie.lim@demobank.example')
     book=database.execute('select customer_id from rm.assignments where advisor_id=%s and ended_on is null order by 1',(SOPHIE,)).fetchall()
-    assert [row[0] for row in book]==[1002,1003,1004,1005,1007]  # 0090 adds Tan Mei Ling, inherited from Rachel
+    assert [row[0] for row in book]==[1002,1007]  # 0090 adds Tan Mei Ling (inherited from Rachel); 0093 moves 1003-1005 to Priya
     other=database.execute('select customer_id from rm.assignments where advisor_id=%s and ended_on is null order by 1',(PRIYA,)).fetchall()
-    assert [row[0] for row in other]==[1001,1006]
+    assert [row[0] for row in other]==[1001,1003,1004,1005,1006]
     # Michelle keeps one long-standing assignment (no change notice); her joining details name Sophie.
     assert database.execute('select count(*),bool_and(ended_on is null) from rm.assignments where customer_id=1002').fetchone()==(1,True)
     details=[row[0] for row in database.execute('select joining_details from rm.meeting_options where advisor_id=%s',(SOPHIE,))]
@@ -41,7 +41,7 @@ def test_sophie_has_a_linked_login_and_a_book_of_five_clients(database: 'Connect
 
 
 def test_david_is_inherited_from_rachel_with_notes_a_request_and_a_consented_handover(database: 'Connection[SqlRow]') -> None:
-    assert database.execute('select advisor_id,ended_on is not null from rm.assignments where customer_id=1003 order by started_on').fetchall()==[(RACHEL,True),(SOPHIE,False)]
+    assert database.execute('select advisor_id,ended_on is not null from rm.assignments where customer_id=1003 order by started_on').fetchall()==[(RACHEL,True),(SOPHIE,True),(PRIYA,False)]  # 0093
     notes=database.execute('select advisor_id,format,cardinality(commitments) from rm.meeting_notes where customer_id=1003 order by met_on').fetchall()
     assert len(notes)==3 and {row[0] for row in notes}=={RACHEL} and all(row[2]>=1 for row in notes)
     assert database.execute("select count(*) from rm.requests where customer_id=1003 and status<>'closed'").fetchone()==(1,)
@@ -52,7 +52,7 @@ def test_david_is_inherited_from_rachel_with_notes_a_request_and_a_consented_han
 
 def test_open_tickets_across_the_book_include_urgent_fraud_and_one_past_its_target(database: 'Connection[SqlRow]') -> None:
     rows=database.execute("""select category,urgency,target_at<now() from support.tickets
-        where status=any(%s) and customer_id in (select customer_id from rm.assignments where advisor_id=%s and ended_on is null)""",(list(OPEN),SOPHIE)).fetchall()
+        where status=any(%s) and customer_id in (1002,1003,1004,1005,1007)""",(list(OPEN),)).fetchall()  # the 0088-0090 seed book
     assert 8<=len(rows)<=12  # 0090: Mei Ling's request to Rachel and her handed-over chat question
     assert len({row[0] for row in rows})>=6 and {row[1] for row in rows}>={'urgent','high','normal','low'}
     assert ('suspected_fraud','urgent',False) in rows and sum(row[2] for row in rows)==1

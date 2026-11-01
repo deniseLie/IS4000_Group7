@@ -22,6 +22,12 @@
 | `16_apply_0089_0090_hosted.sql` | Relationship manager workspace: book-based RM access (F12), RM reads and RM-approved writes (F14), audited refusals; demo data (Sophie's notes, preferences, maturities, tasks, appointments; Tan Mei Ling inherited from Rachel). Then create Sophie's login and app_metadata (`docs/workflows/workflow-2-relationship-manager.md`, *Set up on the hosted project*) | Once, after 15 |
 | `17_reset_michelle_demo.sql` | Optional demo reset: deletes Michelle's saved chats and the requests and handoffs they created (keeps her records, compliance review, meetings, the seeded requests and the audit log) | Any time before a demo |
 | `18_apply_0091_hosted.sql` | Saved RM assistant conversations (Past conversations in the RM workspace); turns about clients no longer in the RM's book are not shown again | Once, after 16 |
+| `19_repair_0089_0090_hosted.sql` | Use when `0089`/`0090` are missing from `supabase_migrations.schema_migrations` but the RM workspace works (the migration files were run directly) and 16 fails with *already exists*. Checks the 0089 columns, recreates every 0089 function, grant and template from the released source, records 0089/0090 without re-inserting data. On a project without 0089 it behaves like 16; when the rows exist it only confirms them | Once, instead of re-running 16 |
+| `20_apply_0092_hosted.sql` | Weekly meeting limit: a client can book at most two meetings with their RM per week (Mon–Sun); full weeks are no longer offered and the RM sees the rule on Schedule | Once, after 18/19 |
+| `21_reset_michelle_meetings.sql` | Optional demo reset: deletes all of Michelle's appointments and booking notices, then rebooks the seeded meeting (next Wednesday 14:30, video, with Sophie) | Any time before a demo |
+| `22_apply_0093_hosted.sql` | Sophie's book becomes Michelle and Tan Mei Ling; Grace and Hafiz (and David, if present) move to Priya, their meetings with Sophie are cancelled and her open tasks for them closed | Once, after 20 |
+| `23_repair_michelle_actions.sql` | Fixes Michelle's Actions page (GET /commands 503) after an earlier run of 17: removes actions whose chat was deleted; 17 now does this itself | Once, if Actions fails |
+| `24_apply_0094_hosted.sql` | Restores the customer grant on `rm.is_my_advisor` that 0089 removed (Michelle's Overview "Record access does not match the signed-in customer", /customer/advisor 403) | Once, now |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

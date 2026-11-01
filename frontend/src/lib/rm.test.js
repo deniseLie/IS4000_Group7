@@ -80,3 +80,36 @@ test('saved conversations drop source records, keep clients and fit the request 
   const restored=restoreConversation({messages:saved.messages,context:{client_id:1002}});
   assert.ok(restored.messages.every(m=>m.restored)) ;assert.equal(restored.context.draft,null);
 });
+
+test('ticket age reads as plain words and the book filters as you type',async()=>{
+  const {receivedText,filterBook}=await import('./rm.js');
+  assert.equal(receivedText(0),'Received less than an hour ago');
+  assert.equal(receivedText(1),'Received 1 hour ago');
+  assert.equal(receivedText(26),'Received 26 hours ago');
+  assert.equal(receivedText(100),'Received 4 days ago');
+  const book=[{name:'Grace Koh'},{name:'Michelle Ng'},{name:'Tan Mei Ling'}];
+  assert.deepEqual(filterBook(book,'gr').map(c=>c.name),['Grace Koh']);
+  assert.deepEqual(filterBook(book,'mei').map(c=>c.name),['Tan Mei Ling']);
+  assert.equal(filterBook(book,'  ').length,3);
+  assert.equal(filterBook(book,'wei ming').length,0);
+});
+
+test('meetings are grouped by day and counted per client per week',async()=>{
+  const {meetingsPerWeek,weekStart,groupByDate}=await import('./rm.js');
+  assert.equal(weekStart('2026-11-01'),'2026-10-26');  // Sunday belongs to the week starting Monday
+  assert.equal(weekStart('2026-11-02'),'2026-11-02');
+  const list=[{customer_id:1002,date:'2026-11-02'},{customer_id:1002,date:'2026-11-02'},{customer_id:1002,date:'2026-11-06'},{customer_id:1004,date:'2026-11-09'}];
+  const counts=meetingsPerWeek(list);
+  assert.equal(counts.get('1002|2026-11-02'),3);assert.equal(counts.get('1004|2026-11-09'),1);
+  assert.deepEqual(groupByDate(list).map(g=>[g.date,g.items.length]),[['2026-11-02',2],['2026-11-06',1],['2026-11-09',1]]);
+});
+
+test('a copied report keeps labels, numbered references and the source list',async()=>{
+  const {reportText}=await import('./rm.js');
+  const text=reportText({intent:'meeting_brief',summary:'S',sections:[{heading:'Open matters',items:[{text:'FD matures 11 Nov',kind:'record',source_ids:['milestones','x']},
+    {text:'Ask about the sale agreement',kind:'suggestion',source_ids:['note-2026-09-24']}]}],sources:[{id:'milestones',title:'Upcoming maturities'},{id:'note-2026-09-24',title:'Meeting note 24 Sep 2026'}]},'Michelle Ng');
+  assert.match(text,/^Meeting briefing – Michelle Ng/);
+  assert.match(text,/- FD matures 11 Nov \[1\]/);
+  assert.match(text,/- AI suggestion: Ask about the sale agreement \[2\]/);
+  assert.match(text,/\[2\] Meeting note 24 Sep 2026/);
+});
