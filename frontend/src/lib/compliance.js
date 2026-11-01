@@ -74,9 +74,12 @@ export function templateFor(item,templates){
 }
 export async function loadTemplates(signal){
  const response=await fetch(`${API}/documents/templates`,{signal});
- if(!response.ok)return [];
+ if(!response.ok)throw new Error(`Document guidance could not be loaded (HTTP ${response.status}).`);
  const body=await response.json();
- return Array.isArray(body)?body.filter(item=>item&&typeof item.key==='string'&&Array.isArray(item.must_show)&&Array.isArray(item.example)):[];
+ if(!Array.isArray(body)||body.some(item=>!item||typeof item.key!=='string'||typeof item.title!=='string'||typeof item.match!=='string'||
+  [item.must_show,item.example,item.tips].some(lines=>!Array.isArray(lines)||lines.some(line=>typeof line!=='string'))))throw new Error('Document guidance could not be verified.');
+ for(const item of body){try{new RegExp(item.match,'i');}catch{throw new Error('Document guidance contains an invalid document matcher.');}}
+ return body;
 }
 async function request(path,token,signal,method='GET'){
  const response=await fetch(`${API}${path}`,{method,headers:{Authorization:`Bearer ${token}`},signal});

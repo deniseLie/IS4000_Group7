@@ -65,7 +65,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         return (AgentResult(task_id=task.task_id,agent='compliance',
                     status='needs_clarification',answer_kind='conversation',
                     text=CLARIFICATION,question=CLARIFICATION),
-                [],prompts.load('compliance','v3')['id'])
+                [],prompts.load('compliance','v4')['id'])
     snapshot=await load(ctx)
     chosen=compliance_selection.selection.get()
     if chosen is not None:
@@ -74,7 +74,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         if not requests:raise customer_data.CustomerDataIntegrityError('Selected request changed')
         snapshot=snapshot.model_copy(update={'data':snapshot.data.model_copy(update={'requested_items':[],'status_history':[],'info_requests':requests})})
     evidence=[*public_evidence,*evidence_for(snapshot)]
-    pv=prompts.load('compliance','v3')
+    pv=prompts.load('compliance','v4')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

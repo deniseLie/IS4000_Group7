@@ -36,6 +36,25 @@ def test_a_recent_singapore_utility_bill_passes() -> None:
     assert findings==[] and len(requirements)==4 and all(r.kind=='presence' for r in requirements)
 
 
+@pytest.mark.parametrize('stamp,expected',[
+    ('Bill date: 01 Aug 2026',None),('Bill date: 31 Jul 2026','date_outdated'),
+    ('Bill date: 02 Nov 2026\nBill period: 01 Oct 2026 - 31 Oct 2026','date_invalid'),
+    ('Bill date: 01 Jun 2026\nPlease pay by 01 Nov 2026','date_outdated'),
+    ('Bill date: 01/11/2026','date_invalid'),('Bill date: 2026/11/01',None),
+])
+def test_address_issue_date_boundaries_ignore_payment_dates(stamp: str,expected: str | None) -> None:
+    from app.schemas.prechecks import CheckPolicy
+    findings=templates.address_date_findings(stamp,date(2026,11,1),CheckPolicy())
+    assert [finding.code for finding in findings]==([] if expected is None else [expected])
+
+
+def test_address_numeric_date_uses_the_configured_order() -> None:
+    from app.schemas.prechecks import CheckPolicy
+    today=date(2026,11,1)
+    assert not templates.address_date_findings('Bill date: 01/11/2026',today,CheckPolicy(numeric_date_order='day_first'))
+    assert [finding.code for finding in templates.address_date_findings('Bill date: 01/11/2026',today,CheckPolicy(numeric_date_order='month_first'))]==['date_outdated']
+
+
 @pytest.mark.parametrize('change,expected',[
     (lambda lines:[l for l in lines if 'MICHELLE' not in l],('missing_field','Your full name, as on your bank records')),
     (lambda lines:[l for l in lines if 'Singapore' not in l],('missing_field','Your Singapore address with its 6-digit postal code')),
@@ -58,8 +77,22 @@ def test_declarations_need_a_date_and_signature() -> None:
     good=['Source of wealth declaration','Name: Michelle Ng','My wealth comes from my business since 2015','Date: 20 Oct 2026','Signature: M Ng']
     assert run('wealth_declaration',good)[1]==[]
     assert ('missing_field','Your signature') in codes(run('wealth_declaration',good[:-1])[1])
-    tax=['Tax residency self-certification','Name: Michelle Ng','Country of tax residence: Singapore','Date: 20 Oct 2026','Signed by the account holder']
+    tax=['Tax residency self-certification','Name: Michelle Ng','Country of tax residence: Singapore','Date: 20 Oct 2026','Signed by Michelle Ng']
     assert run('tax_residency',tax)[1]==[]
+
+
+@pytest.mark.parametrize('signature',['Signature: ____________','Signature:','Signature: not signed','Signature: pending','Signature: your name','Signed by the account holder'])
+@pytest.mark.parametrize('key',['wealth_declaration','tax_residency'])
+def test_unsigned_declarations_do_not_pass_preliminary_checks(signature: str,key: str) -> None:
+    lines=['Source of wealth declaration','Tax residency self-certification','Name: Michelle Ng',
+        'Country of tax residence: Singapore','My wealth comes from my business','Date: 20 Oct 2026',signature]
+    assert ('missing_field','Your signature') in codes(run(key,lines)[1])
+
+
+def test_empty_signature_line_does_not_borrow_the_next_field() -> None:
+    assert not templates.has_signature_text('Signature:\nDate: 20 Oct 2026')
+    assert not templates.has_signature_text('Signature: ____________ Date: 20 Oct 2026')
+    assert templates.has_signature_text('Signature: M Ng Date: 20 Oct 2026')
 
 
 def test_unreadable_files_and_missing_pages_are_explained() -> None:

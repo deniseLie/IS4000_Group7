@@ -79,6 +79,16 @@ class TicketUpdate(BaseModel):
     note: str | None
 
 
+class TicketFollowUp(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    message: Annotated[str,StringConstraints(strict=True,min_length=1,max_length=480,pattern=r'\S')]
+
+
+class TicketFollowUpResult(BaseModel):
+    reference: Reference
+    added: StrictBool
+
+
 class TicketAttachment(BaseModel):
     """A document the client attached to an RM ticket (0082): its id and file name only, never a storage path."""
     model_config=ConfigDict(extra='ignore')

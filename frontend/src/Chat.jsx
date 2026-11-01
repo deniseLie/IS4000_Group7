@@ -4,7 +4,7 @@ import Panel from './components/Panel';
 import Answer from './components/Answer';
 import TicketsPage from './components/TicketsPage';
 import InlineRequestCard from './components/InlineRequestCard';
-import {limitRequestPrefill,ticketIntent,isLimitWorkflowReply,isConceptQuestion,statementRequestPrefill} from './lib/ticketData';
+import {limitRequestPrefill,ticketIntent,isLimitWorkflowReply,isConceptQuestion,statementRequestPrefill,sendHandoffMessage} from './lib/ticketData';
 import CompliancePage from './components/CompliancePage';
 import OverviewPage from './components/OverviewPage';
 import {displayName,firstName} from './lib/format';
@@ -29,7 +29,7 @@ import TopBar from './components/TopBar';
 import Sidebar,{TabBar} from './components/Sidebar';
 import LockedPage from './components/LockedPage';
 import { supabase } from './lib/supabase';
-import { boundedHistory, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
+import { boundedHistory, handoffMessage, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
 import {loadWorkflowPreview,parsePausedWorkflow,parsePreview} from './lib/workflows';
 import {createActionCase,proposeAction,rejectAction} from './lib/actions';
@@ -363,6 +363,9 @@ export default function Chat({session,onSignIn}) {
     if(!rmMessage.trim()){setHandoff({saving:false,outcome:null,error:'Write a short message for your relationship manager first.'});return;}
     setHandoff({saving:true,outcome:null,error:''});
     try {
+      const reviewedMessage=handoffMessage(rmMessage,supportScope||attachSummary?handoffText:'');
+      const clientMessage=redact(rmMessage.trim());
+      if(supportScope&&clientMessage.length>480)throw new Error('Shorten your compliance message to 480 characters; the recorded review context is attached separately.');
       const {data,error}=await supabase.auth.getSession();
       if(error)throw error;
       if(!data.session)throw new Error('Session expired. Please sign in again.');
@@ -370,8 +373,9 @@ export default function Chat({session,onSignIn}) {
       const scope=supportScope?{case_id:supportScope}:await createActionCase({session_id:crypto.randomUUID(),case_id:crypto.randomUUID()},token);
       const urgent=messages.some(m=>m.sections?.some(section=>section.priority==='P0'));
       const saved=await proposeAction({command_id:crypto.randomUUID(),task_id:'handoff',case_id:scope.case_id,type:'handoff.create',
-        target:{reason:'general_support',priority:urgent?'P0':'P2',summary:redact(rmMessage.trim()||handoffText).slice(0,1000)}},token);
+        target:{reason:'general_support',priority:urgent?'P0':'P2',summary:supportScope?handoffText:reviewedMessage}},token);
       if(saved.receipt?.outcome!=='succeeded')throw new Error('Your question could not be sent. Please try again.');
+      if(supportScope)await sendHandoffMessage(saved.receipt.result.handoff_id,clientMessage,token);
       setHandoff({saving:false,outcome:saved,error:''});
       setNotice('Sent to your relationship manager. You can follow it in My requests.');
     } catch(failure) {setHandoff({saving:false,outcome:null,error:failure.message});}
@@ -405,7 +409,7 @@ export default function Chat({session,onSignIn}) {
   const lastQuestion=[...messages].reverse().find(item=>item.role==='user'&&item.content&&!/^talk to a person$/i.test(item.content.trim()))?.content;
   const rmFirst=rmIntro?.current?displayName(rmIntro.current.name).split(' ')[0]:null;
   const rmDraft=summary===null?'':[`Hi${rmFirst?` ${rmFirst}`:''}, I’d like help with ${supportScope?'my compliance review':topicLabel.charAt(0).toLowerCase()+topicLabel.slice(1)}.`,
-    lastQuestion?`My question: “${redact(lastQuestion).slice(0,300)}”`:'',
+    lastQuestion&&!supportScope?`My question: “${redact(lastQuestion).slice(0,300)}”`:'',
     earlierTopics?`Earlier in the chat I asked about: ${earlierTopics.toLowerCase()}.`:'',
     'Thank you.'].filter(Boolean).join('\n');
   useEffect(()=>{if(!rmEdited.current)setRmMessage(rmDraft);},[rmDraft]);  // fixed labels only
@@ -601,10 +605,11 @@ export default function Chat({session,onSignIn}) {
       {route&&<div className="handoff-route" data-testid="handoff-route-info"><strong>{route[0]}</strong><p>{route[1]}</p></div>}
       {(!route||route[3][1]==='send')&&!supportScope&&<label className="sp-attach"><input type="checkbox" checked={attachSummary} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setAttachSummary(e.target.checked)}/><span><strong>Attach a short summary of this chat</strong><small>Topic labels only. Passwords, OTPs and card numbers are never included.</small></span></label>}
       {(!route||route[3][1]==='send')&&<label className="form-field rm-message">Your message to your relationship manager
-        <textarea data-testid="handoff-message" rows={5} value={rmMessage} maxLength={1000} disabled={handoff.saving||!!handoff.outcome}
+        <textarea data-testid="handoff-message" rows={5} value={rmMessage} maxLength={supportScope?480:1000} disabled={handoff.saving||!!handoff.outcome}
           onChange={e=>{rmEdited.current=true;setRmMessage(e.target.value);}}/>
         <small>Drafted for you. Change or add anything before sending. Don’t include passwords, PINs or card numbers; they’re removed if you do.</small>
         <span className="sr-only" data-testid="handoff-summary">{handoffText}</span></label>}
+      {(supportScope||attachSummary)&&handoffText&&<details data-testid="handoff-context"><summary>Attached context</summary><p>{handoffText}</p></details>}
       <p className="security-note"><Icon name="shield"/>Never share your PIN, password or OTP. If you suspect fraud or a lost card, use the official bank fraud channel immediately. This chat can help prepare a report but cannot block the card.</p>
       {handoff.saving&&<p className="loading" role="status">Sending…</p>}
       {handoff.error&&<p role="alert">{handoff.error}</p>}

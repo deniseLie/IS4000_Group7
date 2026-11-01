@@ -14,13 +14,13 @@ import re
 from dataclasses import dataclass,field
 from datetime import date,timedelta
 from app.schemas.prechecks import CheckPolicy,Finding,NoticeRequirement
-from app.services.notice_checks import needs_translation,shift
+from app.services.notice_checks import needs_translation,parsed_date,shift
 
 MONTHS={name:i for i,names in enumerate(calendar.month_name) for name in ([names.lower(),names[:3].lower()] if names else [])}
 MON=r'(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
 DAY_MONTH_YEAR=re.compile(r'\b(\d{1,2})(?:st|nd|rd|th)?[\s\-/.]*'+MON+r'[\s\-/.,]*(\d{4}|\d{2})\b',re.I)
 MONTH_DAY_YEAR=re.compile(r'\b'+MON+r'\s+(\d{1,2}),?\s+(\d{4})\b',re.I)
-ISO=re.compile(r'\b(\d{4})-(\d{2})-(\d{2})\b')
+ISO=re.compile(r'\b(\d{4})[-/](\d{2})[-/](\d{2})\b')
 NUMERIC=re.compile(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b')  # Singapore documents print day first
 MONTH_YEAR=re.compile(r'\b'+MON+r"[\s\-'/,]*(\d{4})\b",re.I)
 RANGE=re.compile(r'(\d{1,2}[\s\-/.]*[A-Za-z]{3,9}[\s\-/.,]*\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})\s*(?:-|–|to|until)\s*'
@@ -30,7 +30,7 @@ UTILITIES=('sp services','sp group','singapore power','geneco','senoko','tuas po
     'city energy','pub ','singtel','starhub','m1 limited','myrepublic','simba','circles.life','town council')
 BANKS=('dbs','posb','ocbc','uob','united overseas bank','maybank','standard chartered','hsbc','citibank','bank of china','icbc',
     'rhb','cimb','trust bank','gxs','boc','bank')
-SIGNATURE=re.compile(r'\bsign(?:ed|ature)\b|\bsigned\s+by\b',re.I)
+SIGNATURE=re.compile(r'\b(?:signature|signed(?:[ \t]+electronically)?[ \t]+by)[ \t]*[:=]?[ \t]*([^\r\n]*)',re.I)
 # A certifier's statement on a copy or a translation (CR5). "Self-certification" (a form's title) is not one.
 CERTIFIED=re.compile(r'\bcertified\s+(?:true\s+|as\s+a\s+true\s+)?(?:copy|translation)\b|\b(?<!self-)certifi(?:ed|cation)\s+by\b'
     r'|\bI\s+(?:hereby\s+)?certify\b|\bnotar(?:y|ised|ized|ial)\b|\bcommissioner\s+for\s+oaths\b|\bsworn\s+translat|\battested\s+by\b',re.I)
@@ -71,6 +71,32 @@ def name_tokens(name: str) -> list[str]:
 def has_name(text: str,name: str) -> bool:
     tokens=name_tokens(name)
     return bool(tokens) and all(re.search(r'\b'+re.escape(token)+r'\b',text,re.I) for token in tokens)
+
+
+def has_signature_text(text: str) -> bool:
+    """Require a filled signature line; this never verifies a signature's authenticity."""
+    for match in SIGNATURE.finditer(text):
+        value=re.split(r'[ \t]+(?:date|name|title|place)[ \t]*:',match.group(1),maxsplit=1,flags=re.I)[0].strip(' _.-:()[]')
+        if not value or re.fullmatch(r'not(?:\s+yet)?\s+signed|unsigned|pending|required|missing|not\s+provided|n/?a|your\s+(?:name|signature)|sign\s+here|the\s+account\s+holder',value,re.I):continue
+        if any(character.isalpha() for character in value):return True
+    return False
+
+
+def address_date_findings(text: str,today: date,policy: CheckPolicy) -> list[Finding]:
+    """Check the issue date, excluding payment/print dates and respecting configured numeric-date ambiguity."""
+    issued=re.compile(r'\b(?:bill(?:ing)?\s+date|invoice\s+date|statement\s+date|document\s+date|date\s+(?:of\s+)?issue|issued?(?:\s+on)?|date\s*:)',re.I)
+    other=re.compile(r'\b(?:due|pay|payment|payable|paid|printed|downloaded)\b',re.I)
+    lines=[other.split(line,maxsplit=1)[0] for line in text.splitlines()]
+    labelled=[line for line in lines if issued.search(line)]
+    selected='\n'.join(labelled if labelled else lines)
+    raw: set[str]={match.group(0) for pattern in (DAY_MONTH_YEAR,MONTH_DAY_YEAR,ISO,NUMERIC) for match in pattern.finditer(selected)}
+    if not raw:return [Finding(code='missing_field',field='A bill or statement date')]
+    dates: set[tuple[date,date] | None]={parsed_date(value,policy) for value in raw}
+    if None in dates or len(dates)!=1:return [Finding(code='date_invalid',field='A clear bill or statement issue date')]
+    issued_on=next(value[0] for value in dates if value is not None)
+    if issued_on>today:return [Finding(code='date_invalid',field='A bill or statement issue date that is not in the future')]
+    if issued_on<shift(today,3,'months'):return [Finding(code='date_outdated',field='A bill or statement date within the last 3 months')]
+    return []
 
 
 @dataclass(frozen=True)
@@ -141,8 +167,7 @@ def check(template: Template,text: str,pages: int | None,name: str,today: date,p
     if template.key=='proof_address':
         if not POSTCODE.search(text):missing('Your Singapore address with its 6-digit postal code')
         if not any(issuer in lower for issuer in UTILITIES+BANKS):missing('The company that issued it')
-        if not dates:missing('A bill or statement date')
-        elif max(dates)<shift(today,3,'months'):findings.append(Finding(code='date_outdated',field='A bill or statement date within the last 3 months'))
+        findings.extend(address_date_findings(text,today,policy))
     elif template.key=='bank_statements':
         if not any(bank in lower for bank in BANKS):missing('The bank’s name')
         end=today.replace(day=1)-timedelta(days=1) if policy.statement_period_mode=='completed_months' else today
@@ -155,7 +180,7 @@ def check(template: Template,text: str,pages: int | None,name: str,today: date,p
         if template.key=='wealth_declaration' and not re.search(r'\bwealth\b|\bsource of (?:funds|income)\b',text,re.I):missing('Where your wealth comes from')
         if template.key=='tax_residency' and not re.search(r'\btax\b[^\n]{0,40}\b(?:residen|country)|\bTIN\b',text,re.I):missing('Your country of tax residence')
         if not dates:missing('The date you completed it')
-        if not SIGNATURE.search(text):missing('Your signature')
+        if not has_signature_text(text):missing('Your signature')
     elif template.key=='identity':
         future=[value for value in all_dates(text) if value>today]
         if not future:findings.append(Finding(code='date_outdated',field='An expiry date that has not passed'))

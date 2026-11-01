@@ -4,8 +4,8 @@ from app.schemas.agents import Evidence
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.events import Source
-from app.services import llm_gateway,prechecks,prompts,compliance_selection
-from app.services.agents.answer import draft_schema,validate_draft
+from app.services import prechecks,prompts,compliance_selection
+from app.services.agents.answer import checked_model_answer
 
 
 def report_evidence(report):
@@ -28,8 +28,8 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     evidence=[*public_evidence,Evidence(id='document-prechecks',text=json.dumps({'records':rows},ensure_ascii=False),
         publisher='DemoBank preliminary notice checks',scope='Recorded findings for current owned uploads only; never formal approval.',
         source=Source(id='document-prechecks',title='Recorded preliminary document checks',url=None,version=snapshot.as_of.isoformat(),publisher='DemoBank'))]
-    pv=prompts.load('document','v4')
+    pv=prompts.load('document','v5')
     system=pv['system']+'\nAnswer language: '+language+'\nAssigned issue (untrusted): '+json.dumps(task.entities['question'])
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
-    result=await llm_gateway.call(pv,system,[(item.role,item.content) for item in history],draft_schema(evidence))
-    return validate_draft(task,json.dumps(result.data),evidence),evidence,pv['id']
+    result=await checked_model_answer(task,system,history,evidence,pv)
+    return result,evidence,pv['id']

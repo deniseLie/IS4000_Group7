@@ -33,7 +33,7 @@ export function parseTicket(value) {
   return {ticket_id:id(value.ticket_id),reference:value.reference,category:key(value.category),category_label:text(value.category_label,80),summary:text(value.summary,500),
     details:details(value.details),urgency:value.urgency,status:value.status,owner_team:text(value.owner_team,80),decided_by:text(value.decided_by,120),source:value.source,
     created_at:time(value.created_at),updated_at:time(value.updated_at),target_at:time(value.target_at),overdue:value.overdue,
-    last_update:update&&{at:time(update.at),status:update.status,note:update.note},attachments:attachments(value.attachments)};
+    last_update:update&&{at:time(update.at),status:update.status,note:update.note},attachments:attachments(value.attachments),handoff_id:value.handoff_id==null?null:id(value.handoff_id)};
 }
 // Documents attached to an RM ticket (0082): id and file name only. Older servers send none.
 function attachments(value) {
@@ -118,6 +118,16 @@ async function body(response) {
   return value;
 }
 export async function loadTickets(token,signal) {return parseTickets(await body(await fetch(`${API_URL}/tickets`,{headers:{Authorization:`Bearer ${token}`},signal})));}
+
+export async function sendHandoffMessage(handoffId,message,token) {
+ try {
+  const tickets=await loadTickets(token,undefined),ticket=tickets.find(item=>item.handoff_id===id(handoffId));
+  if(!ticket)throw new Error('Its ticket could not be found. Refresh My requests before retrying.');
+  const result=await body(await fetch(`${API_URL}/tickets/${ticket.reference}/follow-up`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message})}));
+  if(result?.reference!==ticket.reference||typeof result.added!=='boolean')throw invalid();
+  return result;
+ }catch(error){throw new Error(`Your request was recorded, but your message was not confirmed. ${error.message} Retry to add it to the same request.`,{cause:error});}
+}
 export async function loadCategories(token,signal) {
   return parseCategories(await body(await fetch(`${API_URL}/tickets/categories`,{headers:token?{Authorization:`Bearer ${token}`}:{},signal})));
 }
