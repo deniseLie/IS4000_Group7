@@ -93,6 +93,6 @@ Agents and rules read through `services/tools.py` (`my_cards`, `my_transactions`
 4. She completes the form and confirms; SQL checks the card is hers and records the ticket, receipt, audit and inbox notice in one transaction.
 5. My requests shows the reference and "the cards and credit team decides".
 
-## 9. RM side today
+## 9. RM side (Persona 2)
 
-The RM assistant (RM1–RM16) is not built. RM tickets and meetings sit in the same records an RM screen will read. Fraud and support handoffs are worked with `scripts/staff_support.py`; an RM ticket can be answered with `support.set_ticket_status('TCK-…','resolved','…')`.
+Sophie's assistant is a separate pipeline (`services/rm/assistant.py`), not the client orchestrator: a SQL book check on names in her message (outside the book: refused and audited, no model), the planner model (`rm_planner/v1`) picks the intent, code resolves the client, ticket, meeting or note (asking when several match), the RM tools read the records (`rm_*` in `services/tools.py`), one model call (`rm_assistant/v1` + task file) writes a structured answer, and `services/rm/checks.py` withholds any item whose figures, dates or references are not in its records, or that advises, decides or claims an action. Drafts, documentation, tasks and service requests are proposals; each write is a separate request the RM approves in the workspace. See [workflow-2-relationship-manager.md](workflows/workflow-2-relationship-manager.md).

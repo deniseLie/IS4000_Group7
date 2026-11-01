@@ -26,12 +26,12 @@ def set_sophie(db: 'Connection[SqlRow]') -> None:
     db.execute('set local role authenticated')
 
 
-def test_sophie_has_a_linked_login_and_a_book_of_four_clients(database: 'Connection[SqlRow]') -> None:
+def test_sophie_has_a_linked_login_and_a_book_of_five_clients(database: 'Connection[SqlRow]') -> None:
     assert database.execute('select advisor_id,demo_email,auth_user_id from rm.staff_logins').fetchall()==[(SOPHIE,'demo.sophie@example.com',SOPHIE_LOGIN)]
     assert database.execute("select full_name,role,team_name,email from rm.advisors where advisor_id=%s",(SOPHIE,)).fetchone()==(
         'Sophie Lim (DEMO)','Senior Relationship Manager','Private Clients Team A','sophie.lim@demobank.example')
     book=database.execute('select customer_id from rm.assignments where advisor_id=%s and ended_on is null order by 1',(SOPHIE,)).fetchall()
-    assert [row[0] for row in book]==[1002,1003,1004,1005]
+    assert [row[0] for row in book]==[1002,1003,1004,1005,1007]  # 0090 adds Tan Mei Ling, inherited from Rachel
     other=database.execute('select customer_id from rm.assignments where advisor_id=%s and ended_on is null order by 1',(PRIYA,)).fetchall()
     assert [row[0] for row in other]==[1001,1006]
     # Michelle keeps one long-standing assignment (no change notice); her joining details name Sophie.
@@ -53,7 +53,7 @@ def test_david_is_inherited_from_rachel_with_notes_a_request_and_a_consented_han
 def test_open_tickets_across_the_book_include_urgent_fraud_and_one_past_its_target(database: 'Connection[SqlRow]') -> None:
     rows=database.execute("""select category,urgency,target_at<now() from support.tickets
         where status=any(%s) and customer_id in (select customer_id from rm.assignments where advisor_id=%s and ended_on is null)""",(list(OPEN),SOPHIE)).fetchall()
-    assert 8<=len(rows)<=10
+    assert 8<=len(rows)<=12  # 0090: Mei Ling's request to Rachel and her handed-over chat question
     assert len({row[0] for row in rows})>=6 and {row[1] for row in rows}>={'urgent','high','normal','low'}
     assert ('suspected_fraud','urgent',False) in rows and sum(row[2] for row in rows)==1
     events=database.execute("select count(*) from support.ticket_events e join support.tickets t using(ticket_id) where t.source='seed' and e.status='submitted'").fetchone()[0]

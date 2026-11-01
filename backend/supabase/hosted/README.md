@@ -18,6 +18,10 @@
 | `12_apply_0083_hosted.sql` | Cards and loans get a recorded currency (SGD for every demo card and loan), so the assistant says "SGD 316.20" instead of "currency unrecorded" | Once, after 11 |
 | `13_apply_0084_hosted.sql` | Michelle's two sample fees get their own names ("Annual card fee", "Telegraphic transfer fee") so fee questions can tell them apart | Once, after 12 |
 | `14_apply_0085_hosted.sql` | A different question for the RM in the same chat opens its own ticket (`customer_open_rm_ticket`); approved how-to article for sending money overseas | Once, after 13 |
+| `15_apply_0087_0088_hosted.sql` | Loan types article; Persona 2 seed: Sophie Lim, her book (Grace, Hafiz), Wei Ming with Priya, meeting notes, tickets, `rm.staff_logins` | Once, after 14 |
+| `16_apply_0089_0090_hosted.sql` | Relationship manager workspace: book-based RM access (F12), RM reads and RM-approved writes (F14), audited refusals; demo data (Sophie's notes, preferences, maturities, tasks, appointments; Tan Mei Ling inherited from Rachel). Then create Sophie's login and app_metadata (`docs/workflows/workflow-2-relationship-manager.md`, *Set up on the hosted project*) | Once, after 15 |
+| `17_reset_michelle_demo.sql` | Optional demo reset: deletes Michelle's saved chats and the requests and handoffs they created (keeps her records, compliance review, meetings, the seeded requests and the audit log) | Any time before a demo |
+| `18_apply_0091_hosted.sql` | Saved RM assistant conversations (Past conversations in the RM workspace); turns about clients no longer in the RM's book are not shown again | Once, after 16 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

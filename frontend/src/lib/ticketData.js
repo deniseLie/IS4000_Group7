@@ -272,3 +272,10 @@ export function statementRequestPrefill(question) {
   if(!m)return {};
   return {period:`${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}`};
 }
+
+// A note a person added (for example the relationship manager's approved update, RM9), not an automatic status line.
+export function latestUpdate(ticket) {
+  const note=ticket?.last_update?.note;
+  if(!note||ticket.status==='waiting_on_client')return null;  // waiting_on_client already shows the note as the next step
+  return /^(Received\. |(?:The|Your) .+ is reviewing it\.$|Marked resolved by the bank\.$|Closed\.$)/.test(note)?null:note;
+}

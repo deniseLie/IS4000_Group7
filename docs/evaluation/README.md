@@ -94,3 +94,7 @@ Later (needs agreement): **phase 4** personal-mode and Workflow 1–3 datasets. 
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.
+
+## RM assistant (Sophie)
+
+Manual prompt tests for the relationship manager assistant, with expected results and a results table: [rm-assistant-prompt-tests.md](rm-assistant-prompt-tests.md). The LangSmith runner (`langsmith_run.py`) plays client cases through `/chat`; the RM cases R01–R10 are run by hand with this guide until the runner supports `/rm/assistant`.

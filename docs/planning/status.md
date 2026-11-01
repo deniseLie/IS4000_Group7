@@ -17,9 +17,9 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F9 | Conversation store | Built, sheet says **No** | Saved chats work (migrations 0013–0014); tick it after a quick check. |
 | F10 | Knowledge service | Done | – |
 | F11 | Authorisation and consent | Done | – |
-| F12 | RM role and book-based access | **Not started** | Persona 2 |
+| F12 | RM role and book-based access | Done (0089) | Hosted: apply file 16, create Sophie's login and app_metadata. |
 | F13 | Customer data service | Done | – |
-| F14 | RM data functions | **Not started** | Persona 2 |
+| F14 | RM data functions | Done (0089) | – |
 | F15–F17 | Action service, card/handoff, appointment executors | Done | – |
 | F18 | Orchestrator | Done | Handover to RM added (0073). |
 | F19 | Response validator | Done | Withheld answers go to the RM. |
@@ -40,6 +40,17 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Reminders:** off until the worker runs. README step 5: create the `demobank_reminders` login, set `WORKER_DATABASE_URL` and `RUN_WORKER_IN_API=true`.
 - **Run the 10 test cases** and record the results (F22 evidence).
 - **Assign owners** in the backlog and in `test-cases.md`.
+
+## Done on 1 Nov (Persona 2: F12, F14, RM1–RM12, RM16; migrations 0089–0090)
+
+- **RM access (F12):** every RM function resolves the advisor from administrator-owned `app_metadata` (`demobank_role=rm`, `rm_id`) and the `rm.staff_logins` link, then checks the client is in her current book. Refusals are audited (`policy.rm_client_denied`) and return nothing. Customers cannot call RM functions or read RM tables. `audit.record` now records an RM as `staff`.
+- **RM reads and approved writes (F14):** book, client 360 view with gaps, meeting notes (previous RMs' shared notes, private notes withheld), consent-checked handover note, tickets (specialist detail restricted), reviews, appointments, 14-day availability, tasks, follow-ups, handover sources (audited with sources used); RM-approved documentation, tasks, service requests (verification required, duplicates refused), client messages (on her tickets with optional status, message-only on non-restricted specialist tickets, or to the Inbox), working hours and blocks.
+- **RM workspace and assistant (RM1–RM12, RM16):** `RmWorkspace.jsx` (assistant, My clients, Ticket inbox, Schedule, Follow-ups, Quality) in the client app's shell; `/rm/*` API (`api/rm.py`); the assistant (`services/rm/`, prompts `rm_planner/v1`, `rm_assistant/v1`) reads through the RM tools (MCP-capable), labels and cites every item and withholds unverified ones. Details and demo script: [workflow-2-relationship-manager.md](../workflows/workflow-2-relationship-manager.md).
+- **Demo data (0090):** Sophie's own notes (one deliberately unclear), preferences, maturities and reviews, tasks (one overdue), confirmed and held appointments, and Tan Mei Ling (1007) inherited from Rachel with consent-filtered handover notes.
+- **Client side:** My requests shows an RM's approved update as *Latest update*; status notes for RM-owned requests read "Your relationship manager will review it." (was "The your relationship manager…").
+- **Saved RM conversations (0091):** Past conversations in the RM workspace, saved after every reply (redacted, 50 per RM, source records not stored); reopened conversations hide turns about clients who left her book, and earlier drafts are read-only.
+- **Tests:** `test_rm_workspace.py` (native SQL), `test_rm_assistant.py` (checks on sample outputs), `rm.test.js`; `test_rm_seed.py` updated for Mei Ling.
+- **Still open:** apply `16_apply_0089_0090_hosted.sql` on hosted and create Sophie's login; run R01–R10 with the real model and record results; RM5 audio transcription is not built.
 
 ## Done on 31 Oct (F4, F25, CR16; migrations 0086–0088)
 

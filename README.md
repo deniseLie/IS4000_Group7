@@ -3,14 +3,14 @@
 <!-- Source review package: generated from original code; caches, local credentials and Git internals excluded. -->
 # DemoBank – AI banking assistant (IS4000 Group 7)
 
-A coursework demo of an AI assistant for a private bank. The client-facing workflow is built; the RM chatbot is planned, not implemented. FastAPI backend with a LangGraph multi-agent pipeline, React (Vite) frontend, Supabase for login and data, an OpenRouter model through LangChain, and LangSmith for tracing. All data is fictional. It is not a real bank product.
+A coursework demo of an AI assistant for a private bank. Both workflows are built: the client assistant (Michelle) and the relationship manager workspace and assistant (Sophie). FastAPI backend with a LangGraph multi-agent pipeline, React (Vite) frontend, Supabase for login and data, an OpenRouter model through LangChain, and LangSmith for tracing. All data is fictional. It is not a real bank product.
 
 ## The two workflows
 
 | Workflow | Who | Status | Doc |
 |---|---|---|---|
 | 1 – Client | Michelle (`demo.michelle@example.com`) | Built | [docs/workflows/workflow-1-client.md](docs/workflows/workflow-1-client.md) |
-| 2 – Relationship manager | Sophie | Planned, not built | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) |
+| 2 – Relationship manager | Sophie (`demo.sophie@example.com`, app_metadata `demobank_role=rm`) | Built (1 Nov 2026: RM1–RM12, RM16) | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) |
 
 The client uses the assistant for:
 - everyday banking questions, within guardrails;
@@ -71,7 +71,7 @@ You need Python 3.12 and Node.js 22. You don't need Docker.
 
 Keep `PIPELINE=v2`, `CONVERSATION_STORE=database`, and `CLIENT_INTENT_ROUTING=adaptive`. For the approved database KB, use `KNOWLEDGE_STORE=database` once migrations are ready. Never use a service-role key.
 
-**Client intelligence updates:** [docs/client-ai-improvements.md](docs/client-ai-improvements.md) describes AI-first intent routing, context-aware knowledge retrieval, answer repair, bounded multi-turn card-limit handling and verification. These are client-only changes; the RM assistant is not implemented.
+**Client intelligence updates:** [docs/client-ai-improvements.md](docs/client-ai-improvements.md) describes AI-first intent routing, context-aware knowledge retrieval, answer repair, bounded multi-turn card-limit handling and verification. These are client-only changes; the RM assistant is described in the Workflow 2 doc.
 
 **2. Install (first time).**
 ```bash
@@ -90,7 +90,7 @@ In a second terminal:
 cd frontend
 VITE_API_URL=/api BACKEND_PORT=5001 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
-Then open http://127.0.0.1:5173 and sign in as Michelle.
+Then open http://127.0.0.1:5173 and sign in as Michelle, or as Sophie for the relationship manager workspace (hosted set-up: apply `backend/supabase/hosted/16_apply_0089_0090_hosted.sql`, then follow *Set up on the hosted project* in the Workflow 2 doc).
 
 **4. Hosted database.** Apply any new SQL from `backend/supabase/hosted/` in order. Its README lists what each file does.
 
@@ -170,3 +170,32 @@ cd ../frontend && npm test                                                # fron
 ## Client chatbot v5 regression update
 
 See [`docs/client-v5-regression-guide.md`](docs/client-v5-regression-guide.md) for the informal-fraud/reporting CTA and ambiguous-spending-intent changes, safety controls, new prompt versions and the testing checklist. The manual 99-case workbook is shared separately.
+
+## Sharing a clean source ZIP
+
+From the project root, run:
+
+```bash
+python3 scripts/package_source.py
+```
+
+This creates `IS4000_Group7-Source.zip` beside the project folder. Share that
+ZIP instead of using Finder's Compress option, which includes ignored files.
+The script excludes installed dependencies, virtual environments, Git history,
+builds, caches, test reports, macOS metadata and local `.env` files. It keeps
+`.env.example`, source code, migrations, documentation, package lockfiles and
+Vite configuration. Recipients follow **Run it locally** to recreate `.venv`
+and run `npm ci` in `frontend/` to install Vite and other dependencies.
+
+`.gitignore` prevents new local/generated files being added to Git; it does not
+remove files already tracked. In an existing clone, refresh the index once
+from the project root (local files stay on disk):
+
+```bash
+git rm -r --cached .
+git add .
+git status
+```
+
+Review the staged changes before committing. No Git commits are made by the
+packaging script. Keep local settings privately; they are absent from sharing ZIPs.

@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {prepareTicketAction} from '../lib/ticketWorkflow';
-import {loadCategories,loadTickets,nextStep,requestFailed,STATUSES,ticketSummary,ticketTopic} from '../lib/ticketData';
+import {latestUpdate,loadCategories,loadTickets,nextStep,requestFailed,STATUSES,ticketSummary,ticketTopic} from '../lib/ticketData';
 import {formatDateTime} from '../lib/format';
 import Meetings from './Meetings';
 
@@ -53,6 +53,7 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
       {ticketTopic(ticket)&&<span className="ticket-topic" data-testid="ticket-topic">{ticketTopic(ticket)}</span>}
       <p>{ticketSummary(ticket)}</p>
       {ticket.attachments.length>0&&<p className="ticket-attachments" data-testid="ticket-attachments"><Icon name="clip"/>Attached: {ticket.attachments.map(item=>item.file_name).join(', ')}</p>}
+      {latestUpdate(ticket)&&<p className="ticket-update" data-testid="ticket-update"><Icon name="chat"/><span><strong>Latest update</strong> · {formatDateTime(ticket.last_update.at)}<br/>{latestUpdate(ticket)}</span></p>}
       <p className="ticket-next"><Icon name="info"/>{nextStep(ticket)}</p>
       <small>Reference <code>{ticket.reference}</code> · {ticket.owner_team} · raised {formatDateTime(ticket.created_at)}{ticket.last_update?` · updated ${formatDateTime(ticket.last_update.at)}`:''}</small>
       {ticket.status==='waiting_on_client'&&onSupport&&<p><button className="bank-chat-logout" onClick={onSupport}>Talk to a person</button></p>}

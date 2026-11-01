@@ -3,6 +3,8 @@ import { supabase } from "./lib/supabase";
 import { setCacheOwner } from "./lib/cache";
 import Login from "./Login";
 import Chat from "./Chat";
+import RmWorkspace from "./RmWorkspace";
+import { isRm } from "./lib/rm";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -32,6 +34,9 @@ export default function App() {
   if (loading) return <div className="app-loading" role="status">Opening your banking assistant…</div>;
 
   if (showLogin && !session) return <Login onBack={() => setShowLogin(false)} />;
+  // Persona 2: a relationship manager (administrator-set app_metadata role) gets the RM workspace; the backend and the
+  // database check the same role and her client book on every call.
+  if (session && isRm(session)) return <RmWorkspace key={session.user.id} session={session} />;
   return <Chat key={session?.user.id || 'guest'} session={session} onSignIn={() => setShowLogin(true)} />;
 }
 
