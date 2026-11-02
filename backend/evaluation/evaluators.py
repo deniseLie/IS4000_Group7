@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 JUDGE_PROMPT=Path(__file__).parent/'judge'/'v1.md'
-JUDGE_SCHEMA={'type':'object','additionalProperties':False,'required':['score','reason'],
+JUDGE_SCHEMA={'title':'judge_grade','type':'object',  # LangChain names the structured output after the title'additionalProperties':False,'required':['score','reason'],
     'properties':{'score':{'type':'number','enum':[0,0.5,1]},'reason':{'type':'string'}}}
 
 
