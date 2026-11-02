@@ -15,8 +15,17 @@ export function cleanTicketDetails(category,values={}) {
 
 export function missingTicketFields(category,values={}) {
   if(!category?.fields)return [];
-  return category.fields.filter(field => (field.required || (category.category==='card_limit_change' && field.key==='until' && values.duration==='temporary'))
+  return category.fields.filter(field => (field.required || conditional(category.category,field.key,values))
     && !String(values[field.key]||'').trim()).map(field=>field.label);
+}
+// Fields a card limit request needs only sometimes (0096): an end date for a temporary change, and the declaration for
+// a higher limit (the form cannot know the current limit, so it is asked unless she is lowering her spending; the bank
+// checks the real rule).
+function conditional(category,key,values) {
+  if(category!=='card_limit_change')return false;
+  if(key==='until')return values.duration==='temporary';
+  if(key==='declaration')return values.reason!=='Lower my spending';
+  return false;
 }
 
 export async function prepareTicketAction({category,summary,urgency='normal',values={}},access,signal) {

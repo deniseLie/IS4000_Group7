@@ -10,8 +10,8 @@ from uuid import UUID
 from pydantic import BaseModel,ConfigDict,Field,field_validator
 
 Intent=Literal['ticket_inbox','priorities','reviews','schedule','client_overview','meeting_history','meeting_brief',
-    'ticket_summary','draft_message','document_interaction','actions_from_note','handover_brief','help']
-BOOK_WIDE: frozenset[str]=frozenset({'ticket_inbox','priorities','reviews','help'})
+    'ticket_summary','draft_message','document_interaction','actions_from_note','handover_brief','book_question','help']
+BOOK_WIDE: frozenset[str]=frozenset({'ticket_inbox','priorities','reviews','book_question','help'})
 NEEDS_CLIENT: frozenset[str]=frozenset({'client_overview','meeting_history','meeting_brief','ticket_summary','draft_message',
     'document_interaction','actions_from_note','handover_brief'})
 TICKET_REF=r'^TCK-[0-9]{6,}$'
@@ -43,6 +43,7 @@ class DocumentationState(Model):
     draft: dict|None=None
     revision: int=Field(default=1,ge=1,le=50)
     note_id: UUID|None=None  # set once the RM has approved and saved it
+    appointment_id: UUID|None=None  # the meeting being documented ("Document this meeting"), checked in SQL when saved
 
 
 class RmContext(Model):

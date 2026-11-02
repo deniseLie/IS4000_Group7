@@ -26,6 +26,8 @@ const paths = {
   clip: <path d="m20 11-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/>,
   refresh: <><path d="M20 11a8 8 0 0 0-14-5L4 8M4 4v4h4M4 13a8 8 0 0 0 14 5l2-2m0 4v-4h-4"/></>,
   alert: <><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3.5v.5"/></>,
+  mic: <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></>,
+  sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
   bank: <><path d="m3 9 9-5 9 5H3Zm2 0v9m4.7-9v9m4.6-9v9M19 9v9M3 21h18"/></>,
   pin: <><path d="M12 21s-7-6-7-12a7 7 0 0 1 14 0c0 6-7 12-7 12Z"/><circle cx="12" cy="9" r="2.5"/></>,
   logout: <><path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/></>,

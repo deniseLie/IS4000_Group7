@@ -6,7 +6,9 @@ in Singapore time words ("Tue 3 Nov 2026, 10:00 am"), so the model never convert
 dates. Restricted specialist detail never reaches this module: the SQL functions withhold it.
 """
 import json
+import re
 from dataclasses import dataclass,field
+from datetime import date,datetime,timedelta,timezone
 from typing import Any
 from app.services.knowledge import INDEX
 
@@ -39,6 +41,9 @@ class Bundle:
     def ids(self) -> list[str]:return [e.id for e in self.items]
     def get(self,source_id: str) -> Evidence|None:return next((e for e in self.items if e.id==source_id),None)
     def for_model(self) -> list[dict]:return [e.for_model() for e in self.items]
+
+
+SGT=timezone(timedelta(hours=8))
 
 
 def _strip(record: dict,*keys: str) -> dict:return {k:v for k,v in record.items() if k not in keys}
@@ -168,4 +173,75 @@ def handover_bundle(result: dict) -> Bundle:
     bundle.add(shared_evidence({'data':data.get('shared') or {},'as_of':as_of},cid))
     bundle.add(Evidence('told','What the client was previously told (bank, chat assistant, relationship managers)','record',data.get('told') or [],as_of,cid))
     bundle.add(Evidence('free-slots','Your free times in the next 14 days (not held or booked)','calendar',data.get('free_slots') or [],as_of,cid))
+    return bundle
+
+
+def cash_evidence(result: dict,customer_id: int) -> Evidence:
+    """Large money movements (10,000 or more in the last 180 days) as recorded, for conversation starters. No interpretation."""
+    rows=result['data'] or []
+    return Evidence('cash-events','Large money movements in the last 180 days','record',
+        rows if rows else {'large_movements':0,'meaning':'No movement of 10,000 or more is recorded in the last 180 days.'},str(result.get('as_of')),customer_id)
+
+
+PERIOD=re.compile(r'\b(?:next|coming|within(?: the next)?|in the next)\s+(\d{1,3})\s+(day|week|month)s?\b',re.I)
+MONTHS=dict(day=1,week=7,month=30)
+
+
+def asked_period(question: str,today: date) -> tuple[date,date,str] | None:
+    """The period a question across the book asks about ("next 30 days", "this month", "next month"), or None.
+    Dates are compared here, in code, so the model never has to decide whether a date falls inside the period."""
+    text=question.lower()
+    found=PERIOD.search(text)
+    if found:
+        days=int(found.group(1))*MONTHS[found.group(2).lower()]
+        return today,today+timedelta(days=days),f'the next {found.group(1)} {found.group(2)}{"s" if found.group(1)!="1" else ""}'
+    if re.search(r'\bthis month\b',text):
+        end=(today.replace(day=28)+timedelta(days=4)).replace(day=1)-timedelta(days=1)
+        return today,end,'this month'
+    if re.search(r'\bnext month\b',text):
+        start=(today.replace(day=28)+timedelta(days=4)).replace(day=1)
+        end=(start.replace(day=28)+timedelta(days=4)).replace(day=1)-timedelta(days=1)
+        return start,end,'next month'
+    if re.search(r'\bthis week\b',text):return today,today+timedelta(days=6-today.weekday()),'this week'
+    return None
+
+
+def _day(text: Any) -> date | None:
+    try:return datetime.strptime(str(text),'%d %b %Y').date()
+    except ValueError:return None
+
+
+def _in_period(row: dict,period: tuple[date,date,str] | None,today: date) -> dict:
+    """Days from today for every dated fact, and, when the question names a period, only the facts inside it."""
+    row=dict(row)
+    items=[]
+    for item in row.get('maturities_and_reviews_next_90_days') or []:
+        due=_day(item.get('due'))
+        if due is None:continue
+        if period and not period[0]<=due<=period[1]:continue
+        items.append({**item,'days_from_today':(due-today).days})
+    review=_day(row.get('review_due'))
+    if period:
+        row.pop('maturities_and_reviews_next_90_days',None)
+        row[f'maturities_and_reviews_in_{re.sub(r"[^a-z0-9]+","_",period[2])}']=items
+        if review is not None and not period[0]<=review<=period[1]:row['review_due']=None
+    else:row['maturities_and_reviews_next_90_days']=items
+    if row.get('review_due') and review is not None:row['review_due_days_from_today']=(review-today).days
+    return row
+
+
+def book_bundle(result: dict,question: str='',today: date | None=None) -> Bundle:
+    """One evidence item per client in the RM's book (rm_book_facts), for questions across the book. When the question
+    names a period, dated facts outside it are removed before the model sees them, so it cannot list them."""
+    bundle=Bundle()
+    today=today or datetime.now(SGT).date()
+    period=asked_period(question,today)
+    if period:
+        bundle.add(Evidence('asked-period','The period you asked about','record',{'today':today.strftime('%-d %b %Y'),
+            'from':period[0].strftime('%-d %b %Y'),'to':period[1].strftime('%-d %b %Y'),'period':period[2],
+            'note':'Only maturities and reviews inside this period are listed in the client records below.'},str(result.get('as_of'))))
+    for row in result['data'] or []:
+        slug=re.sub(r'[^a-z]+','-',row['client'].lower()).strip('-')
+        bundle.add(Evidence('facts-'+slug,f"Book facts: {row['client']}",'record',_in_period(_strip(row,'customer_id'),period,today),str(result.get('as_of')),row['customer_id']))
+    if not bundle.items:bundle.add(Evidence('facts-none','Your book','record',{'clients':0},str(result.get('as_of'))))
     return bundle

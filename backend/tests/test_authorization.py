@@ -76,17 +76,23 @@ def test_obligations_and_staff_restrictions():
         elevated=ctx.model_copy(update={'principal':ctx.principal.model_copy(update={'aal':level})})
         for tool in ['handoff.claim','handoff.close']:
             assert decide(elevated.principal,tool,None,elevated).reasons==['staff_access_required']
-        # Card actions are the bank's since 0081: a customer cannot block, dispute, unblock or cancel; staff keep a separate path.
-        for tool in ['card.temporary_block','card.dispute','card.unblock','card.cancel_permanently']:
+        # Cancelling and the fraud dispute draft are the bank's (0081); staff keep a separate path.
+        for tool in ['card.dispute','card.cancel_permanently']:
             assert decide(elevated.principal,tool,{'customer_id':1001},elevated).reasons==['bank_only_action']
+            assert decide(elevated.principal,tool,{'customer_id':1003},elevated).reasons==['customer_scope_mismatch']
+        # 0096: the client freezes and unfreezes her own card, with confirmation; SQL decides whether an unfreeze is hers to make.
+        for tool in ['card.temporary_block','card.unblock']:
+            assert decide(elevated.principal,tool,{'customer_id':1001},elevated).obligations==['require:confirmation']
             assert decide(elevated.principal,tool,{'customer_id':1003},elevated).reasons==['customer_scope_mismatch']
 
 
 @pytest.mark.parametrize('agent',['fraud','retail','relationship','compliance','document'])
 def test_no_agent_may_propose_a_card_action(agent: str):
     ctx=customer(agent)
-    for tool in ['card.temporary_block','card.dispute','card.unblock','card.cancel_permanently']:
+    for tool in ['card.dispute','card.cancel_permanently']:
         assert decide(ctx.principal,tool,{'customer_id':1001},ctx).reasons==['bank_only_action']
+    for tool in ['card.temporary_block','card.unblock']:  # 0096: the client's own controls, never an agent's
+        assert decide(ctx.principal,tool,{'customer_id':1001},ctx).reasons==['customer_only_action']
     guest=Principal(kind='guest')
     assert not decide(guest,'card.unblock',None,RequestContext(session_id=uuid4(),principal=guest)).allow
 

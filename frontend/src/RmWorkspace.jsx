@@ -7,13 +7,15 @@ import ClientsPage from './components/rm/ClientsPage';
 import RmTicketsPage from './components/rm/RmTicketsPage';
 import SchedulePage from './components/rm/SchedulePage';
 import FollowUpsPage from './components/rm/FollowUpsPage';
+import TodayPage from './components/rm/TodayPage';
 import QualityPage from './components/QualityPage';
 import {supabase} from './lib/supabase';
 import {display,newId,restoreConversation,rmGet} from './lib/rm';
 
 const API_URL=import.meta.env.VITE_API_URL||'/api';
-const PAGES=['assistant','clients','tickets','schedule','followups','quality'];
-function pageFromHash() {const page=location.hash.replace(/^#rm-?/,'').replace(/^#/,'');return PAGES.includes(page)?page:'assistant';}
+const PAGES=['today','assistant','clients','tickets','schedule','followups','quality'];
+// Today is the start page (no hash); every other page has its own #rm-… address.
+function pageFromHash() {const page=location.hash.replace(/^#rm-?/,'').replace(/^#/,'');return PAGES.includes(page)?page:'today';}
 const EMPTY={client_id:null,ticket_ref:null,appointment_id:null,note_id:null,draft:null,documentation:null};
 
 // Persona 2: the relationship manager's workspace. Same shell, type and buttons as the client app; RM pages instead of
@@ -50,8 +52,8 @@ export default function RmWorkspace({session}) {
 
   function navigate(page) {
     if(page===view){setPageKey(k=>k+1);return;}
-    location.hash=page==='assistant'?'':`rm-${page}`;
-    if(page==='assistant')history.replaceState(null,'',location.pathname+location.search);
+    location.hash=page==='today'?'':`rm-${page}`;
+    if(page==='today')history.replaceState(null,'',location.pathname+location.search);
     setView(page);
   }
   // From any page: open the assistant with a question for a client, ticket, appointment or note.
@@ -75,6 +77,7 @@ export default function RmWorkspace({session}) {
   }
   const name=profile?display(profile.advisor.name):profileError?'Relationship manager':null;
   const pages=[
+    {view:'today',testid:'rm-open-today',icon:'sun',label:'Today',short:'Today'},
     {view:'assistant',testid:'rm-open-assistant',icon:'spark',label:'RM assistant',short:'Assistant'},
     {view:'clients',testid:'rm-open-clients',icon:'people',label:'My clients',short:'Clients'},
     {view:'tickets',testid:'rm-open-tickets',icon:'clip',label:'Ticket inbox',short:'Tickets',badge:ticketCount,badgeLabel:'need your action'},
@@ -112,9 +115,11 @@ export default function RmWorkspace({session}) {
         {view==='tickets'&&<RmTicketsPage {...shared}/>}
         {view==='schedule'&&<SchedulePage {...shared}/>}
         {view==='followups'&&<FollowUpsPage {...shared}/>}
+        {view==='today'&&<TodayPage {...shared} advisor={profile?.advisor}/>}
         {view==='quality'&&<QualityPage/>}
         {footer}
       </main>}
     </div>
   </div>;
 }
+

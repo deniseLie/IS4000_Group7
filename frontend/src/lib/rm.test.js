@@ -28,7 +28,7 @@ test('switching client drops the other client’s draft and documentation',()=>{
   const other=contextAfter(previous,{context:{client_id:1004}});
   assert.equal(other.draft,null);assert.equal(other.documentation,null);assert.equal(other.ticket_ref,null);assert.equal(other.appointment_id,null);
   const body=requestContext({...previous,documentation:{...previous.documentation,client:'David',from_note:true,corrections:['c']}});
-  assert.deepEqual(Object.keys(body.documentation).sort(),['corrections','customer_id','draft','note_id','revision','source_notes']);
+  assert.deepEqual(Object.keys(body.documentation).sort(),['appointment_id','corrections','customer_id','draft','note_id','revision','source_notes']);
 });
 
 test('withheld points are counted, never shown',()=>{
@@ -112,4 +112,25 @@ test('a copied report keeps labels, numbered references and the source list',asy
   assert.match(text,/- FD matures 11 Nov \[1\]/);
   assert.match(text,/- AI suggestion: Ask about the sale agreement \[2\]/);
   assert.match(text,/\[2\] Meeting note 24 Sep 2026/);
+});
+
+test('Today page lists upcoming meetings, meetings to document, waiting requests and what is coming up',async()=>{
+  const {todayView,interactionPayload}=await import('./rm.js');
+  const v=todayView({appointments:[
+      {appointment_id:'a1',status:'confirmed',past:true,date:'2026-10-30',note_id:null},
+      {appointment_id:'a2',status:'confirmed',past:true,date:'2026-10-28',note_id:'n1'},
+      {appointment_id:'a3',status:'confirmed',past:false,date:'2026-11-02'},
+      {appointment_id:'a4',status:'held',past:false,date:'2026-11-03'},
+      {appointment_id:'a5',status:'confirmed',past:false,date:'2026-11-20'}],
+    tickets:{rm_owned:[{reference:'T1',overdue:false,age_hours:3},{reference:'T2',overdue:true,age_hours:40}]},
+    followups:[{item_key:'m',kind:'milestone',owner:'rm',due_on:'2026-11-12'},{item_key:'x',kind:'milestone',owner:'rm',due_on:'2027-01-12'},
+      {item_key:'t',kind:'task',owner:'rm',overdue:true,due_on:'2026-10-30'},{item_key:'s',kind:'specialist_ticket',owner:'specialist',due_on:'2026-11-03'}]},'2026-11-02');
+  assert.deepEqual(v.upcoming.map(a=>a.appointment_id),['a3']);
+  assert.deepEqual(v.today.map(a=>a.appointment_id),['a3']);
+  assert.deepEqual(v.toDocument.map(a=>a.appointment_id),['a1']);
+  assert.deepEqual(v.requests.map(t=>t.reference),['T2','T1']);
+  assert.equal(v.pastTarget.length,1);assert.equal(v.fresh.length,1);
+  assert.deepEqual(v.soon.map(f=>f.item_key),['m']);assert.deepEqual(v.overdueTasks.map(f=>f.item_key),['t']);
+  const body=interactionPayload({customer_id:1002,source_notes:'n',appointment_id:'a1',draft:{gaps:[],actions:[]}},{met_on:'2026-10-30',format:'phone',summary:'S',items:[]},'k');
+  assert.equal(body.structured.appointment_id,'a1');
 });

@@ -77,6 +77,8 @@ async def appointments(ctx,start: date|None=None,end: date|None=None):
 async def availability(ctx):return await rpc('rm_availability',{},ctx,'rm.availability')
 async def tasks(ctx,customer_id: int|None=None):return await rpc('rm_tasks',{'p_customer_id':customer_id},ctx,'rm.tasks')
 async def followups(ctx):return await rpc('rm_followups',{},ctx,'rm.followups')
+async def cash_events(ctx,customer_id: int):return await rpc('rm_cash_events',{'p_customer_id':customer_id},ctx,'rm.cash_events')
+async def book_facts(ctx):return await rpc('rm_book_facts',{},ctx,'rm.book_facts')
 async def handover_sources(ctx,customer_id: int):return await rpc('rm_handover_sources',{'p_customer_id':customer_id},ctx,'rm.handover_brief')
 async def check_service_request(ctx,customer_id: int,category: str,summary: str,details: dict,urgency: str):
     return await rpc('rm_check_service_request',{'p_customer_id':customer_id,'p_category':category,'p_summary':summary,

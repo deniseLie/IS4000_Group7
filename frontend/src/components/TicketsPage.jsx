@@ -5,6 +5,8 @@ import {prepareTicketAction} from '../lib/ticketWorkflow';
 import {latestUpdate,loadCategories,loadTickets,nextStep,requestFailed,STATUSES,ticketSummary,ticketTopic} from '../lib/ticketData';
 import {formatDateTime} from '../lib/format';
 import Meetings from './Meetings';
+import RequestField,{CARD_RULES} from './RequestField';
+import {loadCardCharges} from '../lib/customerData';
 
 async function token() {
   const {data,error}=await supabase.auth.getSession();if(error)throw error;
@@ -52,6 +54,8 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
       <div className="ticket-head"><strong>{ticket.category_label}</strong><span className={`ticket-status ${ticket.status}${ticket.overdue?' overdue':''}`}>{STATUSES[ticket.status]}{ticket.overdue?' · past target time':''}</span></div>
       {ticketTopic(ticket)&&<span className="ticket-topic" data-testid="ticket-topic">{ticketTopic(ticket)}</span>}
       <p>{ticketSummary(ticket)}</p>
+      {ticket.details?.charge&&<p className="ticket-detail" data-testid="ticket-charge"><Icon name="card"/>Charge: {ticket.details.charge}</p>}
+      {ticket.details?.card_frozen&&<p className="ticket-detail"><Icon name="lock"/>Card ending {ticket.details.card}: {ticket.details.card_frozen.toLowerCase()}</p>}
       {ticket.attachments.length>0&&<p className="ticket-attachments" data-testid="ticket-attachments"><Icon name="clip"/>Attached: {ticket.attachments.map(item=>item.file_name).join(', ')}</p>}
       {latestUpdate(ticket)&&<p className="ticket-update" data-testid="ticket-update"><Icon name="chat"/><span><strong>Latest update</strong> · {formatDateTime(ticket.last_update.at)}<br/>{latestUpdate(ticket)}</span></p>}
       <p className="ticket-next"><Icon name="info"/>{nextStep(ticket)}</p>
@@ -70,14 +74,24 @@ export function RaiseRequest({categories,prefill,onClose,onReviewActions,onSuppo
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [outcome,setOutcome]=useState(null);
+  const [rule,setRule]=useState(false);  // the bank's rule refused it: change the details, no retry or hand-off needed
   const chosen=categories.find(c=>c.category===category);
+  // A dispute names one of her card charges: they are read once, when such a form is open (0096).
+  const [charges,setCharges]=useState(null);
+  const wantsCharges=!!chosen?.fields.some(field=>field.kind==='transaction');
+  useEffect(()=>{
+    if(!wantsCharges||charges)return;
+    const controller=new AbortController();
+    token().then(auth=>loadCardCharges(auth,controller.signal)).then(rows=>{if(!controller.signal.aborted)setCharges(rows);}).catch(()=>{if(!controller.signal.aborted)setCharges([]);});
+    return ()=>controller.abort();
+  },[wantsCharges]);  // eslint-disable-line react-hooks/exhaustive-deps
   const needsUntil=category==='card_limit_change'&&values.duration==='temporary';
   async function prepare(event) {
     event.preventDefault();setBusy(true);setError('');
     try {
       const auth=await token();
       setOutcome(await prepareTicketAction({category:chosen,summary,urgency,values},auth));
-    } catch(failure) {setError(requestFailed(failure));} finally {setBusy(false);}
+    } catch(failure) {setError(failure.code==='action_rule'?failure.message:requestFailed(failure));setRule(failure.code==='action_rule');} finally {setBusy(false);}
   }
   const locked=busy||!!outcome;
   return <section className="relationship-details raise-request" data-testid="raise-request-form" aria-label="Raise a request">
@@ -87,13 +101,11 @@ export function RaiseRequest({categories,prefill,onClose,onReviewActions,onSuppo
         {categories.map(c=><option key={c.category} value={c.category}>{c.label}</option>)}</select></label>
       {chosen&&<p>{chosen.description} <strong>Who decides:</strong> {chosen.decided_by}{chosen.documents.length?<> <strong>You may need:</strong> {chosen.documents.join('; ')}.</>:null}</p>}
       {prefill?.selectedCardLabel&&category==='card_limit_change'&&<p>Selected in chat: <strong>{prefill.selectedCardLabel}</strong>. Enter the card’s last four digits to verify the card before submitting.</p>}
-      {chosen?.fields.map(field=><label key={field.key}>{field.label}{field.required||field.key==='until'&&needsUntil?'':' (optional)'}
-        {field.kind==='choice'?<select data-testid={`ticket-field-${field.key}`} required={field.required} value={values[field.key]||''} disabled={locked} onChange={event=>setValues({...values,[field.key]:event.target.value, ...(field.key==='duration'&&event.target.value==='permanent'?{until:''}:{})})}>
-            <option value="">Choose…</option>{field.choices.map(choice=><option key={choice}>{choice}</option>)}</select>
-          :<input data-testid={`ticket-field-${field.key}`} required={field.required||field.key==='until'&&needsUntil} disabled={locked} value={values[field.key]||''}
-            type={field.kind.startsWith('date')?'date':'text'} inputMode={['amount','card'].includes(field.kind)?'decimal':undefined}
-            pattern={field.kind==='card'?'[0-9]{4}':field.kind==='amount'?'[0-9]{1,9}(\\.[0-9]{1,2})?':undefined} maxLength={field.kind==='card'?4:300}
-            onChange={event=>setValues({...values,[field.key]:event.target.value})}/>}</label>)}
+      {CARD_RULES[category]&&<p className="request-rules" data-testid="request-rules"><Icon name="info"/>{CARD_RULES[category]}</p>}
+      {chosen?.fields.map(field=><RequestField key={field.key} field={field} value={values[field.key]||''} disabled={locked} testId={`ticket-field-${field.key}`}
+        required={field.required||field.key==='until'&&needsUntil} charges={charges} card={values.card}
+        className={field.kind==='confirm'?'request-details-field':''}
+        onChange={value=>setValues({...values,[field.key]:value,...(field.key==='duration'&&value==='permanent'?{until:''}:{}),...(field.key==='card'&&values.transaction?{transaction:''}:{})})}/>)}
       <label className="request-details-field">Short summary <textarea data-testid="ticket-summary" required maxLength={500} value={summary} disabled={locked} onChange={event=>setSummary(event.target.value)}/></label>
       <label>Urgency <select value={urgency} disabled={locked} onChange={event=>setUrgency(event.target.value)}>{['low','normal','high'].map(value=><option key={value}>{value}</option>)}</select></label>
       <p>Never type a password, PIN, one-time code or full card number. You review and explicitly confirm the exact request before it is recorded.</p>
@@ -101,7 +113,8 @@ export function RaiseRequest({categories,prefill,onClose,onReviewActions,onSuppo
         <button className="primary-button" data-testid="prepare-ticket" disabled={locked||!summary.trim()}>Review request</button></div>
     </form>
     {busy&&<p className="loading" role="status">Preparing your request for review…</p>}
-    {error&&<div role="alert" data-testid="ticket-error"><p>{error}</p>
+    {error&&rule&&<p role="alert" className="request-rule-error" data-testid="ticket-rule"><Icon name="info"/>{error} Change the details above and review again.</p>}
+    {error&&!rule&&<div role="alert" data-testid="ticket-error"><p>{error}</p>
       <div className="panel-actions"><button type="button" className="bank-chat-logout" onClick={prepare} disabled={busy||!summary.trim()}>Try again</button>
         {onSupport&&<button type="button" className="primary-button" data-testid="ticket-error-support" onClick={onSupport}>Talk to a person</button>}</div></div>}
     {outcome&&<div data-testid="ticket-proposal"><p>Ready for review. Confirm or reject the exact details; nothing is recorded until you confirm.</p>

@@ -248,3 +248,27 @@ def test_clients_still_read_their_own_advisor(database: 'Connection[SqlRow]') ->
     set_customer(database,1002)
     assert call(database,'customer_read_assignment(%s)',1002)['data']['current']['name']=='Sophie Lim (DEMO)'
     assert call(database,'customer_read_introduction(%s)',1002)['data']['current']['name']=='Sophie Lim (DEMO)'
+
+
+def test_rm_insights_link_meetings_and_stay_in_the_book(database: 'Connection[SqlRow]') -> None:
+    """0095: a documented meeting is linked to its appointment; book facts and money movements are book-only."""
+    as_rm(database)
+    past=[a for a in call(database,'rm_appointments(current_date-30,current_date+13)')['data'] if a['past']]
+    assert past and past[0]['client']=='Michelle Ng' and past[0]['note_id'] is None
+    meeting=past[0]
+    saved=call(database,"rm_save_interaction(%s,1002,%s,'phone','Check-in','Talked about the sale agreement.','{}','{}','{}','raw notes',%s,'[]')",
+        uuid4(),meeting['date'],json.dumps({'appointment_id':meeting['appointment_id']}))
+    again=next(a for a in call(database,'rm_appointments(current_date-30,current_date+13)')['data'] if a['appointment_id']==meeting['appointment_id'])
+    assert str(again['note_id'])==str(saved['note_id'])
+    notes=call(database,'rm_meeting_notes(1002)')['data']['notes']
+    assert str(next(n for n in notes if str(n['note_id'])==str(saved['note_id']))['appointment_id'])==str(meeting['appointment_id'])
+    # Another client's appointment id is never linked.
+    other=call(database,"rm_save_interaction(%s,1007,current_date,'phone','x','y','{}','{}','{}','raw',%s,'[]')",uuid4(),json.dumps({'appointment_id':meeting['appointment_id']}))
+    database.execute('reset role')
+    assert database.execute('select appointment_id from rm.meeting_notes where note_id=%s',(other['note_id'],)).fetchone()[0] is None
+    as_rm(database)
+    facts=call(database,'rm_book_facts()')['data']
+    assert [f['client'] for f in facts]==['Michelle Ng','Tan Mei Ling'] and facts[0]['maturities_and_reviews_next_90_days']
+    cash=call(database,'rm_cash_events(1002)')['data']
+    assert any(c['amount']==120000 and c['direction']=='incoming' and not c['recurring'] for c in cash)
+    assert call(database,'rm_cash_events(1004)')['denied'] is True

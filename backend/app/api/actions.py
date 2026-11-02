@@ -26,6 +26,11 @@ router=APIRouter()
 T=TypeVar('T')
 
 
+def rule_message(error: APIError) -> str:
+    message=error.message if isinstance(error.message,str) else ''
+    return message.strip()[:300] or 'This request does not meet the bank’s rules for this service.'
+
+
 async def response_for(operation: Callable[[],Awaitable[T]],ctx: RequestContext,request: Request) -> T:
     if ctx.principal.kind!='customer':raise ApiError(401,'auth_required','Please sign in to review actions.')
     if ctx.principal.customer_id is None:raise ApiError(403,'profile_missing','A linked demo customer profile is required for actions.')
@@ -43,6 +48,8 @@ async def response_for(operation: Callable[[],Awaitable[T]],ctx: RequestContext,
         if isinstance(error,actions.ActionStateError):raise ApiError(409,'action_'+str(error),'This proposal is '+str(error)+'. No new action was executed.') from error
         if code=='23505':raise ApiError(409,'action_conflict','This command id or idempotency key already names another action. Reload the command.') from error
         if code=='22023':raise ApiError(422,'action_invalid','The action parameters are invalid for this demo service.') from error
+        # 0096: a bank rule the request does not meet; the database wrote the message for the client (no record data).
+        if code=='P1002':raise ApiError(422,'action_rule',rule_message(error)) from error
         raise ApiError(503,'action_unavailable','The action result cannot be verified. Reload its recorded status before retrying.') from error
     await flush(batch)
     return result

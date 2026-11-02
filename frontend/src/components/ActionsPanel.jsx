@@ -10,9 +10,9 @@ import {POSSESSION,possessionLabel} from '../lib/disputeData';
 import {cacheOwner,cached,remember} from '../lib/cache';
 
 function commandTitle(command) {
-  if(command.type==='card.temporary_block')return `Temporarily block card ending ${command.target.last4}`;
+  if(command.type==='card.temporary_block')return `Freeze card ending ${command.target.last4}`;
   if(command.type==='card.dispute')return `Dispute draft for card ending ${command.target.last4}`;
-  if(command.type==='card.unblock')return command.staff?`Staff reactivation of card ending ${command.target.last4}`:`Unblock card ending ${command.target.last4}`;
+  if(command.type==='card.unblock')return command.staff?`Staff reactivation of card ending ${command.target.last4}`:`Unfreeze card ending ${command.target.last4}`;
   if(command.type==='card.cancel_permanently')return command.staff?`Staff cancellation of card ending ${command.target.last4}`:`Permanently cancel card ending ${command.target.last4}`;
   if(command.type==='handoff.claim')return 'Staff claimed a demo support handoff';
   if(command.type==='handoff.close')return 'Staff closed a demo support handoff';
@@ -37,10 +37,10 @@ function commandTitle(command) {
 function receiptText(item) {
   if(item.receipt.outcome==='failed'&&item.command.type==='rm.share_summary')return 'This snapshot was not shared. The saved draft, assigned recipient or reviewed consent changed. Reopen Data sharing before proposing another snapshot.';
   if(item.receipt.outcome==='failed')return 'This command did not change the target. Its state changed before execution.';
-  if(item.command.type==='card.temporary_block')return 'This command temporarily blocked the card.';
+  if(item.command.type==='card.temporary_block')return 'You froze this card; new card payments are declined until you unfreeze it on Overview under Cards.';
   if(item.command.type==='card.dispute')return 'This command recorded the reviewed dispute draft and your answer about the card for bank staff review. Staff decide any refund or cancellation; nothing has been refunded.';
   const noted=item.receipt.result.handoffs_noted?.length?' Bank staff reviewing a case for this card can see this change.':'';
-  if(item.command.type==='card.unblock')return item.command.staff?'A verified demo support session reactivated this card.':'You unblocked this card; new card payments can go through again.'+noted;
+  if(item.command.type==='card.unblock')return item.command.staff?'A verified demo support session reactivated this card.':'You unfroze this card; new card payments can go through again.'+noted;
   if(item.command.type==='card.cancel_permanently')return item.command.staff?'A verified demo support session permanently cancelled this card.':'You permanently cancelled this card. It cannot be reactivated.'+noted;
   if(item.command.type==='handoff.claim')return 'A verified demo support session claimed this support case.';
   if(item.command.type==='handoff.close')return 'A verified demo support session closed this support case. This does not change a card or reverse a transaction.';
@@ -71,7 +71,7 @@ function plainTitle(command) {
   switch(command.type) {
     case 'card.temporary_block':return `Freeze card ending ${t.last4}`;
     case 'card.dispute':return `Dispute ${t.items.length} charges on card ending ${t.last4}`;
-    case 'card.unblock':return command.staff?`Card ending ${t.last4} reactivated`:`Unblock card ending ${t.last4}`;
+    case 'card.unblock':return command.staff?`Card ending ${t.last4} reactivated`:`Unfreeze card ending ${t.last4}`;
     case 'card.cancel_permanently':return command.staff?`Card ending ${t.last4} cancelled`:`Cancel card ending ${t.last4} permanently`;
     case 'compliance.update_checklist_item':return t.item_label;
     case 'compliance.answer_request':return t.question;
@@ -90,9 +90,9 @@ function plainTitle(command) {
 function plainSummary(command) {
   const t=command.target,mark=value=>value.replaceAll('_',' '),who=t.recipient_name?displayName(t.recipient_name):t.recipient;
   switch(command.type) {
-    case 'card.temporary_block':return 'Temporarily blocks this card so no new payments go through. It can be reactivated by support.';
+    case 'card.temporary_block':return 'Freezes this card so no new payments go through. You can unfreeze it yourself on Overview under Cards.';
     case 'card.dispute':return `Sends these charges to bank staff for review: ${t.items.map(charge).join('; ')}. Staff decide any refund.`;
-    case 'card.unblock':return command.staff?'':'Reactivates this card so new payments go through again. If it was blocked for a suspicious charge, unblock it only if you are sure the card is safe.';
+    case 'card.unblock':return command.staff?'':'Unfreezes this card so new payments go through again. Only unfreeze it if you have the card and it is safe.';
     case 'card.cancel_permanently':return command.staff?'':'Permanently cancels this card. This cannot be undone: the card can never be reactivated.';
     case 'compliance.answer_request':return `Your answer to "${t.question}" goes to the bank for review.`;
     case 'compliance.update_checklist_item':return `Your preparation mark changes from ${mark(t.expected_client_mark)} to ${mark(t.client_mark)} for ${t.case_title}. The bank status stays ${mark(t.submission_status)}.`;
@@ -113,8 +113,8 @@ function plainSummary(command) {
 const shortDate=formatDateTime;
 const charge=item=>`${formatDate(item.date)} ${item.merchant} ${formatMoney(item.amount,item.currency)}`;
 // Review wording per type; an unknown type gets neutral wording rather than another action's.
-const REVIEW={'card.temporary_block':['Confirming temporarily blocks this card. Rejecting leaves it unchanged. This does not reverse a transaction or permanently cancel a card.','card','Confirm temporary block'],
-  'card.unblock':['Confirming reactivates this card so new payments can go through. If it was blocked because of a suspicious charge, anyone using this signed-in session could do the same, so confirm only if you are sure the card is safe. Rejecting leaves it blocked.','card','Unblock card'],
+const REVIEW={'card.temporary_block':['Confirming freezes this card: new payments are declined until you unfreeze it. Rejecting leaves it unchanged. This does not reverse a transaction or cancel the card.','card','Freeze card'],
+  'card.unblock':['Confirming unfreezes this card so new payments can go through. You can only unfreeze a card you froze yourself while no fraud case or replacement is open. Rejecting leaves it frozen.','card','Unfreeze card'],
   'card.cancel_permanently':['Confirming permanently cancels this card. This cannot be undone: it can never be reactivated, and a replacement card is a separate request to the bank. Rejecting leaves the card unchanged.','permanent card cancellation','Cancel card permanently'],
   'card.dispute':['Confirming sends this dispute draft and your answer about the card to bank staff, who decide any refund or cancellation. Nothing is refunded now. Rejecting sends nothing.','dispute draft','Send dispute draft'],
   'requests.create':['Confirming records these exact request details for the displayed recipient. It does not fulfil the request, guarantee its deadline or perform a financial transaction. Rejecting submits nothing.','relationship request','Submit reviewed request'],
@@ -158,7 +158,7 @@ function activity(command) {
     case 'requests.create':return ['people',`Sent a request to ${displayName(t.recipient_name)}`,t.what];
     case 'card.temporary_block':return ['card',`Freeze card ending ${t.last4}`,'Stops new payments on this card until it is checked.'];
     case 'card.dispute':return ['card',`Dispute ${t.items.length} charges on card ending ${t.last4}`,t.items.map(charge).join('; ')];
-    case 'card.unblock':return ['card',command.staff?`The bank reactivated card ending ${t.last4}`:`Unblock card ending ${t.last4}`,''];
+    case 'card.unblock':return ['card',command.staff?`The bank reactivated card ending ${t.last4}`:`Unfreeze card ending ${t.last4}`,''];
     case 'card.cancel_permanently':return ['card',command.staff?`The bank cancelled card ending ${t.last4}`:`Cancel card ending ${t.last4} for good`,command.staff?'':'This cannot be undone.'];
     default:return ['document',plainTitle(command),plainSummary(command)];
   }

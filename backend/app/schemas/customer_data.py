@@ -49,6 +49,8 @@ class CreditCard(BaseModel):
     outstanding: Money
     minimum_payment: Money
     due_date: date | None
+    # 0096: why the client may not unfreeze this frozen card herself (null when she may, or when it is not frozen).
+    unfreeze_blocked_reason: str | None=Field(default=None,max_length=300)
 
 
 class CustomerLoan(BaseModel):

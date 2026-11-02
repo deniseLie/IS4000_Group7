@@ -140,13 +140,24 @@ async def rm_handover_sources(customer_id: int) -> dict[str,Any]:
     return await rm_records.handover_sources(_ctx(),customer_id)
 
 
+async def rm_cash_events(customer_id: int) -> dict[str,Any]:
+    """Large money movements (10,000 or more, last 180 days) for one book client, as recorded; recurring ones are marked."""
+    return await rm_records.cash_events(_ctx(),customer_id)
+
+
+async def rm_book_facts() -> dict[str,Any]:
+    """One line of facts per client in the RM's book: last interaction, next meeting, open requests, maturities, tasks."""
+    return await rm_records.book_facts(_ctx())
+
+
 TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
     'free_slots':free_slots,
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
-    'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources}
+    'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
+    'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts}
 
 
 async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:

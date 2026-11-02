@@ -9,7 +9,7 @@ const ACTION_WORDS={client_note:'Client note',follow_up_task:'Follow-up task',se
 
 // RM5 → RM10 / RM6: review the structured documentation, approve it into the client record, then confirm each proposed
 // task or service request separately. Nothing is saved, created or submitted without an explicit approval here.
-export default function DocumentationReview({documentation,token,onChange,latest}) {
+export default function DocumentationReview({documentation,token,onChange,latest,onRecap}) {
   const draft=documentation.draft||{items:[],actions:[],gaps:[]};
   const [edits,setEdits]=useState({met_on:draft.interaction?.met_on||new Date().toISOString().slice(0,10),format:['video','phone','in_person'].includes(draft.interaction?.format)?draft.interaction.format:'',
     title:draft.interaction?.title||'',summary:draft.summary||'',items:draft.items.map(i=>({...i}))});
@@ -77,7 +77,9 @@ export default function DocumentationReview({documentation,token,onChange,latest
         <p className="rm-quote">{documentation.source_notes}</p>{documentation.corrections?.map((c,i)=><p key={i} className="rm-quote correction">Correction {i+1}: {c}</p>)}</details>
       {!saved&&<p className="rm-small">Correct anything here, or type a correction in the chat (for example “the statement is for August, not September”). Your corrections are kept with the record.</p>}
       {saving.error&&<p role="alert" className="rm-error">{saving.error}</p>}
-      {saved?<p role="status" className="rm-success" data-testid="rm-documentation-saved"><Icon name="check"/>Saved to the client record with your notes and corrections. Proposed actions below can now be confirmed.</p>
+      {documentation.appointment_id&&<p className="rm-small"><Icon name="calendar"/> Documents the selected meeting: it will be linked to that appointment when you save.</p>}
+      {saved?<div className="rm-saved-row"><p role="status" className="rm-success" data-testid="rm-documentation-saved"><Icon name="check"/>Saved to the client record with your notes and corrections{documentation.appointment_id?', linked to the meeting':''}. Proposed actions below can now be confirmed.</p>
+        {onRecap&&<button type="button" className="bank-chat-logout" data-testid="rm-draft-recap" onClick={()=>onRecap(documentation.client)}><Icon name="chat"/>Draft a recap for {documentation.client?.split(' ')[0]||'the client'}</button>}</div>
         :<div className="panel-actions"><button type="button" className="primary-button" data-testid="rm-documentation-approve" disabled={saving.busy||locked} onClick={approveDocumentation}>{saving.busy?'Saving…':'Approve and save to client record'}<Icon name="check"/></button></div>}
     </>}
     <h4>Proposed actions <small className="rm-small">{ready?'confirm each one separately':'available once the documentation is saved'}</small></h4>

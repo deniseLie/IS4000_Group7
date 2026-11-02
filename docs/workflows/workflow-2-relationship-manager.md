@@ -1,6 +1,6 @@
 # Workflow 2 – Relationship manager (Sophie)
 
-**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
+**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
 
 ## Who she is
 
@@ -52,6 +52,14 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 | RM11 Follow-up priorities | *Follow-ups*; *Prioritise with assistant* | Live from records; reason, date and source per item; never suggests a second meeting when one is confirmed; dismiss |
 | RM12 Availability | *Schedule* → Appointments / Availability / Working hours | Meetings grouped by day; weekly hours edited in one table (apply to all weekdays, save once); blocks drive the free times clients book (CR17); **at most 2 meetings per client per week** (0092), enforced at booking and shown with a warning for older bookings over the limit |
 | RM16 Handover brief | Inherited client → *Handover brief* | Only with a recorded reassignment; fixed eight sections; consent-filtered handover note (revoked/expired excluded); audited with the sources used |
+
+## RM insights (0095, rm_assistant v2, rm_planner v2)
+
+- **Today** (start page, no model call): requests waiting for her (new today, past target), meetings in the next 7 days with *Brief me*, **meetings to document** (confirmed meetings in the last 30 days without a note), maturities and reviews in the next 14 days, overdue tasks, and a box to **ask across the book**.
+- **Conversation starters** in every briefing: open questions tied to a recorded event – a large money movement (`rm_cash_events`: 10,000 or more in 180 days, recurring ones marked, never interpreted), a maturity, a request or something the client said – each with its source. The overview adds *Recent large movements*.
+- **Meeting → notes → recap**: *Document this meeting* on a past appointment prefills the client and meeting; the saved note is linked to the appointment in SQL (`rm.meeting_notes.appointment_id`, same client and RM only). After saving, *Draft a recap* writes a client message from that note only, for her approval.
+- **Ask across my book** (`book_question` intent): one facts line per client (`rm_book_facts`: last interaction and days since, next meeting, open requests, maturities and reviews in 90 days, tasks, large movements) – book only, cited per client.
+- **Dictation** in the assistant's message box (browser speech service; demo only, with a notice). The text is redacted like typed text and nothing is sent until she presses send.
 
 ## Layout (Nov 2026 redesign)
 

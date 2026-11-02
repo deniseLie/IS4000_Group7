@@ -6,6 +6,7 @@ and audit every read, refusal and write. The assistant route streams status, the
 /chat). Write routes run only what the RM approved on screen; the assistant itself never writes.
 """
 import asyncio
+from datetime import datetime,timedelta,timezone
 import json
 import logging
 from uuid import UUID
@@ -31,6 +32,7 @@ from app.services.privacy import redact
 from app.services.rm import assistant,records
 from app.services.rm.records import RmDenied,RmForbidden,RmSession,rm_scope
 
+SGT=timezone(timedelta(hours=8))
 router=APIRouter(prefix='/rm')
 BUSINESS={'22023':400,'P1001':409,'23505':409,'P0002':404,'42501':403}
 NOT_IN_BOOK='This client is not in your book. The attempt was recorded.'
@@ -104,8 +106,11 @@ async def ticket(reference: str,request: Request,caller: Caller=Depends(rm_calle
     return await run(lambda:records.ticket(caller.ctx,reference),request,caller,'rm.ticket')
 
 @router.get('/appointments')
-async def appointments(request: Request,caller: Caller=Depends(rm_caller)):
-    return await run(lambda:records.appointments(caller.ctx),request,caller,'rm.appointments')
+async def appointments(request: Request,past_days: int=Query(0,ge=0,le=30),caller: Caller=Depends(rm_caller)):
+    # past_days: also list recent meetings (up to 30 days back) so they can be documented; the range stays within 62 days.
+    start=datetime.now(SGT).date()-timedelta(days=past_days) if past_days else None
+    end=(start+timedelta(days=13+past_days)) if start else None
+    return await run(lambda:records.appointments(caller.ctx,start,end),request,caller,'rm.appointments')
 
 @router.get('/availability')
 async def availability(request: Request,caller: Caller=Depends(rm_caller)):

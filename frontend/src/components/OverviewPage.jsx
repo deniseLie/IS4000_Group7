@@ -2,8 +2,9 @@ import {useEffect,useState} from 'react';
 import Icon from './Icon';
 import {initials} from './SharingPage';
 import Statements from './Statements';
+import CardControls from './CardControls';
 import {supabase} from '../lib/supabase';
-import {loadRecords} from '../lib/customerData';
+import {disputableCharges,loadRecords} from '../lib/customerData';
 import {displayName,formatDate,formatDateTime,formatMoney as money} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 import {reviewNextStep} from '../lib/compliance';
@@ -15,9 +16,10 @@ const QUERY={from_date:null,to_date:null,filters:null},KEY=`records:${JSON.strin
 function greeting() {const hour=Number(new Date().toLocaleString('en-SG',{timeZone:'Asia/Singapore',hour:'numeric',hour12:false}));return hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';}
 
 // Online-banking style landing page: everything the customer owns at a glance, with one way into each task.
-export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}) {
+export default function OverviewPage({onNavigate,onAsk,onRequestStatement,onRaise,focus}) {
   // The last loaded records show at once on a return visit while a fresh read replaces them.
   const [records,setRecords]=useState(()=>cached(KEY)),[error,setError]=useState('');
+  const [reload,setReload]=useState(0),[managing,setManaging]=useState(null);  // 0096: card controls open for one card
   useEffect(()=>{
     const controller=new AbortController(),scope=cacheOwner();
     (async()=>{
@@ -30,7 +32,7 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     })();
     return ()=>controller.abort();
-  },[]);
+  },[reload]);
   // Opened from the assistant's "Go to Statements" button: scroll to that section once the records are on screen.
   // CR2/CR15: a "Go to …" button in the chat scrolls to its section (statements, accounts, cards, loans, recent activity).
   useEffect(()=>{if(focus&&records)document.getElementById(focus==='statements'?'statements':`ov-${focus}`)?.scrollIntoView({behavior:'smooth',block:'start'});},[focus,!!records]);
@@ -44,6 +46,7 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
   const rm=records.advisor.data?.current,review=records.compliance.data,open=review&&!REVIEW_DONE.includes(review.status);
   const reviewStep=open?reviewNextStep(review):null;
   const recent=[...records.transactions.data].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+  const disputable=new Set(disputableCharges(records.transactions.data).map(row=>row.txn_id));
   return <section className="app-page-body ov" aria-label="Overview" data-testid="overview-page">
     <header className="ov-head"><div><p className="ov-date">{new Date().toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'})}</p>
       <h1>{greeting()}, {name}</h1></div>
@@ -55,14 +58,20 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
         <article className="ov-card" id="ov-accounts"><h2>Accounts</h2>
           {accounts.length?<ul className="ov-rows">{accounts.map(row=><li key={row.account_id}><span className="ov-icon"><Icon name="account"/></span><div><strong>{ACCOUNT[row.type]}</strong><small>{row.number}{row.status==='dormant'?' · Dormant':''}</small></div><b>{money(row.balance,row.currency)}</b></li>)}</ul>
             :<p className="ov-empty">You have no open accounts.</p>}</article>
-        {cards.length>0&&<article className="ov-card" id="ov-cards"><h2>Cards</h2><ul className="ov-rows">{cards.map(row=><li key={row.card_id}><span className="ov-icon"><Icon name="card"/></span>
-          <div><strong>{row.name}</strong><small>•••• {row.last4}{row.status!=='active'?` · ${row.status.replaceAll('_',' ')}`:''}{row.due_date?` · Due ${formatDate(row.due_date)}`:''}</small></div>
-          <b>{money(row.outstanding,row.currency||undefined)}<small>of {money(row.limit,row.currency||undefined)} limit</small></b></li>)}</ul></article>}
+        {cards.length>0&&<article className="ov-card" id="ov-cards"><h2>Cards</h2><ul className="ov-rows ov-cards">{cards.map(row=><li key={row.card_id} className={managing===row.card_id?'managing':''}>
+          <div className="ov-card-row"><span className="ov-icon"><Icon name="card"/></span>
+          <div><strong>{row.name}</strong><small>•••• {row.last4}{row.status==='temporarily_blocked'?'':row.status!=='active'?` · ${row.status.replaceAll('_',' ')}`:''}{row.due_date?` · Due ${formatDate(row.due_date)}`:''}</small>
+            {row.status==='temporarily_blocked'&&<span className="ov-frozen" data-testid="card-frozen"><Icon name="lock"/>Frozen</span>}</div>
+          <b>{money(row.outstanding,row.currency||undefined)}<small>of {money(row.limit,row.currency||undefined)} limit</small></b>
+          <button className="ov-manage" data-testid="card-manage" aria-expanded={managing===row.card_id} onClick={()=>setManaging(managing===row.card_id?null:row.card_id)}>Manage<Icon name="chevron"/></button></div>
+          {managing===row.card_id&&<CardControls card={row} onChanged={()=>setReload(n=>n+1)} onRaise={onRaise}/>}</li>)}</ul></article>}
         {loans.length>0&&<article className="ov-card" id="ov-loans"><h2>Loans</h2><ul className="ov-rows">{loans.map(row=><li key={row.loan_id}><span className="ov-icon"><Icon name="loan"/></span>
           <div><strong>{LOAN[row.type]}</strong><small>Next payment {money(row.next_amount,row.currency||undefined)}{row.next_payment?` on ${formatDate(row.next_payment)}`:''}</small></div><b>{money(row.outstanding,row.currency||undefined)}<small>outstanding</small></b></li>)}</ul></article>}
         <article className="ov-card" id="ov-transactions"><h2>Recent activity</h2>
           {recent.length?<ul className="ov-rows ov-txns">{recent.map(row=><li key={row.txn_id}><div><strong>{row.description}</strong><small>{formatDate(row.date)}{row.card_last4?` · Card •••• ${row.card_last4}`:''}{row.status!=='posted'?` · ${row.status}`:''}</small></div>
-            <b className={row.amount<0?'out':'in'}>{row.amount<0?'−':'+'}{money(Math.abs(row.amount),row.currency)}</b></li>)}</ul>
+            <b className={row.amount<0?'out':'in'}>{row.amount<0?'−':'+'}{money(Math.abs(row.amount),row.currency)}</b>
+            {onRaise&&disputable.has(row.txn_id)&&<button className="ov-txn-dispute" data-testid="txn-dispute" title="Dispute a charge you recognise but think is wrong"
+              onClick={()=>onRaise({category:'card_dispute',details:{card:row.card_last4,transaction:row.txn_id},summary:`Dispute the ${row.description} charge on ${formatDate(row.date)}.`})}>Dispute</button>}</li>)}</ul>
             :<p className="ov-empty">No recent transactions.</p>}
           <button className="source-link" onClick={()=>onAsk('Show my recent transactions')}>Ask about a transaction</button></article>
         <Statements records={records} onRequest={onRequestStatement}/>

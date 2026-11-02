@@ -155,7 +155,11 @@ async function responseBody(response) {
   let body;
   try {body=await response.json();}
   catch(error) {if(error instanceof SyntaxError)throw invalid();throw error;}
-  if(!response.ok)throw new Error(typeof body?.error?.message==='string'&&body.error.message.trim()?body.error.message:'The action status is unavailable. Reload it before retrying.');
+  if(!response.ok) {
+    const failure=new Error(typeof body?.error?.message==='string'&&body.error.message.trim()?body.error.message:'The action status is unavailable. Reload it before retrying.');
+    failure.code=typeof body?.error?.code==='string'?body.error.code:null;  // 'action_rule': a bank rule, worded for the client (0096)
+    throw failure;
+  }
   return body;
 }
 

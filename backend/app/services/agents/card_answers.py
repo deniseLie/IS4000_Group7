@@ -121,7 +121,25 @@ def limit_change(task_id: str,text: str) -> AgentResult:
     return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',text=(
         'You can request a higher or lower card limit. Tap “Raise a card limit request” to provide the card, '
         'requested limit, temporary or permanent change, and reason. For a temporary change, include an end date. '
-        'The cards and credit team decides, so approval isn’t guaranteed; submitting a request does not change your limit.'))
+        +RULES+' The cards and credit team decides, so approval isn’t guaranteed; submitting a request does not change your limit.'))
+
+
+# The bank's limit rules (0096, card_request_rules); the request form refuses anything else with the same words.
+RULES=('Limits change in steps of SGD 1,000, up to SGD 50,000, once per card every 30 days; a temporary increase lasts up to 90 days.')
+STEP=1000
+MAXIMUM=50000
+
+
+def off_step(amount: int,chosen: CreditCard | None) -> str | None:
+    """A requested limit the bank's rules would refuse, explained before she is sent to the form."""
+    if amount%STEP or amount<STEP or amount>MAXIMUM:
+        lower=max(STEP,min(MAXIMUM,amount//STEP*STEP))
+        upper=min(MAXIMUM,lower+STEP)
+        options=f'SGD {lower:,}' if lower==upper else f'SGD {lower:,} or SGD {upper:,}'
+        return f'Limits change in steps of SGD 1,000, up to SGD 50,000. Would you like {options} instead?'
+    if chosen is not None and amount==chosen.limit:
+        return f'Your {name_of(chosen)} already has a limit of {money(chosen,chosen.limit)}. What new limit would you like?'
+    return None
 
 
 def _limit_card(text: str,cards: Sequence[CreditCard]) -> CreditCard | None:
@@ -165,7 +183,10 @@ def limit_conversation(task_id: str,history: Sequence[Message],cards: Sequence[C
     prefix=f'Your requested new limit is {amount}. ' if amount is not None else ''
     if chosen is not None:prefix+=f'You selected the {name_of(chosen)}. '
     if context.travel_reason:prefix+='You mentioned travel as the reason. '
-    if amount is None:
+    rule=off_step(context.amount,chosen) if context.amount is not None else None
+    if rule is not None:
+        question=rule
+    elif amount is None:
         question=('A temporary change can be requested. What new credit limit would you like?'
             if context.temporary else 'What new credit limit would you like to request?')
     elif context.temporary is None:

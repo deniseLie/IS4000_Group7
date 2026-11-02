@@ -153,6 +153,20 @@ def test_card_limit_change_is_explained_without_a_model(question: str,amount: st
         assert 'temporary or permanent' in result.text and result.question==result.text
     else:
         assert result.status=='ok' and 'Raise a card limit request' in result.text and 'approval isn’t guaranteed' in result.text
+        assert 'steps of SGD 1,000' in result.text and '30 days' in result.text   # 0096 rules
+
+
+@pytest.mark.parametrize('question,offered',[('i want to raise my card limit to 15500','SGD 15,000 or SGD 16,000'),
+    ('i want to raise my card limit to 80000','SGD 50,000')])
+def test_a_limit_the_bank_would_refuse_is_explained_before_the_form(question: str,offered: str) -> None:
+    result=ask(question)
+    assert result is not None and result.status=='needs_clarification'
+    assert 'steps of SGD 1,000' in result.text and offered in result.text and 'Request ready' not in result.text
+
+
+def test_asking_for_the_current_limit_is_pointed_out() -> None:
+    result=ask('i want a permanent increase of my signature card limit to 20000')
+    assert result is not None and 'already has a limit of SGD 20,000.00' in result.text
 
 
 def test_waive_it_and_buttons_in_handover_context() -> None:

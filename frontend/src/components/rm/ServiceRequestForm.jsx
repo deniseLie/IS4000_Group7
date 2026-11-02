@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react';
 import Icon from '../Icon';
+import RequestField from '../RequestField';
 import {newId,requestFromAction,rmPost} from '../../lib/rm';
 
 // RM6: a service request prefilled from the approved interaction. The RM completes missing details, the backend checks
@@ -29,11 +30,9 @@ export default function ServiceRequestForm({action,customerId,noteId,token,onDon
   return <div className="rm-request-form" data-testid="rm-request-form">
     <p className="rm-small"><strong>{category.label}</strong> · goes to the {category.owner_team}. {category.decided_by}</p>
     <div className="rm-form-grid">
-      {category.fields.map(field=><label key={field.key} className="form-field">{field.label}{field.required?'':' (optional)'}
-        {field.kind==='choice'?<select value={form.details[field.key]||''} onChange={e=>set({details:{...form.details,[field.key]:e.target.value}})}>
-            <option value="">Choose…</option>{field.choices.map(c=><option key={c}>{c}</option>)}</select>
-          :<input value={form.details[field.key]||''} type={field.kind.startsWith('date')?'date':'text'} maxLength={field.kind==='card'?4:300}
-            onChange={e=>set({details:{...form.details,[field.key]:e.target.value}})}/>}</label>)}
+      {category.fields.map(field=><RequestField key={field.key} field={field} value={form.details[field.key]||''} required={field.required} onBehalf
+        className={field.kind==='confirm'?'form-field rm-span':'form-field'}
+        onChange={value=>set({details:{...form.details,[field.key]:value}})}/>)}
       <label className="form-field rm-span">Short summary (the client sees this in My requests)<textarea rows={2} maxLength={500} value={form.summary} onChange={e=>set({summary:e.target.value})}/></label>
       <label className="form-field">Urgency<select value={form.urgency} onChange={e=>set({urgency:e.target.value})}>{['low','normal','high'].map(u=><option key={u}>{u}</option>)}</select></label>
     </div>

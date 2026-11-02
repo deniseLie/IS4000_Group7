@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import RequestField from './RequestField';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {loadCategories,requestFailed} from '../lib/ticketData';
@@ -13,6 +14,7 @@ async function accessToken() {
 }
 function labelValue(field,value) {
   if(!value)return 'Not provided';
+  if(field?.kind==='confirm')return value==='yes'?'Confirmed':'Not confirmed';
   if(field?.key==='new_limit') {
     const number=Number(value);
     return Number.isFinite(number)?`SGD ${number.toLocaleString('en-SG')}`:value;
@@ -69,7 +71,7 @@ export default function InlineRequestCard({prefill={},onDismiss,onSuccess,onProp
       const saved=await prepareTicketAction({category:chosen,summary,urgency,values},await accessToken());
       if(saved.command.state!=='proposed'||saved.command.target?.category!==chosen.category)throw new Error('The prepared request could not be verified.');
       setProposal(saved);onProposalChange?.(saved.command.command_id);setEditing(false);setAcknowledged(false);
-    }catch(err){setError(requestFailed(err));}finally{setBusy(false);}
+    }catch(err){setError(err.code==='action_rule'?`${err.message} Edit the details and continue again.`:requestFailed(err));}finally{setBusy(false);}
   }
   async function confirm() {
     if(!proposed||!acknowledged||busy||receipt)return;
@@ -111,9 +113,8 @@ export default function InlineRequestCard({prefill={},onDismiss,onSuccess,onProp
         <label>Request type<select data-testid="inline-ticket-category" disabled={readOnly} value={category} onChange={event=>{setCategory(event.target.value);setValues({});setSummary('');setSummaryEdited(false);}}>{categories.map(item=><option key={item.category} value={item.category}>{item.label}</option>)}</select></label>
         <p className="inline-request-hint">{chosen.description} The {chosen.owner_team.toLowerCase()} handles this request.</p>
         {prefill.selectedCardLabel&&category==='card_limit_change'&&<p className="inline-request-hint">Selected in chat: {prefill.selectedCardLabel}. Enter the last 4 card digits to verify it.</p>}
-        <div className="inline-request-fields">{chosen.fields.map(field=><label key={field.key}>{field.label}{field.required||(field.key==='until'&&values.duration==='temporary')?' *':''}
-          {field.kind==='choice'?<select data-testid={`inline-ticket-field-${field.key}`} disabled={readOnly} required={field.required} value={values[field.key]||''} onChange={event=>changeField(field.key,event.target.value)}><option value="">Choose…</option>{field.choices.map(option=><option key={option} value={option}>{option}</option>)}</select>
-            :<input data-testid={`inline-ticket-field-${field.key}`} value={values[field.key]||''} disabled={readOnly} required={field.required||(field.key==='until'&&values.duration==='temporary')} type={field.kind.startsWith('date')?'date':'text'} inputMode={field.kind==='amount'?'decimal':field.kind==='card'?'numeric':undefined} pattern={field.kind==='card'?'[0-9]{4}':field.kind==='amount'?'[0-9]{1,9}(\\.[0-9]{1,2})?':undefined} maxLength={field.kind==='card'?4:300} onChange={event=>changeField(field.key,event.target.value)}/>}</label>)}</div>
+        <div className="inline-request-fields">{chosen.fields.map(field=><RequestField key={field.key} field={field} value={values[field.key]||''} disabled={readOnly}
+          testId={`inline-ticket-field-${field.key}`} required={field.required||(field.key==='until'&&values.duration==='temporary')} onChange={value=>changeField(field.key,value)}/>)}</div>
         <label>Short summary<textarea data-testid="inline-ticket-summary" maxLength={500} required value={summary} disabled={readOnly} onChange={event=>{setSummary(event.target.value);setSummaryEdited(true);}}/></label>
         <label>Urgency<select value={urgency} disabled={readOnly} onChange={event=>setUrgency(event.target.value)}>{['low','normal','high'].map(option=><option key={option}>{option}</option>)}</select></label>
         {missing.length>0&&<p className="inline-request-hint">Still needed: {missing.join(', ')}.</p>}

@@ -28,6 +28,8 @@
 | `22_apply_0093_hosted.sql` | Sophie's book becomes Michelle and Tan Mei Ling; Grace and Hafiz (and David, if present) move to Priya, their meetings with Sophie are cancelled and her open tasks for them closed | Once, after 20 |
 | `23_repair_michelle_actions.sql` | Fixes Michelle's Actions page (GET /commands 503) after an earlier run of 17: removes actions whose chat was deleted; 17 now does this itself | Once, if Actions fails |
 | `24_apply_0094_hosted.sql` | Restores the customer grant on `rm.is_my_advisor` that 0089 removed (Michelle's Overview "Record access does not match the signed-in customer", /customer/advisor 403) | Once, now |
+| `25_apply_0095_hosted.sql` | RM insights: meeting notes linked to appointments, large money movements, book facts, and one undocumented past meeting with Michelle for Today → Meetings to document | Once, after 24 |
+| `26_apply_0096_hosted.sql` | Card controls (CR19): the client freezes and unfreezes her own card, replaces a lost, stolen or damaged card, disputes a recognised charge, and card limit rules (steps of 1,000, 90-day temporary, declaration, once per 30 days) | Once, after 25 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

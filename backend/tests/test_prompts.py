@@ -50,6 +50,8 @@ RELEASED[('relationship','v4')]='v4+2c8aec82'
 RELEASED[('relationship','v5')]='v5+82c591e9'
 RELEASED[('rm_planner','v1')]='v1+b780c1e3'
 RELEASED[('rm_assistant','v1')]='v1+162b341f'
+RELEASED[('rm_planner','v2')]='v2+baed2fc1'
+RELEASED[('rm_assistant','v2')]='v2+bdcb8a3f'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

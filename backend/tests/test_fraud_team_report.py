@@ -79,7 +79,7 @@ def test_reported_charges_go_to_the_fraud_team_without_a_pause_or_a_block(local_
     assert 'Card ending 7310' in summary and 'MAYFAIR AUDIO LONDON' in summary and 'LUXEHAUS LONDON' in summary and 'Temporary block' not in summary
     (reference,category,urgency,title),=tickets
     assert (category,urgency)==('suspected_fraud','urgent') and 'fraud team contacts you' in title
-    assert f'reference {reference}' in answer.answer and 'fraud team' in answer.answer and 'I can’t block the card' in answer.answer
+    assert f'reference {reference}' in answer.answer and 'fraud team' in answer.answer and 'freeze it yourself now' in answer.answer and 'I can’t freeze the card' in answer.answer
     assert answer.needs_human and not any(section.pending_actions for section in answer.sections)
 
 

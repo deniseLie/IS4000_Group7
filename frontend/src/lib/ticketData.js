@@ -3,7 +3,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 import {lastFullMonths} from './statements.js';
 export const STATUSES={submitted:'Submitted',in_review:'In review',waiting_on_client:'Waiting for you',resolved:'Resolved',closed:'Closed'};
-const KINDS=['text','amount','date','date_past','choice','card'];
+const KINDS=['text','amount','date','date_past','choice','card','confirm','transaction'];  // confirm, transaction: 0096
 function invalid() {return new Error('The recorded request could not be verified. Reload My requests.');}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
 function text(value,max) {if(typeof value!=='string'||!value.trim()||value.length>max)throw invalid();return value;}

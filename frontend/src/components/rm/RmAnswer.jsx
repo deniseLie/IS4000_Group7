@@ -88,7 +88,8 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
     {reply.clarification&&<div className="follow-ups rm-options" data-testid="rm-clarification"><span>{reply.clarification.question}</span>
       {reply.clarification.options.map(option=><button key={option.label} type="button" disabled={!latest} onClick={()=>onOption(option)}>{option.label}</button>)}</div>}
     {reply.draft&&<DraftReview draft={reply.draft} token={token} onChange={onDraftChange} onAsk={onAsk} latest={latest}/>}
-    {reply.documentation&&<DocumentationReview documentation={reply.documentation} token={token} onChange={onDocumentationChange} latest={latest} onSource={s=>show(s.id)} sources={reply.sources}/>}
+    {reply.documentation&&<DocumentationReview documentation={reply.documentation} token={token} onChange={onDocumentationChange} latest={latest} onSource={s=>show(s.id)} sources={reply.sources}
+      onRecap={onAsk?(client=>onAsk(`Draft a recap message to ${client||'the client'} of our conversation`)):null}/>}
     {validationNote(reply.validation)&&<p className="rm-validation" data-testid="rm-validation"><Icon name="shield"/>{validationNote(reply.validation)}</p>}
     {reply.notice&&<p className="rm-validation"><Icon name="info"/>{reply.notice}</p>}
     {sources.length>0&&<section className="rm-sources" data-testid="rm-sources">

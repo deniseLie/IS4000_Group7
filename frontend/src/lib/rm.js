@@ -65,7 +65,7 @@ export function requestContext(context) {
   const doc=context.documentation;
   return {client_id:context.client_id||null,ticket_ref:context.ticket_ref||null,appointment_id:context.appointment_id||null,note_id:context.note_id||null,
     draft:context.draft?{customer_id:context.draft.customer_id,reference:context.draft.reference||null,text:context.draft.text.slice(0,500),revision:context.draft.revision||1}:null,
-    documentation:doc?{customer_id:doc.customer_id,source_notes:doc.source_notes,corrections:doc.corrections||[],draft:doc.draft||null,revision:doc.revision||1,note_id:doc.note_id||null}:null};
+    documentation:doc?{customer_id:doc.customer_id,source_notes:doc.source_notes,corrections:doc.corrections||[],draft:doc.draft||null,revision:doc.revision||1,note_id:doc.note_id||null,appointment_id:doc.appointment_id||null}:null};
 }
 
 export const KIND_LABELS={record:'Record',client_stated:'Client said',suggestion:'AI suggestion',gap:'Gap',guidance:'Guidance'};
@@ -91,7 +91,7 @@ export function receivedText(hours) {
 
 export const REPORT_TITLES={ticket_inbox:'Ticket triage',priorities:'Follow-up priorities',reviews:'Review deadlines',schedule:'Your schedule',
   client_overview:'Client overview',meeting_history:'Meeting history',meeting_brief:'Meeting briefing',ticket_summary:'Ticket summary',
-  draft_message:'Client message',document_interaction:'Interaction record',actions_from_note:'Follow-up actions',handover_brief:'Handover brief',help:'RM assistant'};
+  draft_message:'Client message',document_interaction:'Interaction record',actions_from_note:'Follow-up actions',handover_brief:'Handover brief',book_question:'Across your book',help:'RM assistant'};
 
 // A reply as plain text with numbered references and a source list (for Copy).
 export function reportText(reply,client) {
@@ -182,7 +182,8 @@ export function interactionPayload(doc,edits,requestKey) {
   const pick=category=>items.filter(i=>i.category===category).map(i=>i.certainty==='tentative'?`${i.text} (tentative)`:i.text).slice(0,10);
   return {request_key:requestKey,customer_id:doc.customer_id,met_on:edits.met_on,format:edits.format,title:edits.title||'',summary:edits.summary,
     commitments:pick('commitment'),decisions:pick('decision'),client_requests:pick('client_request'),source_notes:doc.source_notes,
-    structured:{items,gaps:doc.draft.gaps||[],actions:(doc.draft.actions||[]).map(a=>({kind:a.kind,title:a.title,origin:a.origin}))},
+    structured:{items,gaps:doc.draft.gaps||[],actions:(doc.draft.actions||[]).map(a=>({kind:a.kind,title:a.title,origin:a.origin})),
+      ...(doc.appointment_id?{appointment_id:doc.appointment_id}:{})},
     revisions:(doc.corrections||[]).map((text,index)=>({revision:index+2,correction:text,confirmed_by:'rm'}))};
 }
 export function taskFromAction(action) {
@@ -228,4 +229,18 @@ export function conversationPayload(messages,context) {
 export function restoreConversation(saved) {
   return {messages:(saved.messages||[]).map(m=>({...m,restored:true})),
     context:{client_id:null,ticket_ref:null,appointment_id:null,note_id:null,draft:null,documentation:null,...(saved.context||{})}};
+}
+
+// The Today page: what needs Sophie now, built from records only (no model call). Each list is short and sorted.
+export function todayView({appointments=[],tickets=null,followups=[]},today) {
+  const days=(date)=>Math.round((Date.parse(date)-Date.parse(today))/86400000);
+  const confirmed=appointments.filter(a=>a.status==='confirmed');
+  const upcoming=confirmed.filter(a=>!a.past&&days(a.date)>=0&&days(a.date)<=7);
+  const toDocument=confirmed.filter(a=>a.past&&!a.note_id&&days(a.date)>=-30).sort((x,y)=>y.date.localeCompare(x.date));
+  const mine=(tickets?.rm_owned||[]).slice().sort((x,y)=>(y.overdue-x.overdue)||((y.age_hours??0)-(x.age_hours??0)));
+  const fresh=mine.filter(t=>(t.age_hours??99)<24);
+  const soon=followups.filter(f=>f.owner!=='specialist'&&['milestone','review_deadline'].includes(f.kind)&&f.due_on&&days(f.due_on)>=0&&days(f.due_on)<=14)
+    .sort((x,y)=>x.due_on.localeCompare(y.due_on));
+  const overdueTasks=followups.filter(f=>f.kind==='task'&&f.overdue);
+  return {upcoming,today:upcoming.filter(a=>days(a.date)===0),toDocument,requests:mine,fresh,pastTarget:mine.filter(t=>t.overdue),soon,overdueTasks};
 }

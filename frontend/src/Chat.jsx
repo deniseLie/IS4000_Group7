@@ -589,7 +589,7 @@ export default function Chat({session,onSignIn}) {
       {view==='chat'&&savedChats&&<SavedChats closing={historyClosing} current={conversation?.session_id} onLoaded={setChatCount} onClose={closeHistory} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
       {view!=='chat'&&<main className="app-page page-enter" key={view}>
         {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
-        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} focus={overviewFocus?.section}/>}
+        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
         {session&&view==='actions'&&<ActionsPanel key={pageKey} onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}}/>}
         {session&&view==='quality'&&isTeam(session)&&<QualityPage key={pageKey}/>}

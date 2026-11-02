@@ -540,8 +540,9 @@ async def ask_to_confirm(state: Turn,ctx: RequestContext) -> list[AnswerSection]
 
 
 FRAUD_TEAM=('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card ending {last4} if needed '
-    'and review the charges. Don’t wait for them if your card is at risk: call the fraud line on the back of your card or use the '
-    'report function in the official app now. I can’t block the card or reverse a charge from here. You can follow it in My requests.')
+    'and review the charges. Don’t wait for them if your card is at risk: freeze it yourself now on Overview under Cards (Manage, '
+    'then Freeze card), or call the fraud line on the back of your card. Only the bank can unfreeze it while the case is open. '
+    'I can’t freeze the card or reverse a charge from here. You can follow it in My requests.')  # 0096: the client's own freeze
 
 
 async def report_to_fraud_team(state: Turn,ctx: RequestContext,owned: OwnedWorkflow) -> list[AnswerSection]:

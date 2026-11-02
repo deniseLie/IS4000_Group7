@@ -57,11 +57,13 @@ def test_part_b_guidance_has_no_invented_times_and_names_the_fraud_team():
     assert 'fraud team' in knowledge.INDEX['unrecognised-charge'].content and 'not proof of fraud' in knowledge.INDEX['unrecognised-charge'].content
 
 def test_guidance_says_only_the_bank_blocks_cards_and_where_reports_go():
-    # 0081: card actions are the bank's; the assistant passes reports to the fraud team and other questions to the RM.
+    # 0081: the assistant passes reports to the fraud team and other questions to the RM. 0096: the client freezes her
+    # own card from her card controls; only the bank cancels one or unfreezes one it froze.
     for key in ('lost-card','unrecognised-charge','support'):
         text=knowledge.INDEX[key].content
         assert 'only after you confirm' not in text and 'dispute draft' not in text and 'can offer a temporary block' not in text
-    assert 'cannot block, unblock or cancel a card; only the bank can' in knowledge.INDEX['lost-card'].content
+    assert 'Freeze card' in knowledge.INDEX['lost-card'].content and 'Only the bank cancels a card' in knowledge.INDEX['card-controls'].content
+    assert 'steps of SGD 1,000' in knowledge.INDEX['card-limit-change'].content and '60 days' in knowledge.INDEX['card-controls'].content
     assert 'fraud team' in knowledge.INDEX['support'].content and 'relationship manager' in knowledge.INDEX['support'].content
 
 @pytest.mark.parametrize('change',[

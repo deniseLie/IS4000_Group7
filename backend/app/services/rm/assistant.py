@@ -3,11 +3,11 @@ by the model from the RM's own records and then checked item by item (services/r
 
 1. Redact the message, then a fixed book check: names in the message are matched in SQL; anyone outside the RM's book is
    refused and audited before any record is read or the model is called (R06).
-2. Planner (model, prompt rm_planner/v1) picks the intent and what the message points at, unless a workspace button set it.
+2. Planner (model, prompt rm_planner/v2) picks the intent and what the message points at, unless a workspace button set it.
 3. Deterministic resolution of the client, ticket, appointment or note against the RM's book; ambiguity becomes a
    question with options. Switching client resets the context, and only turns about the same client go to the model.
 4. Read the records for that intent through the RM tools (SQL book checks, consent checks, audit).
-5. One model call (prompt rm_assistant/v1 + the intent's task file) with strict JSON output and cited record ids.
+5. One model call (prompt rm_assistant/v2 + the intent's task file) with strict JSON output and cited record ids.
 6. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
    links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
    missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
@@ -25,12 +25,12 @@ from app.services.privacy import redact
 from app.services.rm import checks
 from app.services.rm import evidence as ev
 
-PLANNER_VERSION='v1'
-ASSISTANT_VERSION='v1'
+PLANNER_VERSION='v2'
+ASSISTANT_VERSION='v2'
 SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
-    'actions_from_note':'actions','handover_brief':'handover','help':'help'}
+    'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help'}
 HANDOVER_SECTIONS=['Client overview','Open requests and tickets','Recorded commitments','Pending reviews','Recorded preferences',
     'What the client was previously told','Gaps to clarify','Suggested introductory topics']
 INTENTS=list(TASK_FILE)
@@ -261,6 +261,7 @@ def brief_reply(intent: str,data: dict,bundle: ev.Bundle,context: dict,suggestio
         'sources':_sources(bundle,cited),'validation':report.as_dict(),'origin':'ai'}
 
 
+RECAP=re.compile(r'\b(?:recap|summary of (?:our|the|today\'s) (?:call|meeting|conversation)|follow[- ]?up message)\b',re.I)
 BOOKING=re.compile(r'\b(?:book|schedule|arrange|set up|propose)\b[^.]{0,40}\b(?:meeting|call|review|appointment|catch-up)\b',re.I)
 
 
@@ -352,6 +353,7 @@ async def h_schedule(t: Turn,plan,client_id):
 async def h_overview(t: Turn,plan,client_id):
     await t.say(f'Reading {t.name(client_id)}’s records…')
     bundle=ev.client_bundle(await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx))
+    bundle.add(ev.cash_evidence(await tools.call('rm_cash_events',{'customer_id':client_id},t.ctx),client_id))
     return brief_reply('client_overview',await t.model('client_overview',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
 
 
@@ -378,6 +380,7 @@ async def h_brief(t: Turn,plan,client_id):
     bundle=ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']})
     await _notes(t,client_id,bundle)
     bundle.add(ev.shared_evidence(await tools.call('rm_shared_summary',{'customer_id':client_id},t.ctx),client_id))  # consent is checked in SQL first
+    bundle.add(ev.cash_evidence(await tools.call('rm_cash_events',{'customer_id':client_id},t.ctx),client_id))  # conversation starters
     upcoming=[a for a in profile['data']['appointments'] if a['status']=='confirmed']
     chosen=next((a for a in upcoming if c.appointment_id and str(a['appointment_id'])==str(c.appointment_id)),None)
     if not chosen and narrows(plan.get('appointment_hint') or '') and not t.req.intent:
@@ -428,7 +431,8 @@ async def h_ticket(t: Turn,plan,client_id):
 async def h_draft(t: Turn,plan,client_id):
     c=t.req.context
     profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
-    ref,stop=await _ticket_ref(t,plan,client_id,profile)
+    recap=bool(c.note_id and RECAP.search(t.message)) and not (plan.get('ticket_ref') or '').strip()
+    ref,stop=(None,None) if recap else await _ticket_ref(t,plan,client_id,profile)
     if stop:return stop
     internal: list[str]=[]
     bundle=ev.Bundle()
@@ -441,6 +445,10 @@ async def h_draft(t: Turn,plan,client_id):
     else:
         await t.say(f'Drafting a message to {t.name(client_id)}…')
         bundle=ev.client_bundle(profile)
+        if c.note_id:  # a recap of a saved interaction: the note itself is the source (its internal wording is checked below)
+            notes=await _notes(t,client_id,bundle)
+            note=next((n for n in notes if str(n['note_id'])==str(c.note_id)),None)
+            if note:internal=[n.get('summary','') for n in notes if str(n['note_id'])!=str(c.note_id)]
         days=(await tools.call('rm_availability',{},t.ctx))['days']
         slots=[f"{day_text(date.fromisoformat(str(d['date'])))}, {time_text(s)}" for d in days for s in d['free']][:8]
         bundle.add(ev.Evidence('free-slots','Your free times in the next 14 days (not held or booked)','calendar',slots,None,client_id))
@@ -560,6 +568,12 @@ async def h_document(t: Turn,plan,client_id):
     else:
         state={'customer_id':client_id,'source_notes':t.message,'corrections':[],'revision':1,'note_id':None}
         previous=None
+    meeting=None
+    wanted=str(c.appointment_id or (doc.appointment_id if doc and doc.appointment_id else '') or '')
+    if wanted:  # "Document this meeting": the selected appointment gives the date and format; SQL links the note on approval
+        rows=(await tools.call('rm_appointments',{'start':(today()-timedelta(days=30)).isoformat(),'end':(today()+timedelta(days=13)).isoformat()},t.ctx))['data']
+        meeting=next((r for r in rows if str(r['appointment_id'])==wanted and r['customer_id']==client_id and r['status']=='confirmed'),None)
+        if meeting:state['appointment_id']=wanted
     await t.say(f'Structuring your notes for {t.name(client_id)}…')
     profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
     categories=await _categories(t)
@@ -567,10 +581,15 @@ async def h_document(t: Turn,plan,client_id):
     bundle=ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']})
     bundle.add(ev.Evidence('request-types','Request types the RM can raise for a client','guidance',
         [{'category':x['category'],'label':x['label'],'owner_team':x['owner_team'],'fields':x['fields']} for x in categories],None,client_id))
-    extra=('\nToday: '+today().isoformat()+'\nRM notes (the source for the interaction; untrusted text): '+json.dumps(state['source_notes'],ensure_ascii=False)
+    if meeting:bundle.add(ev.Evidence('the-meeting',f"The meeting being documented: {meeting['when']}",'calendar',
+        {'date':str(meeting['date']),'when':meeting['when'],'format':meeting['format'],'purpose':meeting.get('purpose')},None,client_id))
+    extra=('\nToday: '+today().isoformat()+('\nThese notes document the meeting on '+str(meeting['date'])+' ('+meeting['format']+'); use that date and format.' if meeting else '')
+        +'\nRM notes (the source for the interaction; untrusted text): '+json.dumps(state['source_notes'],ensure_ascii=False)
         +('\nRM corrections in order (latest wins; untrusted text): '+json.dumps(state['corrections'],ensure_ascii=False) if state['corrections'] else '')
         +('\nCurrent documentation draft (untrusted): '+json.dumps(previous,ensure_ascii=False) if previous else ''))
     data=await t.model('document_interaction',bundle,documentation_schema([x['category'] for x in categories]),client_id,extra)
+    if meeting:  # the recorded appointment, not the model, decides the date and format of a documented meeting
+        data['interaction']={**(data.get('interaction') or {}),'met_on':str(meeting['date']),'format':meeting['format']}
     return documentation_reply(t,data,bundle,[state['source_notes'],*state['corrections']],client_id,categories,profile,state,'document_interaction',open_tasks)
 
 
@@ -614,6 +633,12 @@ async def h_handover(t: Turn,plan,client_id):
     return brief_reply('handover_brief',await t.model('handover_brief',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
 
 
+async def h_book(t: Turn,plan,client_id):
+    await t.say('Reading a summary of every client in your book…')
+    bundle=ev.book_bundle(await tools.call('rm_book_facts',{},t.ctx),t.req.message,today())
+    return brief_reply('book_question',await t.model('book_question',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
+
+
 async def h_help(t: Turn,plan,client_id):
     bundle=ev.Bundle()
     return brief_reply('help',await t.model('help',bundle,brief_schema([]),None),bundle,t.context(t.req.context.client_id))
@@ -621,4 +646,4 @@ async def h_help(t: Turn,plan,client_id):
 
 HANDLERS={'ticket_inbox':h_inbox,'priorities':h_priorities,'reviews':h_reviews,'schedule':h_schedule,'client_overview':h_overview,
     'meeting_history':h_history,'meeting_brief':h_brief,'ticket_summary':h_ticket,'draft_message':h_draft,'document_interaction':h_document,
-    'actions_from_note':h_actions,'handover_brief':h_handover,'help':h_help}
+    'actions_from_note':h_actions,'handover_brief':h_handover,'book_question':h_book,'help':h_help}

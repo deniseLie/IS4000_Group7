@@ -129,3 +129,43 @@ def test_currency_amounts_in_list_records_are_recognised():
         {'text':'Savings ****1234 holds USD 42,150.75.','kind':'record','source_ids':['accounts']}]}],b,report)
     assert [i['text'] for s in out for i in s['items']]==['Savings ****1234 holds SGD 42,150.75.','Card 6634 has a limit of S$12,000.']
     assert report.withheld==['unsupported_unit']
+
+
+def test_book_facts_cash_events_and_recap_requests():
+    """0095 / rm_assistant v2: one cited record per book client; large movements are records without interpretation."""
+    bundle=ev.book_bundle({'data':[{'customer_id':1002,'client':'Michelle Ng','last_interaction':'20 Oct 2026'},
+        {'customer_id':1007,'client':'Tan Mei Ling','last_interaction':'19 Jun 2026'}],'as_of':'2026-11-02'})
+    assert bundle.ids()==['facts-michelle-ng','facts-tan-mei-ling'] and bundle.get('facts-tan-mei-ling').customer_id==1007
+    assert 'customer_id' not in bundle.get('facts-michelle-ng').data
+    assert ev.book_bundle({'data':[],'as_of':None}).ids()==['facts-none']
+    cash=ev.cash_evidence({'data':[{'date_text':'22 Sep 2026','amount':120000,'currency':'SGD','direction':'incoming','recurring':False}],'as_of':None},1002)
+    report=checks.Report()
+    out=checks.check_sections([{'heading':'Conversation starters','items':[
+        {'text':'Ask how she would like to plan around the SGD 120,000 incoming transfer on 22 Sep 2026.','kind':'suggestion','owner':'rm','source_ids':['cash-events']},
+        {'text':'Ask about the SGD 150,000 transfer on 22 Sep 2026.','kind':'suggestion','owner':'rm','source_ids':['cash-events']}]}],ev.Bundle([cash]),report,True)
+    assert len(out[0]['items'])==1 and report.withheld==['unsupported_figure']
+    assert assistant.RECAP.search('Draft a recap for Michelle') and assistant.RECAP.search('a follow-up message about our call')
+    assert not assistant.RECAP.search('Draft a reply to her statement request')
+    assert assistant.TASK_FILE['book_question']=='book' and 'book_question' in assistant.HANDLERS
+
+
+def test_a_question_across_the_book_only_sees_dates_inside_the_period_it_asks_about():
+    """Code, not the model, decides whether a maturity or review falls inside "the next 30 days" (it used to list a
+    15 Dec maturity and then say it was outside the period)."""
+    import json
+    from datetime import date
+    from app.services.rm import evidence as ev
+    facts={'as_of':'2026-11-02T08:00:00+08:00','data':[
+        {'customer_id':1005,'client':'Tan Mei Ling (DEMO)','review_due':None,
+         'maturities_and_reviews_next_90_days':[{'title':'Fixed deposit ****9051 matures','due':'15 Dec 2026','amount':80000,'currency':'SGD'}]},
+        {'customer_id':1002,'client':'Michelle Ng (DEMO)','review_due':'30 Nov 2026',
+         'maturities_and_reviews_next_90_days':[{'title':'Annual review','due':'30 Nov 2026','amount':None,'currency':None}]}]}
+    today=date(2026,11,2)
+    assert ev.asked_period('Which clients have a maturity or review in the next 30 days?',today)[:2]==(today,date(2026,12,2))
+    assert ev.asked_period('who has a maturity this month',today)[1]==date(2026,11,30)
+    assert ev.asked_period("who haven't I met in 90 days?",today) is None
+    bundle=ev.book_bundle(facts,'Which clients have a maturity or review in the next 30 days?',today)
+    text=json.dumps([vars(item) for item in bundle.items],default=str)
+    assert '15 Dec 2026' not in text and '30 Nov 2026' in text and '"days_from_today": 28' in text and 'asked-period' in text
+    # Without a period the 90-day list stays, with days from today added.
+    assert '15 Dec 2026' in json.dumps([vars(item) for item in ev.book_bundle(facts,'who has a fixed deposit coming up?',today).items],default=str)

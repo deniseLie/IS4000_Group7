@@ -8,16 +8,31 @@ const STARTERS=[
   {icon:'clip',title:'Ticket triage',detail:'What needs my attention today?',message:'What needs my attention today?',intent:'ticket_inbox'},
   {icon:'bell',title:'Follow-up priorities',detail:'Who should I follow up with this week?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'},
   {icon:'calendar',title:'Prepare a meeting',detail:'Brief me for my next meeting.',message:'What meetings do I have in the next two weeks?',intent:'schedule'},
-  {icon:'document',title:'Document a call',detail:'Paste your call notes for a client.',draft:'Notes from my call today with '},
+  {icon:'document',title:'Document a call',detail:'Paste or dictate your call notes for a client.',draft:'Notes from my call today with '},
+  {icon:'people',title:'Ask across my book',detail:'Who has a maturity or review in the next 30 days?',message:'Which clients have a maturity or review in the next 30 days?',intent:'book_question'},
 ];
 
 // The RM assistant: one conversation about one active client at a time (or the whole book). The active client is
 // always shown; choosing another client starts a clean context so nothing carries over between clients.
+// Browser dictation (RM5 stretch, demo only): the browser's speech service turns speech into text in the message box;
+// nothing is sent until the RM presses send, and the text is redacted like typed text.
+const Speech=typeof window!=='undefined'?(window.SpeechRecognition||window.webkitSpeechRecognition):null;
+
 export default function RmAssistant({token,chatCount,messages,setMessages,context,setContext,ask,onAsked,advisor,onNavigate,conversationId,onNew,onSaved,historyOpen,onHistory,notice,onNotice}) {
   const [input,setInput]=useState('');
   const [busy,setBusy]=useState(false),[status,setStatus]=useState('');
   const [book,setBook]=useState([]);
-  const list=useRef(null),composer=useRef(null),request=useRef(null);
+  const list=useRef(null),composer=useRef(null),request=useRef(null),listener=useRef(null);
+  const [listening,setListening]=useState(false),[dictationNote,setDictationNote]=useState(false);
+  function dictate() {
+    if(listening){listener.current?.stop();return;}
+    const r=new Speech();r.lang='en-SG';r.continuous=true;r.interimResults=false;
+    r.onresult=e=>{const text=[...e.results].slice(e.resultIndex).filter(x=>x.isFinal).map(x=>x[0].transcript).join(' ').trim();
+      if(text)setInput(v=>(v&&!/\s$/.test(v)?v+' ':v)+text);};
+    r.onend=()=>setListening(false);r.onerror=()=>setListening(false);
+    listener.current=r;setDictationNote(true);setListening(true);r.start();
+  }
+  useEffect(()=>()=>listener.current?.abort?.(),[]);
   useEffect(()=>{
     const controller=new AbortController();
     (async()=>{try{setBook((await rmGet('/book',await token(),controller.signal)).data);}catch{}})();
@@ -26,7 +41,12 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
   useEffect(()=>{list.current?.scrollTo({top:list.current.scrollHeight,behavior:'smooth'});},[messages,busy]);
   useEffect(()=>{
     if(!ask)return;
-    if(ask.prefill){if(ask.context.client_id&&ask.context.client_id!==context.client_id)chooseClient(ask.context.client_id);setInput(ask.message);requestAnimationFrame(()=>composer.current?.focus());}
+    if(ask.prefill){
+      // A prefilled message (Document a call / this meeting) selects the client, and the meeting when one is given.
+      if(ask.context.client_id&&ask.context.client_id!==context.client_id)chooseClient(ask.context.client_id);
+      if(ask.context.appointment_id)setContext(c=>({...c,client_id:ask.context.client_id||c.client_id,appointment_id:ask.context.appointment_id,documentation:null,draft:null}));
+      setInput(ask.message);requestAnimationFrame(()=>{const box=composer.current;if(box){box.focus();box.setSelectionRange(box.value.length,box.value.length);}});
+    }
     else send(ask.message,{intent:ask.intent,context:ask.context});
     onAsked();
   },[ask?.key]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -113,8 +133,10 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
         <textarea ref={composer} id="rm-composer" aria-label="Message to the RM assistant" rows={1} value={input} maxLength={8000} disabled={busy}
           placeholder={active?`Ask about ${active}, paste call notes, or ask for a draft…`:'Ask about your book, a client, a ticket or a meeting…'}
           onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send();}}}/>
+        {Speech&&<button type="button" className={`composer-mic ${listening?'on':''}`} data-testid="rm-dictate" aria-pressed={listening} aria-label={listening?'Stop dictation':'Dictate'} title={listening?'Stop dictation':'Dictate your notes'} disabled={busy} onClick={dictate}><Icon name={listening?'close':'mic'}/></button>}
         <button className="composer-send" data-testid="rm-send" aria-label="Send" disabled={busy||!input.trim()}><Icon name="send"/></button>
-      </form><div className="composer-note"><span><Icon name="shield"/>AI output can contain errors. Check sources before you act. Nothing is sent to a client or saved without your approval.</span></div></div>
+      </form>{dictationNote&&<p className="rm-small rm-dictation-note"><Icon name="info"/>{listening?'Listening… ':''}Dictation uses your browser’s speech service (in Chrome, audio is processed by Google). Don’t dictate card numbers, passwords or codes; check the text before sending.</p>}
+      <div className="composer-note"><span><Icon name="shield"/>AI output can contain errors. Check sources before you act. Nothing is sent to a client or saved without your approval.</span></div></div>
     </section>
   </>;
 }
