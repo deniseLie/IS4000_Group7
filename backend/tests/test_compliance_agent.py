@@ -107,7 +107,7 @@ def test_real_compliance_provider_keeps_preparation_distinct_from_bank_status(lo
     result,_,prompt=compliance_provider_runner.run(compliance.respond(task,[],'English',context(local_data_api,1002).model_copy(update={'agent':'compliance'}),[]))
     assert result.status in {'ok','needs_human'} and result.answer_kind=='banking',result.model_dump_json()
     assert re.search(r'not.submitted|not.*accept|does not mean|doesn.t mean|not.*confirm',result.text,re.I),result.text
-    assert 'compliance-items' in {item.source_id for item in result.citations} and prompt.startswith('v4+')
+    assert 'compliance-items' in {item.source_id for item in result.citations} and prompt.startswith('v5+')
 
 
 @pytest.mark.skipif(os.getenv('TEST_COMPLIANCE_LIVE')!='1',reason='Opt in to actual synthetic compliance model calls')

@@ -7,7 +7,8 @@ from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.customer_data import ComplianceCase,CustomerEnvelope
 from app.schemas.events import Source
-from app.services import customer_data,llm_gateway,prompts,compliance_selection
+from app.services import customer_data,llm_gateway,prompts,compliance_selection,prechecks
+from app.services.agents import document
 from app.services.agents.answer import checked_model_answer
 
 
@@ -18,6 +19,7 @@ GENERAL_HELP = re.compile(
     r"\b(?:help|assistance|assist|support|guidance)\b|\bwhat can you do\b",re.I)
 COMPLIANCE_SUBJECT = re.compile(
     r"\b(?:compliance|kyc|review|documents?|checklist)\b",re.I)
+DOCUMENT_CHECK = re.compile(r"\b(?:documents?|files?|uploads?|replacements?|proof|address|corrections?)\b",re.I)
 SPECIFIC_NEED = re.compile(
     r"\b(?:which|what\s+(?:documents?|items?|files?)|how|why|where|when|"
     r"upload(?:ing|ed|s)?|submit(?:ting|ted)?|received|accepted|approved|reject(?:ed|ion)?|"
@@ -65,7 +67,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         return (AgentResult(task_id=task.task_id,agent='compliance',
                     status='needs_clarification',answer_kind='conversation',
                     text=CLARIFICATION,question=CLARIFICATION),
-                [],prompts.load('compliance','v4')['id'])
+                [],prompts.load('compliance','v5')['id'])
     snapshot=await load(ctx)
     chosen=compliance_selection.selection.get()
     if chosen is not None:
@@ -74,7 +76,13 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         if not requests:raise customer_data.CustomerDataIntegrityError('Selected request changed')
         snapshot=snapshot.model_copy(update={'data':snapshot.data.model_copy(update={'requested_items':[],'status_history':[],'info_requests':requests})})
     evidence=[*public_evidence,*evidence_for(snapshot)]
-    pv=prompts.load('compliance','v4')
+    if snapshot.data is not None and chosen is None and DOCUMENT_CHECK.search(question):
+        checked=await prechecks.workspace(ctx)
+        workspace=prechecks.Workspace.model_validate(checked.data)
+        if workspace.review is None or workspace.review.case_id!=snapshot.data.case_id:
+            raise customer_data.CustomerDataIntegrityError('Compliance review changed while loading current document checks')
+        evidence.append(document.evidence_for(workspace,workspace.review.requested_items,checked.as_of))
+    pv=prompts.load('compliance','v5')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

@@ -121,9 +121,11 @@ export default function Chat({session,onSignIn}) {
     const list=messageList.current;
     if(!messages.length||!list)return;
     const behavior=window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth';
-    list.scrollTo({top:list.scrollHeight,behavior});
-    // Buttons and one-tap replies render just after the reply; scroll again so they are never left below the input box.
-    const later=setTimeout(()=>list.scrollTo({top:list.scrollHeight,behavior}),350);
+    const answer=[...list.querySelectorAll('[data-testid="chat-message-assistant"]')].at(-1);
+    const scroll=()=>list.scrollTo({top:!loading&&messages.at(-1).role==='assistant'&&answer?answer.getBoundingClientRect().top-list.getBoundingClientRect().top+list.scrollTop:list.scrollHeight,behavior});
+    scroll();
+    // Keep the answer's beginning visible when its sources and follow-up controls finish rendering.
+    const later=setTimeout(scroll,350);
     return ()=>clearTimeout(later);
   },[messages,loading]);
   useEffect(()=>()=>request.current?.abort(),[]);

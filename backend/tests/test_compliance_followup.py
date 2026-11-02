@@ -47,6 +47,15 @@ def test_failed_replacement_and_rm_follow_up_keep_submission_and_check_distinct(
                 report=next(report for report in workspace['checks'] if report['document_id']==upload['document_id'])
                 assert report['status']=='issues_found' and report['findings'][0]['code']=='missing_field'
                 assert len([doc for doc in workspace['documents'] if doc['item_id']==target['item_id']])==2
+                from app.services.agents.document import evidence_for
+                from app.services.prechecks import Workspace
+                from app.services.source_checks import check_sources
+                view=Workspace.model_validate(workspace)
+                evidence=evidence_for(view,view.review.requested_items,datetime.now(ZoneInfo('Asia/Singapore')))
+                assert check_sources('The replacement needs your Singapore address with its 6-digit postal code.',
+                    ['document-prechecks'],[evidence.model_dump()]) is None
+                assert upload['document_id'] not in evidence.text and report['check_id'] not in evidence.text
+                assert upload['file_name'] not in evidence.text and 'sha256' not in evidence.text
         advisor=native_api_client.get('/customer/advisor',headers=headers(ctx))
         assert advisor.status_code==200,advisor.text
         scope_id=uuid4()

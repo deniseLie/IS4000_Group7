@@ -333,7 +333,7 @@ def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
     if task.domain=='document':return prompts.load('document','v5')['id']
     if task.domain=='relationship':return prompts.load(agent,relationship.PROMPT)['id']
-    if task.domain=='compliance':return prompts.load(agent,'v4')['id']
+    if task.domain=='compliance':return prompts.load(agent,'v5')['id']
     return None
 
 

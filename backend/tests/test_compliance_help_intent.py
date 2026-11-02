@@ -50,7 +50,7 @@ def test_vague_help_does_not_read_private_records_or_call_llm(monkeypatch):
     assert result.citations==[] and evidence==[]
     assert 'upload' in result.text and 'status' in result.text
     assert not load.await_count and not llm.await_count
-    assert 'v4' in prompt
+    assert 'v5' in prompt
 
 
 def test_specific_compliance_question_uses_record_evidence_and_checked_model(monkeypatch):
