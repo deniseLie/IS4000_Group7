@@ -12,6 +12,8 @@ dist/
 frontend/test-results/
 frontend/playwright-report/
 backend/evaluation-results.json
+# Question vectors kept between retrieval evaluation runs (evaluation/retrieval.py --embedding-cache)
+backend/.cache/
 
 # Persona test logins for tests/test_rls_live.py (never commit)
 personas.json

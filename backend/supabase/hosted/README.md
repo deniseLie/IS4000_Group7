@@ -20,6 +20,7 @@
 | `14_apply_0085_hosted.sql` | A different question for the RM in the same chat opens its own ticket (`customer_open_rm_ticket`); approved how-to article for sending money overseas | Once, after 13 |
 | `15_apply_0086_hosted.sql` | Knowledge search returns a section only when a question word is in its heading or keywords, so unrelated questions return nothing; customer wording in keywords (no article text changes) | Once, after 14 |
 | `16_apply_0087_hosted.sql` | Client guidance articles: compliance review statuses, review documents (proof of address, statements, source of wealth, tax residency, identity), uploading documents, answering the bank's questions, review reminders, updating personal details and working with your RM; new versions of support, security, statements and overseas transfers; five new `kb.facts` | Once, after 15 |
+| `17_apply_0088_hosted.sql` | Hybrid knowledge search: turns on pgvector (in `extensions`), adds `kb.section_embeddings` (read-only for the app) and `kb_hybrid_search`. Nothing changes until `KNOWLEDGE_SEARCH=hybrid`; then run `python -m scripts.embed_knowledge --database-url …` (owner connection) to store the section vectors, and again after every later knowledge migration | Once, after 16 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

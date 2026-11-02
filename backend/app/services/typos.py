@@ -11,6 +11,7 @@ Corrections are deliberately conservative: an explicit table of common chat spel
 import re
 from difflib import get_close_matches
 from functools import lru_cache
+from app.core.config import settings
 
 CHAT={
     'wat':'what','wats':'whats','wht':'what','whts':'whats','whatz':'whats','wut':'what','wha':'what','whr':'where','wen':'when',
@@ -66,3 +67,8 @@ def respell(text: str) -> str:
     """Like normalise() but with the explicit CHAT table only, no close-match guesses. Knowledge search uses this:
     there 'change' must stay 'change' (normalise() would read it as 'charge')."""
     return WORD.sub(lambda match:CHAT.get(word:=match.group(0).lower().replace('’',"'"),word),text or '')
+
+
+def for_search(text: str) -> str:
+    """The text knowledge search matches: respell() unless KNOWLEDGE_RESPELL is off (both stores; rules keep normalise())."""
+    return respell(text) if settings.knowledge_respell else (text or '').lower()

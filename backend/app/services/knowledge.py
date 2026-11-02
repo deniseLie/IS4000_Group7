@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 from datetime import date
 from urllib.parse import urlsplit
-from app.services.typos import respell
+from app.services.typos import for_search
 
 @dataclass(frozen=True)
 class Article:
@@ -97,7 +97,7 @@ FACTS = {'savings.fall_below_threshold': (1000, 'SGD', 'savings-fees'),
 
 def search(text: str) -> list[Article]:
     """Keyword phrases score by their word count, so a specific phrase ('credit limit') outranks one broad word ('card')."""
-    query = respell(text)
+    query = for_search(text)
     scores = [(sum(len(k.split()) for k in a.keywords if re.search(r'\b'+re.escape(k)+r's?\b',query)),a) for a in ARTICLES if is_current(a)]
     return [a for score,a in sorted(scores,key=lambda x:x[0],reverse=True) if score][:4]
 

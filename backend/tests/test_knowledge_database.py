@@ -179,3 +179,91 @@ def test_workflow_one_part_b_guidance_is_published(database: 'Connection[SqlRow]
         ('account-security-after-fraud',1),('transfer-timing',1),('unrecognised-charge',3)]  # 0081
     assert 'transfer-timing' in [row[1] for row in search(database,"my rent transfer still says pending, will it make it",[],4)]
     assert database.execute("select article_id from public.kb_get_section('unrecognised-charge',1,'urgent-steps')").fetchall()==[('unrecognised-charge',)]
+
+
+# Hybrid search (0088). Vectors here are hand-made 3-number fixtures that test the SQL ranking rules only;
+# real embeddings come from the provider (scripts/embed_knowledge.py, evaluation/retrieval.py --search hybrid).
+FIXTURE_MODEL='test/fixture'
+
+
+def floats(vector: list[float | None] | None) -> list[float | None] | None:
+    return None if vector is None else [None if value is None else float(value) for value in vector]
+
+
+def embed_section(db: 'Connection[SqlRow]', article_id: str, version: int, anchor: str, vector: list[float], model: str=FIXTURE_MODEL) -> None:
+    db.execute('insert into kb.section_embeddings(article_id,version,anchor,model,content_sha256,embedding) values (%s,%s,%s,%s,%s,%s::real[]::extensions.vector)',
+        (article_id,version,anchor,model,'0'*64,floats(vector)))
+
+
+def hybrid(db: 'Connection[SqlRow]', query: str, vector: list[float], minimum: float=0.5, categories: list[str] | None=None, k: int=4, model: str=FIXTURE_MODEL) -> list[str]:
+    return [row[0] for row in db.execute('select cite from public.kb_hybrid_search(%s::text,%s::real[],%s::text,%s::real,%s::text[],%s::int)',
+        (query,floats(vector),model,minimum,categories or [],k)).fetchall()]
+
+
+@pytest.mark.parametrize('role',['anon','authenticated'])
+def test_hybrid_search_finds_a_section_by_similarity_alone(database: 'Connection[SqlRow]', role: str) -> None:
+    embed_section(database,'sg-accounts',1,'main',[1,0,0])
+    database.execute(f'set local role {role}')
+    assert search(database,'zxqv',[],4)==[]  # no keyword match
+    assert hybrid(database,'zxqv',[1,0.1,0])==['kb:sg-accounts@v1#main']
+    assert hybrid(database,'zxqv',[0,1,0])==[]  # below the minimum similarity: nothing, never the nearest anyway
+    assert hybrid(database,'zxqv',[1,0,0],model='other/model')==[]  # vectors of another model are ignored
+    assert hybrid(database,'zxqv',[1,0,0,0])==[]  # and so are vectors of another size
+    assert hybrid(database,'zxqv',[1,0,0],categories=['document'])==[]
+
+
+def test_hybrid_search_keeps_keyword_matches_and_ranks_agreement_first(database: 'Connection[SqlRow]') -> None:
+    embed_section(database,'sg-accounts',1,'main',[0,1,0])
+    embed_section(database,'savings-fees',1,'main',[1,0,0])
+    database.execute('set local role anon')
+    keyword=[row[0] for row in search(database,'fixed deposit',[],4)]
+    found=hybrid(database,'fixed deposit',[0,1,0],minimum=0.99)
+    assert found[0]=='kb:sg-accounts@v1#main' and set(keyword)<=set(found)  # keyword and similarity agree
+    assert 'kb:savings-fees@v1#main' not in found  # similarity 0 is under the minimum
+    scores=[row[0] for row in database.execute("select score from public.kb_hybrid_search('fixed deposit',array[0,1,0]::real[],%s,0.99,'{}'::text[],4)",(FIXTURE_MODEL,)).fetchall()]
+    assert scores==sorted(scores,reverse=True) and all(score>0 for score in scores)
+
+
+def test_hybrid_search_never_returns_retired_or_out_of_review_sections(database: 'Connection[SqlRow]') -> None:
+    article_id,version,anchor=database.execute("""select s.article_id,s.version,s.anchor from kb.sections s join kb.articles a using(article_id,version)
+        where a.status='retired' order by 1,2,3 limit 1""").fetchone()
+    embed_section(database,str(article_id),int(version),str(anchor),[1,0,0])
+    for name,status,checked,due in [('expired','published',-10,-1),('draft','draft',-1,10)]:
+        add_article(database,name,status,checked,due)
+        embed_section(database,name,1,'main',[1,0,0])
+    database.execute('set local role anon')
+    assert hybrid(database,'zxqv',[1,0,0])==[]
+
+
+@pytest.mark.parametrize('vector,model,minimum,k',[([],FIXTURE_MODEL,0.5,4),([1,None,0],FIXTURE_MODEL,0.5,4),(None,FIXTURE_MODEL,0.5,4),
+    ([1,0,0],'Bad Model',0.5,4),([1,0,0],None,0.5,4),([1,0,0],FIXTURE_MODEL,1.5,4),([1,0,0],FIXTURE_MODEL,None,4),
+    ([1,0,0],FIXTURE_MODEL,0.5,0),([1,0,0],FIXTURE_MODEL,0.5,21)])
+def test_invalid_hybrid_parameters_fail_explicitly(database: 'Connection[SqlRow]', vector: list[float | None] | None, model: str | None, minimum: float | None, k: int) -> None:
+    from psycopg.errors import InvalidParameterValue
+    database.execute('set local role anon')
+    with pytest.raises(InvalidParameterValue):
+        with database.transaction():
+            database.execute('select * from public.kb_hybrid_search(%s::text,%s::real[],%s::text,%s::real,%s::text[],%s::int)',('loan',floats(vector),model,minimum,[],k))
+
+
+@pytest.mark.parametrize('role',['anon','authenticated'])
+def test_app_roles_cannot_write_embeddings(database: 'Connection[SqlRow]', role: str) -> None:
+    from psycopg.errors import InsufficientPrivilege
+    database.execute(f'set local role {role}')
+    with pytest.raises(InsufficientPrivilege):
+        with database.transaction():embed_section(database,'sg-accounts',1,'main',[1,0,0])
+
+
+def test_embed_script_lists_only_sections_without_a_current_vector(database: 'Connection[SqlRow]') -> None:
+    from scripts.embed_knowledge import digest, pending
+    published=database.execute("select count(*) from kb.sections s join kb.articles a using(article_id,version) where a.status='published'").fetchone()[0]
+    rows=pending(database,FIXTURE_MODEL)
+    assert len(rows)==published and all(value.count('\n')>=2 for *_,value in rows)  # title, heading, body
+    (article_id,version,anchor,value),(other_id,other_version,other_anchor,_)=rows[0],rows[1]
+    database.execute('insert into kb.section_embeddings(article_id,version,anchor,model,content_sha256,embedding) values (%s,%s,%s,%s,%s,%s::extensions.vector)',
+        (article_id,version,anchor,FIXTURE_MODEL,digest(value),'[1,0,0]'))
+    database.execute('insert into kb.section_embeddings(article_id,version,anchor,model,content_sha256,embedding) values (%s,%s,%s,%s,%s,%s::extensions.vector)',
+        (other_id,other_version,other_anchor,FIXTURE_MODEL,'0'*64,'[1,0,0]'))  # stale: text changed since
+    left={(row[0],row[1],row[2]) for row in pending(database,FIXTURE_MODEL)}
+    assert (article_id,version,anchor) not in left and (other_id,other_version,other_anchor) in left and len(left)==published-1
+    assert len(pending(database,'other/model'))==published

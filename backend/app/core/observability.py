@@ -47,7 +47,7 @@ def start_trace():
     current_trace.set(trace)
     return trace
 
-RUN_TYPES={'tool':'tool','agent':'chain','decision':'chain','llm':'chain'}
+RUN_TYPES={'tool':'tool','agent':'chain','decision':'chain','llm':'chain','embedding':'embedding'}
 
 @contextmanager
 def span(name,kind,**attrs):

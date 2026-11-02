@@ -5,6 +5,7 @@ The approved articles the assistant can retrieve, as of 2 Nov 2026 (migrations u
 **Two stores, same 28 articles:**
 - **Memory** (`backend/app/services/knowledge.py`, `KNOWLEDGE_STORE=memory`) keeps each article as one text: its sections joined in order.
 - **Database** (`kb.articles`, `kb.sections`, `kb.facts`, `KNOWLEDGE_STORE=database`) keeps the sections separately (anchors below), plus retired versions.
+- **Section vectors** (`kb.section_embeddings`, migration `0088`) are used only by hybrid search (`KNOWLEDGE_SEARCH=hybrid`). Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
 
 All content is synthetic demo guidance or a summary of an allowed public source. The 2 Nov articles were informed by [research on how a private bank explains these topics](research/ubs-practices.md). They are written as DemoBank guidance and do not name or quote that bank.
 

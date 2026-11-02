@@ -291,12 +291,13 @@ Stories without an agent are handled by platform components: CR1 login (Identity
 | In-memory library (default, `KNOWLEDGE_STORE=memory`) | `services/knowledge.py`: small curated library, keyword search, no embeddings |
 | Articles / sections | `kb.articles`, `kb.sections` (versioned, cited as `article_id@vN#anchor`), migration `0008`; approved seed `0009`; Workflow 1 content `0055` |
 | Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`); since `0086` a section matches only when a question word is in its heading or keywords. Retrieval quality: `backend/evaluation/retrieval.py` ([results](evaluation/README.md#knowledge-retrieval-offline-no-model)) |
+| Hybrid search (optional, `KNOWLEDGE_SEARCH=hybrid`) | Migration `0088`: pgvector, `kb.section_embeddings` (one vector per section and model, written by the owner with `scripts/embed_knowledge.py`), `kb_hybrid_search` fuses the keyword ranking with embedding similarity (reciprocal rank fusion); a section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY` (0.4). The question is embedded by `services/embeddings.py` with its own key (`EMBEDDING_API_KEY`, never `LLM_API_KEY`). If the embedding call fails, keyword search runs and the audit event records `mode: keyword_only`. Database store only ([results](evaluation/README.md#3-nov-2026-hybrid-search-migration-0088)) |
 | Exact source lookup | Migration `0011`; `GET /knowledge/sections/{article}/{version}/{anchor}` |
 | Fact table | `kb.facts`, used for figure checks |
 | Read-only access | RLS on `kb` tables; content changes only through migrations |
 
 - **Inputs / outputs:** `search(KnowledgeQuery) → [KbChunk]`; `get_fact`; `GET /knowledge/{id}`.
-- **Infrastructure / pattern:** In-memory Python or hosted Postgres; no vector database.
+- **Infrastructure / pattern:** In-memory Python or hosted Postgres; pgvector inside the same Postgres for hybrid search, no separate vector database.
 - **Dependencies:** ↑ Orchestrator (`database_evidence`), agents, v1 answer flow. ↓ Operational Database.
 
 #### 5.7.2 Customer Data Service
@@ -739,7 +740,7 @@ Worker-started AI turns, pg_cron, email, replacement-card ordering, AI agenda dr
 | Separate Response Composer | Orchestrator node |
 | Separate Case Escalation, Appointment, Card Adapter services | Executors behind one `run_action()` |
 | Policy decision log, data-access audit, action ledger | Unified Audit Log Service |
-| Embeddings, vector search, re-ranker | Keyword search in Postgres |
+| Embeddings, vector search, re-ranker | Keyword search in Postgres; optional hybrid keyword + pgvector search (`0088`); no re-ranker |
 | OPA | Python rules |
 
 ---
@@ -796,7 +797,7 @@ Status: **proposal**. Detailed design of the Knowledge Service in §5.7. The con
 #### 1. Summary
 
 - **Retrieval-augmented generation (RAG):** agents retrieve approved sections, and the LLM answers only from them, with citations.
-- **Keyword retrieval:** Postgres full-text search over article sections. No embeddings or vector search; the library is small enough that keywords, plus today's fallback of sending the whole small library when nothing matches, cover it.
+- **Keyword retrieval:** Postgres full-text search over article sections. Optional hybrid search (`0088`, `KNOWLEDGE_SEARCH=hybrid`) adds embedding similarity in the same database, fused with the keyword ranking.
 - **No new infrastructure:** everything lives in the hosted Supabase Postgres that the app already uses.
 - **Three tables, one search function.** All content is public guidance; the app can only read it.
 - **No content workflow:** whatever is in the tables is live. Content changes arrive only through migrations.
@@ -945,9 +946,8 @@ Add an `expected_article` (and where useful `expected_anchor`) to the cases in `
 
 | Left out | Reason |
 |---|---|
-| Embeddings and vector search (pgvector, hybrid ranking) | Small library; keyword search plus the small-library fallback covers it. Revisit only if evaluation shows frequent misses on informal wording |
 | Customer-only articles and audience filtering | All knowledge is general guidance; personal details come from Customer Data |
-| Separate vector database (Pinecone, Qdrant, Weaviate) | No vector search |
+| Separate vector database (Pinecone, Qdrant, Weaviate) | About 60 sections; pgvector in the existing Postgres scans them exactly in a few milliseconds |
 | Draft / review / publish workflow, version history | One author; migrations in git already give history |
 | Re-ranker model | Small library; add only if evaluation shows ranking problems |
 | Helpful votes, search-miss log | Can be added later without changing these tables |

@@ -63,6 +63,78 @@ Limits: the cases are small and written by the developers, so tune-split results
 - "wat counts as proof of my address" (memory)
 - "I need more time to send my documents" (database)
 
+### 3 Nov 2026: hybrid search (migration `0088`)
+
+**What was compared.** Keyword search against hybrid search (keyword ranks fused with embedding similarity, `openai/text-embedding-3-small` through OpenRouter), each with the chat-spelling table (`KNOWLEDGE_RESPELL`) on and off, on a temporary local database with every migration:
+
+```bash
+cd backend && ../.venv/bin/python -m evaluation.retrieval --local --search keyword,hybrid --respell on,off --min-similarity 0.2,0.3,0.35,0.4,0.45,0.5 --embedding-cache .cache/embeddings.json
+```
+
+**New paraphrase batch.** Written before any hybrid run and never used for tuning (`batch: paraphrase`, all held out):
+- 26 questions that share few words with their article ("The shop terminal keeps rejecting my plastic");
+- 4 gap and 2 off-topic questions;
+- 4 Chinese and Malay questions.
+
+It is reported on its own, so the earlier figures and the test floors are unchanged.
+
+**Choosing the similarity minimum (tune split only).** A section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY`. 0.4 is the lowest value that keeps tune no-match at the keyword level (0.636), and it still finds the non-English tune questions:
+
+| Minimum | 0.2 | 0.3 | 0.35 | **0.4** | 0.45 | 0.5 |
+|---|---|---|---|---|---|---|
+| Tune no-match | 0.182 | 0.364 | 0.545 | **0.636** | 0.636 | 0.636 |
+| Tune non-English hit@4 | 1.0 | 1.0 | 1.0 | **1.0** | 0.5 | 0.0 |
+
+Tune hit@1 is 0.968 at every value (keyword 0.952).
+
+**Results (database store, k = 4):**
+
+| Set-up | hit@1 | hit@4 | MRR | no-match | held-out hit@1 | informal hit@1 | paraphrase hit@1 | paraphrase hit@4 | non-English hit@4 (batch) |
+|---|---|---|---|---|---|---|---|---|---|
+| Keyword, spelling table on (today) | 0.930 | 0.991 | 0.958 | 0.476 | 0.904 | 0.941 | 0.577 | 0.808 | 0.25 |
+| Keyword, spelling table off | 0.904 | 0.974 | 0.936 | 0.476 | 0.885 | 0.765 | 0.577 | 0.808 | 0.25 |
+| **Hybrid 0.4, spelling table on** | **0.965** | **1.000** | **0.981** | **0.476** | **0.962** | **1.000** | **0.808** | **0.923** | **1.00** |
+| Hybrid 0.4, spelling table off | 0.947 | 1.000 | 0.969 | 0.476 | 0.962 | 0.882 | 0.808 | 0.923 | 1.00 |
+
+For reference, the memory store (keyword, spelling table on) scores 0.939 / 0.974 / 0.955 / 0.667 on the earlier cases and 0.308 hit@1 on the paraphrase batch.
+
+**Timing.** No cache, so every question was a real embedding request:
+
+| Step | p50 | p95 |
+|---|---|---|
+| Keyword search (database only) | 1.7 ms | 6 ms |
+| Hybrid: embedding request | 870 ms | 1,089 ms |
+| Hybrid: database query | about 12 ms | about 15 ms |
+| Hybrid: total | 887 ms | 1,103 ms |
+
+These times are from this machine to OpenRouter and to the local database. The app adds its Data API call. In the app, the `knowledge_search` log line and the LangSmith `kb.search` run record `embed_ms` and `sql_ms` for each search, so live timings can be compared by `mode`.
+
+**Reading the results:**
+- **Hybrid helps most where keywords fail.**
+  - Paraphrase hit@1 rose from 0.577 to 0.808.
+  - Non-English questions are found: batch hit@4 rose from 0.25 to 1.0, and the tune cases from 0 to 1.0.
+  - Held-out hit@1 rose from 0.904 to 0.962.
+  - On the earlier cases, the right article is now always in the top 4.
+- **"Correctly returns nothing" is no worse, and no better.**
+  - Earlier cases: 0.476 in both, and every earlier off-topic question still returns nothing.
+  - Paraphrase batch: 0.0 in both. Its gap and off-topic questions already match keywords ("Write me a poem about cats" matches `bank-questions`), and hybrid keeps every keyword match.
+  - Fixing that needs keyword clean-up, not embeddings.
+- **The spelling table still pays its way.** Turning it off costs informal hit@1 in both modes: keyword 0.941 → 0.765, hybrid 1.000 → 0.882. Embeddings recover part of the loss, not all of it. So `KNOWLEDGE_RESPELL` stays on. The guardrail and routing rules keep their own use of the table (`normalise`) either way.
+- **The cost is time.** Each hybrid search waits about 0.9 s for the embedding request; the vector search itself adds about 10 ms. In v2 the tasks of one turn search in parallel, so this is paid about once per turn, before the model call. A faster embedding endpoint (`EMBEDDING_BASE_URL`) would cut most of it.
+
+**Decision:**
+- `KNOWLEDGE_SEARCH` stays `keyword` in code, because hybrid needs an embedding key. Turn it on in `.env` when the extra ~0.9 s per turn is acceptable.
+- `EMBEDDING_MIN_SIMILARITY` defaults to 0.4.
+- The opt-in floors (`TEST_DATABASE_LOCAL=1 TEST_EMBEDDINGS_LIVE=1`) are:
+  - earlier cases: hit@1 0.93, hit@4 0.97, no-match 0.45;
+  - paraphrase batch: hit@1 0.7.
+  - That check runs `services/kb.search` itself with real embeddings.
+
+**Limits:**
+- The developers wrote both case sets. The paraphrase batch is small (26 covered questions).
+- The sweep printed held-out figures next to tune figures. The minimum was chosen by the tune rule above, but the held-out numbers were visible when it was chosen.
+- Not yet run against the hosted project or through PostgREST (the native Data API suite needs the Mac). After applying `17_apply_0088_hosted.sql` and embedding the sections, check one hybrid chat turn and its `knowledge_search` log line.
+
 ## LangSmith evaluations (current)
 
 Goal: one stack, LangChain (model calls), LangGraph (v2 orchestration) and LangSmith (tracing, datasets, experiments, human review), with evaluations that score live answers automatically instead of stopping at `needs_human_review`.
