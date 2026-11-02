@@ -1,4 +1,4 @@
-const DOMAIN_LABELS={retail:'Complex banking needs',fraud:'Fraud & security',compliance:'Compliance review',document:'Document check',relationship:'Relationship manager',smalltalk:'Banking assistant'};
+const DOMAIN_LABELS={retail:'Everyday banking',fraud:'Fraud & security',compliance:'Compliance review',document:'Document check',relationship:'Relationship manager',smalltalk:'Banking assistant'};
 
 function Sources({sources,onSource}) {
   if(!sources?.length)return null;
@@ -9,7 +9,7 @@ export default function Answer({message,pendingText,onSource,onAction}) {
   if(message.sections?.length)return <div className="answer-sections" data-testid="answer-sections">{message.sections.map(section=><section className="answer-section" key={section.task_id} data-domain={section.domain} data-priority={section.priority} data-response-origin={section.response_origin} data-prompt-version={section.prompt_version}>
     <h3>{DOMAIN_LABELS[section.domain]}{section.priority==='P0'&&<small>Urgent</small>}</h3>
     <span className="answer-text">{section.answer}</span>
-    {section.response_origin==='validation'&&<small className="answer-origin">Answer withheld</small>}
+    {section.response_origin==='validation'&&<small className="answer-origin">Could not verify</small>}
     {section.decision&&<p className="answer-decision" data-testid="answer-decision">{section.decision}</p>}
     {onAction&&section.pending_actions?.map(action=>action.type==='card.dispute'
       ?<button key={action.command_id} className="primary-button block-card" data-testid="review-dispute" onClick={()=>onAction(action)}>Review dispute draft…</button>

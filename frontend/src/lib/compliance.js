@@ -57,6 +57,18 @@ export function primaryStatus(item){
  if(item.submission_status==='rejected')return 'Correction requested by bank';
  return item.client_mark==='prepared'?'Prepared':'Not prepared';
 }
+export function closedRequestOutcome(outcome){
+ if(outcome==null)return {label:'Closed – bank outcome not recorded',tone:'wait',icon:'…'};
+ if(outcome==='accepted')return {label:'Accepted by bank',tone:'ok',icon:'✓'};
+ if(outcome==='more_info')return {label:'The bank asked a follow-up question',tone:'wait',icon:'…'};
+ throw new Error('The bank-question outcome could not be verified. Reload the compliance review.');
+}
+export function reviewNextStep(review){
+ if(review.requested_items.some(item=>['not_submitted','rejected'].includes(item.submission_status))||review.info_requests.some(item=>item.status==='open'))return {label:'Action needed',needsAttention:true};
+ if(review.requested_items.some(item=>item.submission_status==='unknown'))return {label:'Document status needs checking',needsAttention:true};
+ if(review.requested_items.some(item=>item.submission_status==='submitted_awaiting_review'))return {label:'Documents with bank – awaiting review',needsAttention:false};
+ return {label:'No requested actions remaining',needsAttention:false};
+}
 export function findingText(finding,rule){
  if(finding.code==='translation_needed')return 'This file seems to be mostly in another language. Please add a certified English translation, or use Talk to a person to ask which translation the bank accepts.';
  if(finding.code==='missing_pages')return `Some pages seem to be missing (page ${finding.field}). Please upload the complete file.`;
@@ -74,9 +86,12 @@ export function templateFor(item,templates){
 }
 export async function loadTemplates(signal){
  const response=await fetch(`${API}/documents/templates`,{signal});
- if(!response.ok)return [];
+ if(!response.ok)throw new Error(`Document guidance could not be loaded (HTTP ${response.status}).`);
  const body=await response.json();
- return Array.isArray(body)?body.filter(item=>item&&typeof item.key==='string'&&Array.isArray(item.must_show)&&Array.isArray(item.example)):[];
+ if(!Array.isArray(body)||body.some(item=>!item||typeof item.key!=='string'||typeof item.title!=='string'||typeof item.match!=='string'||
+  [item.must_show,item.example,item.tips].some(lines=>!Array.isArray(lines)||lines.some(line=>typeof line!=='string'))))throw new Error('Document guidance could not be verified.');
+ for(const item of body){try{new RegExp(item.match,'i');}catch{throw new Error('Document guidance contains an invalid document matcher.');}}
+ return body;
 }
 async function request(path,token,signal,method='GET'){
  const response=await fetch(`${API}${path}`,{method,headers:{Authorization:`Bearer ${token}`},signal});

@@ -1,0 +1,624 @@
+"""RM assistant (Persona 2): one RM message → a grounded, structured reply. No canned answers: every reply is generated
+by the model from the RM's own records and then checked item by item (services/rm/checks.py).
+
+1. Redact the message, then a fixed book check: names in the message are matched in SQL; anyone outside the RM's book is
+   refused and audited before any record is read or the model is called (R06).
+2. Planner (model, prompt rm_planner/v1) picks the intent and what the message points at, unless a workspace button set it.
+3. Deterministic resolution of the client, ticket, appointment or note against the RM's book; ambiguity becomes a
+   question with options. Switching client resets the context, and only turns about the same client go to the model.
+4. Read the records for that intent through the RM tools (SQL book checks, consent checks, audit).
+5. One model call (prompt rm_assistant/v1 + the intent's task file) with strict JSON output and cited record ids.
+6. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
+   links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
+   missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
+"""
+import json
+import re
+from collections.abc import Awaitable,Callable
+from datetime import date,datetime,timedelta,timezone
+from difflib import SequenceMatcher
+from typing import Any
+from app.schemas.contracts import RequestContext
+from app.schemas.rm import BOOK_WIDE,NEEDS_CLIENT,RmAssistantRequest
+from app.services import customer_data,llm_gateway,prompts,tools
+from app.services.privacy import redact
+from app.services.rm import checks
+from app.services.rm import evidence as ev
+
+PLANNER_VERSION='v1'
+ASSISTANT_VERSION='v1'
+SGT=timezone(timedelta(hours=8))
+TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
+    'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
+    'actions_from_note':'actions','handover_brief':'handover','help':'help'}
+HANDOVER_SECTIONS=['Client overview','Open requests and tickets','Recorded commitments','Pending reviews','Recorded preferences',
+    'What the client was previously told','Gaps to clarify','Suggested introductory topics']
+INTENTS=list(TASK_FILE)
+STOP={'the','a','an','to','of','for','and','on','my','me','his','her','their','about','please','request','reply','ticket','client','draft','with','what','is','in'}
+Say=Callable[[str],Awaitable[None]]
+
+
+# Schemas (strict JSON) -----------------------------------------------------------------------------------------------
+def _ids(ids: list[str]) -> dict:return {'type':'array','items':{'type':'string',**({'enum':ids} if ids else {})}}
+
+
+def _obj(props: dict) -> dict:return {'type':'object','additionalProperties':False,'properties':props,'required':list(props)}
+
+
+S={'type':'string'}
+CLARIFY={'clarification_question':S,'clarification_options':{'type':'array','items':S}}
+PLANNER_SCHEMA={'title':'rm_plan',**_obj({'intent':{'type':'string','enum':INTENTS},'client_name':S,'uses_active_client':{'type':'boolean'},
+    'ticket_ref':S,'appointment_hint':S,'is_new_notes':{'type':'boolean'},'clarification_question':S})}
+
+
+def brief_schema(ids: list[str]) -> dict:
+    item=_obj({'text':S,'kind':{'type':'string','enum':['record','client_stated','suggestion','gap']},
+        'owner':{'type':'string','enum':['rm','specialist','client','none']},'source_ids':_ids(ids)})
+    return {'title':'rm_brief',**_obj({'status':{'type':'string','enum':['ok','needs_clarification']},'summary':S,
+        'sections':{'type':'array','items':_obj({'heading':S,'items':{'type':'array','items':item}})},**CLARIFY})}
+
+
+def draft_schema(ids: list[str]) -> dict:
+    return {'title':'rm_draft',**_obj({'status':{'type':'string','enum':['ok','needs_clarification']},'draft':S,
+        'facts_used':{'type':'array','items':_obj({'text':S,'source_ids':_ids(ids)})},'cautions':{'type':'array','items':S},
+        'suggested_status':{'type':'string','enum':['none','in_review','waiting_on_client','resolved']},**CLARIFY})}
+
+
+def documentation_schema(categories: list[str]) -> dict:
+    item=_obj({'category':{'type':'string','enum':['fact','decision','commitment','client_request','topic']},'text':S,
+        'certainty':{'type':'string','enum':['confirmed','tentative']},'origin':{'type':'string','enum':['notes','rm_correction','ai_inference']},'owner':S,'due':S})
+    action=_obj({'kind':{'type':'string','enum':['client_note','follow_up_task','service_request','meeting']},'title':S,'details':S,'owner':S,'due':S,
+        'category':{'type':'string','enum':[*categories,'']},'fields':{'type':'array','items':_obj({'key':S,'value':S})},'evidence_quote':S,
+        'origin':{'type':'string','enum':['notes','rm_correction','ai_inference']}})
+    return {'title':'rm_documentation',**_obj({'status':{'type':'string','enum':['ok','needs_clarification']},'summary':S,
+        'interaction':_obj({'met_on':S,'format':{'type':'string','enum':['video','phone','in_person','unknown']},'title':S}),
+        'items':{'type':'array','items':item},'gaps':{'type':'array','items':S},'actions':{'type':'array','items':action},**CLARIFY})}
+
+
+# Small deterministic helpers --------------------------------------------------------------------------------------
+def today() -> date:return datetime.now(SGT).date()
+
+
+def day_text(d: date) -> str:return f'{d:%a} {d.day} {d:%b %Y}'  # portable (no %-d on Windows)
+
+
+def time_text(hhmm: str) -> str:
+    h,m=(int(x) for x in hhmm.split(':'))
+    return f"{h%12 or 12}:{m:02d} {'am' if h<12 else 'pm'}"
+
+
+def name_parts(name: str) -> list[str]:return re.sub(r'[^a-z ]','',name.lower()).split()
+
+
+def names_match(query: str,name: str) -> bool:
+    """Same rule as rm_match_clients: two consecutive name parts or one part of four letters or more, as whole words;
+    a near spelling of a first or last name also counts (typos)."""
+    q=' '+re.sub(r'[^a-z ]',' ',query.lower())+' '
+    parts=name_parts(name)
+    if any(len(p)>=4 and f' {p} ' in q for p in parts) or any(f' {a} {b} ' in q for a,b in zip(parts,parts[1:])):return True
+    words=q.split()
+    return any(len(w)>=4 and len(p)>=4 and SequenceMatcher(None,w,p).ratio()>=0.85 for w in words for p in parts)
+
+
+def keywords(text: str) -> set[str]:return {w for w in re.findall(r'[a-z]{3,}',text.lower()) if w not in STOP}
+
+
+def pick_ticket(message: str,tickets: list[dict]) -> tuple[str|None,list[dict]]:
+    """A unique best keyword match between the message and a ticket's type or summary, else the candidates to ask about."""
+    if len(tickets)==1:return tickets[0]['reference'],tickets
+    words=keywords(message)
+    scored=sorted(((len(words&keywords(f"{t.get('category_label','')} {t.get('category','').replace('_',' ')} {t.get('summary') or ''}")),t) for t in tickets),
+        key=lambda pair:-pair[0])
+    if scored and scored[0][0]>0 and (len(scored)==1 or scored[0][0]>scored[1][0]):return scored[0][1]['reference'],tickets
+    return None,tickets
+
+
+WEEKDAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+TIME=re.compile(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b|\b(\d{1,2})[:.](\d{2})\b',re.I)
+
+
+def narrows(hint: str) -> bool:
+    """Whether a hint names a time or a day ("10am", "Tuesday", "tomorrow"), so it can pick out one appointment."""
+    text=(hint or '').lower()
+    return bool(TIME.search(text) or 'today' in text or 'tomorrow' in text or any(w in text or w[:3]+' ' in text+' ' for w in WEEKDAYS))
+
+
+def match_appointments(rows: list[dict],hint: str,customer_id: int|None) -> list[dict]:
+    """Appointments that fit a time/day hint ("10am", "Tuesday", "tomorrow 2:30pm") for the client, if one is set."""
+    rows=[r for r in rows if customer_id is None or r['customer_id']==customer_id]
+    text=(hint or '').lower()
+    if not text:return rows
+    day=None
+    if 'today' in text:day=today()
+    elif 'tomorrow' in text:day=today()+timedelta(days=1)
+    wd=next((i+1 for i,w in enumerate(WEEKDAYS) if w in text or w[:3]+' ' in text+' '),None)
+    m=TIME.search(text)
+    minutes=None
+    if m:
+        h,mi,ap=(int(m.group(1)),int(m.group(2) or 0),m.group(3).lower()) if m.group(1) else (int(m.group(4)),int(m.group(5)),'')
+        h=h%12+(12 if ap=='pm' else 0) if ap else h
+        minutes=h*60+mi
+    def fits(r):
+        local=datetime.fromisoformat(str(r['starts_at'])).astimezone(SGT)
+        return (day is None or local.date()==day) and (wd is None or local.isoweekday()==wd) and (minutes is None or local.hour*60+local.minute==minutes)
+    return [r for r in rows if fits(r)]
+
+
+def history_for(req: RmAssistantRequest,client_id: int|None,book_wide: bool) -> list[tuple[str,str]]:
+    """Only turns about the same client (or book-wide turns for book-wide questions) reach the model."""
+    keep=[t for t in req.history if (t.client_id is None if book_wide else t.client_id==client_id)]
+    turns=[(t.role,redact(t.content)[0][:3000]) for t in keep][-12:]
+    while turns and turns[0][0]!='user':turns.pop(0)
+    return turns
+
+
+def clarify(question: str,options: list[dict],intent: str,context: dict,origin: str='records') -> dict:
+    return {'status':'clarify','intent':intent,'summary':question,'sections':[],'clarification':{'question':question,'options':options[:8]},
+        'context':context,'sources':[],'validation':{'checked':0,'withheld':0,'reasons':[]},'origin':origin}
+
+
+def refusal(context: dict) -> dict:
+    """R06: no record of anyone outside the book is read and the model is not called; the attempt is audited in SQL."""
+    return {'status':'denied','intent':'access_check','summary':'That person is not in your client book, so I can’t show or discuss their records. '
+        'If you need something for them, contact their relationship manager through the bank’s usual process.','sections':[],'clarification':None,
+        'context':context,'sources':[],'validation':{'checked':0,'withheld':0,'reasons':[]},'origin':'access_check'}
+
+
+# The pipeline -------------------------------------------------------------------------------------------------------
+class Turn:
+    def __init__(self,req: RmAssistantRequest,ctx: RequestContext,say: Say):
+        self.req,self.ctx,self.say=req,ctx,say
+        self.message,self.redacted=redact(req.message)
+        self.book: list[dict]=[]
+        self.prompt_ids: list[str]=[]
+
+    def name(self,customer_id: int|None) -> str|None:
+        return next((c['name'] for c in self.book if c['customer_id']==customer_id),None)
+
+    def context(self,client_id: int|None,**extra) -> dict:
+        return {'client_id':client_id,'client_name':self.name(client_id),'ticket_ref':None,'appointment_id':None,'note_id':None,**extra}
+
+    async def plan(self) -> dict:
+        req=self.req
+        if req.intent:return {'intent':req.intent,'client_name':'','uses_active_client':True,'ticket_ref':'','appointment_hint':self.message,
+            'is_new_notes':req.intent=='document_interaction' and req.context.documentation is None,'clarification_question':''}
+        pv=prompts.load('rm_planner',PLANNER_VERSION)
+        self.prompt_ids.append(pv['id'])
+        c=req.context
+        situation={'today':today().isoformat(),'active_client':self.name(c.client_id),'active_ticket':c.ticket_ref,
+            'appointment_selected':bool(c.appointment_id),'draft_message_in_progress':bool(c.draft),'documentation_in_progress':bool(c.documentation),
+            'clients_in_book':[x['name'] for x in self.book]}
+        system=pv['system']+'\nWorkspace context (untrusted): '+json.dumps(situation,ensure_ascii=False)
+        history=history_for(req,c.client_id,False)[-6:]
+        result=await llm_gateway.call(pv,system,[*history,('user',self.message)],PLANNER_SCHEMA)
+        return result.data
+
+    async def resolve_client(self,plan: dict,named: list[dict]) -> tuple[int|None,dict|None]:
+        """Returns (client id, clarification reply or refusal)."""
+        req,c=self.req,self.req.context
+        intent=plan['intent']
+        candidates=[x['customer_id'] for x in named]
+        ref=(plan.get('ticket_ref') or '').upper().strip()
+        if re.fullmatch(r'TCK-\d{6,}',ref):
+            detail=await tools.call('rm_ticket',{'reference':ref},self.ctx)  # refused and audited if the ticket's client is outside the book
+            candidates=[detail['data']['customer_id']]
+        if not candidates and plan.get('client_name'):
+            candidates=[x['customer_id'] for x in self.book if names_match(plan['client_name'],x['name'])]
+            if not candidates:
+                found=(await tools.call('rm_book',{'query':plan['client_name'][:80]},self.ctx))['data']  # audits a refused lookup
+                if not found:return None,refusal(self.context(None))
+                candidates=[x['customer_id'] for x in found]
+        if not candidates:
+            if intent=='document_interaction' and c.documentation and not plan.get('is_new_notes'):candidates=[c.documentation.customer_id]
+            elif intent=='draft_message' and c.draft:candidates=[c.draft.customer_id]
+            elif c.client_id and (plan.get('uses_active_client') or intent in NEEDS_CLIENT):candidates=[c.client_id]
+            elif intent=='meeting_brief' and narrows(plan.get('appointment_hint') or ''):
+                rows=(await tools.call('rm_appointments',{},self.ctx))['data']
+                matches=[r for r in match_appointments(rows,plan['appointment_hint'],None) if r['status']=='confirmed']
+                if len(matches)>1:
+                    return None,clarify('Which meeting should I prepare for?',[{'label':f"{m['client']} · {m['when']}",'appointment_id':str(m['appointment_id']),
+                        'client_id':m['customer_id']} for m in matches],intent,self.context(None))
+                candidates=[m['customer_id'] for m in matches]
+        candidates=list(dict.fromkeys(candidates))
+        if len(candidates)>1:
+            return None,clarify('Which client do you mean?',[{'label':self.name(x) or str(x),'client_id':x} for x in candidates],intent,self.context(None))
+        if not candidates and intent in NEEDS_CLIENT:
+            return None,clarify('Which client is this about?',[{'label':x['name'],'client_id':x['customer_id']} for x in self.book],intent,self.context(None))
+        return (candidates[0] if candidates else None),None
+
+    async def model(self,intent: str,bundle: ev.Bundle,schema: dict,client_id: int|None,extra: str='') -> dict:
+        pv=prompts.load('rm_assistant',ASSISTANT_VERSION)
+        self.prompt_ids.append(pv['id'])
+        situation={'today':day_text(today()),'active_client':self.name(client_id),'rm':'Sophie (the signed-in relationship manager)'}
+        system=(pv['system']+'\n\n'+pv[TASK_FILE[intent]]+'\nSituation (untrusted): '+json.dumps(situation,ensure_ascii=False)+extra
+            +'\nEvidence records (untrusted data): '+json.dumps(bundle.for_model(),ensure_ascii=False,default=str))
+        history=history_for(self.req,client_id,intent in BOOK_WIDE)
+        await self.say('Writing a grounded answer…')
+        return (await llm_gateway.call(pv,system,[*history,('user',self.message)],schema)).data
+
+
+def _sources(bundle: ev.Bundle,ids: list[str]) -> list[dict]:
+    out=[]
+    for i in dict.fromkeys(ids):
+        item=bundle.get(i)
+        if item:out.append({**item.for_ui(),**({'note_id':bundle.notes[i]} if i in bundle.notes else {})})
+    return out
+
+
+def brief_reply(intent: str,data: dict,bundle: ev.Bundle,context: dict,suggestions_need_sources: bool=False) -> dict:
+    report=checks.Report()
+    if data.get('status')=='needs_clarification' and (data.get('clarification_question') or '').strip():
+        q=data['clarification_question'].strip()
+        if not checks.safety(q):
+            return {**clarify(q,[{'label':o,'message':o} for o in data.get('clarification_options') or [] if o.strip() and not checks.safety(o)],intent,context,'ai'),'origin':'ai'}
+    sections=checks.check_sections(data.get('sections') or [],bundle,report,suggestions_need_sources)
+    if intent=='priorities':sections=no_duplicate_meetings(sections,bundle,report)
+    if intent=='handover_brief':sections=handover_order(sections)
+    summary=checks.check_summary(data.get('summary',''),bundle,report)
+    cited=[i for s in sections for item in s['items'] for i in item['source_ids']]
+    if not sections:summary='I couldn’t verify an answer against your records, so I’ve left it out rather than guess. Try asking more specifically.'
+    return {'status':'ok' if sections else 'unverified','intent':intent,'summary':summary,'sections':sections,'clarification':None,'context':context,
+        'sources':_sources(bundle,cited),'validation':report.as_dict(),'origin':'ai'}
+
+
+BOOKING=re.compile(r'\b(?:book|schedule|arrange|set up|propose)\b[^.]{0,40}\b(?:meeting|call|review|appointment|catch-up)\b',re.I)
+
+
+def no_duplicate_meetings(sections: list[dict],bundle: ev.Bundle,report: checks.Report) -> list[dict]:
+    """RM11: never suggest booking a meeting for a client who already has one confirmed (from the follow-up records)."""
+    confirmed={e.customer_id for e in bundle.items if e.id.startswith('followup-') and isinstance(e.data,dict) and e.data.get('confirmed_meeting')}
+    clients={e.customer_id:(e.data.get('client') or '') for e in bundle.items if e.id.startswith('followup-') and isinstance(e.data,dict)}
+    out=[]
+    for s in sections:
+        keep=[]
+        for item in s['items']:
+            cited={bundle.get(i).customer_id for i in item['source_ids'] if bundle.get(i)}
+            named={cid for cid,name in clients.items() if name and name.split()[0] in item['text']}
+            if item.get('kind')=='suggestion' and BOOKING.search(item['text']) and (cited|named)&confirmed:
+                report.withheld.append('duplicate_meeting_suggestion');continue
+            keep.append(item)
+        if keep:out.append({**s,'items':keep})
+    return out
+
+
+def handover_order(sections: list[dict]) -> list[dict]:
+    """RM16: the fixed structure, in order; an empty heading becomes an explicit gap."""
+    by={s['heading'].strip().lower():s for s in sections}
+    out=[]
+    for heading in HANDOVER_SECTIONS:
+        found=by.get(heading.lower()) or next((s for k,s in by.items() if heading.lower().split()[0] in k and heading.lower().split()[-1] in k),None)
+        out.append({'heading':heading,'items':found['items'] if found else [{'text':'Nothing recorded or nothing could be verified for this section.','kind':'gap','owner':'none','source_ids':[]}]})
+    return out
+
+
+async def respond(req: RmAssistantRequest,ctx: RequestContext,say: Say) -> dict:
+    turn=Turn(req,ctx,say)
+    await say('Checking your client book…')
+    turn.book=(await tools.call('rm_book',{},ctx))['data']
+    named=await tools.call('rm_match_clients',{'text':turn.message},ctx)
+    if named['outside_book'] and not named['in_book']:return refusal(turn.context(req.context.client_id))
+    plan=await turn.plan()
+    intent=plan['intent']
+    if intent not in TASK_FILE:intent='help'
+    client_id,stop=await turn.resolve_client(plan,named['in_book'] if not req.intent else [])
+    if stop:return stop
+    if req.intent and req.context.client_id and not client_id:client_id=req.context.client_id
+    reply=await HANDLERS[intent](turn,plan,client_id)
+    reply['prompt_version']='/'.join(dict.fromkeys(turn.prompt_ids)) or None
+    if turn.redacted:reply['notice']='Private details (card numbers, emails, ID numbers or codes) were removed from your message before it was used.'
+    if named['outside_book']:reply['notice']=((reply.get('notice') or '')+' Someone you named is not in your book, so nothing about them was read.').strip()
+    return reply
+
+
+# Intent handlers ------------------------------------------------------------------------------------------------------
+async def h_inbox(t: Turn,plan,client_id):
+    await t.say('Reading open tickets across your book…')
+    bundle=ev.tickets_bundle(await tools.call('rm_tickets',{},t.ctx))
+    return brief_reply('ticket_inbox',await t.model('ticket_inbox',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
+
+
+async def h_priorities(t: Turn,plan,client_id):
+    await t.say('Reading deadlines, tickets, tasks and meetings across your book…')
+    bundle=ev.followups_bundle(await tools.call('rm_followups',{},t.ctx),await tools.call('rm_appointments',{'start':today().isoformat(),'end':(today()+timedelta(days=30)).isoformat()},t.ctx))
+    return brief_reply('priorities',await t.model('priorities',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
+
+
+async def h_reviews(t: Turn,plan,client_id):
+    await t.say('Reading compliance reviews across your book…')
+    bundle=ev.reviews_bundle(await tools.call('rm_review_status',{},t.ctx))
+    return brief_reply('reviews',await t.model('reviews',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
+
+
+async def h_schedule(t: Turn,plan,client_id):
+    await t.say('Reading your appointments…')
+    rows=await tools.call('rm_appointments',{'start':today().isoformat(),'end':(today()+timedelta(days=30)).isoformat()},t.ctx)
+    c=t.req.context
+    selected=next((r for r in rows['data'] if c.appointment_id and str(r['appointment_id'])==str(c.appointment_id)),None)
+    hint=plan.get('appointment_hint') or ''
+    if narrows(hint) and not t.req.intent:
+        matches=match_appointments(rows['data'],hint,client_id)
+        if len(matches)==1:selected=matches[0]
+        elif len(matches)>1:
+            return clarify('Which appointment do you mean?',[{'label':f"{m['client']} · {m['when']}",'appointment_id':str(m['appointment_id']),
+                'client_id':m['customer_id']} for m in matches],'schedule',t.context(client_id))
+    bundle=ev.Bundle()
+    bundle.add(ev.appointments_evidence(rows,client_id))
+    if selected:bundle.add(ev.Evidence('selected-appointment',f"Selected appointment: {selected['client']}, {selected['when']}",'calendar',
+        {k:v for k,v in selected.items() if k not in ('starts_at','ends_at','customer_id')},str(rows.get('as_of')),selected['customer_id']))
+    ctx=t.context(selected['customer_id'] if selected else client_id,appointment_id=str(selected['appointment_id']) if selected else None)
+    return brief_reply('schedule',await t.model('schedule',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx)
+
+
+async def h_overview(t: Turn,plan,client_id):
+    await t.say(f'Reading {t.name(client_id)}’s records…')
+    bundle=ev.client_bundle(await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx))
+    return brief_reply('client_overview',await t.model('client_overview',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
+
+
+async def _notes(t: Turn,client_id: int,bundle: ev.Bundle):
+    notes=await tools.call('rm_meeting_notes',{'customer_id':client_id},t.ctx)
+    ev.add_notes(bundle,notes['data']['notes'],str(notes.get('as_of')),client_id,notes['data']['withheld_private_notes'])
+    if not notes['data']['notes']:bundle.add(ev.Evidence('notes-none','Meeting notes','record',{'notes_recorded':0},str(notes.get('as_of')),client_id))
+    return notes['data']['notes']
+
+
+async def h_history(t: Turn,plan,client_id):
+    await t.say(f'Reading meeting notes for {t.name(client_id)}…')
+    bundle=ev.Bundle()
+    profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
+    bundle.add(ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']}).get('profile'))
+    await _notes(t,client_id,bundle)
+    return brief_reply('meeting_history',await t.model('meeting_history',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
+
+
+async def h_brief(t: Turn,plan,client_id):
+    await t.say(f'Preparing a briefing from {t.name(client_id)}’s records…')
+    c=t.req.context
+    profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
+    bundle=ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']})
+    await _notes(t,client_id,bundle)
+    bundle.add(ev.shared_evidence(await tools.call('rm_shared_summary',{'customer_id':client_id},t.ctx),client_id))  # consent is checked in SQL first
+    upcoming=[a for a in profile['data']['appointments'] if a['status']=='confirmed']
+    chosen=next((a for a in upcoming if c.appointment_id and str(a['appointment_id'])==str(c.appointment_id)),None)
+    if not chosen and narrows(plan.get('appointment_hint') or '') and not t.req.intent:
+        rows=[{**a,'customer_id':client_id} for a in upcoming]
+        matches=match_appointments(rows,plan['appointment_hint'],client_id)
+        if len(matches)>1:
+            return clarify('Which meeting should I prepare for?',[{'label':m['when'],'appointment_id':str(m['appointment_id']),'client_id':client_id} for m in matches],
+                'meeting_brief',t.context(client_id))
+        chosen=matches[0] if matches else None
+    if not chosen and len(upcoming)==1:chosen=upcoming[0]
+    if chosen:bundle.add(ev.Evidence('selected-appointment',f"The meeting: {chosen['when']}",'calendar',
+        {k:v for k,v in chosen.items() if k not in ('starts_at','appointment_id')},str(profile['as_of']),client_id))
+    else:bundle.add(ev.Evidence('selected-appointment','The meeting','calendar',{'confirmed_appointment':None,
+        'meaning':'No single confirmed appointment was identified; prepare from the records and say the meeting details are not confirmed.'},str(profile['as_of']),client_id))
+    ctx=t.context(client_id,appointment_id=str(chosen['appointment_id']) if chosen else None)
+    return brief_reply('meeting_brief',await t.model('meeting_brief',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx,True)
+
+
+async def _ticket_ref(t: Turn,plan,client_id,profile) -> tuple[str|None,dict|None]:
+    c=t.req.context
+    ref=(plan.get('ticket_ref') or '').upper().strip()
+    if re.fullmatch(r'TCK-\d{6,}',ref):return ref,None
+    open_tickets=profile['data']['tickets']
+    if c.draft and c.draft.customer_id==client_id and c.draft.reference and plan['intent']=='draft_message':return c.draft.reference,None
+    if c.ticket_ref and c.client_id==client_id and any(x['reference']==c.ticket_ref for x in open_tickets):
+        chosen,_=pick_ticket(t.message,open_tickets)
+        if chosen is None or chosen==c.ticket_ref or not keywords(t.message)&keywords(' '.join(x.get('category_label','') for x in open_tickets)):return c.ticket_ref,None
+        return chosen,None
+    if not open_tickets:return None,None
+    chosen,candidates=pick_ticket(t.message,open_tickets)
+    if chosen:return chosen,None
+    return None,clarify('Which request do you mean?',[{'label':f"{x['reference']} · {x['category_label']}",'ticket_ref':x['reference'],'client_id':client_id}
+        for x in candidates],plan['intent'],t.context(client_id))
+
+
+async def h_ticket(t: Turn,plan,client_id):
+    profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
+    ref,stop=await _ticket_ref(t,plan,client_id,profile)
+    if stop:return stop
+    if ref is None:
+        bundle=ev.client_bundle(profile)
+        return brief_reply('ticket_summary',await t.model('ticket_summary',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
+    await t.say(f'Reading {ref} and what the client was told…')
+    bundle=ev.ticket_detail_bundle(await tools.call('rm_ticket',{'reference':ref},t.ctx))
+    return brief_reply('ticket_summary',await t.model('ticket_summary',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id,ticket_ref=ref))
+
+
+async def h_draft(t: Turn,plan,client_id):
+    c=t.req.context
+    profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
+    ref,stop=await _ticket_ref(t,plan,client_id,profile)
+    if stop:return stop
+    internal: list[str]=[]
+    bundle=ev.Bundle()
+    if ref:
+        await t.say(f'Drafting a reply about {ref}…')
+        detail=await tools.call('rm_ticket',{'reference':ref},t.ctx)
+        bundle=ev.ticket_detail_bundle(detail)
+        internal=[n.get('note','') for n in detail['data'].get('internal_notes') or []]
+        bundle.add(ev.client_bundle(profile).get('profile'))
+    else:
+        await t.say(f'Drafting a message to {t.name(client_id)}…')
+        bundle=ev.client_bundle(profile)
+        days=(await tools.call('rm_availability',{},t.ctx))['days']
+        slots=[f"{day_text(date.fromisoformat(str(d['date'])))}, {time_text(s)}" for d in days for s in d['free']][:8]
+        bundle.add(ev.Evidence('free-slots','Your free times in the next 14 days (not held or booked)','calendar',slots,None,client_id))
+    current=c.draft if c.draft and c.draft.customer_id==client_id and (c.draft.reference or None)==ref else None
+    extra=('\nCurrent draft on screen (revision '+str(current.revision)+', untrusted): '+json.dumps(current.text,ensure_ascii=False)
+        +'\nApply the RM\'s latest message as a revision request.') if current else ''
+    data=await t.model('draft_message',bundle,draft_schema(bundle.ids()),client_id,extra)
+    ctx=t.context(client_id,ticket_ref=ref)
+    if data.get('status')=='needs_clarification' and (data.get('clarification_question') or '').strip() and not checks.safety(data['clarification_question']):
+        return clarify(data['clarification_question'],[{'label':o,'message':o} for o in data.get('clarification_options') or []],'draft_message',ctx,'ai')
+    text=(data.get('draft') or '').strip()[:500]
+    reason,cautions=checks.check_draft(text,bundle,internal) if text else ('empty',[])
+    report=checks.Report(checked=1,withheld=[reason] if reason else [])
+    facts=checks.check_sections([{'heading':'Facts used','items':[{**f,'kind':'record'} for f in data.get('facts_used') or []]}],bundle,report)
+    for s in facts:  # a fact taken only from approved guidance or request rules is labelled as guidance, not as a client record
+        for item in s['items']:
+            if item['source_ids'] and all(i.startswith(('kb-','category-')) for i in item['source_ids']):item['kind']='guidance'
+    cautions=[*cautions,*[x.strip() for x in data.get('cautions') or [] if x.strip() and not checks.safety(x)]][:6]
+    ticket=bundle.get('ticket-'+ref).data if ref and bundle.get('ticket-'+ref) else None
+    status=data.get('suggested_status') if data.get('suggested_status')!='none' and ticket and ticket.get('rm_owned') else None
+    cited=[i for s in facts for item in s['items'] for i in item['source_ids']]
+    if reason:
+        return {'status':'unverified','intent':'draft_message','summary':'I couldn’t produce a draft that matches your records '
+            f'({reason.replace("_"," ")}), so none is shown. Try asking again or write it yourself.','sections':[],'clarification':None,'context':ctx,
+            'sources':_sources(bundle,cited),'validation':report.as_dict(),'origin':'ai','draft':None}
+    revision=(current.revision+1) if current else 1
+    return {'status':'ok','intent':'draft_message','summary':'Here is a draft for you to review. It has not been sent.','sections':facts,'clarification':None,
+        'context':{**ctx,'draft':{'customer_id':client_id,'reference':ref,'text':text,'revision':revision}},'sources':_sources(bundle,cited),
+        'validation':report.as_dict(),'origin':'ai','draft':{'customer_id':client_id,'client':t.name(client_id),'reference':ref,'text':text,'revision':revision,
+        'cautions':cautions,'suggested_status':status,'can_change_status':bool(ticket and ticket.get('rm_owned')),
+        'restricted':bool(ticket and ticket.get('restricted') and not ticket.get('rm_owned'))}}
+
+
+async def _categories(t: Turn) -> list[dict]:
+    rows=await customer_data.get_categories(t.ctx)
+    return [r.model_dump(mode='json') for r in rows if r.customer_raisable]
+
+
+def documentation_reply(t: Turn,data: dict,bundle: ev.Bundle,sources: list[str],client_id: int,categories: list[dict],profile: dict,
+    state: dict,intent: str,open_tasks: list[dict]) -> dict:
+    """RM5/RM6/RM10 checks: quotes from the notes, figures and dates from the notes or records, request types and fields,
+    missing details and duplicates. The result is a proposal; nothing is saved until the RM approves it."""
+    report=checks.Report()
+    ctx=t.context(client_id)
+    if data.get('status')=='needs_clarification' and (data.get('clarification_question') or '').strip() and not checks.safety(data['clarification_question']):
+        return {**clarify(data['clarification_question'],[{'label':o,'message':o} for o in data.get('clarification_options') or []],intent,ctx,'ai'),
+            'context':{**ctx,'documentation':state}}
+    source_text='\n'.join(sources)
+    support=ev.Bundle([ev.Evidence('rm-notes','Your notes','note',source_text),*bundle.items])
+    def ok(text: str) -> bool:
+        reason=checks.safety(text) or (checks.grounded(text,['rm-notes'],support)[0] if checks.has_facts(text) else None)
+        if reason:report.withheld.append(reason)
+        return reason is None
+    items=[]
+    for item in data.get('items') or []:
+        report.checked+=1
+        if (item.get('text') or '').strip() and ok(item['text']):items.append({**item,'text':item['text'].strip()})
+    gaps=[g.strip() for g in data.get('gaps') or [] if g.strip() and ok(g)]
+    by_cat={c['category']:c for c in categories}
+    tickets=profile['data']['tickets']
+    actions=[]
+    for action in data.get('actions') or []:
+        report.checked+=1
+        if not checks.quoted(action.get('evidence_quote',''),sources):report.withheld.append('not_in_notes');continue
+        if not ok(action.get('title','')+' '+action.get('details','')):continue
+        a={k:(v.strip() if isinstance(v,str) else v) for k,v in action.items()}
+        flags=[]
+        due=a.get('due') or ''
+        try:a['due_on']=date.fromisoformat(due).isoformat() if due else None
+        except ValueError:a['due_on']=None;flags.append(f'Due date “{due}” needs a calendar date')
+        if a['kind']=='follow_up_task' and not a.get('owner'):flags.append('No owner stated in the notes')
+        if a['kind']=='follow_up_task' and not due:flags.append('No due date stated in the notes')
+        if a['kind']=='follow_up_task':
+            dup=next((x for x in open_tasks if checks.similar(x['title'],a.get('title',''))),None)
+            if dup:a['duplicate_of']={'task_id':dup['task_id'],'title':dup['title']};flags.append(f"Similar open task already exists: “{dup['title']}”")
+        if a['kind']=='service_request':
+            cat=by_cat.get(a.get('category') or '')
+            if not cat:a['kind']='follow_up_task';flags.append('No matching request type; proposed as a task instead')
+            else:
+                keys={f['key'] for f in cat['fields']}
+                values={f['key']:f['value'] for f in a.get('fields') or [] if f.get('key') in keys and (f.get('value') or '').strip() and ok(f['value'])}
+                a['details']={k:v for k,v in values.items()}
+                a['request']={'category':cat['category'],'label':cat['label'],'owner_team':cat['owner_team'],'decided_by':cat['decided_by'],
+                    'fields':cat['fields'],'documents':cat['documents']}
+                a['missing']=[f['label'] for f in cat['fields'] if f.get('required') and f['key'] not in values]
+                if a['missing']:flags.append('Missing: '+', '.join(a['missing']))
+                dup=next((x for x in tickets if x['category']==cat['category']),None)
+                if dup:a['duplicate_of']={'reference':dup['reference'],'status':dup['status']};flags.append(f"An open {cat['label'].lower()} request already exists: {dup['reference']}")
+        if a['kind']=='meeting' and profile['data']['appointments']:
+            first=profile['data']['appointments'][0]
+            flags.append(f"A meeting is already {'confirmed' if first['status']=='confirmed' else 'held'} for {first['when']}")
+        a['flags']=flags
+        a.pop('fields',None)
+        a['id']=f"action-{len(actions)+1}"
+        actions.append(a)
+    summary=(data.get('summary') or '').strip()
+    if summary and not ok(summary):summary=''
+    interaction=data.get('interaction') or {}
+    met=interaction.get('met_on') or ''
+    try:met=date.fromisoformat(met).isoformat() if met else ''
+    except ValueError:met=''
+    draft={'summary':summary,'interaction':{**interaction,'met_on':met},'items':items,'gaps':gaps,'actions':actions}
+    state={**state,'draft':draft}
+    return {'status':'ok','intent':intent,'summary':'Review the documentation and proposed actions. Nothing is saved or submitted until you approve it.' if intent=='document_interaction'
+            else 'Proposed follow-ups from the selected note. Nothing is created until you confirm each one.',
+        'sections':[],'clarification':None,'context':{**ctx,'documentation':state,'note_id':state.get('note_id')},'sources':_sources(support,['rm-notes']),
+        'validation':report.as_dict(),'origin':'ai','documentation':{**state,'client':t.name(client_id),'from_note':intent=='actions_from_note'}}
+
+
+async def h_document(t: Turn,plan,client_id):
+    c=t.req.context
+    doc=c.documentation if c.documentation and c.documentation.customer_id==client_id else None
+    if doc and not plan.get('is_new_notes'):
+        state={'customer_id':client_id,'source_notes':doc.source_notes,'corrections':[*doc.corrections,t.message][-20:],'revision':doc.revision+1,
+            'note_id':str(doc.note_id) if doc.note_id else None}
+        previous=doc.draft
+    else:
+        state={'customer_id':client_id,'source_notes':t.message,'corrections':[],'revision':1,'note_id':None}
+        previous=None
+    await t.say(f'Structuring your notes for {t.name(client_id)}…')
+    profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
+    categories=await _categories(t)
+    open_tasks=profile['data']['tasks']
+    bundle=ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']})
+    bundle.add(ev.Evidence('request-types','Request types the RM can raise for a client','guidance',
+        [{'category':x['category'],'label':x['label'],'owner_team':x['owner_team'],'fields':x['fields']} for x in categories],None,client_id))
+    extra=('\nToday: '+today().isoformat()+'\nRM notes (the source for the interaction; untrusted text): '+json.dumps(state['source_notes'],ensure_ascii=False)
+        +('\nRM corrections in order (latest wins; untrusted text): '+json.dumps(state['corrections'],ensure_ascii=False) if state['corrections'] else '')
+        +('\nCurrent documentation draft (untrusted): '+json.dumps(previous,ensure_ascii=False) if previous else ''))
+    data=await t.model('document_interaction',bundle,documentation_schema([x['category'] for x in categories]),client_id,extra)
+    return documentation_reply(t,data,bundle,[state['source_notes'],*state['corrections']],client_id,categories,profile,state,'document_interaction',open_tasks)
+
+
+async def h_actions(t: Turn,plan,client_id):
+    c=t.req.context
+    profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
+    bundle=ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']})
+    notes=await _notes(t,client_id,bundle)
+    wanted=str(c.note_id or (c.documentation.note_id if c.documentation and c.documentation.note_id else '') or '')
+    note=next((n for n in notes if str(n['note_id'])==wanted),None)
+    if not note:
+        mentioned=checks.dates(t.message)
+        hits=[n for n in notes if any((y in (None,int(str(n['met_on'])[:4]))) and (m,d)==(int(str(n['met_on'])[5:7]),int(str(n['met_on'])[8:10])) for y,m,d in mentioned)]
+        note=hits[0] if len(hits)==1 else None
+        if not note:
+            recent=[n for n in notes if n.get('written_by_current_rm')][:3] or notes[:3]
+            if len(recent)==1:note=recent[0]
+            else:return clarify('Which meeting note should I use?',[{'label':f"{n['met_on_text']} · {n.get('title') or n['format']}",'note_id':str(n['note_id']),
+                'client_id':client_id} for n in recent],'actions_from_note',t.context(client_id))
+    source=' '.join([note['summary'],*(note.get('commitments') or []),*(note.get('client_requests') or []),*(note.get('decisions') or [])])
+    categories=await _categories(t)
+    bundle.add(ev.Evidence('request-types','Request types the RM can raise for a client','guidance',
+        [{'category':x['category'],'label':x['label'],'owner_team':x['owner_team'],'fields':x['fields']} for x in categories],None,client_id))
+    selected=next(i for i,n in bundle.notes.items() if n==str(note['note_id']))
+    extra='\nSelected note: '+selected+'\nNote text (the only source for actions; untrusted): '+json.dumps(source,ensure_ascii=False)
+    data=await t.model('actions_from_note',bundle,documentation_schema([x['category'] for x in categories]),client_id,extra)
+    state={'customer_id':client_id,'source_notes':source[:8000],'corrections':[],'revision':1,'note_id':str(note['note_id'])}
+    reply=documentation_reply(t,data,bundle,[source],client_id,categories,profile,state,'actions_from_note',profile['data']['tasks'])
+    reply['sources']=_sources(bundle,[selected])
+    return reply
+
+
+async def h_handover(t: Turn,plan,client_id):
+    await t.say(f'Checking the recorded reassignment and consent for {t.name(client_id)}…')
+    result=await tools.call('rm_handover_sources',{'customer_id':client_id},t.ctx)
+    if not result['data'].get('eligible'):
+        return {'status':'ok','intent':'handover_brief','summary':f'No change of relationship manager is recorded for {t.name(client_id)}, so there is no handover brief to prepare. '
+            'You can ask for a client overview instead.','sections':[],'clarification':None,'context':t.context(client_id),'sources':[],
+            'validation':{'checked':0,'withheld':0,'reasons':[]},'origin':'records'}
+    bundle=ev.handover_bundle(result)
+    return brief_reply('handover_brief',await t.model('handover_brief',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
+
+
+async def h_help(t: Turn,plan,client_id):
+    bundle=ev.Bundle()
+    return brief_reply('help',await t.model('help',bundle,brief_schema([]),None),bundle,t.context(t.req.context.client_id))
+
+
+HANDLERS={'ticket_inbox':h_inbox,'priorities':h_priorities,'reviews':h_reviews,'schedule':h_schedule,'client_overview':h_overview,
+    'meeting_history':h_history,'meeting_brief':h_brief,'ticket_summary':h_ticket,'draft_message':h_draft,'document_interaction':h_document,
+    'actions_from_note':h_actions,'handover_brief':h_handover,'help':h_help}

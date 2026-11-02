@@ -6,6 +6,7 @@ import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
 import {displayName,formatDate,formatDateTime,formatMoney as money} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
+import {reviewNextStep} from '../lib/compliance';
 
 const ACCOUNT={savings:'Savings account',current:'Current account',multi_currency:'Multi-currency account'};
 const LOAN={home:'Home loan',car:'Car loan',personal:'Personal loan',securities_backed:'Securities-backed loan'};
@@ -31,7 +32,8 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
     return ()=>controller.abort();
   },[]);
   // Opened from the assistant's "Go to Statements" button: scroll to that section once the records are on screen.
-  useEffect(()=>{if(focus==='statements'&&records)document.getElementById('statements')?.scrollIntoView({behavior:'smooth',block:'start'});},[focus,!!records]);
+  // CR2/CR15: a "Go to …" button in the chat scrolls to its section (statements, accounts, cards, loans, recent activity).
+  useEffect(()=>{if(focus&&records)document.getElementById(focus==='statements'?'statements':`ov-${focus}`)?.scrollIntoView({behavior:'smooth',block:'start'});},[focus,!!records]);
   if(error&&!records)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p></section>;
   if(!records)return <section className="app-page-body ov" data-testid="overview-page"><p className="loading" role="status">Loading your accounts…</p>
     <div className="skeleton-page" aria-hidden="true"><span className="skeleton-line wide"/><span className="skeleton-block tall"/>
@@ -40,6 +42,7 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
   const accounts=records.accounts.data.filter(row=>row.status!=='closed'),cards=records.cards.data,loans=records.loans.data.filter(row=>row.status==='active');
   const sgd=accounts.filter(row=>row.currency==='SGD').reduce((sum,row)=>sum+row.balance,0);
   const rm=records.advisor.data?.current,review=records.compliance.data,open=review&&!REVIEW_DONE.includes(review.status);
+  const reviewStep=open?reviewNextStep(review):null;
   const recent=[...records.transactions.data].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   return <section className="app-page-body ov" aria-label="Overview" data-testid="overview-page">
     <header className="ov-head"><div><p className="ov-date">{new Date().toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'})}</p>
@@ -49,15 +52,15 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
     <div className="ov-balance"><span>Total balance in SGD accounts</span><strong data-testid="overview-total">{money(sgd)}</strong><small>As of {formatDateTime(records.accounts.as_of)}</small></div>
     <div className="ov-grid">
       <div className="ov-main">
-        <article className="ov-card"><h2>Accounts</h2>
+        <article className="ov-card" id="ov-accounts"><h2>Accounts</h2>
           {accounts.length?<ul className="ov-rows">{accounts.map(row=><li key={row.account_id}><span className="ov-icon"><Icon name="account"/></span><div><strong>{ACCOUNT[row.type]}</strong><small>{row.number}{row.status==='dormant'?' · Dormant':''}</small></div><b>{money(row.balance,row.currency)}</b></li>)}</ul>
             :<p className="ov-empty">You have no open accounts.</p>}</article>
-        {cards.length>0&&<article className="ov-card"><h2>Cards</h2><ul className="ov-rows">{cards.map(row=><li key={row.card_id}><span className="ov-icon"><Icon name="card"/></span>
+        {cards.length>0&&<article className="ov-card" id="ov-cards"><h2>Cards</h2><ul className="ov-rows">{cards.map(row=><li key={row.card_id}><span className="ov-icon"><Icon name="card"/></span>
           <div><strong>{row.name}</strong><small>•••• {row.last4}{row.status!=='active'?` · ${row.status.replaceAll('_',' ')}`:''}{row.due_date?` · Due ${formatDate(row.due_date)}`:''}</small></div>
           <b>{money(row.outstanding,row.currency||undefined)}<small>of {money(row.limit,row.currency||undefined)} limit</small></b></li>)}</ul></article>}
-        {loans.length>0&&<article className="ov-card"><h2>Loans</h2><ul className="ov-rows">{loans.map(row=><li key={row.loan_id}><span className="ov-icon"><Icon name="loan"/></span>
+        {loans.length>0&&<article className="ov-card" id="ov-loans"><h2>Loans</h2><ul className="ov-rows">{loans.map(row=><li key={row.loan_id}><span className="ov-icon"><Icon name="loan"/></span>
           <div><strong>{LOAN[row.type]}</strong><small>Next payment {money(row.next_amount,row.currency||undefined)}{row.next_payment?` on ${formatDate(row.next_payment)}`:''}</small></div><b>{money(row.outstanding,row.currency||undefined)}<small>outstanding</small></b></li>)}</ul></article>}
-        <article className="ov-card"><h2>Recent activity</h2>
+        <article className="ov-card" id="ov-transactions"><h2>Recent activity</h2>
           {recent.length?<ul className="ov-rows ov-txns">{recent.map(row=><li key={row.txn_id}><div><strong>{row.description}</strong><small>{formatDate(row.date)}{row.card_last4?` · Card •••• ${row.card_last4}`:''}{row.status!=='posted'?` · ${row.status}`:''}</small></div>
             <b className={row.amount<0?'out':'in'}>{row.amount<0?'−':'+'}{money(Math.abs(row.amount),row.currency)}</b></li>)}</ul>
             :<p className="ov-empty">No recent transactions.</p>}
@@ -68,9 +71,9 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
         <article className="ov-card ov-tile" data-testid="overview-help"><h2>Need a person?</h2>
           <p className="ov-small">Ask the assistant first. If it can't answer, it passes your question to your relationship manager and gives you a reference.</p>
           <button className="bank-chat-logout" data-testid="overview-open-requests" onClick={()=>onNavigate('requests')}>See my requests<Icon name="arrow"/></button></article>
-        <article className={`ov-card ov-tile ${open?'attention':''}`} data-testid="overview-compliance"><h2>Compliance review</h2>
-          {open?<><p><strong>{review.title}</strong></p><p className="ov-small">Action needed{review.due_date?` by ${formatDate(review.due_date)}`:''}</p>
-            <button className="primary-button" onClick={()=>onNavigate('compliance')}>Continue review<Icon name="arrow"/></button></>
+        <article className={`ov-card ov-tile ${reviewStep?.needsAttention?'attention':''}`} data-testid="overview-compliance"><h2>Compliance review</h2>
+          {open?<><p><strong>{review.title}</strong></p><p className="ov-small">{reviewStep.label}{reviewStep.needsAttention&&review.due_date?` by ${formatDate(review.due_date)}`:''}</p>
+            <button className="primary-button" onClick={()=>onNavigate('compliance')}>{reviewStep.needsAttention?'Continue review':'View review'}<Icon name="arrow"/></button></>
             :<><p className="ov-ok"><Icon name="check"/>Nothing needed from you</p><p className="ov-small">You have no open review. We will tell you in your Inbox if the bank needs anything.</p></>}</article>
         <article className="ov-card ov-tile"><h2>Need help?</h2><p className="ov-small">Ask the assistant anything about your accounts, or reach a person.</p>
           <button className="bank-chat-logout" onClick={()=>onNavigate('chat')}>Open the assistant<Icon name="arrow"/></button></article>

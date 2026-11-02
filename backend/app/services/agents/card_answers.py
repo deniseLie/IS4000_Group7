@@ -14,6 +14,8 @@ from app.schemas.contracts import AgentResult,Citation
 from app.schemas.customer_data import CreditCard,CustomerTransaction
 from app.schemas.retail import RetailRecords
 from app.services.typos import normalise
+from app.services import limit_context
+from app.services.client_intents import explanation,request_status
 
 LABELS={'balance':'outstanding balance','limit':'credit limit','minimum':'minimum payment','due':'payment due date','annual_fee':'annual fee'}
 INTENTS=(
@@ -88,18 +90,127 @@ def line(intent: str,card: CreditCard,fees: Sequence[CustomerTransaction]) -> st
         'relationship manager.')
 
 
+FOLLOW=re.compile(r"^\s*(?:and|also|what about|how about|wat about|then|ok|okay)\b|\b(?:that|this|same|the same) card\b|\bits\b|\bfor it\b",re.I)
+CARD_ANSWER=re.compile(r'\b(?:outstanding balance|credit limit|minimum payment|due on|annual fee)\b')
+
+
+def remembered(history: Sequence[Message],cards: Sequence[CreditCard]) -> list[CreditCard]:
+    """CR14: the card(s) our previous card answer was about, so "what about the due date?" stays on that card.
+    Only the immediately previous reply counts, so a change of topic never carries a card into an unrelated question."""
+    if len(history)<2 or history[-2].role!='assistant' or not CARD_ANSWER.search(history[-2].content):return []
+    if not FOLLOW.search(normalise(history[-1].content)):return []  # "whats my balance" is a new question (the account)
+    if ASKED.search(history[-2].content):return []
+    named=set(re.findall(r'ending ([0-9]{4})',history[-2].content))
+    return [card for card in cards if card.last4 in named]
+
+
+LIMIT_CHANGE=re.compile(r"\b(?:increase|raise|higher|bigger|lower|reduce|change|adjust|temporar\w*|up)\b[^.?!]{0,40}\blimit\b"
+    r"|\blimit\b[^.?!]{0,25}\b(?:increase|raise|higher|change|to)\b[^.?!]{0,20}\d",re.I)
+# A request to DO something is different from asking HOW a product works.
+# The latter gets approved guidance, the former starts clarification/intake.
+REQUEST_ACTION=re.compile(
+    r"^\s*(?:i\s+(?:(?:want|wan|need|would\s+like|wish)\b|(?:am|\x27m)\s+asking\b)|"
+    r"please\s+(?:help\s+me\s+)?|can\s+you\s+(?:please\s+)?(?:help\s+me\s+)?|"
+    r"could\s+you\s+(?:please\s+)?(?:help\s+me\s+)?)",re.I)
+
+LIMIT_AMOUNT=re.compile(r'(?:s?\$|sgd\s*)?(\d{1,3}(?:,\d{3})+|\d{4,7}|\d{1,4}(?=\s*k\b))\s*(k\b)?',re.I)
+
+
+def limit_change(task_id: str,text: str) -> AgentResult:
+    """Standalone general guidance, without pretending a limit was changed."""
+    return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',text=(
+        'You can request a higher or lower card limit. Tap “Raise a card limit request” to provide the card, '
+        'requested limit, temporary or permanent change, and reason. For a temporary change, include an end date. '
+        'The cards and credit team decides, so approval isn’t guaranteed; submitting a request does not change your limit.'))
+
+
+def _limit_card(text: str,cards: Sequence[CreditCard]) -> CreditCard | None:
+    """Select a card only when the customer names it as a card, not merely a trip.
+
+    'I'm travelling abroad' is a reason, not an instruction to use the Travel Card.
+    """
+    normalized=normalise(text)
+    named=cards_named(normalized,cards)
+    if not named or len(named)!=1:return None
+    if re.search(r'\b(?:card|ending\s*\d{4}|signature)\b',normalized,re.I):return named[0]
+    if re.fullmatch(r'\s*(?:my|the)?\s*(?:travel|signature)(?:\s+one)?\s*[.!]?\s*',normalized,re.I):return named[0]
+    return None
+
+
+def limit_conversation(task_id: str,history: Sequence[Message],cards: Sequence[CreditCard]) -> AgentResult | None:
+    """Gather customer-requested details in several turns using owned card records.
+
+    No model-generated figure is needed for a card selection or amount correction,
+    and no card limit is changed or submitted by this function. The UI's request
+    form remains the only submission entry point, with explicit customer review.
+    """
+    context=limit_context.extract(history)
+    if context is None:return None
+    turns=[(idx,item.content) for idx,item in enumerate(history[context.start:],context.start) if item.role=='user']
+    chosen=None
+    for idx,text in turns:
+        selected=_limit_card(text,cards)
+        if selected is None:continue
+        is_short_card=re.fullmatch(r'\s*(?:my|the)?\s*(?:travel|signature)(?:\s+(?:one|card))?\s*[.!]?\s*',text,re.I)
+        previous=history[idx-1].content if idx>0 and history[idx-1].role=='assistant' else ''
+        # A one-word reply names a card only when we have asked for a card.
+        if is_short_card and not re.search(r'\b(?:which card|card is this for|card should|choose a card)\b',previous,re.I):
+            continue
+        chosen=selected
+    # One card in the authorised records removes the ambiguity, but not the approval step.
+    if len(cards)==1:chosen=cards[0]
+    amount=(f'{chosen.currency} {context.amount:,}' if context.amount is not None and chosen is not None and chosen.currency else
+        f'SGD {context.amount:,}' if context.amount is not None and context.amount_currency=='SGD' else
+        f'{context.amount:,} (currency to confirm)' if context.amount is not None else None)
+    prefix=f'Your requested new limit is {amount}. ' if amount is not None else ''
+    if chosen is not None:prefix+=f'You selected the {name_of(chosen)}. '
+    if context.travel_reason:prefix+='You mentioned travel as the reason. '
+    if amount is None:
+        question=('A temporary change can be requested. What new credit limit would you like?'
+            if context.temporary else 'What new credit limit would you like to request?')
+    elif context.temporary is None:
+        question='Should this increase be temporary or permanent?'
+    elif chosen is None:
+        names=', '.join(name_of(card) for card in cards)
+        question=f'Which card is this for: {names}?'
+    elif context.temporary and context.end_date is None:
+        question=(f'You mentioned {context.end_year} as the year. What day and month should the temporary change end?'
+            if context.end_year else 'What date should the temporary change end? Please include the day, month and year.')
+    elif context.temporary and context.end_year is None:
+        question=f'You said {context.end_date}. Which year should the temporary change end?'
+    else:
+        kind='temporary' if context.temporary else 'permanent'
+        end=f' until {context.end_date} {context.end_year}' if context.temporary else ''
+        reason=' for your travel' if context.travel_reason else ''
+        text=(f'Request ready for your review: {kind} change to {amount} on your {name_of(chosen)}{end}{reason}. '
+              'Tap “Raise a card limit request” to review any remaining details and submit it yourself. '
+              'The cards and credit team decides; approval isn’t guaranteed and no limit has been changed.')
+        return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',text=text)
+    # Clarify one field at a time, keeping the verified previous details in the next turn.
+    text=prefix+question
+    return AgentResult(task_id=task_id,agent='retail',status='needs_clarification',answer_kind='conversation',
+        text=text,question=text)
+
+
 def respond(task_id: str,question: str,history: Sequence[Message],records: RetailRecords) -> AgentResult | None:
     """A rules answer for a plain card-figure question, a which-card question, or None to let the model answer."""
     cards=[card for card in records.cards if card.status!='cancelled'] or list(records.cards)
     if not cards:return None
     latest=history[-1].content if history and history[-1].role=='user' else question
     text=normalise(latest)
+    # A definition or comparison is not a request for a customer's particular card.
+    if explanation(text) or request_status(text):return None
     intent=awaiting_card(history)
+    if intent is None and limit_context.active(history) and not re.search(r'\b(?:transfer|withdrawal|atm|daily)\b',text) and not re.search(r'\b(?:and|also|plus)\b[^.?!]{0,80}\b(?:balance|statement|transaction|fraud|meeting|loan)\b',text):
+        # General 'how do I...' remains guidance; an actual request becomes multi-turn intake.
+        if len(history)==1 and limit_context.extract(history).amount is None and not re.search(r'\b(?:my trip|temporary|permanent)\b',text) and not REQUEST_ACTION.search(text):
+            return limit_change(task_id,text)
+        return limit_conversation(task_id,history,cards)
     if intent is None:
         if ELSEWHERE.search(text):return None
         intent=intent_of(text)
-        named=cards_named(text,cards)
-        # An annual fee is always a card fee; other figures need the word card or a named card ("my balance" is the account).
+        named=cards_named(text,cards) or remembered(history,cards)
+        # An annual fee is always a card fee; other figures need the word card, a named card or a card we just discussed.
         if intent is None or (intent!='annual_fee' and not (CARD_WORD.search(text) or named)):return None
         if WHY.search(text) and intent!='annual_fee':return None
     else:

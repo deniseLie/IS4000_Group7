@@ -94,7 +94,7 @@ async def run(document_id: UUID,ctx: RequestContext,recheck: bool=False) -> Tool
     try:parsed=await document_parser_process.parse(payload,source.mime_type)
     except document_parser_process.DocumentParserError as error:
         raise customer_data.CustomerDataIntegrityError('Precheck parser failed; no verdict recorded') from error
-    extraction='text';pages=parsed.page_count;text=parsed.text
+    extraction='text' if parsed.status=='text_extracted' else 'unavailable';pages=parsed.page_count;text=parsed.text
     if parsed.status in ('image_decoded','no_extractable_text'):
         from app.services.document_ocr import extract
         text,pages=await extract(payload,source.mime_type,parsed.page_count)

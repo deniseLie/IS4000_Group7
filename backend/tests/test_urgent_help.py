@@ -104,8 +104,11 @@ def test_flagged_charge_offers_the_single_eligible_block_without_a_model_proposa
     assert decision_for(fraud_task(),valid,evidence,pairs,'test').proposal is None
     withheld=decision_for(fraud_task(),fraud_draft('The charge is EUR 9.',[]),evidence,pairs,'test',flagged=True)
     assert withheld.result.status=='error' and withheld.proposal==pairs[0] and withheld.result.text.startswith(fraud.URGENT)
+    # CR12: several charges on ONE card ("the London charges") still give one offer (the newest); different cards do not.
     two=pairs+[FraudProposal(card_id='card_10011',transaction_id='txn_100113')]
-    assert decision_for(fraud_task(),valid,evidence,two,'test',flagged=True).proposal is None
+    assert decision_for(fraud_task(),valid,evidence,two,'test',flagged=True).proposal==two[1]
+    other=pairs+[FraudProposal(card_id='card_10012',transaction_id='txn_100113')]
+    assert decision_for(fraud_task(),valid,evidence,other,'test',flagged=True).proposal is None
 
 
 @pytest.mark.parametrize('claim',["I've reversed the charge.",'We have cancelled the transfer.','I have successfully disputed it.',
@@ -415,4 +418,6 @@ def test_malformed_flagged_fraud_draft_still_offers_the_record_based_block(raw: 
     decision=decision_for(fraud_task(),raw,evidence,pairs,'test',flagged=True)
     assert decision.proposal==pairs[0] and decision.result.status=='error' and decision.result.text.startswith(fraud.URGENT)
     with pytest.raises((ValidationError,LLMBadOutput)):decision_for(fraud_task(),raw,evidence,pairs,'test')
-    with pytest.raises((ValidationError,LLMBadOutput)):decision_for(fraud_task(),raw,evidence,pairs*2,'test',flagged=True)
+    # Charges on two different cards stay ambiguous, so a malformed draft is withheld with no offer (CR12).
+    other=[*pairs,FraudProposal(card_id='card_10012',transaction_id='txn_100113')]
+    with pytest.raises((ValidationError,LLMBadOutput)):decision_for(fraud_task(),raw,evidence,other,'test',flagged=True)

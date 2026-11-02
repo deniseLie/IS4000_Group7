@@ -20,9 +20,9 @@ Requires-Dist: pypdf==6.21.1
 Requires-Dist: defusedxml==0.7.1
 Requires-Dist: psutil==7.2.2
 Requires-Dist: Pillow==13.0.0
+Requires-Dist: mcp<3,>=2.3
 Provides-Extra: dev
 Requires-Dist: pytest>=8; extra == "dev"
 Provides-Extra: dbtest
 Requires-Dist: pgserver==0.1.4; extra == "dbtest"
 Provides-Extra: mcp
-Requires-Dist: mcp<3,>=2.3; extra == "mcp"

@@ -73,7 +73,15 @@ export function handoffSummary(messages) {
   return ['Customer asked for a person.',`Topics: ${topics}.`,block&&`Card block: ${block}.`,dispute&&`Dispute draft: ${dispute}.`,withheld?`Answers withheld: ${withheld}.`:null].filter(Boolean).join(' ');
 }
 
+export function handoffMessage(message,context) {
+ const body=redact(message.trim()),attachment=redact(context.trim());
+ if(!body)throw new Error('Write a short message for your relationship manager first.');
+ const summary=attachment?`${body}\n\n${attachment}`:body;
+ if(summary.length>1000)throw new Error('Shorten your message so it and the attached context fit within 1,000 characters.');
+ return summary;
+}
+
 export function supportSummary(messages) {
-  const questions=messages.filter(m => m.role==='user' && !m.error).slice(-5).map(m=>'- '+redact(m.content));
+  const questions=messages.filter(m => m.role==='user' && !m.error).slice(-1).map(m=>'- '+redact(m.content));
   return `Draft support summary — not sent\n\nRecent customer questions:\n${questions.join('\n') || '- No question entered yet.'}\n\nWhat still needs help:\n[Please describe the unresolved issue.]\n\nPlease review and remove any private details before sharing.`;
 }

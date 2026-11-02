@@ -196,11 +196,17 @@ async def get_free_slots(query: SlotsQuery,ctx: RequestContext) -> ToolResult:
         call_id=envelope.call_id,as_of=envelope.as_of)
 
 
-async def get_tickets(ctx: RequestContext) -> ToolResult:
-    """The customer's own tickets with plain-language status; internal notes never leave SQL."""
+async def get_ticket_records(ctx: RequestContext) -> CustomerEnvelope[list[CustomerTicket]]:
+    """Validated, caller-owned ticket records; staff notes stay in SQL."""
     envelope=await _read('tickets.list','customer_read_tickets',{},TICKETS,ctx)
-    if len({row.reference for row in envelope.data})!=len(envelope.data):raise CustomerDataIntegrityError('Ticket snapshot repeats a reference')
-    return _result(envelope)
+    if len({row.reference for row in envelope.data})!=len(envelope.data):
+        raise CustomerDataIntegrityError('Ticket snapshot repeats a reference')
+    return envelope
+
+
+async def get_tickets(ctx: RequestContext) -> ToolResult:
+    """Serialised version of the same verified ticket snapshot for the API/UI."""
+    return _result(await get_ticket_records(ctx))
 
 
 async def get_categories(ctx: RequestContext) -> list[RequestCategory]:

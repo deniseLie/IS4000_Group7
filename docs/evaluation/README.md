@@ -94,3 +94,15 @@ Later (needs agreement): **phase 4** personal-mode and Workflow 1–3 datasets. 
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.
+
+## Client compliance document coverage
+
+`backend/tests/test_compliance_formats.py` exercises real DOCX, PNG/JPEG and scanned-PDF bytes through parsing, local OCR, caller JWT/RLS, preliminary checks and submission. It covers unreadable and encrypted files, mismatched content, unknown pagination, issue-date boundaries, ambiguous dates, and exact byte/page/pixel/filename limits. `test_document_parsers.py` also checks malformed packages and decompression limits; `test_compliance_followup.py` checks the selected-document support request, approved RM reply, client timeline/Inbox, ownership and retries.
+
+Run from `backend/` with `TEST_DATABASE_LOCAL=1 TEST_DATA_API_LOCAL=1 ../.venv/bin/python -m pytest tests/test_compliance_formats.py tests/test_document_parsers.py tests/test_compliance_followup.py tests/test_document_templates.py`. OCR pass cases require an actual configured local helper; setup is in [Workflow 1](../workflows/workflow-1-client.md). They are explicitly skipped when no helper is configured. No OCR or model response is fabricated.
+
+These are functional and safety checks, not an AI accuracy score. A successful preliminary check never establishes document authenticity or bank acceptance. Model grounding, agent/orchestrator trajectories and multilingual quality still need the separate LangSmith evaluations. Hosted RM testing requires an operator-provisioned RM login; the native follow-up tests do not establish hosted Auth readiness.
+
+## RM assistant (Sophie)
+
+Manual prompt tests for the relationship manager assistant, with expected results and a results table: [rm-assistant-prompt-tests.md](rm-assistant-prompt-tests.md). The LangSmith runner (`langsmith_run.py`) plays client cases through `/chat`; the RM cases R01–R10 are run by hand with this guide until the runner supports `/rm/assistant`.

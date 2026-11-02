@@ -63,7 +63,7 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
       <span className="saved-chat-sub">{preview?.detail||item.language}{item.active_turn_id?' · Reply pending':''}</span></button></li>;
   };
   return <div ref={column} className={`chat-history-track ${closing?'closing':''}`}><aside className={`chat-history ${closing?'closing':''}`} aria-label="Saved chats" data-testid="saved-chats-panel">
-    <div className="chat-history-head"><h2 ref={heading} tabIndex={-1}><Icon name="history"/>Past conversations</h2>
+    <div className="chat-history-head"><h2 ref={heading} tabIndex={-1}><Icon name="history"/>Recent chats</h2>
       <button className="icon-button" aria-label="Close saved chats" onClick={close}><Icon name="close"/></button></div>
     <div className="chat-history-body">
       <button className="bank-chat-logout saved-hide" onClick={close}>Hide history<Icon name="close"/></button>

@@ -16,6 +16,7 @@ pypdf==6.21.1
 defusedxml==0.7.1
 psutil==7.2.2
 Pillow==13.0.0
+mcp<3,>=2.3
 
 [dbtest]
 pgserver==0.1.4
@@ -24,4 +25,3 @@ pgserver==0.1.4
 pytest>=8
 
 [mcp]
-mcp<3,>=2.3

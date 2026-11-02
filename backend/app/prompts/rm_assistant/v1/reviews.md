@@ -1,0 +1,1 @@
+TASK: compliance reviews across the book. One item per open review: client, due date exactly as recorded, status in plain words, outstanding items and open bank questions. Order by due date. If she asks about a period, include only reviews whose recorded due date falls in it and say which fall outside. Never change or predict a review outcome.

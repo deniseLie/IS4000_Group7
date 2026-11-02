@@ -40,11 +40,16 @@ RELEASED[('document_evidence','v1')]='v1+a6d0d1ed'
 RELEASED[('document_evidence','v2')]='v2+4d5d0060'
 RELEASED[('answer','v3')]='v3+7ebdfbfd'
 RELEASED[('compliance','v3')]='v3+30458b0b'
+RELEASED[('compliance','v4')]='v4+7bad1a5e'
+RELEASED[('compliance','v5')]='v5+9fcb70cc'
 RELEASED[('retail','v6')]='v6+c4aaa7a7'
 RELEASED[('retail','v7')]='v7+bf9e632d'
 RELEASED[('document','v4')]='v4+f7e7c0f1'
+RELEASED[('document','v5')]='v5+b7244f35'
 RELEASED[('relationship','v4')]='v4+2c8aec82'
 RELEASED[('relationship','v5')]='v5+82c591e9'
+RELEASED[('rm_planner','v1')]='v1+b780c1e3'
+RELEASED[('rm_assistant','v1')]='v1+162b341f'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
