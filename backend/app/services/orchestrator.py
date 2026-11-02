@@ -140,7 +140,7 @@ def simple_issue(question: str, language: str) -> PlannedIssue | None:
     # Rules match a typo-tolerant copy ("wats my crad bal"); the client's own words are what is planned and answered.
     probe = typos.normalise(question)
     if rm_handover.needs_person(probe) and not FRAUD.search(probe):return PlannedIssue(domain='relationship',question=question)
-    domain = topic_domain(probe)
+    domain = topic_domain(question) or topic_domain(probe)
     if domain is not None:return PlannedIssue(domain=domain,question=question)
     return None
 
@@ -155,7 +155,7 @@ def route_issues(issues: list[PlannedIssue]) -> list[PlannedIssue]:
     routed=[]
     for issue in issues:
         text=typos.normalise(issue.question)
-        if FRAUD.search(text) and not (LOGIN.search(text) and RELATED.search(text)):
+        if (FRAUD.search(issue.question) or FRAUD.search(text)) and not (LOGIN.search(text) and RELATED.search(text)):
             domain='fraud'
         elif LOGIN.search(text):
             domain='retail'
@@ -173,7 +173,7 @@ def critical_route(question: str,language: str) -> PlannedIssue | None:
     if re.fullmatch(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*',question,re.I):
         return PlannedIssue(domain='smalltalk',question=question)
     probe=typos.normalise(question)
-    if FRAUD.search(probe):return PlannedIssue(domain='fraud',question=question)
+    if FRAUD.search(question) or FRAUD.search(probe):return PlannedIssue(domain='fraud',question=question)
     if LOGIN.search(probe):return PlannedIssue(domain='retail',question=question)
     if RM_REQUEST.search(probe) or rm_handover.needs_person(probe):
         return PlannedIssue(domain='relationship',question=question)

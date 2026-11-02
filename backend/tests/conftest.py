@@ -1,4 +1,6 @@
 import os
+from collections.abc import Iterator
+import pytest
 
 pytest_plugins=['tests.database_support','tests.data_api_support','tests.langsmith_support','tests.legacy_card_actions']
 
@@ -10,3 +12,12 @@ os.environ['PIPELINE']='v1'  # individual integration fixtures opt in to their p
 os.environ['KNOWLEDGE_STORE']='memory'
 os.environ['CONVERSATION_STORE']='off'
 os.environ['RUN_WORKER_IN_API']='false'  # native worker fixtures opt in with their restricted local login
+
+
+@pytest.fixture(autouse=True)
+def isolated_audit_batch() -> Iterator[None]:
+    """Direct service checks must not inherit another test's request-scoped audit batch."""
+    from app.services import audit
+    token=audit.current_batch.set(None)
+    try:yield
+    finally:audit.current_batch.reset(token)

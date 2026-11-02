@@ -5,13 +5,31 @@ every agent tool call is a real MCP tools/call. Stdio: `python -m scripts.mcp_se
 external MCP client (for example an MCP inspector) as a guest, or as a customer with DEMOBANK_ACCESS_TOKEN.
 """
 import json
-from functools import lru_cache
-from typing import Any
+from functools import lru_cache,wraps
+from contextvars import ContextVar
+from collections.abc import Awaitable,Callable
+from typing import Any,ParamSpec,TypeVar
 from app.services.tools import TOOLS
+
+tool_failures: ContextVar[list[Exception] | None]=ContextVar('mcp_tool_failures',default=None)
+P=ParamSpec('P')
+R=TypeVar('R')
 
 
 class ToolCallError(RuntimeError):
     """The MCP server reported a tool error; the original is in the server log."""
+
+
+def capture_failure(function: Callable[P,Awaitable[R]]) -> Callable[P,Awaitable[R]]:
+    """Preserve an in-process tool's exception across the SDK's protocol-error conversion."""
+    @wraps(function)
+    async def wrapped(*args: P.args,**kwargs: P.kwargs) -> R:
+        try:return await function(*args,**kwargs)
+        except Exception as error:
+            failures=tool_failures.get()
+            if failures is not None:failures.append(error)
+            raise
+    return wrapped
 
 
 @lru_cache(maxsize=1)
@@ -19,7 +37,7 @@ def build_server():
     from mcp.server.mcpserver import MCPServer
     server=MCPServer('demobank-tools',instructions='DemoBank coursework tools. Every call is permission-checked and audited; '
         'personal tools need a signed-in customer. Tools read records only; they never change banking data.')
-    for name,function in TOOLS.items():server.tool(name=name,description=(function.__doc__ or name).strip())(function)
+    for name,function in TOOLS.items():server.tool(name=name,description=(function.__doc__ or name).strip())(capture_failure(function))
     return server
 
 
@@ -33,4 +51,10 @@ def result_data(result: Any) -> dict[str,Any]:
 
 async def call_in_process(name: str,args: dict[str,Any]) -> dict[str,Any]:
     from mcp import Client
-    async with Client(build_server(),raise_exceptions=True) as client:return result_data(await client.call_tool(name,args))
+    failures: list[Exception]=[]
+    token=tool_failures.set(failures)
+    try:
+        async with Client(build_server(),raise_exceptions=True) as client:result=await client.call_tool(name,args)
+        if failures:raise failures[0]
+        return result_data(result)
+    finally:tool_failures.reset(token)

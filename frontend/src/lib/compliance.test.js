@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCheck,parseWorkspace,primaryStatus,findingText,templateFor} from './compliance.js';
+import {parseCheck,parseWorkspace,primaryStatus,findingText,templateFor,closedRequestOutcome,reviewNextStep} from './compliance.js';
 const id='00000000-0000-4000-8000-100200000001',item='00000000-0000-4000-8000-100200000011',doc='00000000-0000-4000-8000-100200000031';
 const report={check_id:id,document_id:doc,case_id:id,item_id:item,customer_id:1002,rule_id:'proof_address',rule_version:1,scope:'synthetic_template_only',sha256:'a'.repeat(64),status:'no_issues',findings:[],extraction:'text',page_count:1,checked_at:'2026-10-24T00:00:00Z'};
 function snapshot(){return {call_id:id,as_of:report.checked_at,data:{policy:{validity_hours:24,status_stale_days:7,statement_period_mode:'completed_months'},review:{case_id:id,status:'awaiting_client_documents',status_updated_at:report.checked_at,title:'Demo review',notice_text:'Demo notice',requested_items:[{item_id:item,label:'Address',client_mark:'prepared',submission_status:'not_submitted'}],info_requests:[]},documents:[],rules:{},current_documents:{[item]:doc},checks:[{...report}]}};}
@@ -9,6 +9,20 @@ test('bank state outranks preparation and preliminary findings',()=>{
  assert.equal(primaryStatus({client_mark:'not_prepared',submission_status:'submitted_awaiting_review'}),'Submitted – awaiting review');
  assert.equal(primaryStatus({client_mark:'prepared',submission_status:'accepted'}),'Accepted by bank');
  assert.equal(primaryStatus({client_mark:'prepared',submission_status:'not_submitted'}),'Prepared');
+});
+test('a closed bank question is accepted only when its recorded outcome says so',()=>{
+ assert.equal(closedRequestOutcome('accepted').tone,'ok');
+ for(const outcome of [null,undefined,'more_info'])assert.notEqual(closedRequestOutcome(outcome).tone,'ok');
+ assert.match(closedRequestOutcome(null).label,/outcome not recorded/);
+ assert.throws(()=>closedRequestOutcome('approved'),/could not be verified/);
+});
+test('Overview uses recorded required actions instead of the general case heading',()=>{
+ const review={status:'documents_requested',requested_items:[{submission_status:'submitted_awaiting_review',client_mark:'not_prepared'}],info_requests:[]};
+ assert.equal(reviewNextStep(review).needsAttention,false);
+ assert.match(reviewNextStep(review).label,/awaiting review/);
+ for(const status of ['not_submitted','rejected','unknown'])assert.equal(reviewNextStep({...review,requested_items:[{submission_status:status}]}).needsAttention,true);
+ assert.equal(reviewNextStep({...review,info_requests:[{status:'open'}]}).needsAttention,true);
+ assert.equal(reviewNextStep({...review,requested_items:[{submission_status:'accepted'}]}).needsAttention,false);
 });
 test('inconsistent or foreign check envelopes cannot render as a success',()=>{
  assert.equal(parseCheck({...report}).status,'no_issues');

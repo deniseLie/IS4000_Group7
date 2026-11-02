@@ -6,6 +6,7 @@ import {supabase} from '../lib/supabase';
 import {loadRecords} from '../lib/customerData';
 import {displayName,formatDate,formatDateTime,formatMoney as money} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
+import {reviewNextStep} from '../lib/compliance';
 
 const ACCOUNT={savings:'Savings account',current:'Current account',multi_currency:'Multi-currency account'};
 const LOAN={home:'Home loan',car:'Car loan',personal:'Personal loan',securities_backed:'Securities-backed loan'};
@@ -41,6 +42,7 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
   const accounts=records.accounts.data.filter(row=>row.status!=='closed'),cards=records.cards.data,loans=records.loans.data.filter(row=>row.status==='active');
   const sgd=accounts.filter(row=>row.currency==='SGD').reduce((sum,row)=>sum+row.balance,0);
   const rm=records.advisor.data?.current,review=records.compliance.data,open=review&&!REVIEW_DONE.includes(review.status);
+  const reviewStep=open?reviewNextStep(review):null;
   const recent=[...records.transactions.data].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   return <section className="app-page-body ov" aria-label="Overview" data-testid="overview-page">
     <header className="ov-head"><div><p className="ov-date">{new Date().toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'})}</p>
@@ -69,9 +71,9 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,focus}
         <article className="ov-card ov-tile" data-testid="overview-help"><h2>Need a person?</h2>
           <p className="ov-small">Ask the assistant first. If it can't answer, it passes your question to your relationship manager and gives you a reference.</p>
           <button className="bank-chat-logout" data-testid="overview-open-requests" onClick={()=>onNavigate('requests')}>See my requests<Icon name="arrow"/></button></article>
-        <article className={`ov-card ov-tile ${open?'attention':''}`} data-testid="overview-compliance"><h2>Compliance review</h2>
-          {open?<><p><strong>{review.title}</strong></p><p className="ov-small">Action needed{review.due_date?` by ${formatDate(review.due_date)}`:''}</p>
-            <button className="primary-button" onClick={()=>onNavigate('compliance')}>Continue review<Icon name="arrow"/></button></>
+        <article className={`ov-card ov-tile ${reviewStep?.needsAttention?'attention':''}`} data-testid="overview-compliance"><h2>Compliance review</h2>
+          {open?<><p><strong>{review.title}</strong></p><p className="ov-small">{reviewStep.label}{reviewStep.needsAttention&&review.due_date?` by ${formatDate(review.due_date)}`:''}</p>
+            <button className="primary-button" onClick={()=>onNavigate('compliance')}>{reviewStep.needsAttention?'Continue review':'View review'}<Icon name="arrow"/></button></>
             :<><p className="ov-ok"><Icon name="check"/>Nothing needed from you</p><p className="ov-small">You have no open review. We will tell you in your Inbox if the bank needs anything.</p></>}</article>
         <article className="ov-card ov-tile"><h2>Need help?</h2><p className="ov-small">Ask the assistant anything about your accounts, or reach a person.</p>
           <button className="bank-chat-logout" onClick={()=>onNavigate('chat')}>Open the assistant<Icon name="arrow"/></button></article>

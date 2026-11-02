@@ -9,12 +9,14 @@ from collections.abc import Awaitable,Callable
 from datetime import date
 from contextvars import ContextVar
 from typing import Any
+from pydantic import JsonValue
 from app.core import data_api
 from app.core.config import settings
 from app.core.observability import span
 from app.schemas.contracts import RequestContext
 from app.schemas.knowledge import KnowledgeQuery
-from app.services import customer_data,kb
+from app.schemas.relationship import SlotsQuery
+from app.services import customer_data,kb,prechecks
 from app.services.rm import records as rm_records
 
 TOOL_CTX: ContextVar[RequestContext | None]=ContextVar('tool_ctx',default=None)
@@ -58,6 +60,22 @@ async def my_transactions(status: str | None=None) -> dict[str,Any]:
     """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones."""
     result=await customer_data.get_transactions(_ctx(),None,None,{'status':status} if status else None)
     return {'items':result.data,'call_id':str(result.call_id)}
+
+
+async def my_compliance_case() -> dict[str,JsonValue]:
+    """The signed-in customer's recorded review, checklist and bank questions; never a bank decision."""
+    return (await customer_data.get_compliance_case(_ctx())).model_dump(mode='json')
+
+
+async def my_document_checks() -> dict[str,JsonValue]:
+    """The signed-in customer's current uploads and preliminary checks, separate from bank acceptance."""
+    return (await prechecks.workspace(_ctx())).model_dump(mode='json')
+
+
+async def free_slots(from_date: date,to_date: date,limit: int) -> dict[str,JsonValue]:
+    """Bounded free appointment suggestions for the signed-in customer's current relationship manager."""
+    query=SlotsQuery(from_date=from_date,to_date=to_date,limit=limit)
+    return (await customer_data.get_available_slot_records(query,_ctx())).model_dump(mode='json')
 
 
 # RM tools (F14/F25, Persona 2): the signed-in relationship manager's own book only. Each runs one audited SQL function
@@ -124,6 +142,8 @@ async def rm_handover_sources(customer_id: int) -> dict[str,Any]:
 
 TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
+    'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
+    'free_slots':free_slots,
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources}

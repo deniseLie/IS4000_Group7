@@ -3,10 +3,10 @@ import json
 from datetime import datetime
 from app.schemas.agents import Evidence
 from app.schemas.chat import Message
-from app.schemas.contracts import AgentResult,RequestContext,Task
+from app.schemas.contracts import AgentResult,RequestContext,Task,ToolResult
 from app.schemas.events import Source
 from app.schemas.customer_data import RequestedItem
-from app.services import prechecks,prompts,compliance_selection
+from app.services import prechecks,prompts,compliance_selection,tools
 from app.services.agents.answer import checked_model_answer
 
 
@@ -28,7 +28,7 @@ def evidence_for(workspace: prechecks.Workspace,items: list[RequestedItem],as_of
 
 
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
-    snapshot=await prechecks.workspace(ctx)
+    snapshot=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx))
     workspace=prechecks.Workspace.model_validate(snapshot.data)
     chosen=compliance_selection.selection.get()
     if chosen is not None:compliance_selection.validate(chosen,workspace)

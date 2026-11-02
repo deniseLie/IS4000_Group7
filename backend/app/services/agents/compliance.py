@@ -4,10 +4,10 @@ import re
 from pydantic import JsonValue
 from app.schemas.agents import Evidence
 from app.schemas.chat import Message
-from app.schemas.contracts import AgentResult,RequestContext,Task
+from app.schemas.contracts import AgentResult,RequestContext,Task,ToolResult
 from app.schemas.customer_data import ComplianceCase,CustomerEnvelope
 from app.schemas.events import Source
-from app.services import customer_data,llm_gateway,prompts,compliance_selection,prechecks
+from app.services import customer_data,llm_gateway,prompts,compliance_selection,prechecks,tools
 from app.services.agents import document
 from app.services.agents.answer import checked_model_answer
 
@@ -41,7 +41,7 @@ CLARIFICATION = (
 
 
 async def load(ctx: RequestContext) -> CustomerEnvelope[ComplianceCase | None]:
-    result=await customer_data.get_compliance_case(ctx)
+    result=ToolResult.model_validate(await tools.call('my_compliance_case',{},ctx))
     return CustomerEnvelope[ComplianceCase | None].model_validate({'customer_id':ctx.principal.customer_id,
         'call_id':result.call_id,'as_of':result.as_of,'data':result.data})
 
@@ -77,7 +77,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         snapshot=snapshot.model_copy(update={'data':snapshot.data.model_copy(update={'requested_items':[],'status_history':[],'info_requests':requests})})
     evidence=[*public_evidence,*evidence_for(snapshot)]
     if snapshot.data is not None and chosen is None and DOCUMENT_CHECK.search(question):
-        checked=await prechecks.workspace(ctx)
+        checked=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx))
         workspace=prechecks.Workspace.model_validate(checked.data)
         if workspace.review is None or workspace.review.case_id!=snapshot.data.case_id:
             raise customer_data.CustomerDataIntegrityError('Compliance review changed while loading current document checks')

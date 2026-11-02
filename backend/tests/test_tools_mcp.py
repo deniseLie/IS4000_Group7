@@ -1,11 +1,14 @@
 """Tool layer (F21): the same audited tool gives the same result directly and through an in-process MCP server."""
 import asyncio
-from uuid import uuid4
+import os
+from uuid import UUID,uuid4
 import pytest
+from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.schemas.contracts import Principal,RequestContext,Task
 from app.schemas.knowledge import KnowledgeSection
 from app.services import kb,orchestrator,tools
+from tests.data_api_support import NativeAPI
 
 SECTION=KnowledgeSection(article_id='card-limit-change',version=1,anchor='main',cite='kb:card-limit-change@v1#main',title='Changing your credit card limit',
     heading='Changing your credit card limit',body='The cards and credit team decides.',publisher='DemoBank coursework project',
@@ -49,3 +52,30 @@ def test_mcp_transport_is_a_real_tools_call_with_the_same_result(fake_kb: list[s
 def test_tools_refuse_to_run_without_a_backend_context() -> None:
     with pytest.raises(tools.ToolContextMissing):asyncio.run(tools.my_tickets())
     with pytest.raises(KeyError):asyncio.run(tools.call('transfer_money',{},RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))))
+
+
+@pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Requires native JWT/RLS Data API')
+@pytest.mark.parametrize('transport',['direct','mcp'])
+def test_compliance_tools_keep_owned_records_and_policy_under_both_transports(local_data_api: NativeAPI,native_api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,transport: str) -> None:
+    from app.schemas.contracts import ToolResult
+    from app.services.authorization import PolicyDenied
+    from app.services.prechecks import Workspace
+    from tests.test_actions_api import context
+    monkeypatch.setattr(settings,'tool_transport',transport)
+    async def read() -> None:
+        ctx=context(local_data_api,1002).model_copy(update={'agent':'compliance'})
+        case=ToolResult.model_validate(await tools.call('my_compliance_case',{},ctx))
+        checks=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx))
+        workspace=Workspace.model_validate(checks.data)
+        assert workspace.review.case_id==UUID(case.data['case_id'])
+        assert len(workspace.review.requested_items)==4
+        other=context(local_data_api,1003).model_copy(update={'agent':'compliance'})
+        assert (await tools.call('my_compliance_case',{},other))['data'] is None
+        for name in ['my_compliance_case','my_document_checks']:
+            with pytest.raises(PolicyDenied):await tools.call(name,{},ctx.model_copy(update={'agent':'retail'}))
+            with pytest.raises(PolicyDenied):await tools.call(name,{},RequestContext(session_id=uuid4(),principal=Principal(kind='guest')))
+        denied,allowed=await asyncio.gather(tools.call('my_compliance_case',{},ctx.model_copy(update={'agent':'retail'})),
+            tools.call('my_compliance_case',{},ctx),return_exceptions=True)
+        assert isinstance(denied,PolicyDenied) and allowed['data']['case_id']==case.data['case_id']
+    asyncio.run(read())

@@ -10,7 +10,7 @@ test('real personal compliance answer persists with owned case evidence',async({
   await page.getByTestId('send-message').click();expect((await received).status()).toBe(200);
   const section=page.getByTestId('answer-sections').locator('section[data-domain="compliance"]');
   await expect(section).toHaveAttribute('data-response-origin','ai',{timeout:75000});
-  await expect(section).toHaveAttribute('data-prompt-version',/^v4\+/);
+  await expect(section).toHaveAttribute('data-prompt-version',/^v5\+/);
   await expect(section).toContainText(/awaiting.*documents|waiting.*documents|outstanding.*documents/i);
   await section.getByTestId('answer-sources').locator('summary').click();
   await expect(section.getByTestId('answer-sources')).toContainText('Authenticated synthetic review case');

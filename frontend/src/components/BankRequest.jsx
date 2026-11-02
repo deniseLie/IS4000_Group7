@@ -2,6 +2,7 @@ import {useState} from 'react';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
 import {formatDate,formatDateTime} from '../lib/format';
+import {closedRequestOutcome} from '../lib/compliance';
 
 // A question the bank asked on her review (CR6, 0080). Open: she answers in the box; the answer goes to the bank with a
 // receipt in Actions. Answered: "Sent to the bank on … – waiting for review". Closed: the bank's outcome.
@@ -24,11 +25,14 @@ export default function BankRequest({review,request,disabled,onAnswered,onAsk,he
     } catch(failure) {setError(failure.message);}
     finally {setBusy(false);}
   }
-  if(request.status==='closed')return <article className="cw-alert done" data-testid="bank-request" data-status="closed">
-    <span className="cw-alert-icon ok" aria-hidden="true">✓</span>
+  if(request.status==='closed'){
+    const outcome=closedRequestOutcome(request.outcome);
+    return <article className={`cw-alert ${outcome.tone==='ok'?'done':'waiting'}`} data-testid="bank-request" data-status="closed">
+    <span className={`cw-alert-icon ${outcome.tone}`} aria-hidden="true">{outcome.icon}</span>
     <div className="cw-alert-body"><div className="cw-alert-head"><span className="cw-alert-kicker">Your answer to the bank</span>
-      <span className="cw-pill ok">{request.outcome==='more_info'?'The bank asked a follow-up question':'Accepted by bank'}</span></div>
+      <span className={`cw-pill ${outcome.tone}`}>{outcome.label}</span></div>
       <p><strong>{request.question}</strong></p>{request.response&&<p className="cw-answer">{request.response}</p>}</div></article>;
+  }
   if(request.status==='responded')return <article className="cw-alert waiting" data-testid="bank-request" data-status="responded">
     <span className="cw-alert-icon wait" aria-hidden="true">…</span>
     <div className="cw-alert-body"><div className="cw-alert-head"><span className="cw-alert-kicker">Your answer to the bank</span>
