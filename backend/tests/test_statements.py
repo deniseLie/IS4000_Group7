@@ -21,7 +21,9 @@ def test_card_payments_clear_the_previous_month_and_lead_to_todays_balance(datab
     assert charges('2026-09')==Decimal('1250.40')  # her card balance before the 27 Oct charges in 0075
 
 
-def test_only_statements_v2_is_searchable_and_it_matches_the_app(database) -> None:
-    assert database.execute("select version,status from kb.articles where article_id='statements' order by 1").fetchall()==[(1,'retired'),(2,'published')]
-    body,=database.execute("select body from kb.sections where article_id='statements' and version=2").fetchone()
+def test_only_the_latest_statements_version_is_searchable_and_it_matches_the_app(database) -> None:
+    # 0087 split v3 into sections; the memory copy is the sections joined in order.
+    assert database.execute("select version,status from kb.articles where article_id='statements' order by 1").fetchall()==[(1,'retired'),(2,'retired'),(3,'published')]
+    body,=database.execute("""select string_agg(body,' ' order by array_position(array['monthly','older-copies','missing'],anchor))
+        from kb.sections where article_id='statements' and version=3""").fetchone()
     assert body==knowledge.INDEX['statements'].content and 'Overview' in body and 'Statement or document copy' in body

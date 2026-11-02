@@ -10,6 +10,7 @@ from app.schemas.contracts import RequestContext
 from app.schemas.knowledge import FactId,KnowledgeFact,KnowledgeQuery,KnowledgeSection,SectionKey,StoredSection
 from app.services import audit
 from app.services.authorization import require_permission
+from app.services.typos import respell
 
 STUB=False
 
@@ -20,7 +21,7 @@ class KnowledgeResponseError(ValueError):
 
 async def search(query: KnowledgeQuery,ctx: RequestContext,db: SyncPostgrestClient) -> list[KnowledgeSection]:
     require_permission(ctx.principal,'kb.search',None,ctx)
-    response=await execute(lambda:db.rpc('kb_search',{'p_query':query.query,
+    response=await execute(lambda:db.rpc('kb_search',{'p_query':respell(query.query),
         'p_categories':[] if query.scope=='public' else [query.scope],'p_k':query.k}).execute(),'kb.search')
     sections=TypeAdapter(list[KnowledgeSection]).validate_python(response.data)
     if len(sections)>query.k or len({item.cite for item in sections})!=len(sections):

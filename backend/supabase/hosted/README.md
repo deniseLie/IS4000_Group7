@@ -18,6 +18,8 @@
 | `12_apply_0083_hosted.sql` | Cards and loans get a recorded currency (SGD for every demo card and loan), so the assistant says "SGD 316.20" instead of "currency unrecorded" | Once, after 11 |
 | `13_apply_0084_hosted.sql` | Michelle's two sample fees get their own names ("Annual card fee", "Telegraphic transfer fee") so fee questions can tell them apart | Once, after 12 |
 | `14_apply_0085_hosted.sql` | A different question for the RM in the same chat opens its own ticket (`customer_open_rm_ticket`); approved how-to article for sending money overseas | Once, after 13 |
+| `15_apply_0086_hosted.sql` | Knowledge search returns a section only when a question word is in its heading or keywords, so unrelated questions return nothing; customer wording in keywords (no article text changes) | Once, after 14 |
+| `16_apply_0087_hosted.sql` | Client guidance articles: compliance review statuses, review documents (proof of address, statements, source of wealth, tax residency, identity), uploading documents, answering the bank's questions, review reminders, updating personal details and working with your RM; new versions of support, security, statements and overseas transfers; five new `kb.facts` | Once, after 15 |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 

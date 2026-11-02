@@ -290,7 +290,7 @@ Stories without an agent are handled by platform components: CR1 login (Identity
 |---|---|
 | In-memory library (default, `KNOWLEDGE_STORE=memory`) | `services/knowledge.py`: small curated library, keyword search, no embeddings |
 | Articles / sections | `kb.articles`, `kb.sections` (versioned, cited as `article_id@vN#anchor`), migration `0008`; approved seed `0009`; Workflow 1 content `0055` |
-| Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`) |
+| Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`); since `0086` a section matches only when a question word is in its heading or keywords. Retrieval quality: `backend/evaluation/retrieval.py` ([results](evaluation/README.md#knowledge-retrieval-offline-no-model)) |
 | Exact source lookup | Migration `0011`; `GET /knowledge/sections/{article}/{version}/{anchor}` |
 | Fact table | `kb.facts`, used for figure checks |
 | Read-only access | RLS on `kb` tables; content changes only through migrations |

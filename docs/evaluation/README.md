@@ -4,6 +4,65 @@ How answers are tested and the results so far. Raw evidence is in `evidence/`.
 
 The QA1 case set for Michelle (C01–C10, with setup, expected output, must-not-happen and pass criteria) is in [test-cases.md](test-cases.md).
 
+## Knowledge retrieval (offline, no model)
+
+Does knowledge search hand the model the right approved article? `backend/evaluation/retrieval.py` scores both stores against `retrieval_cases.json`: 135 synthetic, hand-labelled general questions (covered, informal/misspelled, no approved article, off-topic) plus 2 non-English ones reported separately (88 on 31 Oct, extended on 2 Nov). Each case lists the acceptable article ids, or none when no approved article covers it. Keywords are tuned on `split=tune`; `split=holdout` (cases written before the change they test) shows whether a change generalises.
+
+```bash
+cd backend && ../.venv/bin/python -m evaluation.retrieval --misses                          # memory store
+cd backend && ../.venv/bin/python -m evaluation.retrieval --database-url postgresql://... --misses   # database store (public.kb_search)
+```
+
+Metrics (k = 4, the sections passed to the model): **hit@1** right article first, **hit@4** right article passed at all, **MRR** 1/rank averaged, **no-match** share of uncovered questions that return nothing. `tests/test_retrieval_eval.py` holds floors for both stores (database part with `TEST_DATABASE_LOCAL=1`) and requires off-topic questions to return nothing.
+
+Results on 31 Oct 2026, before → after (overall English cases; held-out split in brackets):
+
+| Store | hit@1 | hit@4 | MRR | no-match |
+|---|---|---|---|---|
+| Memory | 0.52 → 0.95 (0.61 → 0.89) | 0.84 → 1.00 (0.89 → 1.00) | 0.67 → 0.97 (0.74 → 0.94) | 0.72 → 0.76 (0.50 → 0.50) |
+| Database | 0.83 → 0.94 (0.89 → 0.96) | 0.98 → 1.00 (1.00 → 1.00) | 0.90 → 0.96 (0.94 → 0.97) | 0.16 → 0.56 (0.13 → 0.38) |
+
+Changes: memory keyword phrases score by word count (a specific phrase beats one broad word) and both stores apply the explicit chat-spelling table (`typos.respell`, not the close-match guesses that turn "change" into "charge"); customer wording added to keywords and broad words removed from `support` and `cards`; migration `0086` makes a database section match only when a question word is in its heading or keywords (before, any shared body word matched, so "Tell me a joke" returned four articles). A score threshold was tried and rejected: unrelated questions scored up to 0.86, correct ones as low as 0.29.
+
+Limits: the cases are small and written by the developers, so tune-split results are optimistic. Questions about topics with no article (home loans, transfer limits) still often return a loosely related article; keywords cannot tell "related" from "answers it". That needs the missing articles and a fixed "not covered" reply. Non-English questions match nothing in either store.
+
+### 2 Nov 2026: client guidance articles (migration `0087`)
+
+**What changed:**
+- Seven new articles: compliance review statuses, review documents, uploading documents, answering the bank's questions, review reminders, updating personal details, and working with your RM.
+- New versions of `support`, `security`, `statements` and `overseas-transfers`.
+- The research behind them is in [ubs-practices.md](../research/ubs-practices.md); the article list is in [knowledge-articles.md](../knowledge-articles.md).
+
+**Case set:**
+- Six `gap` cases are now covered and were relabelled: proof of address, review status, file formats, reminders, update address, change phone.
+- 21 new tune cases were added, plus 26 new held-out cases written before any tuning (24 covered or informal, 2 with no article).
+- The set now has 135 English cases (114 covered, 21 uncovered) plus the 2 non-English ones.
+
+**Results on the new case set:**
+
+| Store | Articles | hit@1 | hit@4 | MRR | no-match |
+|---|---|---|---|---|---|
+| Memory | before 0087 | 0.57 | 0.61 | 0.59 | 0.67 |
+| Memory | after (tune · held-out) | 0.94 (1.00 · 0.87) | 0.97 (1.00 · 0.94) | 0.96 | 0.67 (0.82 · 0.50) |
+| Database | before 0087 | 0.57 | 0.62 | 0.59 | 0.48 |
+| Database | after (tune · held-out) | 0.93 (0.95 · 0.90) | 0.99 (1.00 · 0.98) | 0.96 | 0.48 (0.64 · 0.30) |
+
+**Reading the results:**
+- **Held-out baseline.** On their first run, before any tuning, the new held-out cases scored hit@1 0.87 in memory and 0.92 in the database.
+- **Old cases unchanged.** On the original 31 Oct cases, hit@1 and hit@4 did not move (memory 0.95 / 1.00, database 0.94 / 1.00).
+- **No-match is unchanged, not worse.** It does not differ with or without `0087` on the same cases. It fell against the 31 Oct figures only because the six relabelled cases used to count as correct empty results. The no-match floors in `test_retrieval_eval.py` were lowered to sit under the new figures: memory 0.6, database 0.45.
+
+**Tuning:**
+- **Memory.** New keyword phrases were added, plus the spellings `addr`/`adress` → `address` in `typos.CHAT`.
+- **Database.** The first draft lost hit@1 (0.89) because new headings and keywords contained broad words such as "bank", "ask", "mean", "get", "change", "account", "money", "last" and "charges". Section bodies that repeat "review" also outranked the intended section. Removing the broad words and trimming the repetition fixed the tune split.
+- **Not purely tune-only.** This clean-up was driven partly by held-out gap and off-topic misses, including "Who won the football last night?", which matched "last year" in a keyword. The off-topic test requires that question to return nothing.
+
+**Remaining held-out misses:**
+- "Why is the bank reviewing my information again?" (memory)
+- "A caller said he was from the bank and asked me to install an app" (login article ranks first)
+- "wat counts as proof of my address" (memory)
+- "I need more time to send my documents" (database)
+
 ## LangSmith evaluations (current)
 
 Goal: one stack, LangChain (model calls), LangGraph (v2 orchestration) and LangSmith (tracing, datasets, experiments, human review), with evaluations that score live answers automatically instead of stopping at `needs_human_review`.

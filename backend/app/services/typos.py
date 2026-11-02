@@ -14,7 +14,7 @@ from functools import lru_cache
 
 CHAT={
     'wat':'what','wats':'whats','wht':'what','whts':'whats','whatz':'whats','wut':'what','wha':'what','whr':'where','wen':'when',
-    'u':'you','ur':'your','yr':'your','r':'are','pls':'please','plz':'please','thx':'thanks','ty':'thanks','abt':'about',
+    'u':'you','ur':'your','yr':'your','r':'are','pls':'please','plz':'please','thx':'thanks','ty':'thanks','abt':'about','thru':'through',
     'bal':'balance','bals':'balance','blance':'balance','balnce':'balance','balace':'balance','balanc':'balance','balence':'balance','ballance':'balance',
     'crad':'card','cadr':'card','carf':'card','cardd':'card','crd':'card','cards':'cards','crads':'cards',
     'acc':'account','acct':'account','accts':'accounts','acount':'account','accout':'account','accnt':'account',
@@ -29,9 +29,10 @@ CHAT={
     'reconise':'recognise','recongise':'recognise','recognice':'recognise','regonise':'recognise','reognise':'recognise',
     'travle':'travel','tavel':'travel','trvl':'travel','signture':'signature','singature':'signature','sig':'signature','sigature':'signature',
     'trasnfer':'transfer','tranfer':'transfer','transfr':'transfer','trnsfer':'transfer',
-    'statment':'statement','statemnt':'statement','stmt':'statement','stmts':'statements',
+    'fixd':'fixed','depost':'deposit','statment':'statement','statemnt':'statement','stmt':'statement','stmts':'statements',
     'rm':'rm','mgr':'manager','manger':'manager','apt':'appointment','appt':'appointment',
     'doc':'document','docs':'documents','documnet':'document','dcoument':'document',
+    'addr':'address','adress':'address','addres':'address','adresss':'address',
 }
 VOCABULARY=('balance','outstanding','limit','minimum','payment','payments','annual','fee','fees','charge','charged','charges',
     'card','cards','travel','signature','credit','account','accounts','statement','statements','transfer','transfers',
@@ -59,3 +60,9 @@ def fix(word: str) -> str:
 def normalise(text: str) -> str:
     """A lower-case copy for rule matching only; numbers, punctuation and spacing are kept."""
     return WORD.sub(lambda match:fix(match.group(0)),text or '')
+
+
+def respell(text: str) -> str:
+    """Like normalise() but with the explicit CHAT table only, no close-match guesses. Knowledge search uses this:
+    there 'change' must stay 'change' (normalise() would read it as 'charge')."""
+    return WORD.sub(lambda match:CHAT.get(word:=match.group(0).lower().replace('’',"'"),word),text or '')
