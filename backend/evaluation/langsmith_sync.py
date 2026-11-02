@@ -23,8 +23,8 @@ DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.jso
 DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection, corrections and unsupported facts.',
               'demobank-focused':'Source-checked public questions plus the three Workflow 1 public questions.',
               'demobank-safety':'Fixed safety routes that must answer without a model call.',
-              'demobank-qa1-client':'QA1 test cases C01-C10 (Michelle, client): schema, competency and trajectory checks.',
-              'demobank-qa1-rm':'QA1 test cases R01-R10 (Sophie, relationship manager): the spec until F12/F14 and the RM assistant exist.'}
+              'demobank-qa1-client':'QA1 test cases C01-C22 (Michelle, client): schema, competency and trajectory checks.',
+              'demobank-qa1-rm':'QA1 test cases R01-R20 (Sophie, relationship manager): the spec until F12/F14 and the RM assistant exist.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
 EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',

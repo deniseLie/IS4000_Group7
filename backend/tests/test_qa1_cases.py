@@ -23,11 +23,11 @@ MUST_CLIENT={'CR1','CR2','CR3','CR4','CR5','CR6','CR8','CR9','CR10','CR11','CR12
 UBS=set(range(1,8))  # the seven UBS feedback points in the two-week plan
 
 def test_ids_follow_the_template():
-    assert [c['id'] for c in CLIENT]==[f'C{i:02}' for i in range(1,11)] and [c['id'] for c in RM]==[f'R{i:02}' for i in range(1,11)]
+    assert [c['id'] for c in CLIENT]==[f'C{i:02}' for i in range(1,23)] and [c['id'] for c in RM]==[f'R{i:02}' for i in range(1,21)]
     for c in ALL:
         assert c['type'] in TYPES and c['priority'] in {'must','should'} and set(c['ubs'])<=UBS and c['turns'] and c['check'] and c['must_not']
         assert all(re.fullmatch(r'(CR|RM|F)\d+',s) for s in c['stories']) and all(len(t)==1 and set(t)<={'say','tap','form','upload'} for t in c['turns'])
-        assert c['state']=='ready' if c in CLIENT else c['state']=='spec' and c['blocked_by']
+        assert c['state'] in {'ready','manual'} if c in CLIENT else c['state']=='spec' and c['blocked_by']  # manual: needs a setup the runner cannot make
     assert {c['persona'] for c in CLIENT}=={'guest','michelle'} and {c['persona'] for c in RM}=={'sophie'}
 
 @pytest.mark.parametrize('cases',[CLIENT,RM],ids=['client','rm'])

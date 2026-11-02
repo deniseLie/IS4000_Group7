@@ -25,14 +25,14 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F19 | Response validator | Done | Withheld answers go to the RM. |
 | F20 | Stub agents | Built, sheet says **No** | All five agents exist; tick it. |
 | F21 | Local deployment (Docker) | Dropped | Docker removed; run with uvicorn + npm. |
-| F22 | Hardening and report evidence | **Partly** | Automated: RLS and owner-only checks (`test_rls_live.py`, `test_bank_decisions.py`), audit chain (`test_audit*.py`), 10 Michelle cases written. Still to do for the report: run C01–C10 against the hosted project with LangSmith on and fill the run record, one Playwright smoke run, latency per request type from the LangSmith runs, Sophie's RLS checks (Persona 2). |
+| F22 | Hardening and report evidence | **Partly** | Automated: RLS and owner-only checks (`test_rls_live.py`, `test_bank_decisions.py`), audit chain (`test_audit*.py`), 22 Michelle cases written. Still to do for the report: run C01–C22 against the hosted project with LangSmith on and fill the run record, one Playwright smoke run, latency per request type from the LangSmith runs, Sophie's RLS checks (Persona 2). |
 | F23 | Ticket service | Done | – |
 | F24 | Request categories | Done | – |
 | F25 | MCP tool layer | Done | MCP is the default transport; every agent record read goes through it. RM tools come with F14. |
 | F26 | LangSmith tracing and evaluation | **Partly** | Tracing and dataset sync done; run and score the experiments. |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
-| QA1 | Test case set (20 cases) | **Written** | All 20 in [test-cases.md](../evaluation/test-cases.md) and as eval data (`qa1_client_cases.json`, `qa1_rm_cases.json`, LangSmith `demobank-qa1-*`). Sophie R01–R10 are the Workflow 2 spec (need F12, F14 and the RM assistant). Still to do: assign owners, sync the datasets, run C01–C10 and fill the run record. |
+| QA1 | Test case set (42 cases) | **Written** | All 42 in [test-cases.md](../evaluation/test-cases.md) and as eval data (`qa1_client_cases.json`, `qa1_rm_cases.json`, LangSmith `demobank-qa1-*`). Sophie R01–R20 are the Workflow 2 spec (need F12, F14 and the RM assistant). C11–C22 and R11–R20 added 2 Nov 2026 from the backlog Test case sheet. Still to do: assign owners for C01–C10 and R01–R10 (the new cases carry the sheet's owners), sync the datasets, run C01–C22 and fill the run record. |
 
 ## Persona 1 (client) – open items
 
@@ -73,7 +73,7 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Answering the bank's questions (CR6, 0080):** reply box on *The bank asked you*; answer sent with a receipt and Inbox notice, then "Sent to the bank on … – waiting for review"; the bank accepts or asks a follow-up with `compliance.record_request_decision`.
 - **Suggested next questions in the chat:** up to 3 tappable follow-ups under the latest answer, from fixed topic lists.
 - **Card actions are bank-only (CR12, 0081, 30 Oct):** no block, unblock, cancel or dispute draft for the client; unrecognised charges get urgent steps and an urgent fraud-team ticket with a `TCK-` reference. Fraud prompt v6.
-- **Test cases (QA1):** Michelle C01–C10 in `docs/evaluation/test-cases.md`.
+- **Test cases (QA1):** Michelle C01–C22 and Sophie R01–R20 in `docs/evaluation/test-cases.md`.
 - Compliance review stays on its page after an upload; the chat is used only when the client clicks *Explain in chat*. Submitted items show one line, "Sent to the bank on … – waiting for review", with a *Need to send a different file?* link.
 - Inbox moved to the header beside *Talk to a person*.
 - Docker removed; docs reorganised into two workflows (client, relationship manager); backlog IDs made consistent.
