@@ -5,19 +5,25 @@ Agents reach these tools directly (TOOL_TRANSPORT=direct, the default) or throug
 orchestrator and over stdio by external MCP clients (python -m scripts.mcp_server). Either way, policy
 (require_permission), JWT + RLS and audit are applied inside the tool, never by the caller or the model.
 """
+import inspect
 from collections.abc import Awaitable,Callable
-from datetime import date
+from datetime import date,timedelta
 from contextvars import ContextVar
 from typing import Any
+from zoneinfo import ZoneInfo
 from pydantic import JsonValue
 from app.core import data_api
 from app.core.config import settings
 from app.core.observability import span
-from app.schemas.contracts import RequestContext
+from app.schemas.contracts import RequestContext,ToolView
 from app.schemas.knowledge import KnowledgeQuery
 from app.schemas.relationship import SlotsQuery
-from app.services import customer_data,kb,prechecks
+from app.services import customer_data,document_templates,kb,prechecks
+from app.services.agents import fraud_records,registry
+from app.services.authorization import PolicyDenied,require_tool
 from app.services.rm import records as rm_records
+
+SGT=ZoneInfo('Asia/Singapore')
 
 TOOL_CTX: ContextVar[RequestContext | None]=ContextVar('tool_ctx',default=None)
 
@@ -30,6 +36,14 @@ def _ctx() -> RequestContext:
     ctx=TOOL_CTX.get()
     if ctx is None:raise ToolContextMissing('Tools run only inside a request context set by the backend')
     return ctx
+
+
+def today(ctx: RequestContext) -> date:
+    return ctx.received_at.astimezone(SGT).date()
+
+
+class ToolLimitExceeded(PolicyDenied):
+    """A v5 agent asked for more than its spec allows (date window or rows)."""
 
 
 async def knowledge_search(query: str,k: int=4) -> dict[str,Any]:
@@ -56,10 +70,60 @@ async def my_cards() -> dict[str,Any]:
     return {'items':result.data,'call_id':str(result.call_id)}
 
 
-async def my_transactions(status: str | None=None) -> dict[str,Any]:
-    """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones."""
-    result=await customer_data.get_transactions(_ctx(),None,None,{'status':status} if status else None)
+async def my_transactions(status: str | None=None,days: int | None=None) -> dict[str,Any]:
+    """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones, optionally the last `days` days."""
+    ctx=_ctx()
+    since=today(ctx)-timedelta(days=days) if days else None
+    result=await customer_data.get_transactions(ctx,since,None,{'status':status} if status else None)
     return {'items':result.data,'call_id':str(result.call_id)}
+
+
+async def my_profile() -> dict[str,Any]:
+    """The signed-in customer's own profile."""
+    result=await customer_data.get_profile(_ctx())
+    return {'data':result.data,'call_id':str(result.call_id)}
+
+
+async def my_accounts() -> dict[str,Any]:
+    """The signed-in customer's own bank accounts, numbers masked to the last four digits."""
+    result=await customer_data.get_accounts(_ctx())
+    return {'items':result.data,'call_id':str(result.call_id)}
+
+
+async def my_loans() -> dict[str,Any]:
+    """The signed-in customer's own loans and next payments."""
+    result=await customer_data.get_loans(_ctx())
+    return {'items':result.data,'call_id':str(result.call_id)}
+
+
+async def travel_flags() -> dict[str,Any]:
+    """Charges on one card in another country less than 4 hours after an earlier charge (a rule, not a fraud decision)."""
+    flags=fraud_records.travel_flags(await fraud_records.load(_ctx()))
+    return {'items':[{'card_last4':f.charge.card_last4,'gap_minutes':int(f.gap.total_seconds()//60),
+        'earlier':f.anchor.model_dump(mode='json'),'later':f.charge.model_dump(mode='json')} for f in flags]}
+
+
+async def my_rm() -> dict[str,Any]:
+    """The signed-in customer's current and previous relationship manager."""
+    result=await customer_data.get_rm_assignment(_ctx())
+    return {'data':result.data,'call_id':str(result.call_id)}
+
+
+async def my_appointments() -> dict[str,Any]:
+    """The signed-in customer's held, confirmed and past appointments with her relationship manager."""
+    result=await customer_data.get_appointments(_ctx())
+    return {'items':result.data,'call_id':str(result.call_id)}
+
+
+async def my_consents() -> dict[str,Any]:
+    """The signed-in customer's consent requests and grants (purpose, recipient, status, expiry)."""
+    result=await customer_data.get_consent_records(_ctx())
+    return {'data':result.data,'call_id':str(result.call_id)}
+
+
+async def document_templates_guide() -> dict[str,Any]:
+    """What each accepted document type must show, with a made-up example (public configuration)."""
+    return {'items':document_templates.describe()}
 
 
 async def my_compliance_case() -> dict[str,JsonValue]:
@@ -72,9 +136,10 @@ async def my_document_checks() -> dict[str,JsonValue]:
     return (await prechecks.workspace(_ctx())).model_dump(mode='json')
 
 
-async def free_slots(from_date: date,to_date: date,limit: int) -> dict[str,JsonValue]:
-    """Bounded free appointment suggestions for the signed-in customer's current relationship manager."""
-    query=SlotsQuery(from_date=from_date,to_date=to_date,limit=limit)
+async def free_slots(from_date: date | None=None,to_date: date | None=None,limit: int=5) -> dict[str,JsonValue]:
+    """Bounded free appointment suggestions for the signed-in customer's current relationship manager (default: next 14 days)."""
+    start=from_date or today(_ctx())
+    query=SlotsQuery(from_date=start,to_date=to_date or start+timedelta(days=13),limit=limit)
     return (await customer_data.get_available_slot_records(query,_ctx())).model_dump(mode='json')
 
 
@@ -153,21 +218,73 @@ async def rm_book_facts() -> dict[str,Any]:
 TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
-    'free_slots':free_slots,
+    'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'travel_flags':travel_flags,
+    'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
     'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts}
 
 
+def project(value: Any,fields: frozenset[str]) -> Any:
+    """Keep only the listed dotted fields; lists are transparent, so `current.name` applies to every item."""
+    if isinstance(value,list):return [project(item,fields) for item in value]
+    if not isinstance(value,dict):return value
+    kept={}
+    for key,item in value.items():
+        if key in fields:kept[key]=item
+        elif sub:=frozenset(f[len(key)+1:] for f in fields if f.startswith(key+'.')):kept[key]=project(item,sub)
+    return kept
+
+
+# Date-window arguments of tools whose views carry max_days: a look-back length, or a forward (from, to) range.
+LOOKBACK={'my_transactions':'days'}
+FORWARD={'free_slots':('from_date','to_date')}
+
+
+def bounded(name: str,args: dict[str,Any],view: ToolView,ctx: RequestContext) -> dict[str,Any]:
+    """The arguments with the spec's limits applied: a missing window or row count gets the limit, a larger one is refused."""
+    args=dict(args)
+    if view.max_days and name in LOOKBACK:
+        key=LOOKBACK[name]
+        if args.get(key) is None:args[key]=view.max_days
+        if not 0<int(args[key])<=view.max_days:raise ToolLimitExceeded(f'{name}: at most {view.max_days} days')
+    if view.max_days and name in FORWARD:
+        start,end=FORWARD[name];first=today(ctx)
+        begin=date.fromisoformat(str(args[start])) if args.get(start) else first
+        if args.get(end) is None:args[end]=(begin+timedelta(days=view.max_days-1)).isoformat()
+        if begin<first or (date.fromisoformat(str(args[end]))-first).days>=view.max_days:
+            raise ToolLimitExceeded(f'{name}: within the next {view.max_days} days')
+    if view.max_rows and 'limit' in inspect.signature(TOOLS[name]).parameters:
+        if int(args.get('limit') or 0)>view.max_rows:raise ToolLimitExceeded(f'{name}: at most {view.max_rows} rows')
+    return args
+
+
+def shaped(result: dict[str,Any],view: ToolView) -> dict[str,Any]:
+    """What the agent receives: its field view of the records (`items` or `data`) and at most max_rows of them."""
+    out={key:value for key,value in result.items() if key!='customer_id'}  # identifiers never reach the model
+    for key in ('items','data'):
+        if key not in out:continue
+        records=out[key]
+        if view.max_rows and isinstance(records,list):records=records[:view.max_rows]
+        out[key]=project(records,view.fields) if view.fields is not None else records
+    return out
+
+
 async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
-    """The one way agents call a tool. The transport is a setting; the tool, policy and audit are the same."""
+    """The one way agents call a tool. The transport is a setting; the tool, policy and audit are the same.
+    A v5 agent (registry.spec_for) may call only its spec's tools, within its limits, and receives only its field view."""
     if name not in TOOLS:raise KeyError(f'Unknown tool {name}')
+    require_tool(name,ctx)
+    spec=registry.spec_for(ctx.agent)
+    view=spec.tools[name] if spec is not None else None
+    if view is not None:args=bounded(name,args,view,ctx)
     token=TOOL_CTX.set(ctx)
     try:
         with span('tool_call','tool',tool=name,transport=settings.tool_transport):
             if settings.tool_transport=='mcp':
                 from app.mcp_server import call_in_process
-                return await call_in_process(name,args)
-            return await TOOLS[name](**args)
+                result=await call_in_process(name,args)
+            else:result=await TOOLS[name](**args)
     finally:TOOL_CTX.reset(token)
+    return shaped(result,view) if view is not None else result

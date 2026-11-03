@@ -1,12 +1,17 @@
-"""Shared data contracts between pipeline modules (docs/architecture.md §4). Change only by PR reviewed by all developers."""
+"""Shared data contracts between pipeline modules (docs/architecture.md §4, v5 additions §14.8).
+
+Keep changes backwards-compatible within a build phase and note them in docs/architecture.md."""
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, model_validator
 
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
 AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
+# v5 client agents (architecture §5.6.1). `compliance` and `relationship` keep their v4 names; the v4 agents use
+# registry.TOOLS until the phase 5 switch-over, when AgentName becomes this list.
+TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py
@@ -39,7 +44,7 @@ class RequestContext(Contract):
     session_id: UUID
     case_id: UUID | None = None
     principal: Principal
-    agent: AgentName | None = None  # set only by backend dispatch; never read from tool arguments
+    agent: AgentName | TargetAgent | None = None  # set only by backend dispatch; never read from tool arguments
     locale: str = 'en-SG'
     received_at: datetime = Field(default_factory=now)
 
@@ -144,6 +149,96 @@ class Receipt(Contract):
     command_id: UUID
     outcome: Literal['succeeded', 'failed']
     audit_event_id: int | None = None
+
+
+# v5 agent catalogue and plan (architecture §14.5, §14.8). Nothing runs on these until the phase 5 switch-over.
+OPEN_INTENT = 'open'  # the planner found no listed intent: the agent chooses its reads in the bounded tool loop
+QUESTION = 'question'  # pseudo-entity: the task's own question, e.g. as a knowledge_search query
+ToolName = str  # a model-facing tool in services/tools.TOOLS
+
+
+class ToolView(Contract):
+    """What one agent receives from one tool: dotted record fields (lists are transparent) and per-call limits."""
+    fields: frozenset[str] | None = None  # None: the whole record
+    max_days: int | None = Field(default=None, gt=0)  # oldest record, counted back from today
+    max_rows: int | None = Field(default=None, gt=0)
+    free_text: bool = False  # returns text written by other people (ticket messages, notes): a default read only
+
+
+class Read(Contract):
+    """One default read: arguments come from the task's entities (or fixed values), never from the model."""
+    tool: ToolName
+    entities: dict[str, str] = {}  # tool argument -> entity name; a missing entity leaves the tool's default
+    fixed: dict[str, JsonValue] = {}
+
+    @model_validator(mode='after')
+    def _one_source(self):
+        if set(self.entities) & set(self.fixed):raise ValueError('an argument comes from an entity or a fixed value, not both')
+        return self
+
+
+class AgentSpec(Contract):
+    name: TargetAgent
+    role: Literal['public', 'client', 'rm']
+    scope: Literal['public', 'own_customer', 'rm_book']
+    answers: str  # what it handles; builds the planner prompt
+    tools: dict[ToolName, ToolView]
+    intents: dict[str, tuple[Read, ...]]  # intent -> default reads (option B, docs/planning/agent-decisions.md)
+    loop_tools: frozenset[ToolName] = frozenset()  # tools an `open` task may choose
+    external: frozenset[str] = frozenset()  # external tools (phase 2): public_holidays, fx_rate
+    exports: dict[str, str] = {}  # name -> type name, computed by code (phase 7)
+    imports: frozenset[str] = frozenset()
+    hands_to: frozenset[TargetAgent] = frozenset()
+    offers: frozenset[str] = frozenset()  # action types it may propose; every one needs confirmation
+    prompt: str
+
+    @model_validator(mode='after')
+    def _consistent(self):
+        reads = {read.tool for reads in self.intents.values() for read in reads}
+        if missing := (reads | self.loop_tools) - set(self.tools):raise ValueError(f'{self.name}: tools not in its spec: {sorted(missing)}')
+        if text := sorted(t for t in self.loop_tools if self.tools[t].free_text):raise ValueError(f'{self.name}: free-text loop tools {text}')
+        if OPEN_INTENT in self.intents:raise ValueError(f'{self.name}: {OPEN_INTENT!r} is not a listed intent')
+        if self.scope == 'public' and self.offers:raise ValueError(f'{self.name}: a public agent makes no offers')
+        return self
+
+
+class PlanTask(Contract):
+    id: str
+    agent: TargetAgent
+    intent: str  # one of the agent's intents, or OPEN_INTENT
+    question: str
+    entities: dict[str, JsonValue] = {}
+    priority: Priority = 'P3'
+
+
+class Export(Contract):
+    value: JsonValue
+    source_ids: list[str] = Field(min_length=1)  # provenance, so a receiving agent's validator accepts it
+
+
+class Offer(Contract):
+    offer_id: UUID
+    type: str
+    target: dict[str, Any] = {}
+    summary: str
+    expires_at: datetime
+    after_offer: UUID | None = None
+
+
+class AgentOutput(Contract):
+    task_id: str
+    agent: TargetAgent
+    status: Literal['ok', 'needs_clarification', 'needs_human', 'out_of_scope', 'error']
+    result: AgentResult | None = None  # the section; None when nothing may be shown
+    evidence: list[dict[str, JsonValue]] = []
+    exports: dict[str, Export] = {}
+    offers: list[Offer] = []
+    suggested: TargetAgent | None = None  # out_of_scope only: the agent to hand the question to
+
+    @model_validator(mode='after')
+    def _handoff(self):
+        if self.suggested is not None and self.status != 'out_of_scope':raise ValueError('suggested is only valid for out_of_scope')
+        return self
 
 
 
