@@ -1,0 +1,43 @@
+# v5 baseline on 6b8c39d (3 Nov 2026)
+#
+# Backend tests: clean checkout of 6b8c39d, PYTHONUTF8=1, repo-root .venv, `pytest -q` from backend/
+# (Windows, no opt-in flags). Result: 29 failed, 650 passed, 546 skipped.
+# A later phase may only remove ids from this list, never add new ones.
+
+tests/test_agents.py::test_planning_prioritises_fraud_without_modifying_input
+tests/test_chat.py::test_lost_card_with_secret_still_gets_urgent_guidance
+tests/test_chat.py::test_lost_card_works_without_model
+tests/test_client_v7_request_status.py::test_status_answer_uses_owned_records_and_never_infers_approval
+tests/test_document_parsers.py::test_real_fixtures_parse_in_credential_free_worker[jpg-image/jpeg-image_decoded-None]
+tests/test_guardrail.py::test_fixed_routes_integrate_without_model_calls[I lost my card and PIN 1234-secrets]
+tests/test_guardrail.py::test_fixed_routes_integrate_without_model_calls[My card was stolen-lost_card]
+tests/test_knowledge_checks.py::test_offline_report_has_no_live_calls
+tests/test_knowledge_checks.py::test_unclear_loan_question_names_the_loan_types_and_asks_which
+tests/test_qa1_cases.py::test_fixed_route_cases_run_without_a_model[C12]
+tests/test_rm_assistant.py::test_a_question_across_the_book_only_sees_dates_inside_the_period_it_asks_about
+tests/test_rm_handover.py::test_handover_is_marked_on_the_task_but_never_on_fraud
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I can\u2019t find my debit card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I can't find my card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I dropped my ATM card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I lost my card and my PIN is 1 2 3 4]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I lost my card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I lost my new debit card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I misplaced my credit card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[I need help with a missing card]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My card got stolen]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My card has been stolen]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My card is missing]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My card was just stolen]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My card went missing]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My cards were stolen]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[My debit card was stolen]
+tests/test_safety_variants.py::test_emergency_variants_work_without_ai[Someone stole my bank card]
+tests/test_urgent_help.py::test_personal_retail_and_fraud_use_the_new_prompt_versions
+
+# Latency: fresh live run of all QA1 client cases on the 6b8c39d app code (only eval files differ, 8aa7a9c), 4 Nov 2026:
+# `python -m evaluation.langsmith_run --dataset demobank-qa1-client --pipeline v2`, experiment demobank-qa1-client-v2-006b76d7
+# (20 cases played, C08/C21 skipped; 31 chat turns, all HTTP 200).
+# v4 sends the whole reply in one `answer` event, so time to first section = total time.
+# `chat` span (one turn inside the API, no login or eval setup): median 8.7 s, p90 15.0 s, max 23.7 s
+# POST /chat request time (API request log):                      median 9.3 s, p90 15.5 s, max 24.5 s
+# Checks in the same run: 6 pass, 13 fail, 2 skipped, 0 errors (passing: C01 C02 C07 C09 C11 C18).

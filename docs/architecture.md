@@ -4,6 +4,8 @@ Status: **as built** (2026-10-31; client view CR1–CR17 refined to the finalise
 
 v4 changes from v3.1: the document now records what was built rather than what was planned. The overall shape is unchanged (one FastAPI process, the same components and contracts), but the orchestrator has eight nodes instead of four, agents read their data in code and make one model call instead of calling tools themselves, only the Fraud & Security agent proposes actions, most other changes start from forms in the Web Client, the Background Worker sends notifications only, and the multi-agent pipeline is switched on with `PIPELINE=v2` (v1 is still the default).
 
+**Target v5 (agreed 3 Nov 2026, not built yet):** §14 records the agreed redesign (orchestrator–workers graph, agent catalogue with a bounded tool loop and typed exports, confirmations as chat turns, external read-only tools). §5.6.1 lists the target agents and their data boundaries. Everything else describes v4 as built.
+
 ---
 
 ## 0. Design principles
@@ -301,6 +303,7 @@ Confirming or rejecting (`POST /commands/{id}/confirm|reject`) resumes the same 
 - **Inputs / outputs:** In: `ChatRequest` + `RiskAssessment` + runtime context. Out: `AnswerEvent` or `WorkflowPausedEvent`; checkpoints and workflow rows in the Conversation Store.
 - **Infrastructure / pattern:** LangGraph `StateGraph` + owned Data API checkpoint saver (`services/checkpoints.py`) with HMAC-signed envelopes and a closed JSON codec (no pickle).
 - **Dependencies:** ↑ `/chat`, `/commands/{id}/confirm|reject`, `/workflows/{turn}/resume`. ↓ Domain Agents, Knowledge Service, LLM Gateway (planner), Action Service, Conversation Store, Audit Log Service.
+- **Target (v5, not built):** a five-node orchestrator–workers graph (`planner`, `agent`, `gather`, `act`, `compose`) with confirmations as chat turns and no pause; see §14.
 
 ### 5.6 Domain Agents
 - **Category:** Bounded-context agents (five, drawn separately in §2).
@@ -321,6 +324,60 @@ Stories without an agent are handled by platform components: CR1 login (Identity
 - **Inputs / outputs:** In: `{task, history, language, RequestContext with agent, public evidence}`. Out: `(AgentResult, evidence[], prompt_id)`; Fraud also returns a bounded `FraudProposal`.
 - **Infrastructure / pattern:** Code-driven reads + one strict-JSON model call per task; prompts in `backend/app/prompts/<agent>/vN` (released versions immutable).
 - **Dependencies:** ↑ Orchestrator. ↓ Customer Data, Knowledge, Authorisation, LLM Gateway.
+
+#### 5.6.1 Target agents and boundaries (agreed 3 Nov 2026, not built yet)
+
+The agents above are split by topic. The target set is split by **the data an agent may see and the harm a mistake could do**: five client agents and two RM agents. It goes with the target orchestrator in §14 (`planner` → specialist agents in parallel → `act` → `compose`; confirmations are chat turns, no pause). Agents read through a bounded tool loop (at most 4 tool calls) instead of fixed reads in code, and pass typed exports to each other through the graph (§14.6).
+
+| Target agent | Replaces | Reason |
+|---|---|---|
+| **Guide** (public) | shared public answer agent, `smalltalk` | Guests and general questions get an agent with no personal data, instead of borrowing Retail's name |
+| **Accounts & Cards** | `retail` without login, tickets and RM requests | One financial data domain |
+| **Security** | `fraud`, plus login/OTP/phishing from `retail` | Same risk class (P0/P1); login help no longer has full financial access |
+| **Compliance & Documents** | `compliance` + `document` | Document only read the compliance workspace; merging loses no protection |
+| **Relationship & Service** | `relationship`, plus request/ticket status from `retail` | Everything about a person at the bank |
+| **RM Client Insight** | part of the RM assistant (`services/rm/assistant.py`, [workflow 2](workflows/workflow-2-relationship-manager.md)) | Sensitive per-client reads |
+| **RM Service Desk** | part of the RM assistant | Ticket work in the RM's book |
+
+**Client agents.** Row scope is the signed-in client only (caller JWT + RLS + explicit customer id checked in code); Guide sees no customer rows.
+
+| Agent | Fields it may see | Tools (bounded) | External | Offers (confirm-first) |
+|---|---|---|---|---|
+| **Guide** | Approved knowledge only | `knowledge_search`, `request_categories` | `public_holidays`, `fx_rate` | None; personal questions get "sign in to check" |
+| **Accounts & Cards** | Accounts (type, balance, currency); cards (last 4, product, limit, balance, due date, fee, status); loans; transactions ≤90 days; statements | `my_accounts`, `my_cards`, `my_loans`, `my_transactions` (window ≤90 days), `my_statements`, `knowledge_search` | `fx_rate`, `public_holidays` | Card-limit request, statement copy request (`ticket.create`) |
+| **Security** | Cards: `card_id`, `last4`, `status` only; transactions ≤90 days; travel flags. No balances, profile or loans | `my_cards` (security view), `my_transactions`, `travel_flags`, `knowledge_search` (security articles) | `public_holidays` | Fraud report (P0 handoff), lost-card report, travel notice, replacement card. Never freeze, unfreeze, dispute or cancel |
+| **Compliance & Documents** | Review case, checklist, bank questions, upload metadata and check results (counts, no file contents); only the profile fields a form needs (tax-form pre-fill) | `my_compliance_case`, `my_document_checks`, `document_templates`, `my_profile` (form fields), `knowledge_search` | — | Checklist mark, answer a bank request, submit a document, compliance handoff. Never a bank decision |
+| **Relationship & Service** | RM name and phone (no email or ids), appointments, free slots ≤14 days, consent records, own tickets (status and client-safe text, no internal notes), request categories | `my_rm`, `my_appointments`, `free_slots`, `my_consents`, `my_tickets`, `request_categories`, `knowledge_search` | `public_holidays` | Appointment hold/confirm/cancel, RM handover, ticket follow-up, consent grant/revoke, share summary with the RM (active consent required) |
+
+**RM agents.** Row scope is the RM's own book (`rm.in_book`); a client outside the book gets an audited refusal that reads the same whether or not the client exists.
+
+| Agent | Fields it may see | Tools | Offers (RM approval required) |
+|---|---|---|---|
+| **RM Client Insight** | 360 profile, products, review status, shared notes (previous RMs' private notes withheld), cash events ≥10,000 over 180 days, handover sources only after a recorded reassignment, shared summary only under `rm_brief` consent | `rm_book`, `rm_match_clients`, `rm_client_profile`, `rm_meeting_notes`, `rm_shared_summary`, `rm_cash_events`, `rm_handover_sources`, `rm_book_facts`, `rm_followups` | Meeting brief, transition message draft; otherwise read-only |
+| **RM Service Desk** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data | `rm_tickets`, `rm_ticket`, `rm_appointments`, `rm_availability`, `request_categories` | Draft reply (sent only on Approve), tickets from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
+
+Neither RM agent decides approvals or gives investment advice, and neither changes specialist-managed fraud tickets.
+
+**Rules for every agent**
+1. **One declared spec per agent** (`AgentSpec` in `agents/registry.py`): row scope (`public`, `own_customer`, `rm_book`), tool names with the field view each returns, per-call limits (date window, row count), external hosts and offer types. Policy (`authorization.decide`) and the tool layer both read it, so permission and tool names cannot drift apart.
+2. **Fields are projected in the tool layer**, not in the agent: `my_cards` returns the security view to Security and the full view to Accounts & Cards. The model never receives more than the spec allows, including inside the tool loop.
+3. **No data is shared between agents.** Each agent's evidence stays its own; cross-agent context is a flag only (for example `linked: card_fraud`).
+4. **Agents never write.** They return offers; `act` carries them out on the next turn after Confirm or "yes", with the offer id as the idempotency key.
+5. **External calls send codes only** (country, currency, year), never names, card digits or amounts. Hosts are allow-listed; a failed call is reported in that section, not replaced.
+6. **No identifiers reach the model.** Cards appear as last 4 digits and tickets as `TCK-` references; NRIC, emails and internal UUIDs are dropped.
+7. **Fixed safety replies stay outside the agents.** Lost card, pasted secrets and "talk to a person" remain no-model guardrail routes (§5.4).
+
+**Use-case coverage**
+
+| Agent | QA1 and backlog use cases |
+|---|---|
+| Guide | General question while logged out; loan enquiry; investment advice (refused, RM offered) |
+| Accounts & Cards | Card limit increase; pressure to approve; statement then the other account; two cards and a fee waiver (waiver handed to Relationship & Service) |
+| Security | Lost card; model unavailable during a fraud message; wrong and forgotten password; password, OTP and NRIC in chat (guardrail first); travel readiness |
+| Compliance & Documents | Compliance checklist; uploads with an address mismatch; tax-form pre-fill; unreadable or wrong-format upload; review status with mixed results |
+| Relationship & Service | Book a meeting; ticket status with internal notes hidden; RM matter and fraud in one message (with Security in parallel); claiming to be her assistant (refused, no data) |
+| RM Client Insight | Pre-meeting brief with and without consent; client outside the book; 360 overview then switch client; inherited client; transition message |
+| RM Service Desk | Ticket inbox triage; draft and approve a reply; meeting notes into tickets; summarise a ticket without changing it; specialist-managed fraud ticket; prepare requests; instructions hidden in a ticket |
 
 ### 5.7 Shared Services
 
@@ -825,7 +882,177 @@ Hosted Supabase status, test commands and known limits are in the README.
 | 3 | Customers viewing their own audit trail | Deferred | Not in the UI; Actions shows receipts and a CSV export of loaded receipts |
 | 4 | Hosted or local Supabase | Closed | Hosted for development and the demo; native PostgreSQL/PostgREST for automated tests |
 | 5 | Default pipeline | Open | `v1` stays the default; persona workflows run with `PIPELINE=v2` |
-| 6 | Agents choosing tools | Closed | Agent code performs reads; one model call per task; model output never executes |
+| 6 | Agents choosing tools | Closed for v4; reopened for v5 (§14) | Agent code performs reads; one model call per task; model output never executes. v5: a bounded tool loop chooses reads from the agent's spec; model output still never executes |
+
+## 14. Target architecture (v5 redesign, agreed 3 Nov 2026, not built yet)
+
+This section records the agreed redesign. Sections 1–13 describe what is built. The stack (FastAPI, LangGraph, Supabase, OpenRouter) and the Input Guardrail are unchanged; the orchestrator, agent definitions, tool layer and confirmations change. The target agents and their data boundaries are in §5.6.1.
+
+### 14.1 Why
+
+Response time comes from sequential model calls, a synchronous checkpoint write after every node, and waiting for the slowest agent before anything is shown, not from node count. The v4 graph also runs every node on every turn, keeps a LangGraph pause that chat no longer uses (0081), and lets agents read only what their code fetches in advance.
+
+### 14.2 Pattern and naming
+
+**Orchestrator–workers** (planner–executor): a single-pass `planner` decides *what* happens; the graph (code) decides *how and when*. The planner is not a supervisor: it does not get control back after each agent, run agents one after another or write the final reply.
+
+### 14.3 One chat turn
+
+```mermaid
+flowchart TD
+  IN(["RiskAssessment<br/>(fixed safety replies never get here)"]) --> PL["planner<br/>rules → 1 model call → rules → plan check"]
+  PL -->|confirms an open offer| ACT["act<br/>(no model)"]
+  PL -->|tasks| W1["agent × N in parallel<br/>(Send)"]
+  W1 --> GA["gather<br/>(join, next_wave)"]
+  GA -->|a condition, input or for_each is ready<br/>(wave 2 at most)| W1
+  GA -->|nothing left| CO["compose<br/>(no model)"]
+  ACT --> CO
+  CO --> OUT(["AnswerEvent + offers"])
+```
+
+| Node | What it does | Model? |
+|---|---|---|
+| `planner` | Rules first: replies to our own question (offer confirmation, which card, meeting time), fraud/login wording, explicit RM requests, greetings. Otherwise one structured call on a fast model returning `PlanTask`s. Rules then set priority (P0 fraud to Security, P1 security, P2 compliance deadlines, P3 the rest) and RM handover flags, and code checks the plan against the agent catalogue. A confirmation goes straight to `act` | Only when rules cannot decide |
+| `agent` | One run per task through LangGraph `Send`. Rules-first answers, then the bounded tool loop (§14.5), then the Response Validator against that agent's own evidence. Returns an `AgentOutput` | Yes, per agent |
+| `gather` | Join node: runs once per wave after all parallel agents finish, merges their outputs, and `next_wave` either sends wave 2 or goes to `compose` (a conditional edge on `agent` itself would fire once per `Send`) | No |
+| `act` | Confirmation turns only. Executes confirmed offers through the Action Service in dependency order; a later offer may use an earlier receipt | No |
+| `compose` | Sections in priority order, a dependent section straight after the one it depends on; fixed "skipped" lines; offers shown with Confirm/Cancel | No |
+
+After each wave the `gather` node runs a code router (`next_wave`) that evaluates dependencies and either sends the next tasks or goes to `compose`. State holds outputs, exports and offers keyed by task id with merge reducers, so parallel runs do not overwrite each other. **No checkpointer** is used for chat turns: the saved conversation and the open offers are the turn's state. A crash mid-turn marks the turn failed and the client retries; offers are idempotent.
+
+The web client receives a `section` SSE event as each agent finishes, then the final ordered `answer`, so urgent sections appear first.
+
+### 14.4 Components
+
+| Layer | Component | Change from v4 |
+|---|---|---|
+| Edge | Web Client | Streams sections; Confirm/Cancel buttons send an `offer_id`; card-block and dispute dialogs removed |
+| | API Gateway, Input Guardrail | Unchanged |
+| Orchestrator | `planner`, `agent`, `gather`, `act`, `compose` | Replaces the eight nodes of §5.5 |
+| Agent runtime | **Agent catalogue** (`AgentSpec` per agent, `agents/registry.py`) | New. Single source for policy, tool field views, the planner prompt and plan checks |
+| | **Tool loop runner** | New. Shared bounded loop for all agents |
+| | Response Validator | Unchanged rules; exports count as evidence with provenance (§14.6) |
+| Tools | Internal tools (`services/tools.py`) | Return a **field view** per agent and enforce per-call limits (date window, rows) |
+| | **External tool gateway** | New: `public_holidays` (any country), `fx_rate`. Allow-listed hosts, codes only (country, currency, year), timeout, 60 s cache, audit; a failure is reported in that section |
+| Shared services | Customer Data, Knowledge, Action Service, Audit, Notifications | Unchanged |
+| | **Offers** | Proposed commands on the existing Action Service ledger (`run_action(confirmed=False)`), plus `offer_group` and `group_order` for chains; owned under RLS, 30-minute expiry. No new table |
+| LLM Gateway | Two model settings | `PLANNER_MODEL` (defaults to the agent model until measured) and the agent model. Same strict JSON check, retries and token budget |
+
+### 14.5 Agents and the tool loop
+
+The agents are the target set in §5.6.1 (Guide, Accounts & Cards, Security, Compliance & Documents, Relationship & Service; RM Client Insight and RM Service Desk). Inside one agent:
+
+1. **Rules first.** Records answers that must not be withheld (card figures, which card, meeting times, request status) return without a model call.
+2. **Tool loop.** A strict-JSON step through `llm_gateway` (`calls` or `answer`; not native function calling, so any model and the Codex transport work) picks the next tool from its spec, at most **4 tool calls**, 30 s per agent, 60 s per turn; independent calls in one step run in parallel. Each call goes through `tools.call` (policy, caller JWT + RLS, audit) and returns only the agent's field view. The model sees results as untrusted evidence.
+3. **Answer.** One strict-JSON answer validated against all evidence gathered in the loop; one repair attempt as today; otherwise the section is withheld.
+
+Agents never write. They return **offers**; nothing changes until `act` runs on a later turn.
+
+### 14.6 Agent interactions
+
+Agents never call each other. They pass small typed values through the graph, and code decides what runs next.
+
+```python
+class AgentSpec(BaseModel):
+    name: AgentName
+    exports: dict[str,type]        # e.g. {'due_in_window': bool, 'due_dates': list[date]}
+    imports: frozenset[str]        # exports this agent may receive
+    hands_to: frozenset[AgentName] # agents it may pass a task to
+```
+
+| Interaction | Planner writes | Router does | Example |
+|---|---|---|---|
+| **Conditional** | `depends_on`, `condition` (a `bool` export) | Runs the task only if the export is `true`; `false` or unknown skips it with a fixed line | "If a payment falls due while I'm away, move my meeting" |
+| **Input** | `depends_on` | Passes only the exports in the receiver's `imports` | Tax self-certification listing `account_refs` (type, currency, last 4; no balances) |
+| **Fan-out** | `depends_on`, `for_each` (a list export) | One task per item, **at most 5**; "showing 5 of N" | RM: a reminder draft per client with a review due |
+| **Handoff** | — | An agent returns `out_of_scope` with a `suggested` agent from `hands_to`; the task is reassigned **once**, question only, no planner call | Fee waiver sent to Accounts & Cards, passed to Relationship & Service |
+| **Confirmation chain** | — (offers carry `after_offer`) | `act` executes in order; an earlier receipt fills a later offer; if the earlier one fails, the later one is not executed | Fraud report, then an RM note quoting its `TCK-` reference |
+
+Rules:
+1. **Exports are computed by code** from the agent's records (never written by the model), typed and small: booleans, dates, references, labels. Never raw rows, balances or free text.
+2. **Exports carry provenance** (the source ids they came from), so the receiving agent's validator accepts a passed date or reference as evidence.
+3. **The plan is checked before anything runs.** Every `depends_on`, `condition`, `for_each` and import must exist in the specs; no cycles; at most 2 waves (a reroute counts as a wave).
+4. **Unknown means no.** A failed, withheld or missing upstream export skips the dependent task, and the client is told in fixed wording (for example "I couldn't check your due dates, so I haven't changed your meeting").
+5. **No crossing roles.** Client exports never reach RM agents in the same turn, or the other way round. Guests get no dependent tasks.
+6. **Audit records names and counts**, never values: `export.passed {from, to, name, count}`.
+
+```python
+def next_wave(state: Turn) -> list[Send] | str:
+    if state['wave']>=2:return 'compose'
+    sends=[]
+    for task in state['plan'].waiting():
+        up=state['outputs'].get(task.depends_on)
+        if up is None or up.status!='ok' or (task.condition and task.condition not in up.exports):
+            skip(task,'upstream_unavailable');continue
+        if task.condition and up.exports[task.condition] is not True:
+            skip(task,'condition_false');continue
+        inputs={k:up.exports[k] for k in SPECS[task.agent].imports & up.exports.keys()}
+        items=up.exports[task.for_each][:5] if task.for_each else [None]
+        sends+=[Send('agent',{'task':task.for_item(item),'inputs':inputs}) for item in items]
+    sends+=[Send('agent',{'task':o.task.reassign(o.suggested)}) for o in state['outputs'].values()
+        if o.status=='out_of_scope' and not o.task.rerouted and o.suggested in SPECS[o.task.agent].hands_to]
+    return sends or 'compose'
+```
+
+### 14.7 Confirmations as chat turns
+
+There is no LangGraph pause. On the first turn, agents return offers and `compose` shows each one: what would be sent, **Confirm** and **Cancel**, and "or reply *yes*". Nothing is recorded.
+
+On the next turn the planner's rules recognise the confirmation and go straight to `act`, with no model call and no agents:
+- the button sends its `offer_id`;
+- chained offers form one group with one Confirm button;
+- a typed "yes" (English yes/no words only) counts only if exactly one offer group is open; with several, buttons only; "no" cancels; a new topic lets the offer lapse;
+- the stored offer (a proposed command: type, exact target, 30-minute expiry; an expired one is offered again only if she asks) is executed, never text re-read from the earlier reply;
+- `offer_id` is the idempotency key, so a double click or a repeated "yes" records once.
+
+### 14.8 Contracts (`schemas/contracts.py`)
+
+| Contract | Fields |
+|---|---|
+| `AgentSpec` | `name`, `role` (public/client/rm), `scope` (public/own_customer/rm_book), `answers` (what it handles; builds the planner prompt), `tools` (tool → field view and limits), `external` (hosts), `exports`, `imports`, `hands_to`, `offers` (action types), `prompt` |
+| `PlanTask` | `id`, `agent`, `question`, `entities`, `priority`, `depends_on`, `condition`, `for_each` |
+| `AgentOutput` | `section`, `evidence`, `exports` (with provenance), `offers`, `status` (`ok`, `needs_clarification`, `needs_human`, `out_of_scope`, `error`), `suggested` |
+| `Offer` | `offer_id`, `type`, `target`, `summary`, `expires_at`, `after_offer` |
+
+`TaskPlan`, `AgentResult` and the SSE events are replaced or extended by these. Contract changes no longer need a separate all-developer review (decided 3 Nov 2026; AGENTS.md is updated in phase 1).
+
+### 14.9 Data and migrations
+
+- **New:** `0097` adds `offer_group`, `group_order` and `turn_id` to `actions.commands`, an `action_offer` RPC with a TTL (`action_propose` keeps its 5 minutes), a `customer_open_offers` read, and expires turns still paused for a decision; `0098` adds the `travel_notice` request category. `offer_id` is the command id and its idempotency key.
+- **Kept, never edited:** the checkpoint and workflow tables (`0015`–`0016`, `0020`–`0022`). Chat stops writing to them.
+- **Rules in code:** trip window, due dates inside it and bank-holiday effects are computed like `retail_checks`, never by the model.
+
+### 14.10 Removed
+
+`propose_actions`, `review_actions`, `interrupt` and `WorkflowPausedEvent`; `/workflows/{turn}/preview|resume`; the card-block and dispute dialogs; the `smalltalk` domain; the separate Document agent; the `linked: card_fraud` flag (login moves into Security); `resume_pending` and `prioritise` as separate nodes (their rules move into `planner`).
+
+### 14.11 RM side
+
+The same graph serves the RM, with the agent catalogue chosen by role: a verified `rm` login gets RM Client Insight and RM Service Desk; a client gets the five client agents. This replaces the separate `services/rm/assistant.py` pipeline and lets RM fan-out use the same waves. It is the last build slice, because the RM pipeline works and is tested today.
+
+### 14.12 Evaluation
+
+- Trajectories name `planner`, `agent` (each agent and its wave), `act` and `compose`, plus tools per agent, external calls and the order `act` ran in.
+- A **planner-only dataset**: message → expected agents, entities and dependencies, with no agents run.
+- New cases: client C23 travel and reschedule (conditional + input + external API), C24 tax self-certification (input), C25 affordability then a meeting (conditional), C26 failed document check then the RM (conditional + input), C27 fraud report then an RM note (confirmation chain); RM R21 review reminders (fan-out), R22 brief and ticket drafts (input), R23 inherited client and consent (conditional); and a fee-waiver handoff case. Each has a failure variant: external API down, upstream agent withheld, or an earlier receipt failing.
+- LangSmith spans per wave and per tool call; time to first section and total time compared before and after.
+
+### 14.13 Build order
+
+The phased plan, with files, tests and done criteria per phase, is [planning/v5-build-plan.md](planning/v5-build-plan.md). One commit per phase on one branch; phases 1–4 add unused parts, phase 5 switches the backend over in one commit and keeps the `answer` event compatible until the UI follows in phase 6.
+
+| # | Slice | Client-visible? |
+|---|---|---|
+| 0 | Baseline: commit docs, record pre-existing test failures and current latency | No |
+| 1 | `AgentSpec` catalogue, tool field views, one tool-to-permission name map (fixes `docs.precheck`) | No |
+| 2 | External tool gateway (`public_holidays`, `fx_rate`) | No |
+| 3 | Tool loop runner, first for Accounts & Cards | No |
+| 4 | Offers on the Action Service (`0097`) | No |
+| 5 | Switch-over: five-node graph, restructured agents, confirmations as chat turns, section streaming; pause and its endpoints removed | Yes |
+| 6 | Web client: placeholders, Confirm/Cancel per offer group, dialogs removed | Yes |
+| 7 | Dependencies: exports, waves, fan-out, handoff, ordered `act`, `travel_notice` (`0098`) | Yes |
+| 8 | Eval cases (C23–C27, handoff) and planner dataset; docs | No |
+| 9 | RM pipeline onto the same graph (R21–R23), later | Yes (RM) |
 
 ## Appendix: knowledge base
 
