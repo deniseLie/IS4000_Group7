@@ -31,6 +31,7 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
     'my_consents':('consent.records',),
 })
 
+EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
 KB=ToolView()
 ASK=Read(tool='knowledge_search',entities={'query':QUESTION})
 CARD_FIELDS=frozenset({'last4','name','network','status','currency','limit','outstanding','minimum_payment','due_date','unfreeze_blocked_reason'})

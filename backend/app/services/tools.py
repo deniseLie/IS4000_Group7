@@ -18,7 +18,7 @@ from app.core.observability import span
 from app.schemas.contracts import RequestContext,ToolView
 from app.schemas.knowledge import KnowledgeQuery
 from app.schemas.relationship import SlotsQuery
-from app.services import customer_data,document_templates,kb,prechecks
+from app.services import customer_data,document_templates,external,kb,prechecks
 from app.services.agents import fraud_records,registry
 from app.services.authorization import PolicyDenied,require_tool
 from app.services.rm import records as rm_records
@@ -220,6 +220,7 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
     'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'travel_flags':travel_flags,
     'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
+    **external.TOOLS,  # public data, codes only; an agent may call those named in its spec's `external`
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
@@ -277,7 +278,7 @@ async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,An
     if name not in TOOLS:raise KeyError(f'Unknown tool {name}')
     require_tool(name,ctx)
     spec=registry.spec_for(ctx.agent)
-    view=spec.tools[name] if spec is not None else None
+    view=(spec.tools.get(name) or ToolView()) if spec is not None else None  # an external tool returns public data whole
     if view is not None:args=bounded(name,args,view,ctx)
     token=TOOL_CTX.set(ctx)
     try:
