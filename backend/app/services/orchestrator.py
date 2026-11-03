@@ -87,6 +87,12 @@ class Turn(TypedDict):
     answer: AnswerEvent
 
 
+class ResumeUpdate(TypedDict):
+    issues: list[PlannedIssue]
+    pending_reviews: list[PendingReview]
+    decision_sections: list[AnswerSection]
+
+
 class PlanUpdate(TypedDict):
     issues: list[PlannedIssue]
 
@@ -179,42 +185,59 @@ def critical_route(question: str,language: str) -> PlannedIssue | None:
         return PlannedIssue(domain='relationship',question=question)
     return None
 
+def fixed_intent(question: str,req: ChatRequest) -> PlannedIssue | None:
+    """Fresh requests answered by rules; they win over the older questions we are still waiting on."""
+    # A request-status question is a read, even in an active card-limit draft.
+    # This must precede limit-context continuation and the LLM planner, so a
+    # bank-decision question never starts another limit-change application.
+    if req.mode=='personal' and client_intents.request_status(question):return PlannedIssue(domain='retail',question=question)
+    if client_guidance.PERSONAL_DETAILS.search(question) or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
+        return PlannedIssue(domain='retail',question=question)
+    if client_guidance.UNCLEAR_HELP.search(question):return PlannedIssue(domain='retail',question=question)
+    # An explicit, non-specific compliance help request is a clarification,
+    # not a document inspection or an active card-limit continuation. Preserve
+    # multi-intent requests for the planner instead of swallowing other work.
+    if req.mode=='personal' and req.language=='English' and not MULTIPLE.search(question) and compliance.general_help(question):
+        return PlannedIssue(domain='compliance',question=question)
+    # A new explicit request or a topical question must not inherit card-limit
+    # context from the preceding assistant answer.
+    if re.search(r"\b(?:raise|open|start|create)\s+(?:a\s+)?(?:new\s+)?(?:service\s+)?request\b",question,re.I):
+        return PlannedIssue(domain='retail',question=question)
+    return None
+
+
+def pending_reply(state: Turn) -> PlannedIssue | None:
+    """Her answer to a question in our previous reply goes back to that flow, never to the planner."""
+    req=state['request']
+    question=state['risk'].redacted_message
+    history=state['history']
+    if req.mode!='personal' or req.record_context is not None:return None
+    # A plain yes to the charge list we just showed (CR12): report exactly those charges, no planner call.
+    if fraud_reports.pending(history):return PlannedIssue(domain='fraud',question=question)
+    if fixed_intent(question,req) is not None:return None
+    # Her answer to the lost-card offer or to "here's what I'd send to your RM" (CR8): carried out by rules.
+    if lost:=fraud_reports.lost_pending(history):return PlannedIssue(domain='fraud',question=lost[0])
+    if choice:=rm_handover.pending_choice(history):return PlannedIssue(domain='relationship',question=choice[0])
+    # A reply to our "which card do you mean?" goes back to the card answer, however short ("the travel one").
+    if not MULTIPLE.search(question) and (card_answers.awaiting_card(history) or limit_context.active(history)):
+        return PlannedIssue(domain='retail',question=question)
+    # Picking or confirming a meeting time we just offered goes back to the meeting flow (CR17).
+    if meeting_answers.awaiting(history):return PlannedIssue(domain='relationship',question=question)
+    return None
+
+
+def resume_pending(state: Turn) -> ResumeUpdate:
+    """First node: a reply to our own question skips planning. Also clears the per-turn values a skipped node would leave behind."""
+    issue=pending_reply(state)
+    return {'issues':[issue] if issue is not None else [],'pending_reviews':[],'decision_sections':[]}
+
+
 async def plan(state: Turn) -> PlanUpdate:
     req = state['request']
     question = state['risk'].redacted_message
     if req.record_context is not None:
         return {'issues':[PlannedIssue(domain='document' if req.record_context.kind=='document' else 'compliance',question=question)]}
-    # A plain yes to the charge list we just showed (CR12): report exactly those charges, no planner call.
-    if req.mode=='personal' and fraud_reports.pending(state['history']):return {'issues':[PlannedIssue(domain='fraud',question=question)]}
-    # A request-status question is a read, even in an active card-limit draft.
-    # This must precede limit-context continuation and the LLM planner, so a
-    # bank-decision question never starts another limit-change application.
-    if req.mode=='personal' and client_intents.request_status(question):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    if client_guidance.PERSONAL_DETAILS.search(question) or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    if client_guidance.UNCLEAR_HELP.search(question):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    # An explicit, non-specific compliance help request is a clarification,
-    # not a document inspection or an active card-limit continuation. Preserve
-    # multi-intent requests for the planner instead of swallowing other work.
-    if (req.mode=='personal' and req.language=='English' and
-            not MULTIPLE.search(question) and compliance.general_help(question)):
-        return {'issues':[PlannedIssue(domain='compliance',question=question)]}
-    # A new explicit request or a topical question must not inherit card-limit
-    # context from the preceding assistant answer.
-    if re.search(r"\b(?:raise|open|start|create)\s+(?:a\s+)?(?:new\s+)?(?:service\s+)?request\b",question,re.I):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    # A reply to our "which card do you mean?" goes back to the card answer, however short ("the travel one").
-    # Her answer to "here's what I'd send to your RM" (CR8): carried out by rules, never re-planned.
-    if req.mode=='personal' and (lost:=fraud_reports.lost_pending(state['history'])):
-        return {'issues':[PlannedIssue(domain='fraud',question=lost[0])]}
-    if req.mode=='personal' and (choice:=rm_handover.pending_choice(state['history'])):
-        return {'issues':[PlannedIssue(domain='relationship',question=choice[0])]}
-    if req.mode=='personal' and not MULTIPLE.search(question) and (card_answers.awaiting_card(state['history']) or limit_context.active(state['history'])):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    # Picking or confirming a meeting time we just offered goes back to the meeting flow (CR17).
-    if req.mode=='personal' and meeting_answers.awaiting(state['history']):return {'issues':[PlannedIssue(domain='relationship',question=question)]}
+    if (fixed:=fixed_intent(question,req)) is not None:return {'issues':[fixed]}
     # Model-first for everyday client intents, including multi-intent requests and
     # follow-ups; avoid a brittle keyword-to-answer mapping. Preserve the old
     # rule-based mode for offline comparison and constrained deployments.
@@ -492,7 +515,7 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
     ctx=runtime.context.request
     owned=runtime.context.workflow
     outcomes: dict[str,dict[str,ActionOutcome]]={}
-    for review in state['pending_reviews']:
+    for review in state.get('pending_reviews') or []:
         with data_api.connect(ctx) as db:outcome=await action_store.load(review.command_id,ctx,db)
         if outcome.command.state in ('proposed','confirmed'):raise ValueError('Cannot compose a reply before a recorded decision')
         if owned is None:raise ValueError('Action settlement requires an owned turn')
@@ -516,7 +539,7 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
             idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
         handoff=await actions.propose_for_workflow(command,handoff_id,owned,ctx.model_copy(update={'agent':'fraud'}))
         if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
-    if owned is not None and not state['pending_reviews']:
+    if owned is not None and not state.get('pending_reviews'):
         sections+=await ask_to_confirm(state,ctx)
         sections+=await report_to_fraud_team(state,ctx,owned)
     return {'decision_sections':sections}
@@ -604,22 +627,14 @@ async def other_issues(state: Turn,ctx: RequestContext) -> tuple[list[CustomerTr
 async def staff_summary(state: Turn,task_id: str,block: ActionOutcome,dispute: ActionOutcome | None,ctx: RequestContext) -> str:
     """Case summary from records and recorded decisions; the other issues come from the plan and a fresh pending-transfer read."""
     tasks=state['plan'].by_priority()
-    index=[task.task_id for task in tasks].index(task_id)
-    proposal=state['proposals'][index]
+    proposal=state['proposals'][[task.task_id for task in tasks].index(task_id)]
     target=dispute.command.target if dispute is not None else None
     items=target.items if isinstance(target,StoredDisputeTarget) else []
-    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
-    transfer=[task for task in tasks if task.domain=='retail' and retail_checks.TRANSFER.search(str(task.entities.get('question','')))
-        and 'linked' not in task.entities]
-    pending=[]
-    if transfer:
-        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
-        pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
-    due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
+    transfers,due,lockout=await other_issues(state,ctx)
     return case_summary.build(last4=block.command.target.last4,reported_id=proposal.transaction_id if proposal else '',items=items,
         block=block.command.state,dispute=dispute.command.state if dispute is not None else None,
         possession=dispute.command.confirmation_input.card_in_possession if dispute is not None and dispute.command.confirmation_input else None,
-        transfers=pending,due=due,lockout=any(task.entities.get('linked')=='card_fraud' for task in tasks),customer_words=state['risk'].redacted_message)
+        transfers=transfers,due=due,lockout=lockout,customer_words=state['risk'].redacted_message)
 
 
 def decision_text(state: str,receipt: str | None,last4: str) -> str:
@@ -742,8 +757,37 @@ def answer_for(state: Turn,pending: dict[str,list[ActionRequiredEvent]]) -> Answ
     return answer
 
 
+async def act(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
+    """Fraud tickets, then RM handovers. Retrying after a failure repeats both safely: every command has a fixed id and idempotency key."""
+    settled=await settle_actions(state,runtime)
+    return await escalate_validation({**state,**settled},runtime)
+
+
 def compose(state: Turn) -> ComposeUpdate:
     return {'answer':answer_for(state,{})}
+
+
+def needs_action(state: Turn,runtime: Runtime[PipelineContext]) -> bool:
+    """Whether act would record anything: a fraud proposal in an owned turn, an RM handover, or a withheld section to hand over."""
+    if runtime.context.workflow is not None and (state.get('pending_reviews') or any(item is not None for item in state['proposals'])):return True
+    if not can_hand_over(runtime.context.request):return False
+    if any(task.entities.get('handover')=='rm' for task in state['plan'].tasks):return True
+    return rm_handover.validation_handoff() and any(result.status=='error' and meta.origin=='validation'
+        for result,meta in zip(state['results'],state['metadata'],strict=True))
+
+
+def after_resume(state: Turn) -> str:
+    return 'prioritise' if state['issues'] else 'plan'
+
+
+def after_dispatch(state: Turn,runtime: Runtime[PipelineContext]) -> str:
+    """Guests and plain answers go straight to compose; only an owned turn with a fraud proposal passes the review nodes."""
+    if runtime.context.workflow is not None and any(item is not None for item in state['proposals']):return 'propose_actions'
+    return 'act' if needs_action(state,runtime) else 'compose'
+
+
+def after_proposals(state: Turn) -> str:
+    return 'review_actions' if state['pending_reviews'] else 'act'
 
 
 def preview_answer(state: Turn,pending: dict[str,list[ActionRequiredEvent]]) -> AnswerEvent:
@@ -765,22 +809,22 @@ def paused_preview(state: Turn,outcomes: list[ActionOutcome],pending_ids: list[U
 
 def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateGraph[Turn, PipelineContext, Turn, Turn]:
     graph = StateGraph(Turn,context_schema=PipelineContext)
+    graph.add_node('resume_pending',resume_pending)
     graph.add_node('plan',plan)
     graph.add_node('prioritise',prioritise)
     graph.add_node('dispatch',dispatch)
     graph.add_node('propose_actions',propose_actions)
     graph.add_node('review_actions',review_actions)
-    graph.add_node('settle_actions',settle_actions)
-    graph.add_node('escalate_validation',escalate_validation)
+    graph.add_node('act',act)
     graph.add_node('compose',compose)
-    graph.add_edge(START,'plan')
+    graph.add_edge(START,'resume_pending')
+    graph.add_conditional_edges('resume_pending',after_resume,['plan','prioritise'])
     graph.add_edge('plan','prioritise')
     graph.add_edge('prioritise','dispatch')
-    graph.add_edge('dispatch','propose_actions')
-    graph.add_edge('propose_actions','review_actions')
-    graph.add_edge('review_actions','settle_actions')
-    graph.add_edge('settle_actions','escalate_validation')
-    graph.add_edge('escalate_validation','compose')
+    graph.add_conditional_edges('dispatch',after_dispatch,['propose_actions','act','compose'])
+    graph.add_conditional_edges('propose_actions',after_proposals,['review_actions','act'])
+    graph.add_edge('review_actions','act')
+    graph.add_edge('act','compose')
     graph.add_edge('compose',END)
     return graph.compile(checkpointer=checkpointer)
 

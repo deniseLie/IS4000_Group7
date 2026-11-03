@@ -25,18 +25,28 @@ The guardrail runs first and never calls the model. Lost card and pasted secrets
 ## 2. The orchestrator graph (`services/orchestrator.py`)
 
 ```mermaid
-flowchart LR
-  plan --> prioritise --> dispatch --> propose_actions --> review_actions --> settle_actions --> escalate_validation --> compose
+flowchart TD
+  resume_pending -->|new message| plan --> prioritise
+  resume_pending -->|reply to our question| prioritise
+  prioritise --> dispatch
+  dispatch -->|nothing to act on, incl. guests| compose
+  dispatch -->|fraud or RM task| act
+  dispatch -->|fraud proposal, owned turn| propose_actions
+  propose_actions -->|decision pending| review_actions --> act
+  propose_actions --> act
+  act --> compose
 ```
+
+Edges after `resume_pending`, `dispatch` and `propose_actions` are conditional (`after_resume`, `after_dispatch`, `after_proposals`), so a node with nothing to do is skipped instead of run as a no-op.
 
 | # | Node | What it does | Model? |
 |---|---|---|---|
-| 1 | `plan` | If her message answers a pending question (fraud yes/no, lost card yes/no, RM preview choice, which card, meeting time), routes it straight back to that flow. Otherwise rules route clear questions (`simple_issue`, on the typo-tolerant copy); only unclear or multi-topic messages go to the planner | Only when rules can't decide |
-| 2 | `prioritise` | P0 fraud, P1 security, P2 compliance deadline, P3 the rest. Marks RM matters (`rm_handover.needs_person`) as `handover`. Builds confirmation tasks for pending answers | No |
-| 3 | `dispatch` | Runs tasks in parallel with timeouts. Each agent first tries **records answers by rules**, then makes one model call if needed. A confirmed lost-card report runs here | Inside agents |
-| 4–5 | `propose_actions`, `review_actions` | Kept for older saved turns; chat no longer proposes card blocks (0081) | No |
-| 6 | `settle_actions` | Fraud: lists the charges for her to confirm (`ask_to_confirm`); after "Yes, report it", records the urgent fraud ticket (`report_to_fraud_team`) | No |
-| 7 | `escalate_validation` | RM matters: shows the **preview**, then carries out her choice. Withheld answers get "try asking differently or talk to a person", with **no ticket** (`VALIDATION_HANDOFF=1` restores the old behaviour for tests) | No |
+| 1 | `resume_pending` | If her message answers a pending question (fraud yes/no, lost card yes/no, RM preview choice, which card, card-limit request, meeting time), routes it straight back to that flow and skips `plan`. A fresh request matched by rules (`fixed_intent`) still wins. Also clears last turn's `pending_reviews` and `decision_sections` | No |
+| 2 | `plan` | Selected record → document/compliance; `fixed_intent` rules; `critical_route` for fraud, login and RM requests; otherwise the LLM planner (`CLIENT_INTENT_ROUTING=adaptive`, the default). `route_issues` keeps fraud/login/RM routing deterministic | Yes, unless a rule decides |
+| 3 | `prioritise` | P0 fraud, P1 security, P2 compliance deadline, P3 the rest. Marks RM matters (`rm_handover.needs_person`) as `handover`. Builds confirmation tasks for pending answers | No |
+| 4 | `dispatch` | Runs tasks in parallel with timeouts. Each agent first tries **records answers by rules**, then makes one model call if needed. A confirmed lost-card report runs here | Inside agents |
+| 5–6 | `propose_actions`, `review_actions` | Kept for older saved turns; chat no longer proposes card blocks (0081). Reached only with a fraud proposal in an owned turn; `review_actions` only when a decision is pending | No |
+| 7 | `act` | `settle_actions` then `escalate_validation`. Fraud: lists the charges for her to confirm (`ask_to_confirm`); after "Yes, report it", records the urgent fraud ticket (`report_to_fraud_team`). RM matters: shows the **preview**, then carries out her choice. Withheld answers get "try asking differently or talk to a person", with **no ticket** (`VALIDATION_HANDOFF=1` restores the old behaviour for tests). Commands have fixed ids and idempotency keys, so a retry repeats both safely | No |
 | 8 | `compose` | One reply in priority order, with sources and page buttons | No |
 
 ## 3. Who answers what

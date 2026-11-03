@@ -24,7 +24,7 @@ from app.services.guardrail import assess_request
 
 PERSONAS={'michelle':'demo.michelle@example.com','sophie':'demo.sophie@example.com'}
 CHAT_TAPS={CONFIRM_REPLY}  # buttons whose label is sent as the next chat message
-NODES=('plan','prioritise','dispatch','propose_actions','review_actions','settle_actions','escalate_validation','compose')
+NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
 
 
 class NodeLog(AsyncCallbackHandler):

@@ -64,7 +64,7 @@ async def saved_validation(db: SyncPostgrestClient,ctx: RequestContext) -> tuple
     config={'configurable':{'thread_id':str(owned.turn.case_id)}}
     runtime=PipelineContext(request=current,workflow=owned)
     result=await graph.ainvoke(None,config,context=runtime,durability='sync')
-    before=[snapshot async for snapshot in graph.aget_state_history(config) if snapshot.next==('escalate_validation',)]
+    before=[snapshot async for snapshot in graph.aget_state_history(config) if snapshot.next==('act',)]
     assert len(before)==1
     repeated=await graph.ainvoke(None,before[0].config,context=runtime,durability='sync')
     assert repeated['answer']==result['answer']
@@ -156,7 +156,7 @@ def test_question_for_a_person_opens_one_rm_ticket_with_its_reference(local_data
                 'evidence':[[]],'metadata':[ResponseMeta(origin='safety',prompt_id=None)],'proposals':[None]},as_node='dispatch')
             runtime=PipelineContext(request=current,workflow=owned)
             first=await graph.ainvoke(None,config,context=runtime,durability='sync')
-            before=[snapshot async for snapshot in graph.aget_state_history(config) if snapshot.next==('escalate_validation',)]
+            before=[snapshot async for snapshot in graph.aget_state_history(config) if snapshot.next==('act',)]
             again=await graph.ainvoke(None,before[0].config,context=runtime,durability='sync')
             assert again['answer']==first['answer']
             return AnswerEvent.model_validate(first['answer'])

@@ -31,7 +31,7 @@ EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_h
           'reply_has','reply_lacks','ticket','schema','trajectory','must_not','handoff')
 OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
-NODES=('plan','prioritise','dispatch','propose_actions','review_actions','settle_actions','escalate_validation','compose')
+NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
 AGENTS=(*get_args(AgentName),'answer')
 PLANNED_AGENTS=('rm_assistant',)
 PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14

@@ -38,7 +38,7 @@ All seven v3.1 principles are implemented; the notes say how.
 | ④ Scheduling | — | Slot reads in Customer Data; hold/confirm/cancel in `appointments.py` | `api/relationship.py`, `actions/appointments.py` |
 | ④ Notifications | **Notification Service** | In-app inbox + Supabase Realtime | `services/notifications.py`, `api/notifications.py` |
 | ⑤ Composer | — | `compose` node of the orchestrator | `orchestrator.answer_for` |
-| ⑥ Validator | **Response Validator** | Per-section checks inside each agent + `escalate_validation` node | `services/source_checks.py`, `agents/answer.py` |
+| ⑥ Validator | **Response Validator** | Per-section checks inside each agent + `act` node (`escalate_validation`) | `services/source_checks.py`, `agents/answer.py` |
 | Reply over SSE | **Streaming Response (SSE)** | `fetch` + parser | `api/chat.py`, `frontend/src/lib/chatTools.js` |
 | Human handoff queue | **Human Handoff** | `handoffs.py` executor + staff script | `actions/handoffs.py`, `actions/staff.py`, `scripts/staff_support.py` |
 | Proactive triggers + event bus + rules | **Background Worker** | Outbox poller + reminder scheduler (no pg_cron) | `app/worker.py`, `core/lifecycle.py` |
@@ -272,23 +272,28 @@ because the validator withheld correct AI answers; moving them back to AI wordin
 ### 5.5 Conversation Orchestrator
 - **Category:** Supervisor, planner–executor workflow.
 - **Responsibility & boundaries:** Turns a message into a `TaskPlan`, runs the agents concurrently, records the proposed actions, pauses for the customer's decision, writes the recorded outcome into the reply, records a handoff for withheld sections and composes one reply. It does not answer banking questions itself. Runtime identity (`RequestContext`, owned turn) is passed as LangGraph runtime context, never stored in checkpoint state.
-- **How it works:** a LangGraph `StateGraph` with eight nodes in a straight line. Saved turns use the owned checkpoint saver with synchronous durability, so the state after every node is in Postgres.
+- **How it works:** a LangGraph `StateGraph` with eight nodes. Edges after `resume_pending`, `dispatch` and `propose_actions` are conditional, so nodes with nothing to do (all action nodes for guests and plain answers) are skipped. Saved turns use the owned checkpoint saver with synchronous durability, so the state after every node is in Postgres.
 
 ```mermaid
 flowchart LR
-  IN(["RiskAssessment"]) --> P["1 plan"] --> R["2 prioritise"] --> D["3 dispatch"] --> PA["4 propose_actions"] --> RA["5 review_actions"] --> SA["6 settle_actions"] --> EV["7 escalate_validation"] --> C["8 compose"] --> OUT(["AnswerEvent"])
+  IN(["RiskAssessment"]) --> RP["1 resume_pending"] -->|new message| P["2 plan"] --> R["3 prioritise"] --> D["4 dispatch"]
+  RP -->|reply to our question| R
+  D -->|nothing to act on| C["8 compose"] --> OUT(["AnswerEvent"])
+  D -->|fraud or RM task| A["7 act"] --> C
+  D -->|fraud proposal, owned turn| PA["5 propose_actions"] --> A
+  PA -->|decision pending| RA["6 review_actions"] --> A
   RA -. "proposal pending: interrupt" .-> W(["workflow_paused<br/>wait for confirm/reject"]) -. "resume" .-> RA
 ```
 
 | Node | What it does | LLM? |
 |---|---|---|
-| 1 plan | A document/compliance record selected in the UI routes straight to that agent. Otherwise keyword rules (`simple_issue`) build a one-task plan. Only if no rule fits, one structured-output planner call splits the message into `{domain, question}` issues; English results are re-checked by routing rules (`route_issues`) | Only when unclear |
-| 2 prioritise | Adds a fraud task if the Guardrail flagged `fraud_suspected`/`lost_card` and the planner missed it; assigns P0 fraud, P1 security wording, P2 compliance/document deadline wording, P3 otherwise | No |
-| 3 dispatch | Runs every task concurrently (`asyncio.TaskGroup`), each bounded by `AGENT_TIMEOUT_S`. Each task loads its own evidence and calls its agent. Expected provider/data failures withhold only that section, with no evidence or proposal released | Agents |
-| 4 propose_actions | For each fraud proposal (one per card), calls the Action Service to record a `card.temporary_block` proposal for the owned turn | No |
-| 5 review_actions | Loads the ledger; if any proposal is still `proposed`, pauses the graph (`interrupt`). After resume, the ledger, not the resume value, decides what happened | No |
-| 6 settle_actions | For each decision writes a fixed-wording decision section (origin `safety`). A succeeded block also records a P0 `card_verification` handoff | No |
-| 7 escalate_validation | If any section was withheld by validation in a signed-in customer's saved case, records one `general_support` handoff (no rejected text in its summary) and adds a section saying so | No |
+| 1 resume_pending | A reply to a question in our previous reply (charge list, lost-card offer, RM preview, which card, meeting time) goes straight to `prioritise`; a fresh request matched by `fixed_intent` still goes to `plan`. Clears last turn's `pending_reviews` and `decision_sections` | No |
+| 2 plan | A document/compliance record selected in the UI routes straight to that agent. `fixed_intent` and `critical_route` rules decide fraud, login, RM and a few fixed intents; otherwise one structured-output planner call splits the message into `{domain, question}` issues (`CLIENT_INTENT_ROUTING=rules` uses `simple_issue` first). English results are re-checked by routing rules (`route_issues`) | Unless a rule decides |
+| 3 prioritise | Adds a fraud task if the Guardrail flagged `fraud_suspected`/`lost_card` and the planner missed it; assigns P0 fraud, P1 security wording, P2 compliance/document deadline wording, P3 otherwise | No |
+| 4 dispatch | Runs every task concurrently (`asyncio.TaskGroup`), each bounded by `AGENT_TIMEOUT_S`. Each task loads its own evidence and calls its agent. Expected provider/data failures withhold only that section, with no evidence or proposal released | Agents |
+| 5 propose_actions | Retired by 0081: records nothing for new turns (`offer_card_actions` kept for older saved turns and tests). Reached only with a fraud proposal in an owned turn | No |
+| 6 review_actions | Loads the ledger; if any proposal is still `proposed`, pauses the graph (`interrupt`). After resume, the ledger, not the resume value, decides what happened | No |
+| 7 act | `settle_actions`: fraud charge list to confirm, then the P0 fraud-team handoff after "Yes, report it"; fixed decision text for older recorded decisions. `escalate_validation`: RM handover preview/choice and, with `VALIDATION_HANDOFF=1`, one `general_support` handoff for withheld sections (no rejected text in its summary). Fixed command ids and idempotency keys make a retry safe | No |
 | 8 compose | Deterministic merge: one section per task in priority order, citations kept with their section, decisions written into their own task's section, overall `needs_human`/`source_check`/origin computed | No |
 
 Confirming or rejecting (`POST /commands/{id}/confirm|reject`) resumes the same graph from its checkpoint; `POST /workflows/{turn}/resume` retries a resume that failed. The final reply is stored on the saved turn, and the client reads it from the conversation.
@@ -570,10 +575,10 @@ S = synchronous, A = asynchronous.
 | 14b | Compliance agent → LLM Gateway | S | One call with prompt `compliance/v3`: short plain answer citing the case ("due 30 Nov 2026") |
 | 14c | Response Validator | S | Sources exist and every figure and date matches the record → section released |
 | 14d | t2 | S | No model call: fixed reply "That's something I'm not able to help with here…" |
-| 15 | *propose_actions*, *review_actions*, *settle_actions* | S | No changes proposed, so nothing pauses |
-| 16 | *escalate_validation* → Action Service | S | `handoff.create` (`general_support`, summary = her redacted question); receipt, audit and outbox in one transaction |
+| 15 | *dispatch* → *act* | S | A `handover` task, so the action nodes for proposals are skipped and nothing pauses |
+| 16 | *act* → Action Service | S | `handoff.create` (`general_support`, summary = her redacted question); receipt, audit and outbox in one transaction |
 | 17 | Database trigger | S | Opens an `rm_handover` ticket owned by *Your relationship manager* (migration 0073) |
-| 18 | *escalate_validation* → Customer Data | S | Reads the new ticket's `TCK-` reference and adds "I've passed your question to your relationship manager. Your reference is TCK-…" |
+| 18 | *act* → Customer Data | S | Reads the new ticket's `TCK-` reference and adds "I've passed your question to your relationship manager. Your reference is TCK-…" |
 | 19 | *compose* → Web | S stream | Two sections in priority order; audit batch flushed; SSE `answer`, `done`; reply saved on the turn |
 | 20 | Background Worker → Notification Service | A | Ticket notice → Inbox |
 
@@ -731,13 +736,13 @@ Free hosting of the frontend and API (Vercel/Netlify, Render/Hugging Face) remai
 |---|---|---|---|---|
 | 1 | **Default pipeline** | The orchestrator design *is* the system | Opt-in with `PIPELINE=v2`; `v1` (single `make_answer` path) is still the default. Personal v2 needs `CONVERSATION_STORE=database` | v1 kept as a stable baseline while v2 was built |
 | 2 | **Knowledge and conversation storage** | Postgres `kb` and `conversation` tables | Built, but switched on per setting (`KNOWLEDGE_STORE=memory` and `CONVERSATION_STORE=off` by default) | Same reason |
-| 3 | **Orchestrator graph** | 4 nodes: plan → prioritise → dispatch → compose | 8 nodes: adds propose_actions, review_actions, settle_actions, escalate_validation | Action recording, pause, outcome wording and validation handoffs are separate checkpointed steps |
+| 3 | **Orchestrator graph** | 4 nodes: plan → prioritise → dispatch → compose | 8 nodes: adds resume_pending, propose_actions, review_actions and act, with conditional edges | Action recording, pause, outcome wording and validation handoffs are separate checkpointed steps |
 | 4 | **Parallel dispatch** | LangGraph `Send` | `asyncio.TaskGroup` inside one node, per-task timeout | Simpler; same "slowest, not sum" latency |
 | 5 | **Planner output** | `{domain, intent, entities}` with entity extraction | `{domain, question}` per issue; `intent: answer_question` | Agents read records themselves; extracted entities were not needed |
 | 6 | **How agents work** | Tool-calling agents choose tools, with a cap on tool calls | Agent code reads data, then one model call; the model never chooses a tool | Fewer model calls; no prompt-driven data access |
 | 7 | **Who proposes actions** | Fraud & Security and Relationship agents call `actions.propose`; Compliance updates checklists | Only Fraud & Security (temporary block). Relationship, Compliance and documents changes start from forms | Customer reviews exact fields before any change; no AI drafting |
 | 8 | **Fraud block decision** | The model fills a playbook template | The model writes the description; code chooses the card to offer, and fixed wording reports the outcome | Outcome text never comes from the model |
-| 9 | **Response Validator placement** | One step after compose | Per section inside each agent, plus the `escalate_validation` node | Failed sections are withheld before composing |
+| 9 | **Response Validator placement** | One step after compose | Per section inside each agent, plus the `act` node | Failed sections are withheld before composing |
 | 10 | **Planner failure** | Fraud task still runs; others get "please resend" | Request fails with an explicit error | Not implemented |
 | 11 | **SSE events** | `action_required`, `status {stage}` | `workflow_paused` (actions + full preview), `conversation`; `status` is text | Preview lets the customer see every section while deciding |
 | 12 | **Confirm and resume** | `/commands/{id}/confirm` resumes the graph | Same, plus `/reject` and a retry route `/workflows/{turn}/resume`; the final reply is read from the saved turn | Resume can fail after a recorded decision without losing it |
