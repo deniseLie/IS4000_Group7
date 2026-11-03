@@ -84,6 +84,8 @@ def test_a_yes_answers_the_open_offer_without_planning_or_agents(monkeypatch: py
         calls.append(('confirm',found));return []
     async def nothing(*a,**kw):raise AssertionError('no planner or agent on a confirmation turn')
     monkeypatch.setattr(offers,'open_group',open_group);monkeypatch.setattr(offers,'confirm',confirm)
+    async def unchained(*a):return set()
+    monkeypatch.setattr(offers,'chained',unchained)
     monkeypatch.setattr(orchestrator,'model_plan',nothing);monkeypatch.setattr(runner,'run_agent',nothing)
     req=ChatRequest(messages=[{'role':'user','content':'charges'},{'role':'assistant','content':'Would you like me to report it?'},
         {'role':'user','content':'yes'}],mode='personal')

@@ -23,7 +23,7 @@ from app.services import audit, customer_data, kb, knowledge, llm_gateway, promp
 from app.services.authorization import PolicyDenied, require_tool
 from app.services.external import ExternalError
 from app.services.llm_gateway import LLMError
-from app.services.agents import fraud, registry
+from app.services.agents import derived, fraud, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
 PROMPTS = {'guide': 'v1', 'accounts': 'v1', 'security': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
@@ -248,11 +248,29 @@ def dumps(evidence: list[Evidence]) -> list[dict[str, JsonValue]]:
     return [item.model_dump(mode='json') for item in evidence]
 
 
-def output(spec: AgentSpec, task: PlanTask, result: AgentResult, got: Gathered, prompt_id: str | None = None) -> AgentOutput:
+def output(spec: AgentSpec, task: PlanTask, result: AgentResult, got: Gathered, prompt_id: str | None = None,
+        values: derived.Derived | None = None) -> AgentOutput:
+    """A withheld answer releases no evidence, exports or offers; exports go out only with an `ok` answer."""
     status = result.status if result.status in {'ok', 'needs_clarification', 'needs_human'} else 'error'
     shown = result if status != 'error' else result.model_copy(update={'text': result.text if result.text.endswith(WITHHELD) else WITHHELD, 'citations': []})
+    values = values if values is not None and status != 'error' else derived.Derived()
     return AgentOutput(task_id=task.id, agent=spec.name, status=status, result=shown, evidence=dumps(got.evidence) if status != 'error' else [],
-        reads=got.log, origin='validation' if status == 'error' else 'ai', prompt_id=prompt_id)
+        reads=got.log, origin='validation' if status == 'error' else 'ai', prompt_id=prompt_id,
+        exports=values.exports if status == 'ok' else {}, proposals=values.proposals)
+
+
+def clarify(spec: AgentSpec, task: PlanTask, question: str, got: Gathered) -> AgentOutput:
+    """A value code could not read (the trip dates, which card): a fixed question, no model call."""
+    return AgentOutput(task_id=task.id, agent=spec.name, status='needs_clarification', origin='safety', reads=got.log,
+        result=AgentResult(task_id=task.id, agent=spec.name, status='needs_clarification', answer_kind='conversation', text=question, question=question))
+
+
+def reader(ctx: RequestContext, got: Gathered) -> derived.Reader:
+    async def one(name: str, args: dict[str, Any]) -> list[Evidence]:
+        found = await read(name, args, ctx, got.taken)
+        got.log.append({'tool': name, 'args': args, 'evidence_ids': [e.id for e in found]})
+        return found
+    return one
 
 
 def withheld(spec: AgentSpec, task: PlanTask, error: BaseException, got: Gathered, prompt_id: str | None) -> AgentOutput:
@@ -287,9 +305,13 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
                 else:
                     a['path'] = 'reads'
                     await default_reads(spec, task, ctx, got)
+                values = await derived.compute(spec, task, ctx, got.evidence, reader(ctx, got))
                 system, prompt = answer_system(spec, task, ctx, language, got.evidence)
                 shim = Task(task_id=task.id, domain=DOMAIN[spec.name], intent=task.intent)
                 result = await checked_model_answer(shim, system, history, got.evidence, prompt, agent=spec.name)
+        except derived.Clarify as ask:
+            a['status'] = 'needs_clarification'
+            return clarify(spec, task, ask.question, got)
         except FAILURES as error:
             a['outcome'] = 'timeout' if isinstance(error, TimeoutError) else 'withheld'
             out = withheld(spec, task, error, got, prompt_id(spec))
@@ -297,7 +319,8 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
             return out
         a['status'] = result.status
         a['evidence_count'] = len(got.evidence)
-    return output(spec, task, result, got, prompt['id'])
+        a['exports'] = len(values.exports) if result.status == 'ok' else 0
+    return output(spec, task, result, got, prompt['id'], values)
 
 
 def prompt_id(spec: AgentSpec) -> str | None:

@@ -39,10 +39,12 @@ def group_for(case_id: UUID) -> UUID:
 
 
 async def save(proposals: list[Proposal], ctx: RequestContext, turn_id: UUID | None = None) -> list[Offer]:
-    """Save a reply's offers in order. Each needs its agent's spec to list the type (authorization.decide)."""
+    """Save a reply's offers in order. Each needs its agent's spec to list the type (authorization.decide). A chained offer
+    carries "after_receipt": null, which offer_group_confirm fills with the previous step's receipt (migration 0100)."""
     if not proposals:return []
     if ctx.case_id is None or ctx.principal.kind != 'customer':raise ActionIntegrityError('Offers need a signed-in customer case')
     if len(proposals) > MAX_GROUP:raise ActionIntegrityError(f'At most {MAX_GROUP} offers in one reply')
+    if proposals[0].chained:raise ActionIntegrityError('The first offer in a reply has nothing to follow')
     for proposal in proposals:  # every refusal before the database is opened
         require_permission(ctx.principal, proposal.type, {'customer_id': ctx.principal.customer_id}, ctx.model_copy(update={'agent': proposal.agent}))
     group = group_for(ctx.case_id)
@@ -51,7 +53,7 @@ async def save(proposals: list[Proposal], ctx: RequestContext, turn_id: UUID | N
         for order, proposal in enumerate(proposals, 1):
             key = f'{ctx.case_id}:{proposal.task_id}:{proposal.type}'
             command = ActionCommand(command_id=uuid5(NAMESPACE_URL, 'demobank-offer:' + key), idempotency_key=key, type=proposal.type, target=proposal.target)
-            target = canonical_target(command)
+            target = {**canonical_target(command), **({'after_receipt': None} if proposal.chained else {})}
             response = await data_api.execute(lambda: db.rpc('action_offer', {'p_command_id': str(command.command_id), 'p_case_id': str(ctx.case_id),
                 'p_type': command.type, 'p_target': target, 'p_idempotency_key': key, 'p_ttl_minutes': TTL_MINUTES,
                 'p_offer_group': str(group), 'p_group_order': order, 'p_turn_id': str(turn_id) if turn_id else None}).execute(), 'offers.save')
@@ -59,7 +61,7 @@ async def save(proposals: list[Proposal], ctx: RequestContext, turn_id: UUID | N
             if result.command.idempotency_key != key or result.command.case_id != ctx.case_id:
                 raise ActionIntegrityError('The saved offer does not match the proposal')
             saved.append(Offer(offer_id=result.command.command_id, type=proposal.type, target=target, summary=proposal.summary,
-                expires_at=result.command.expires_at))
+                expires_at=result.command.expires_at, after_offer=saved[-1].offer_id if proposal.chained else None))
     return saved
 
 
@@ -90,6 +92,13 @@ def reply_kind(text: str) -> str:
     """'yes', 'no' or 'other'. English words only, and only a whole short reply: "yes but also …" is 'other'."""
     words = re.sub(r"[^a-z]+", ' ', text.lower().replace('’', "'")).strip()
     return 'yes' if words in YES else 'no' if words in NO else 'other'
+
+
+async def chained(group_id: UUID, ctx: RequestContext, conversation_id: UUID | None) -> set[UUID]:
+    """The open offers in a group that wait for the previous step's receipt (their reply quotes its reference)."""
+    if conversation_id is None:return set()
+    found = (await open_groups(ctx, conversation_id)).get(group_id, [])
+    return {o.command_id for o in found if 'after_receipt' in o.target}
 
 
 def customer_only(ctx: RequestContext) -> None:

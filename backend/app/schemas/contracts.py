@@ -155,6 +155,8 @@ class Receipt(Contract):
 OPEN_INTENT = 'open'  # the planner found no listed intent: the agent chooses its reads in the bounded tool loop
 QUESTION = 'question'  # pseudo-entity: the task's own question, e.g. as a knowledge_search query
 ToolName = str  # a model-facing tool in services/tools.TOOLS
+# Export types (§14.6, phase 7): small values computed by code, never raw rows, balances or free text.
+EXPORT_TYPES = frozenset({'bool', 'date', 'reference', 'label', 'list[date]', 'list[account_ref]'})
 
 
 class ToolView(Contract):
@@ -186,7 +188,8 @@ class AgentSpec(Contract):
     intents: dict[str, tuple[Read, ...]]  # intent -> default reads (option B, docs/planning/agent-decisions.md)
     loop_tools: frozenset[ToolName] = frozenset()  # tools an `open` task may choose
     external: frozenset[str] = frozenset()  # external tools (phase 2): public_holidays, fx_rate; usable in reads and loop_tools
-    exports: dict[str, str] = {}  # name -> type name, computed by code (phase 7)
+    exports: dict[str, str] = {}  # name -> EXPORT_TYPES name, computed by code (agents/derived.py), never by the model
+    sort_by: dict[str, str] = {}  # list export of objects -> the field a fan-out sorts on (a list of dates sorts by value)
     imports: frozenset[str] = frozenset()
     hands_to: frozenset[TargetAgent] = frozenset()
     offers: frozenset[str] = frozenset()  # action types it may propose; every one needs confirmation
@@ -199,6 +202,9 @@ class AgentSpec(Contract):
         if text := sorted(t for t in self.loop_tools if t in self.tools and self.tools[t].free_text):raise ValueError(f'{self.name}: free-text loop tools {text}')
         if OPEN_INTENT in self.intents:raise ValueError(f'{self.name}: {OPEN_INTENT!r} is not a listed intent')
         if self.scope == 'public' and self.offers:raise ValueError(f'{self.name}: a public agent makes no offers')
+        if bad := sorted(n for n, t in self.exports.items() if t not in EXPORT_TYPES):raise ValueError(f'{self.name}: unknown export types {bad}')
+        if bad := sorted(n for n, t in self.exports.items() if t.startswith('list[') and t != 'list[date]' and n not in self.sort_by):
+            raise ValueError(f'{self.name}: list exports without a sort field {bad}')
         return self
 
 
@@ -209,6 +215,17 @@ class PlanTask(Contract):
     question: str
     entities: dict[str, JsonValue] = {}
     priority: Priority = 'P3'
+    # Phase 7 (§14.6): wave 2 runs after `depends_on`; `condition` names a bool export, `for_each` a list export of it.
+    depends_on: str | None = None
+    condition: str | None = None
+    for_each: str | None = None
+    rerouted: bool = False  # handed to another agent once already (question only)
+
+    @model_validator(mode='after')
+    def _dependency(self):
+        if (self.condition or self.for_each) and not self.depends_on:raise ValueError('condition and for_each need depends_on')
+        if self.depends_on == self.id:raise ValueError('a task cannot depend on itself')
+        return self
 
 
 class Export(Contract):
@@ -233,6 +250,7 @@ class OfferProposal(Contract):
     type: str
     target: dict[str, JsonValue] = {}
     summary: str = Field(min_length=1, max_length=300)
+    chained: bool = False  # runs after the offer before it in this reply and receives its receipt (after_receipt)
 
 
 class AgentOutput(Contract):

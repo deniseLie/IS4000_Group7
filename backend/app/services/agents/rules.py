@@ -5,6 +5,7 @@ lists charges for the fraud team (Security), meetings, request status and RM han
 (Guide). Compliance and Relationship still answer with their released v4 prompts, and the charge review with fraud v7,
 so these reads run under the v4 agent names and allow-lists (registry.TOOLS) until their own runner prompts land.
 A rule returns None to let the runner's model answer. Importing this module registers the rules in runner.RULES."""
+import re
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 from pydantic import TypeAdapter
@@ -20,6 +21,9 @@ from app.services.agents import (account_answers, card_answers, client_guidance,
 from app.services.agents.answer import WITHHELD
 
 SGT = ZoneInfo('Asia/Singapore')
+# A fee waiver or refund is a person's decision: Accounts hands the question to Relationship once (§14.6 handoff).
+WAIVER = re.compile(r'\b(?:waive[ds]?|waiving|waiver|refund|reverse)\b[^.?!]{0,40}\b(?:fees?|interest|late charges?)\b'
+    r'|\b(?:fees?|interest)\b[^.?!]{0,30}\b(?:waived?|waiver|refunded|reversed)\b', re.I)
 STATUS_UNAVAILABLE = ("I couldn't retrieve your request status right now. Please check My Requests "
     "or try again later. I can't confirm an approval without a bank-recorded decision.")
 
@@ -68,6 +72,9 @@ async def guide_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, hist
 
 async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput | None:
     """Figures and "which card?" straight from records; questions needing computed checks keep the retail prompt."""
+    if WAIVER.search(task.question) and not task.rerouted:
+        return AgentOutput(task_id=task.id, agent=spec.name, status='out_of_scope', suggested='relationship')
+    if task.intent == 'trip_due_dates':return None  # computed by code (agents/derived.py), answered by the accounts prompt
     v4, current = shim(task, 'retail'), as_v4(ctx, 'retail')
     public = await knowledge(task, ctx)
     if (found := client_guidance.respond(task.id, task.question, public, ctx.received_at)) is not None:

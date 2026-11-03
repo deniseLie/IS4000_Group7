@@ -63,13 +63,15 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
         'loans':(Read(tool='my_loans'),ASK),
         'statements':(Read(tool='my_accounts'),ASK),
         'product_info':(ASK,),
-        'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK)},
+        'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK),
+        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans'))},  # + public holidays per trip year (agents/derived.py)
     loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_transactions','knowledge_search','fx_rate','public_holidays'}),
-    external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}))
+    external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
+    exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]'},sort_by={'account_refs':'last4'})
 
 SECURITY=AgentSpec(name='security',role='client',scope='own_customer',prompt='security',
     answers='Unrecognised charges, lost or stolen cards, login trouble, unexpected codes, phishing and travel readiness. '
-        'Reports to the fraud team; never freezes, unfreezes, disputes or cancels.',
+        'Reports to the fraud team and sends travel notices; never freezes, unfreezes, disputes or cancels.',
     tools={'my_cards':ToolView(fields=frozenset({'card_id','last4','status'})),
         'my_transactions':ToolView(fields=frozenset({'txn_id','date','description','amount','currency','status','card_id','card_last4','is_overseas'}),
             max_days=TXN_DAYS,max_rows=TXN_ROWS),
@@ -77,7 +79,7 @@ SECURITY=AgentSpec(name='security',role='client',scope='own_customer',prompt='se
     intents={'unrecognised_charge':(Read(tool='my_cards'),Read(tool='my_transactions'),Read(tool='travel_flags'),ASK),
         'lost_card':(Read(tool='my_cards'),ASK),'login_help':(ASK,),'phishing':(ASK,),
         'travel_readiness':(Read(tool='my_cards'),ASK)},
-    external=frozenset({'public_holidays'}),offers=frozenset({'handoff.create','card.order_replacement'}))
+    external=frozenset({'public_holidays'}),offers=frozenset({'handoff.create','card.order_replacement','ticket.create'}))  # ticket: travel notice (0101)
 
 COMPLIANCE=AgentSpec(name='compliance',role='client',scope='own_customer',prompt='compliance',
     answers='The client\'s compliance review: checklist, missing items, deadlines, bank questions, uploads and check '
@@ -92,7 +94,7 @@ COMPLIANCE=AgentSpec(name='compliance',role='client',scope='own_customer',prompt
         'guidance':(ASK,Read(tool='document_templates'))},
     loop_tools=frozenset({'my_document_checks','document_templates','knowledge_search'}),
     offers=frozenset({'compliance.update_checklist_item','compliance.answer_request','document.submit','handoff.create'}),
-    hands_to=frozenset({'relationship'}))
+    hands_to=frozenset({'relationship'}),imports=frozenset({'account_refs'}))  # C24: account type, currency, last 4; no balances
 
 RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',prompt='relationship',
     answers='Everything about a person at the bank: the client\'s RM, meetings and free times, consent to share, '
@@ -114,7 +116,7 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
         'consent':(Read(tool='my_consents'),ASK),
         'service_options':(Read(tool='request_categories'),ASK)},
     loop_tools=frozenset({'my_rm','my_appointments','free_slots','my_consents','request_categories','knowledge_search'}),
-    external=frozenset({'public_holidays'}),
+    external=frozenset({'public_holidays'}),imports=frozenset({'due_dates'}),
     offers=frozenset({'appointment.hold','appointment.confirm','appointment.cancel','handoff.create','tickets.follow_up',
         'consent.grant','consent.revoke','rm.share_summary'}))
 

@@ -101,7 +101,7 @@ def test_limits_fill_in_or_refuse_windows_and_rows():
 def test_policy_reads_the_spec_for_new_agents():
     for agent,allowed,forbidden in [('accounts','customer.get_loans','compliance.get_case'),
             ('security','customer.get_transactions','customer.get_loans'),('guide','kb.search','customer.get_credit_cards'),
-            ('accounts','ticket.create','handoff.create'),('security','handoff.create','ticket.create')]:
+            ('accounts','ticket.create','handoff.create'),('security','handoff.create','rm.share_summary')]:
         c=ctx(agent)
         assert decide(c.principal,allowed,{'customer_id':1001},c).allow, (agent,allowed)
         assert decide(c.principal,forbidden,None,c).reasons==['agent_tool_forbidden'], (agent,forbidden)

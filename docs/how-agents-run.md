@@ -26,7 +26,8 @@ The guardrail runs first and never calls the model. Lost card and pasted secrets
 
 ```mermaid
 flowchart TD
-  planner -->|one Send per task, up to 5| agent --> gather --> compose
+  planner -->|one Send per independent task, up to 5| agent --> gather --> compose
+  gather -->|wave 2: dependants, fan-out, one handoff| agent
   planner -->|yes / no to an open offer| act --> compose
   planner -->|nothing to run: rephrase or expired offer| compose
 ```
@@ -35,10 +36,10 @@ There is no checkpointer and no paused turn: an offer is saved on the Action Ser
 
 | # | Node | What it does | Model? |
 |---|---|---|---|
-| 1 | `planner` | Rules first: an open offer plus a whole short yes/no (or the `offer` button) goes to `act`; a "yes" after an expired offer gets a fixed line; a reply to our own question (which card, card limit, meeting time, RM preview choice) goes back to that agent; a selected record goes to Compliance; fraud and login wording go to Security; an explicit RM request goes to Relationship; greetings go to Guide. Otherwise one `planner/v6` call returns up to 5 tasks (agent + intent from `registry.SPECS`, or `open`). Then the rule overrides (fraud → Security P0, login → Security P1, RM handover) and the plan check (`checked`: guests get Guide only; unknown intents fixed; entities bounded). If the planner fails and no rule matched, a fixed rephrase line | Yes, unless a rule decides |
+| 1 | `planner` | Rules first: an open offer plus a whole short yes/no (or the `offer` button) goes to `act`; a "yes" after an expired offer gets a fixed line; a reply to our own question (which card, card limit, meeting time, RM preview choice) goes back to that agent; a selected record goes to Compliance; fraud and login wording go to Security; an explicit RM request goes to Relationship; greetings go to Guide. Otherwise one `planner/v7` call returns up to 5 tasks (agent + intent from `registry.SPECS`, or `open`; a task may depend on an earlier one). Then the rule overrides (fraud → Security P0, login → Security P1, RM handover) and the plan check (`checked`: guests get Guide only; unknown intents fixed; entities bounded; `linked`: a dependency the specs do not declare is dropped with a fixed line). If the planner fails and no rule matched, a fixed rephrase line | Yes, unless a rule decides |
 | 2 | `agent` | `runner.run_agent` for one task, in parallel with the others, within `AGENT_TIMEOUT_S`. History is the client's last 3 redacted messages (the task's own question when one message held several issues); assistant text only for a reply to our own question | Inside agents |
-| 3 | `gather` | Wave 1 only for now; phase 7 adds a second wave from agents' exports | No |
-| 4 | `act` | Confirm or cancel the open offer group in order (`offers.confirm` / `cancel`); SQL checks owner, expiry and order, and a double confirm records once. Fixed outcome lines quote the receipt or ticket reference | No |
+| 3 | `gather` | After wave 1, once: the dependent tasks with only the exports they import (computed by code, `agents/derived.py`), skipped with a fixed line when their condition is false or unknown; at most 5 per list export ("first 5 of N"); an `out_of_scope` task handed once to an agent in its spec's `hands_to`, question only. After wave 2 it goes to `compose` | No |
+| 4 | `act` | Confirm or cancel the open offer group in order (`offers.confirm` / `cancel`); SQL checks owner, expiry and order, and a double confirm records once; a chained step receives the earlier receipt, and is not run when the earlier one fails. Fixed outcome lines quote the receipt or ticket reference | No |
 | 5 | `compose` | Sections in priority order (P0 fraud, P1 login, P2 compliance deadline, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `plan` event after the planner (task ids, domains, priorities: the UI shows a placeholder per task), a `section` event as each agent finishes (filling its placeholder), then the `answer` (with `offer`: the UI shows one Confirm and one Cancel) | No |
 
 ## 3. Who answers what

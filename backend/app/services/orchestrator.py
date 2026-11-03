@@ -1,11 +1,16 @@
-"""v5 LangGraph (build plan phase 5; architecture §14): planner → agent (Send ×N) → gather → compose, and
-planner → act → compose when the client answers an open offer.
+"""v5 LangGraph (build plan phases 5 and 7; architecture §14): planner → agent (Send ×N) → gather → [agent (wave 2) →
+gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-fraud and login wording, an explicit request for a person, greetings), then one planner/v6 call, then the rule
+fraud and login wording, an explicit request for a person, greetings), then one planner/v7 call, then the rule
 overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent. Agents never
 write: what they propose is saved by compose as one offer group, and only a later confirmation (act) runs it. There is
 no checkpointer: a crash fails the turn and the client retries, which is safe because offers are idempotent.
+
+Agents never call each other (§14.6). A planned task may depend on an earlier one: gather runs it in a second wave with
+only the exports it imports, only when its condition export is true ("unknown means no"), once per item of a list
+export (at most 5), and hands an out-of-scope question to one allowed agent once. Offers of a dependent task run after
+its upstream's offers and receive their receipt (after_receipt).
 """
 import operator
 import re
@@ -21,9 +26,10 @@ from app.core.observability import log_event, span
 from app.schemas.actions import ActionOutcome, HandoffResult
 from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest, Message
-from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
+from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, Export, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
 from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, PlanEvent, PlannedSection, Source
-from app.services import fraud_reports, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
+from app.schemas.tickets import TicketResult
+from app.services import audit, fraud_reports, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
 from app.services.llm_gateway import LLMError
 from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, retail_checks, runner, rules  # noqa: F401 (rules registers)
 from app.services.agents.answer import WITHHELD
@@ -31,7 +37,8 @@ from app.services.answers import NOTICE, clean_history
 from app.services.guardrail import FRAUD
 
 MAX_TASKS = 5
-PLANNER = 'v6'
+MAX_ITEMS = 5  # fan-out cap per list export
+PLANNER = 'v7'
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
 GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
 SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b', re.I)
@@ -75,6 +82,17 @@ FRAUD_DECLINED = ('Okay, I haven’t sent the charges to the fraud team. If you 
 CANCELLED = 'Okay, nothing has been sent.'
 STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try again, or use the official app.'
 DONE = 'Done. You can see the receipt in Activity.'
+TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
+LINKED = ' It is linked to your earlier request {reference}.'
+CHAIN_STOPPED = 'I didn’t do this next step, because the step before it didn’t go through. Nothing was changed for it.'
+# Dependencies (§14.6): fixed wording, never the planner's text.
+UNLINKED = 'I couldn’t link one part of your message to the rest, so I haven’t done it. Could you ask it on its own?'
+UPSTREAM_UNKNOWN = 'I couldn’t check what this part depends on, so I haven’t gone ahead with it. Ask again on its own if you still want it.'
+CONDITION_FALSE: dict[str, str] = {
+    'due_in_window': 'None of your card or loan payments falls due during your trip, so I haven’t gone ahead with that part.'}
+CONDITION_FALSE_ANY = 'What you asked this to depend on isn’t the case, so I haven’t gone ahead with that part.'
+MORE_ITEMS = 'I’ve shown the first {shown} of {total}. Ask about the others if you need them.'
+OUT_OF_SCOPE = 'I can’t help with that part here. Say “talk to a person” and I’ll show you what I would send to your relationship manager.'
 # Our own fixed asks a short yes or no answers; with no open offer left, the reply says so instead of guessing.
 OFFER_MARKS = (CONFIRM_LINE, fraud_reports.CONFIRM_REPLY, fraud_reports.LOST_REPLY)
 DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship'}
@@ -103,6 +121,8 @@ class Turn(TypedDict, total=False):
     confirm: Confirmation | None
     lines: list[AnswerSection]  # fixed sections: the rephrase line, or the outcomes of a confirmed offer group
     outputs: Annotated[list[AgentOutput], operator.add]
+    wave: int  # 1 after the planner, 2 once gather has sent the dependent tasks
+    next: list['AgentInput']  # wave 2, from gather
     answer: AnswerEvent
 
 
@@ -110,6 +130,7 @@ class AgentInput(TypedDict):
     task: PlanTask
     history: list[Message]
     language: str
+    inputs: dict[str, Export]  # the upstream exports this agent imports (wave 2 only)
 
 
 # ---- Planner rules ----
@@ -215,7 +236,8 @@ def catalogue() -> str:
     lines = ['Agents (name: what it answers; intents):']
     for spec in registry.SPECS.values():
         intents = [*spec.intents, *([OPEN_INTENT] if spec.loop_tools else [])]
-        lines.append(f'- {spec.name}: {spec.answers} Intents: {", ".join(intents)}')
+        exports = f' Exports: {", ".join(f"{n} ({t})" for n, t in spec.exports.items())}.' if spec.exports else ''
+        lines.append(f'- {spec.name}: {spec.answers} Intents: {", ".join(intents)}.{exports}')
     return '\n'.join(lines)
 
 
@@ -224,8 +246,9 @@ def plan_schema() -> dict:
         'tasks': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False, 'properties': {
             'agent': {'type': 'string', 'enum': sorted(registry.SPECS)}, 'intent': {'type': 'string'}, 'question': {'type': 'string'},
             'entities': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
-                'properties': {'name': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['name', 'value']}}},
-            'required': ['agent', 'intent', 'question', 'entities']}}}, 'required': ['tasks']}
+                'properties': {'name': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['name', 'value']}},
+            'depends_on': {'type': 'integer', 'minimum': 0, 'maximum': MAX_TASKS}, 'condition': {'type': 'string'}, 'for_each': {'type': 'string'}},
+            'required': ['agent', 'intent', 'question', 'entities', 'depends_on', 'condition', 'for_each']}}}, 'required': ['tasks']}
 
 
 async def model_plan(history: list[Message]) -> list[PlanTask]:
@@ -233,8 +256,16 @@ async def model_plan(history: list[Message]) -> list[PlanTask]:
     result = await llm_gateway.call(pv, pv['system'] + '\n' + catalogue(), [(m.role, m.content) for m in history], plan_schema())
     rows = result.data.get('tasks') if isinstance(result.data, dict) else None
     if not isinstance(rows, list) or not rows:raise llm_gateway.LLMBadOutput('The planner returned no tasks')
-    return [PlanTask(id=f't{i+1}', agent=row['agent'], intent=row['intent'], question=row['question'],
-        entities={item['name']: item['value'] for item in row['entities'] if isinstance(item, dict)}) for i, row in enumerate(rows[:MAX_TASKS])]
+    rows = rows[:MAX_TASKS]
+    def upstream(i: int, row: dict) -> str | None:  # depends_on is the 1-based number of another task; 0 is none
+        n = row.get('depends_on')
+        return f't{n}' if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= len(rows) and n != i+1 else None
+    def name(row: dict, key: str) -> str | None:
+        return value.strip()[:40] if isinstance(value := row.get(key), str) and value.strip() else None
+    return [PlanTask.model_validate({'id': f't{i+1}', 'agent': row['agent'], 'intent': row['intent'], 'question': row['question'],
+        'entities': {item['name']: item['value'] for item in row['entities'] if isinstance(item, dict)},
+        **({'depends_on': up, 'condition': name(row, 'condition'), 'for_each': name(row, 'for_each')} if (up := upstream(i, row)) else {})})
+        for i, row in enumerate(rows)]
 
 
 def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
@@ -279,6 +310,7 @@ def entity_value(name: str, value):
 def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
     """The plan check against SPECS: guests get only Guide; an unknown intent becomes `open`, or the agent's first intent."""
     plan: list[PlanTask] = []
+    ids: dict[str, str] = {}
     for item in tasks[:MAX_TASKS]:
         if req.mode != 'personal':item = item.model_copy(update={'agent': 'guide', 'intent': item.intent if item.agent == 'guide' else 'general',
             'entities': {}})
@@ -286,8 +318,33 @@ def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
         intent = item.intent if item.intent in spec.intents or (item.intent == OPEN_INTENT and spec.loop_tools) else \
             OPEN_INTENT if spec.loop_tools else next(iter(spec.intents))
         entities = {k: v for k, v in ((k, entity_value(k, v)) for k, v in item.entities.items()) if v is not None}
-        plan.append(item.model_copy(update={'id': f't{len(plan)+1}', 'intent': intent, 'entities': entities}))
+        ids[item.id] = f't{len(plan)+1}'
+        plan.append(item.model_copy(update={'id': ids[item.id], 'intent': intent, 'entities': entities}))
+    plan = [t.model_copy(update={'depends_on': ids.get(t.depends_on, '?')}) if t.depends_on else t for t in plan]  # '?': not in the plan
     return [t.model_copy(update={'priority': t.priority if t.priority != 'P3' else priority(t)}) for t in plan]
+
+
+def linked(tasks: list[PlanTask], req: ChatRequest) -> tuple[list[PlanTask], list[AnswerSection]]:
+    """The dependency check (§14.6 rules 3 and 5): the upstream is another planned task that depends on nothing (so no
+    cycles and at most 2 waves), both agents are on the same side (client or RM), and the condition is a bool export
+    and for_each a list export of the upstream's spec. Guests get no dependent tasks. A task that fails is dropped with
+    a fixed line; nothing runs on a link the specs do not declare."""
+    if req.mode != 'personal':
+        return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None}) for t in tasks], []
+    by_id = {t.id: t for t in tasks}
+    kept, lines = [], []
+    for item in tasks:
+        up = by_id.get(item.depends_on) if item.depends_on else None
+        exports = registry.SPECS[up.agent].exports if up else {}
+        ok = item.depends_on is None or (up is not None and up.id != item.id and up.depends_on is None
+            and (registry.SPECS[up.agent].role == 'rm') == (registry.SPECS[item.agent].role == 'rm')
+            and (item.condition is None or exports.get(item.condition) == 'bool')
+            and (item.for_each is None or exports.get(item.for_each, '').startswith('list[')))
+        if ok:kept.append(item)
+        else:
+            log_event('plan_unlinked', task=item.id, agent=item.agent)
+            lines.append(fixed_section(item.id, UNLINKED, DOMAIN[item.agent], item.priority))
+    return kept, lines
 
 
 async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired'] | None:
@@ -332,9 +389,9 @@ async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
                     if single is None:return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', REPHRASE)]}
                     tasks = [single]
             tasks = overridden(tasks, risk) if req.language == 'English' else tasks
-        tasks = checked(tasks, req)
-        attrs['tasks'] = len(tasks)
-    return {'confirm': None, 'tasks': tasks, 'lines': []}
+        tasks, lines = linked(checked(tasks, req), req)
+        attrs['tasks'], attrs['dependent'] = len(tasks), sum(1 for t in tasks if t.depends_on)
+    return {'confirm': None, 'tasks': tasks, 'lines': lines, 'wave': 1}
 
 
 def agent_history(history: list[Message], item: PlanTask, several: bool) -> list[Message]:
@@ -349,14 +406,16 @@ def agent_history(history: list[Message], item: PlanTask, several: bool) -> list
 def after_planner(state: Turn) -> list[Send] | str:
     if state.get('confirm') is not None:return 'act'
     tasks = state.get('tasks') or []
-    if not tasks:return 'compose'
-    return [Send('agent', AgentInput(task=item, history=agent_history(state['history'], item, len(tasks) > 1), language=state['request'].language))
-        for item in tasks]
+    first = [item for item in tasks if item.depends_on is None]
+    if not first:return 'compose'
+    return [Send('agent', AgentInput(task=item, history=agent_history(state['history'], item, len(tasks) > 1), language=state['request'].language,
+        inputs={})) for item in first]
 
 
 async def agent(item: AgentInput, runtime: Runtime[TurnContext]) -> dict:
     current = item['task']
-    try:output = await runner.run_agent(registry.SPECS[current.agent], current, {}, runtime.context.request, item['history'], item['language'])
+    try:output = await runner.run_agent(registry.SPECS[current.agent], current, item.get('inputs') or {}, runtime.context.request,
+        item['history'], item['language'])
     except runner.PlanRefused as error:
         log_event('plan_refused', agent=current.agent, intent=current.intent, reason=str(error)[:120])
         output = AgentOutput(task_id=current.id, agent=current.agent, status='error', origin='validation',
@@ -364,9 +423,71 @@ async def agent(item: AgentInput, runtime: Runtime[TurnContext]) -> dict:
     return {'outputs': [output]}
 
 
+def skipped(item: PlanTask, text: str, reason: str) -> AgentOutput:
+    """A dependent task that does not run: a fixed line in its place, never the planner's or a model's text."""
+    log_event('dependency_skipped', task=item.id, agent=item.agent, reason=reason)
+    return AgentOutput(task_id=item.id, agent=item.agent, status='ok', origin='safety',
+        result=AgentResult(task_id=item.id, agent=item.agent, status='ok', answer_kind='conversation', text=text))
+
+
+def items_of(export: Export, name: str, agent: TargetAgent) -> list:
+    """A list export in its declared order (the spec's sort field; dates by value)."""
+    values = export.value if isinstance(export.value, list) else []
+    key = registry.SPECS[agent].sort_by.get(name)
+    return sorted(values, key=lambda v: str(v.get(key, '')) if key and isinstance(v, dict) else str(v))
+
+
+def passed(up: AgentOutput, to: PlanTask, inputs: dict[str, Export]) -> None:
+    """Audit names and counts, never values (§14.6 rule 6; the plan's export.passed, named in its category)."""
+    for name, export in inputs.items():
+        count = len(export.value) if isinstance(export.value, list) else 1
+        audit.add('agent', 'agent.export_passed', details={'from': up.agent, 'to': to.agent, 'name': name, 'count': count})
+
+
 def gather(state: Turn) -> dict:
-    """Wave 1 only; phase 7 adds a second wave from the outputs' exports."""
-    return {}
+    """After wave 1 (next_wave, §14.6): the dependent tasks with their imports, conditions and fan-out, and one handoff per
+    out-of-scope task to an agent in its spec's hands_to (question only, no planner call). After wave 2: nothing."""
+    if state.get('wave', 1) >= 2:return {'next': []}
+    outputs = {o.task_id: o for o in state.get('outputs') or []}
+    language, history = state['request'].language, state['history']
+    tasks, sends, extra, lines = [], [], [], list(state.get('lines') or [])
+    for item in state.get('tasks') or []:
+        up = outputs.get(item.depends_on) if item.depends_on else None
+        if item.depends_on is None:
+            done = outputs.get(item.id)
+            hand = done.suggested if done is not None and done.status == 'out_of_scope' and not item.rerouted else None
+            if hand is not None and hand in registry.SPECS[item.agent].hands_to:
+                spec = registry.SPECS[hand]
+                item = item.model_copy(update={'agent': hand, 'intent': OPEN_INTENT if spec.loop_tools else next(iter(spec.intents)),
+                    'entities': {}, 'rerouted': True})
+                log_event('task_rerouted', task=item.id, agent=hand)
+                sends.append(AgentInput(task=item, history=[Message(role='user', content=item.question)], language=language, inputs={}))
+            tasks.append(item)
+            continue
+        if up is None or up.status != 'ok' or any(name and name not in up.exports for name in (item.condition, item.for_each)):
+            extra.append(skipped(item, UPSTREAM_UNKNOWN, 'upstream_unavailable'));tasks.append(item);continue
+        if item.condition and up.exports[item.condition].value is not True:
+            extra.append(skipped(item, CONDITION_FALSE.get(item.condition, CONDITION_FALSE_ANY), 'condition_false'));tasks.append(item);continue
+        inputs = {k: up.exports[k] for k in registry.SPECS[item.agent].imports & up.exports.keys()}
+        own = agent_history(history, item, True)
+        if not item.for_each:
+            passed(up, item, inputs)
+            sends.append(AgentInput(task=item, history=own, language=language, inputs=inputs));tasks.append(item);continue
+        values = items_of(up.exports[item.for_each], item.for_each, up.agent)
+        if not values:
+            extra.append(skipped(item, CONDITION_FALSE_ANY, 'no_items'));tasks.append(item);continue
+        for i, value in enumerate(values[:MAX_ITEMS]):
+            one = item.model_copy(update={'id': item.id if i == 0 else f'{item.id}-{i+1}', 'entities': {**item.entities, 'item': value}})
+            mine = {**inputs, **({item.for_each: Export(value=value, source_ids=up.exports[item.for_each].source_ids)} if item.for_each in inputs else {})}
+            passed(up, one, mine)
+            sends.append(AgentInput(task=one, history=own, language=language, inputs=mine));tasks.append(one)
+        if len(values) > MAX_ITEMS:
+            lines.append(fixed_section(f'{item.id}-more', MORE_ITEMS.format(shown=MAX_ITEMS, total=len(values)), DOMAIN[item.agent], item.priority))
+    return {'wave': 2, 'next': sends, 'tasks': tasks, 'outputs': extra, 'lines': lines}
+
+
+def after_gather(state: Turn) -> list[Send] | str:
+    return [Send('agent', item) for item in state.get('next') or []] or 'compose'
 
 
 # ---- Confirmation turns ----
@@ -375,21 +496,34 @@ def receipt_source(command_id: UUID) -> Source:
     return Source(id=f'action-receipt-{command_id}', title='Recorded action receipt', url=None, version='v1', publisher='DemoBank action ledger')
 
 
-async def outcome_text(outcome: ActionOutcome, ctx: RequestContext) -> str:
-    """Fixed wording per recorded outcome; "sent" is said only with a succeeded receipt."""
+async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str | None = None) -> str:
+    """Fixed wording per recorded outcome; "sent" is said only with a succeeded receipt. `earlier` is the reference of the
+    step this one was chained to (it received that step's receipt)."""
     command, receipt = outcome.command, outcome.receipt
     reason = getattr(command.target, 'reason', None)
     if command.state == 'rejected':
         return FRAUD_DECLINED if reason == 'card_verification' else fraud_reports.LOST_DECLINED if reason == 'card_lost' else CANCELLED
     if command.state == 'expired':return EXPIRED
-    if receipt is None or receipt.outcome != 'succeeded':return STEP_FAILED
+    if receipt is None or receipt.outcome != 'succeeded':
+        return CHAIN_STOPPED if getattr(receipt, 'result', None) is not None and getattr(receipt.result, 'error_code', None) == 'earlier_offer_failed' else STEP_FAILED
+    link = LINKED.format(reference=earlier) if earlier else ''
     if isinstance(receipt.result, HandoffResult):
         reference = await rm_handover.ticket_reference(receipt.result.handoff_id, ctx)
         where = f' (reference {reference})' if reference else ''
         if reason == 'card_verification':return FRAUD_TEAM.format(reference=where)
         if reason == 'card_lost':return fraud_reports.LOST_SENT.format(reference=where)
-        return rm_handover.handed_over(reference)
-    return DONE
+        return rm_handover.handed_over(reference) + link
+    if isinstance(receipt.result, TicketResult):
+        label = getattr(command.target, 'category_label', 'support').lower()
+        return TICKET_RAISED.format(label=label, reference=receipt.result.reference) + link
+    return DONE + link
+
+
+async def reference_of(outcome: ActionOutcome, ctx: RequestContext) -> str | None:
+    result = getattr(outcome.receipt, 'result', None)
+    if isinstance(result, TicketResult):return result.reference
+    if isinstance(result, HandoffResult):return await rm_handover.ticket_reference(result.handoff_id, ctx)
+    return None
 
 
 async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
@@ -397,14 +531,17 @@ async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     reply = state['confirm']
     ctx = runtime.context.request.model_copy(update={'agent': None})
     with span('act', 'tool', decision=reply.decision) as attrs:
+        chained = await offers.chained(reply.group, ctx, runtime.context.conversation_id) if reply.decision == 'confirm' else set()
         outcomes = await (offers.confirm if reply.decision == 'confirm' else offers.cancel)(reply.group, ctx)
-        attrs['offers'] = len(outcomes)
-    lines = []
+        attrs['offers'], attrs['chained'] = len(outcomes), len(chained)
+    lines, earlier = [], None
     for i, outcome in enumerate(outcomes):
         reason = getattr(outcome.command.target, 'reason', None)
         urgent = reason in {'card_verification', 'card_lost'}
         succeeded = outcome.receipt is not None and outcome.receipt.outcome == 'succeeded'
-        lines.append(fixed_section(f'offer{i+1}', await outcome_text(outcome, ctx), domain='fraud' if urgent else 'relationship',
+        link = earlier if outcome.command.command_id in chained else None
+        earlier = await reference_of(outcome, ctx) if succeeded else None
+        lines.append(fixed_section(f'offer{i+1}', await outcome_text(outcome, ctx, link), domain='fraud' if urgent else 'relationship',
             priority='P0' if urgent else 'P3', needs_human=urgent or isinstance(getattr(outcome.receipt, 'result', None), HandoffResult),
             sources=[receipt_source(outcome.command.command_id)] if succeeded else []))
     if not lines:lines.append(fixed_section('t1', EXPIRED))
@@ -420,6 +557,8 @@ def ordered(state: Turn) -> list[tuple[PlanTask, AgentOutput]]:
 
 
 def section_for(item: PlanTask, output: AgentOutput, decision: str | None = None) -> AnswerSection:
+    if output.status == 'out_of_scope' and output.result is None:  # not handed on (no allowed agent, or already handed once)
+        return fixed_section(item.id, OUT_OF_SCOPE, DOMAIN[item.agent], item.priority, needs_human=True)
     result = output.result or AgentResult(task_id=item.id, agent=item.agent, status='error', text=WITHHELD)
     sources = {e.id: e.source for e in (Evidence.model_validate(d) for d in output.evidence)}
     cited = list({s.id: s for s in (sources[c.source_id] for c in result.citations if c.source_id in sources)}.values())
@@ -427,6 +566,21 @@ def section_for(item: PlanTask, output: AgentOutput, decision: str | None = None
     return AnswerSection(task_id=item.id, domain=domain, priority=item.priority, answer_kind=result.answer_kind, answer=result.text,
         sources=cited, needs_human=output.status in ('error', 'needs_human') or bool(decision), response_origin=output.origin,
         prompt_version=output.prompt_id, decision=decision)
+
+
+def offer_order(rows: list[tuple[PlanTask, AgentOutput]]) -> list[OfferProposal]:
+    """Offers in section order, each dependent task's straight after its upstream's. A single dependent task's first offer
+    is chained: it runs after the upstream's last offer and receives its receipt (C27: the RM note after the fraud report)."""
+    usable = [(t, o) for t, o in rows if o.status != 'error']
+    found: list[OfferProposal] = []
+    for item, output in usable:
+        if item.depends_on is not None:continue
+        found += output.proposals
+        for other, after in usable:
+            if other.depends_on != item.id:continue
+            found += [p.model_copy(update={'chained': True}) if i == 0 and output.proposals and not other.for_each else p
+                for i, p in enumerate(after.proposals)]
+    return found
 
 
 def validation_offer(rows: list[tuple[PlanTask, AgentOutput]], ctx: RequestContext) -> list[OfferProposal]:
@@ -442,7 +596,7 @@ async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     """Sections in plan priority order, then the offers saved as one group; fixed lines (act outcomes, rephrase) last."""
     ctx = runtime.context.request
     rows = ordered(state)
-    proposals = [p for _, o in rows if o.status != 'error' for p in o.proposals] + validation_offer(rows, ctx)
+    proposals = offer_order(rows) + validation_offer(rows, ctx)
     saved = await offers.save(proposals, ctx, runtime.context.turn_id) if proposals else []
     by_task: dict[str, list[tuple[OfferProposal, object]]] = {}
     for proposal, offer in zip(proposals, saved, strict=True):by_task.setdefault(proposal.task_id, []).append((proposal, offer))
@@ -485,7 +639,7 @@ def build_graph():
     graph.add_edge(START, 'planner')
     graph.add_conditional_edges('planner', after_planner, ['agent', 'act', 'compose'])
     graph.add_edge('agent', 'gather')
-    graph.add_edge('gather', 'compose')
+    graph.add_conditional_edges('gather', after_gather, ['agent', 'compose'])
     graph.add_edge('act', 'compose')
     graph.add_edge('compose', END)
     return graph.compile()
@@ -511,9 +665,11 @@ async def stream(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> A
                     tasks = {t.id: t for t in (update or {}).get('tasks') or []}
                     if tasks:yield 'plan', PlanEvent(tasks=[PlannedSection(task_id=t.id, domain=DOMAIN[t.agent], priority=t.priority)
                         for t in sorted(tasks.values(), key=lambda t: t.priority)])
-                elif node == 'agent':
-                    for output in update['outputs']:
-                        if output.task_id in tasks:yield 'section', section_for(tasks[output.task_id], output, output.decision)
+                elif node in ('agent', 'gather'):
+                    tasks.update({t.id: t for t in (update or {}).get('tasks') or []})
+                    for output in (update or {}).get('outputs') or []:
+                        if output.task_id in tasks and output.status != 'out_of_scope':
+                            yield 'section', section_for(tasks[output.task_id], output, output.decision)
                 elif node == 'compose':yield 'answer', update['answer']
 
 

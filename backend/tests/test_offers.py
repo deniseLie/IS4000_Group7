@@ -32,7 +32,7 @@ def test_every_agent_offer_requires_confirmation_even_an_automatic_type():
 
 
 def test_an_offer_outside_the_agents_spec_is_refused_before_any_database_call():
-    proposal = Proposal(task_id='t1', agent='security', type='ticket.create', target={}, summary='Raise a request')
+    proposal = Proposal(task_id='t1', agent='security', type='rm.share_summary', target={}, summary='Share a summary')
     with pytest.raises(PolicyDenied, match='agent_tool_forbidden'):asyncio.run(offers.save([proposal], ctx()))
     with pytest.raises(PolicyDenied, match='agent_tool_forbidden'):
         asyncio.run(offers.save([Proposal(task_id='t1', agent='guide', type='handoff.create', target={}, summary='x')], ctx()))
