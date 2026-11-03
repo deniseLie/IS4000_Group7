@@ -66,8 +66,13 @@ async def _receipt_failed(*args,**kw):
     raise RuntimeError('injected fault: offer executor failed')
 
 
-# fault -> (patch target, replacement); None means the piece is not built yet (external tools and consent-gated reads, phase 7).
-FAULTS={'external_down':None,'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
+async def _external_down(tool,*args,**kw):
+    from app.services.external import ExternalError
+    raise ExternalError(tool,'unavailable')
+
+
+# fault -> (patch target, replacement); None means the piece is not built yet (consent-gated RM reads, phase 9).
+FAULTS={'external_down':('app.services.external.fetch',_external_down),'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
     'receipt_failed':('app.services.offers.confirm',_receipt_failed),'consent_revoked':None}
 
 
@@ -108,6 +113,35 @@ def turns_of(inputs: dict[str,Any]) -> list[dict[str,str]]:
     """QA1 examples carry turns; the public datasets carry a question with earlier user messages as history."""
     if 'turns' in inputs:return inputs['turns']
     return [*({'say':m['content']} for m in inputs.get('history',[]) if m['role']=='user'),{'say':inputs['question']}]
+
+
+async def plan_only(inputs: dict[str,Any]) -> dict[str,Any]:
+    """The planner-only dataset: the planner node alone (rules, one planner call, overrides and the plan checks), with no
+    agents, no database writes and no saved chat. `open_offers` stands in for the client's open offer groups in this chat.
+    RM personas wait for phase 9 (the RM graph)."""
+    from types import SimpleNamespace
+    from app.schemas.contracts import Principal,RequestContext
+    from app.services import offers,orchestrator
+    if inputs['persona']=='sophie':return {'played':False,'skipped':[{'say':inputs['say'],'reason':'RM planner is phase 9'}],'plan':None}
+    mode='public' if inputs['persona']=='guest' else 'personal'
+    req=ChatRequest(messages=[*inputs.get('history',[]),{'role':'user','content':inputs['say']}],mode=mode)
+    risk=assess_request(req)
+    if risk.fixed_response is not None:return {'played':True,'plan':{'route':'fixed','tasks':[]},'model_calls':0}
+    principal=Principal(kind='customer',user_id=uuid4(),customer_id=1002,jwt='evaluation-planner-only') if mode=='personal' else Principal(kind='guest')
+    tctx=orchestrator.TurnContext(request=RequestContext(session_id=uuid4(),principal=principal),turn_id=uuid4(),conversation_id=uuid4())
+    async def open_group(ctx,conversation):
+        return (uuid4(),[]) if inputs.get('open_offers',0)==1 else None
+    spans: list[tuple[str,dict[str,Any]]]=[];token=span_sink.set(spans)
+    try:
+        with patch.object(offers,'open_group',open_group):
+            update=await orchestrator.planner(orchestrator.start(req,risk),SimpleNamespace(context=tctx))
+    finally:span_sink.reset(token)
+    route='act' if update.get('confirm') else 'plan' if update.get('tasks') else 'rephrase' if update.get('lines') else 'none'
+    by_id={t.id:t for t in update.get('tasks') or []}
+    tasks=[{'agent':t.agent,'intent':t.intent,'priority':t.priority,'depends_on':by_id[t.depends_on].agent if t.depends_on in by_id else None,
+        'condition':t.condition,'for_each':t.for_each,'entities':sorted(t.entities)} for t in update.get('tasks') or []]
+    return {'played':True,'plan':{'route':route,'tasks':tasks,'unlinked':len(update.get('lines') or []) if route=='plan' else 0},
+        'model_calls':sum(name=='llm' for name,_ in spans)}
 
 
 async def tickets(http: httpx.AsyncClient,headers: dict[str,str]) -> list[dict[str,Any]]:
@@ -161,9 +195,14 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
         after=await tickets(http,headers) if token else []
     agents=Counter(attrs.get('agent') for name,attrs in spans if name=='agent')
     known={t['reference'] for t in before}
+    waves=[attrs for name,attrs in spans if name=='gather']  # one per turn that ran agents (phase 7)
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':routes,'skipped':skipped,'not_offered':missing,'played':bool(replies),
         'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
         'model_calls':sum(name=='llm' for name,_ in spans),
+        'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),
+            'exports':sorted({e for w in waves for e in w.get('exports',[])}),
+            'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},
+            'rerouted':next((w['rerouted'] for w in waves if w.get('rerouted')),{})},
         'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,
         'tickets':{'opened':[t for t in after if t['reference'] not in known],'all':after}}

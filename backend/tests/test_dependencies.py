@@ -36,7 +36,7 @@ def ok(id_: str, agent: str, **exports) -> AgentOutput:
 
 def state(tasks: list[PlanTask], outputs: list[AgentOutput], wave: int = 1) -> dict:
     history = [Message(role='user', content='If a payment falls due while I am away, move my meeting')]
-    return {'request': PERSONAL, 'history': history, 'tasks': tasks, 'outputs': outputs, 'wave': wave, 'lines': []}
+    return {'request': PERSONAL, 'history': history, 'tasks': tasks, 'outputs': outputs, 'lines': [], **({'next': []} if wave == 2 else {})}
 
 
 # ---- Plan check ----
@@ -100,7 +100,7 @@ def test_a_true_condition_sends_the_dependant_with_only_its_imports():
         tasks = [t('t1', 'accounts', 'trip_due_dates'), t('t2', 'relationship', 'meeting_times', depends_on='t1', condition='due_in_window')]
         update = orchestrator.gather(state(tasks, [ok('t1', 'accounts', due_in_window=True, due_dates=['2026-11-25'], account_refs=[])]))
     finally:audit.current_batch.reset(token)
-    assert update['wave'] == 2 and update['outputs'] == []
+    assert update['outputs'] == []
     [send] = update['next']
     assert send['task'].id == 't2' and set(send['inputs']) == {'due_dates'}  # relationship imports due_dates only
     assert send['inputs']['due_dates'].source_ids == ['my_cards']

@@ -121,8 +121,7 @@ class Turn(TypedDict, total=False):
     confirm: Confirmation | None
     lines: list[AnswerSection]  # fixed sections: the rephrase line, or the outcomes of a confirmed offer group
     outputs: Annotated[list[AgentOutput], operator.add]
-    wave: int  # 1 after the planner, 2 once gather has sent the dependent tasks
-    next: list['AgentInput']  # wave 2, from gather
+    next: list['AgentInput']  # wave 2, from gather; set (even empty) once gather has run, so it runs wave 2 only once
     answer: AnswerEvent
 
 
@@ -391,7 +390,7 @@ async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
             tasks = overridden(tasks, risk) if req.language == 'English' else tasks
         tasks, lines = linked(checked(tasks, req), req)
         attrs['tasks'], attrs['dependent'] = len(tasks), sum(1 for t in tasks if t.depends_on)
-    return {'confirm': None, 'tasks': tasks, 'lines': lines, 'wave': 1}
+    return {'confirm': None, 'tasks': tasks, 'lines': lines}
 
 
 def agent_history(history: list[Message], item: PlanTask, several: bool) -> list[Message]:
@@ -423,9 +422,10 @@ async def agent(item: AgentInput, runtime: Runtime[TurnContext]) -> dict:
     return {'outputs': [output]}
 
 
-def skipped(item: PlanTask, text: str, reason: str) -> AgentOutput:
+def skipped(item: PlanTask, text: str, reason: str, facts: dict) -> AgentOutput:
     """A dependent task that does not run: a fixed line in its place, never the planner's or a model's text."""
     log_event('dependency_skipped', task=item.id, agent=item.agent, reason=reason)
+    facts['skipped'][item.agent] = reason
     return AgentOutput(task_id=item.id, agent=item.agent, status='ok', origin='safety',
         result=AgentResult(task_id=item.id, agent=item.agent, status='ok', answer_kind='conversation', text=text))
 
@@ -437,17 +437,27 @@ def items_of(export: Export, name: str, agent: TargetAgent) -> list:
     return sorted(values, key=lambda v: str(v.get(key, '')) if key and isinstance(v, dict) else str(v))
 
 
-def passed(up: AgentOutput, to: PlanTask, inputs: dict[str, Export]) -> None:
+def passed(up: AgentOutput, to: PlanTask, inputs: dict[str, Export], facts: dict) -> None:
     """Audit names and counts, never values (§14.6 rule 6; the plan's export.passed, named in its category)."""
     for name, export in inputs.items():
         count = len(export.value) if isinstance(export.value, list) else 1
+        if (fact := f'{up.agent}>{to.agent}:{name}') not in facts['exports']:facts['exports'].append(fact)
         audit.add('agent', 'agent.export_passed', details={'from': up.agent, 'to': to.agent, 'name': name, 'count': count})
 
 
 def gather(state: Turn) -> dict:
     """After wave 1 (next_wave, §14.6): the dependent tasks with their imports, conditions and fan-out, and one handoff per
-    out-of-scope task to an agent in its spec's hands_to (question only, no planner call). After wave 2: nothing."""
-    if state.get('wave', 1) >= 2:return {'next': []}
+    out-of-scope task to an agent in its spec's hands_to (question only, no planner call). After wave 2: nothing.
+    It changes the state only when there is a wave 2 (or a skip), so the evaluation counts it as acting only then."""
+    if state.get('next') is not None:return {'next': []}
+    with span('gather', 'decision') as facts:
+        facts.update(exports=[], skipped={}, rerouted={})
+        update = next_wave(state, facts)
+        facts['sends'] = len(update['next'])
+    return update
+
+
+def next_wave(state: Turn, facts: dict) -> dict:
     outputs = {o.task_id: o for o in state.get('outputs') or []}
     language, history = state['request'].language, state['history']
     tasks, sends, extra, lines = [], [], [], list(state.get('lines') or [])
@@ -461,29 +471,30 @@ def gather(state: Turn) -> dict:
                 item = item.model_copy(update={'agent': hand, 'intent': OPEN_INTENT if spec.loop_tools else next(iter(spec.intents)),
                     'entities': {}, 'rerouted': True})
                 log_event('task_rerouted', task=item.id, agent=hand)
+                facts['rerouted'] = {'from': done.agent, 'to': hand}
                 sends.append(AgentInput(task=item, history=[Message(role='user', content=item.question)], language=language, inputs={}))
             tasks.append(item)
             continue
         if up is None or up.status != 'ok' or any(name and name not in up.exports for name in (item.condition, item.for_each)):
-            extra.append(skipped(item, UPSTREAM_UNKNOWN, 'upstream_unavailable'));tasks.append(item);continue
+            extra.append(skipped(item, UPSTREAM_UNKNOWN, 'upstream_unavailable', facts));tasks.append(item);continue
         if item.condition and up.exports[item.condition].value is not True:
-            extra.append(skipped(item, CONDITION_FALSE.get(item.condition, CONDITION_FALSE_ANY), 'condition_false'));tasks.append(item);continue
+            extra.append(skipped(item, CONDITION_FALSE.get(item.condition, CONDITION_FALSE_ANY), 'condition_false', facts));tasks.append(item);continue
         inputs = {k: up.exports[k] for k in registry.SPECS[item.agent].imports & up.exports.keys()}
         own = agent_history(history, item, True)
         if not item.for_each:
-            passed(up, item, inputs)
+            passed(up, item, inputs, facts)
             sends.append(AgentInput(task=item, history=own, language=language, inputs=inputs));tasks.append(item);continue
         values = items_of(up.exports[item.for_each], item.for_each, up.agent)
         if not values:
-            extra.append(skipped(item, CONDITION_FALSE_ANY, 'no_items'));tasks.append(item);continue
+            extra.append(skipped(item, CONDITION_FALSE_ANY, 'no_items', facts));tasks.append(item);continue
         for i, value in enumerate(values[:MAX_ITEMS]):
             one = item.model_copy(update={'id': item.id if i == 0 else f'{item.id}-{i+1}', 'entities': {**item.entities, 'item': value}})
             mine = {**inputs, **({item.for_each: Export(value=value, source_ids=up.exports[item.for_each].source_ids)} if item.for_each in inputs else {})}
-            passed(up, one, mine)
+            passed(up, one, mine, facts)
             sends.append(AgentInput(task=one, history=own, language=language, inputs=mine));tasks.append(one)
         if len(values) > MAX_ITEMS:
             lines.append(fixed_section(f'{item.id}-more', MORE_ITEMS.format(shown=MAX_ITEMS, total=len(values)), DOMAIN[item.agent], item.priority))
-    return {'wave': 2, 'next': sends, 'tasks': tasks, 'outputs': extra, 'lines': lines}
+    return {'next': sends, 'tasks': tasks, 'outputs': extra, 'lines': lines}
 
 
 def after_gather(state: Turn) -> list[Send] | str:

@@ -41,6 +41,14 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Run the 10 test cases** and record the results (F22 evidence).
 - **Assign owners** in the backlog and in `test-cases.md`.
 
+## Done on 4 Nov (v5 orchestrator, build plan phases 1–8; migrations 0100–0101)
+
+- **Agents and graph:** one `AgentSpec` per agent with default reads per intent and a bounded tool loop only for open questions; planner → agents in parallel → gather → compose, or planner → act → compose for a Confirm/Cancel turn. Confirmations are chat turns; there is no pause.
+- **Offers:** one Confirm/Cancel per offer group on the action ledger (0100); a chained offer runs only after the one before it succeeded (0101).
+- **Agent dependencies (phase 7):** a task can wait for another (`depends_on`, `condition`, `for_each`, at most 5 items); exports are computed by code (trip due dates, account references); one out-of-scope handoff (fee waiver → Relationship). Travel notice tickets (0101). Planner v7.
+- **Evaluation (phase 8):** graph cases C23–C28 with failure variants, planner-only dataset and target, dependency checks.
+- **Still open:** Compliance and Relationship still answer with their v4 responders and ignore imported values (C24); meeting reschedule and RM note offers (C23, C27); `below_threshold` and `check_failed` exports (C25, C26); `PLANNER_MODEL` and the 60 s turn budget; LangSmith sync and a scored v5 experiment against the phase 0 timings. Hosted: apply `27_apply_0100_hosted.sql` and `28_apply_0101_hosted.sql`. Phase 9 (RM assistant on the same graph) after merge.
+
 ## Done on 1 Nov (Persona 2: F12, F14, RM1–RM12, RM16; migrations 0089–0090)
 
 - **RM access (F12):** every RM function resolves the advisor from administrator-owned `app_metadata` (`demobank_role=rm`, `rm_id`) and the `rm.staff_logins` link, then checks the client is in her current book. Refusals are audited (`policy.rm_client_denied`) and return nothing. Customers cannot call RM functions or read RM tables. `audit.record` now records an RM as `staff`.

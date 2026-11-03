@@ -39,6 +39,8 @@ New `backend/evaluation/langsmith_sync.py`: idempotent upload of local case file
 | `demobank-safety` (new) | new `safety_cases.json` | lost card, secrets, human support, guest "my balance": must route to fixed responses with no model call |
 | `demobank-qa1-client` | `qa1_client_cases.json` | QA1 C01–C22: whole conversations (`turns`, `persona`, `mode` personal or public) with `reply_has`/`reply_lacks`, `ticket`, `schema`, `check` and `trajectory` (nodes, agents, tools, model) |
 | `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20, `state: spec` until F12/F14 and the RM assistant exist; may name the planned RM tools. Client cases marked `state: manual` (C20) are skipped by the runner |
+| `demobank-graph` | `graph_cases.json` | v5 agent interactions C23–C28 (trip window, tax self-certification, affordability, failed document check, fraud report then RM note, fee-waiver handoff) and R21–R23. Each case has a failure variant through `fault`: `external_down` (the public-holiday call fails), `upstream_withheld` (the upstream agent's answer is withheld) , `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b and C28 are ready) |
+| `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases wait for phase 9 |
 
 Each example: `inputs={question, history, language, mode:'public'}`, `outputs={check, expected_sources?, expected_origin?, expect_needs_human?}`, `metadata={case_id}`. Example ids are `uuid5(dataset, case_id)` so re-syncing updates rather than duplicates. After each sync, tag the dataset version with the file's sha256 so every experiment points to an exact dataset version.
 
@@ -47,6 +49,8 @@ Case files gain optional structured fields (`expected_sources`, `expected_origin
 ### 4. Targets (what is evaluated)
 
 `backend/evaluation/targets.py` (built): `play(inputs, app, token)` runs the real app in process (`httpx.ASGITransport`), so nothing between the browser and the database is skipped. Each example becomes one new saved chat (`CONVERSATION_STORE=database`): a guest with a fresh `X-Conversation-Token`, or a persona signed in with its own JWT (password login from the git-ignored persona fixture, as in `test_rls_live.py`). Every turn goes to `POST /chat` exactly as the browser sends it; the pipeline is chosen with `settings.pipeline`. A *tap* whose label is sent back as chat (`fraud_reports.CONFIRM_REPLY`) is played; form, upload and other button steps are skipped and listed.
+
+`plan_only(inputs)` serves `demobank-planner`: it runs `orchestrator.planner` alone (rules, one planner call, overrides and the dependency check) with no agents, no database writes and no saved chat; `open_offers` stands in for the chat's open offer group. The runner picks it when an example has `say` instead of `turns`, and signs in no persona for it.
 
 It returns the joined reply and each turn's reply, origin, `needs_human` and cited source ids; the guard's fixed route per turn; which graph nodes *acted* (a LangChain configure hook: a node acted when its update changes the state or it paused the turn); agents, tools and model calls (an `observability.span_sink` that collects `task`/`tool_call`/`llm` spans while the target runs, `None` in the app); and the persona's tickets before and after. Guests' agent count is reported as `answer`.
 
@@ -66,6 +70,8 @@ It returns the joined reply and each turn's reply, origin, `needs_human` and cit
 | `agents` | agent run counts equal the case's exactly |
 | `tools` | every listed tool was called and none matching `no_tools` (globs) |
 | `model` | a model was or was not called, as the case says |
+| `waves`, `exports`, `skipped`, `rerouted` | v5 only, from the `gather` span: the number of agent waves; every `from>to:name` export was passed (names, never values); the skipped dependants and their reasons; the one out-of-scope handoff |
+| `route`, `agents`, `dependencies`, `no_agents`, `priority` | planner-only cases: the planner's route (`plan`, `act`, `rephrase`, `fixed`), agent counts, each expected `agent after upstream [if condition]` link (or none, with `no_dependencies`), agents that must not be planned, and priorities |
 
 **`judge_rubric` (LLM-as-judge, `--judge`):** grades the conversation against the case's `check` and `must_not` → `{score: 0|0.5|1, reason}` with the prompt in `evaluation/judge/v1.md`. It is built with `init_chat_model` and strict structured output, using its own `JUDGE_MODEL` (refused when unset or equal to `LLM_MODEL`). It is an aid to review, not proof, and never decides a case's pass/fail: the AGENTS.md rule that live results need human review still applies.
 

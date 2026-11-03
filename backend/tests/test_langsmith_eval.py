@@ -69,6 +69,48 @@ def test_trajectory_checks():
     assert set(scores(evaluators.checks(out(),{'trajectory':fixed})).values())=={1}
     assert scores(evaluators.checks(out(nodes={'ran':['planner'],'acted':['planner']},tools=['x']),{'trajectory':fixed}))=={'completed':1,'nodes':0,'agents':1,'tools':0,'model':1}
 
+def test_dependency_checks():
+    t={'nodes':['planner','agent','gather','compose'],'idle':['act'],'waves':2,'exports':[{'from':'accounts','to':'relationship','name':'due_dates'}],
+        'skipped':{},'rerouted':{'from':'accounts','to':'relationship'}}
+    deps={'waves':2,'exports':['accounts>relationship:due_dates'],'skipped':{},'rerouted':{'from':'accounts','to':'relationship'}}
+    good=out(nodes={'ran':[],'acted':['planner','agent','gather','compose']},dependencies=deps)
+    assert scores(evaluators.checks(good,{'trajectory_v5':t}))=={'completed':1,'nodes':1,'waves':1,'exports':1,'skipped':1,'rerouted':1}
+    bad=out(nodes={'ran':[],'acted':['planner','agent','compose']},dependencies={'waves':1,'exports':[],'skipped':{'relationship':'condition_false'},'rerouted':{}})
+    found={r['key']:r for r in evaluators.checks(bad,{'trajectory_v5':t})}
+    assert all(found[k]['score']==0 for k in ('nodes','waves','exports','skipped','rerouted'))
+    assert found['exports']['comment']=='not passed: accounts>relationship:due_dates'
+    assert 'waves' not in scores(evaluators.checks(out(),{'trajectory_v5':t}))  # an output without dependency facts (v4 runs)
+
+def test_the_external_fault_fails_the_public_call(monkeypatch):
+    from app.services import external
+    with targets.inject('external_down') as applied:
+        assert applied
+        with pytest.raises(external.ExternalError):asyncio.run(external.public_holidays('JP',None))
+    assert targets.FAULTS['consent_revoked'] is None  # RM reads arrive in phase 9
+
+def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
+    from app.services import orchestrator
+    async def no_model(history):raise AssertionError('these cases are planned by rules')
+    monkeypatch.setattr(orchestrator,'model_plan',no_model)
+    cases={c['id']:c for c in langsmith_sync.load('demobank-planner')[0]}
+    examples={e['metadata']['case_id']:e for e in langsmith_sync.examples('demobank-planner',list(cases.values()))}
+    status=asyncio.run(targets.plan_only(examples['P09']['inputs']))
+    assert status['plan']['tasks'][0]['agent']=='relationship' and status['model_calls']==0
+    assert scores(evaluators.checks(status,examples['P09']['outputs']))=={'route':1,'agents':1}
+    confirm=asyncio.run(targets.plan_only(examples['P10']['inputs']))
+    assert confirm['plan']['route']=='act' and scores(evaluators.checks(confirm,examples['P10']['outputs']))=={'route':1}
+    assert asyncio.run(targets.plan_only(examples['P13']['inputs']))['plan'] is None  # RM planner: phase 9
+
+def test_plan_checks_score_dependencies():
+    ref={'tasks':[{'id':'a','agent':'accounts'},{'agent':'relationship','depends_on':'a','condition':'due_in_window','priority':'P3'}]}
+    good={'plan':{'route':'plan','unlinked':0,'tasks':[{'agent':'accounts','depends_on':None,'condition':None,'priority':'P3'},
+        {'agent':'relationship','depends_on':'accounts','condition':'due_in_window','priority':'P3'}]}}
+    assert set(scores(evaluators.plan_checks(good,ref)).values())=={1}
+    loose={'plan':{**good['plan'],'tasks':[{**t,'depends_on':None,'condition':None} for t in good['plan']['tasks']]}}
+    found={r['key']:r for r in evaluators.plan_checks(loose,ref)}
+    assert found['dependencies']['score']==0 and found['dependencies']['comment']=='missing: relationship after accounts if due_in_window'
+    assert scores(evaluators.plan_checks(loose,{**ref,'tasks':[{'agent':'accounts'},{'agent':'relationship'}],'no_dependencies':True}))['dependencies']==1
+
 @pytest.mark.parametrize('name',sorted(langsmith_sync.DATASETS))
 def test_every_case_reference_is_checkable(name):
     """Every case file's reference fields fit the evaluators (a renamed field would silently skip a check)."""
