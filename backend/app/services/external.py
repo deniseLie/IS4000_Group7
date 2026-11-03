@@ -86,8 +86,9 @@ def this_year() -> int:
     return datetime.now(SGT).year
 
 
-async def public_holidays(country: str, year: int) -> dict[str, Any]:
-    """Public holidays in one country for one year (this year ±1). National holidays and regional ones are marked."""
+async def public_holidays(country: str, year: int | None = None) -> dict[str, Any]:
+    """Public holidays in one country for one year (this year ±1; default this year). National holidays and regional ones are marked."""
+    year = this_year() if year is None else year
     if not (isinstance(country, str) and COUNTRY.fullmatch(country)):raise ExternalError('public_holidays', 'bad_input')
     if not (isinstance(year, int) and abs(year-this_year()) <= 1):raise ExternalError('public_holidays', 'bad_input')
     holidays = await fetch('public_holidays', HOLIDAYS_HOST, f'/api/v3/PublicHolidays/{year}/{country}', {}, HOLIDAYS_TTL_S,

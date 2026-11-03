@@ -52,6 +52,8 @@ RELEASED[('rm_planner','v1')]='v1+b780c1e3'
 RELEASED[('rm_assistant','v1')]='v1+162b341f'
 RELEASED[('rm_planner','v2')]='v2+baed2fc1'
 RELEASED[('rm_assistant','v2')]='v2+bdcb8a3f'
+RELEASED[('accounts','v1')]='v1+872a384c'
+RELEASED[('runner_common','v1')]='v1+0c95684c'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

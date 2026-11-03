@@ -61,8 +61,9 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
         'transfer_status':(Read(tool='my_transactions',fixed={'status':'pending'}),Read(tool='my_accounts')),
         'loans':(Read(tool='my_loans'),ASK),
         'statements':(Read(tool='my_accounts'),ASK),
-        'product_info':(ASK,)},
-    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_transactions','knowledge_search'}),
+        'product_info':(ASK,),
+        'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK)},
+    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_transactions','knowledge_search','fx_rate','public_holidays'}),
     external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}))
 
 SECURITY=AgentSpec(name='security',role='client',scope='own_customer',prompt='security',

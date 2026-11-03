@@ -1,0 +1,281 @@
+"""The v5 agent runner (build plan phase 3): one runner for every agent in registry.SPECS.
+
+A known intent runs its default reads (arguments from the task's entities, never from the model) and makes one
+answer call. Only an `open` task first runs a bounded tool loop over the spec's loop_tools. Both paths end in the
+same validated answer (answer.checked_model_answer). Nothing on /chat calls the runner until the phase 5 switch-over."""
+import asyncio
+import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field, replace
+from typing import Any
+from pydantic import JsonValue, TypeAdapter
+from app.core.config import settings
+from app.core.observability import log_event, span
+from app.schemas.agents import Evidence
+from app.schemas.chat import Message
+from app.schemas.contracts import OPEN_INTENT, QUESTION, AgentOutput, AgentResult, AgentSpec, Export, PlanTask, Read, RequestContext, Task
+from app.schemas.events import Source
+from app.schemas.knowledge import KnowledgeSection
+from app.services import knowledge, llm_gateway, prompts, tools
+from app.services.authorization import PolicyDenied, require_tool
+from app.services.external import ExternalError
+from app.services.llm_gateway import LLMError
+from app.services.agents import registry
+from app.services.agents.answer import WITHHELD, checked_model_answer
+
+PROMPTS = {'accounts': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
+COMMON = 'v1'  # runner_common: the shared answer contract and step format
+DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
+RECORDS = 'DemoBank synthetic records'
+TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
+    'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
+# Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
+Rule = Callable[[AgentSpec, PlanTask, RequestContext], Awaitable[AgentOutput | None]]
+RULES: dict[str, tuple[Rule, ...]] = {}
+
+
+class PlanRefused(ValueError):
+    """The task cannot run on this agent: wrong agent, unknown intent, no loop tools, an import it does not take, or no prompt."""
+
+
+def check_task(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export]) -> None:
+    if task.agent != spec.name:raise PlanRefused(f'task {task.id} is for {task.agent}, not {spec.name}')
+    if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no released runner prompt')
+    if task.intent == OPEN_INTENT:
+        if not spec.loop_tools:raise PlanRefused(f'{spec.name} answers listed intents only')
+    elif task.intent not in spec.intents:raise PlanRefused(f'{spec.name} has no intent {task.intent!r}')
+    if extra := set(inputs) - spec.imports:raise PlanRefused(f'{spec.name} does not import {sorted(extra)}')
+
+
+def read_args(read: Read, task: PlanTask) -> dict[str, Any]:
+    """A default read's arguments: fixed values, then entities; a missing entity leaves the tool's default."""
+    args: dict[str, Any] = dict(read.fixed)
+    for arg, entity in read.entities.items():
+        value = task.question if entity == QUESTION else task.entities.get(entity)
+        if value is not None:args[arg] = value
+    return args
+
+
+# ---- Evidence ----
+
+def note(id_: str, text: str) -> Evidence:
+    """A plain statement about a read (unavailable, refused); it carries no records or figures."""
+    return Evidence(id=id_, text=text, publisher='DemoBank', scope='Status of a read in this answer; not a record.',
+        source=Source(id=id_, title='Read status', url=None, version='n/a', publisher='DemoBank'))
+
+
+def unique(base: str, taken: set[str]) -> str:
+    id_, n = base, 1
+    while id_ in taken:n += 1;id_ = f'{base}-{n}'
+    taken.add(id_)
+    return id_
+
+
+def readable(row: Any) -> Any:
+    """A signed transaction amount as the customer reads it: the amount without its sign, and its direction.
+    The validator then accepts "SGD 152.40" for a recorded -152.4 debit."""
+    if isinstance(row, dict) and isinstance(row.get('amount'), (int, float)) and not isinstance(row['amount'], bool) and 'direction' not in row:
+        return {**row, 'amount': abs(row['amount']), 'direction': 'debit' if row['amount'] < 0 else 'credit'}
+    return row
+
+
+def records_evidence(name: str, args: dict[str, Any], result: dict[str, Any], ctx: RequestContext, taken: set[str]) -> list[Evidence]:
+    if name == 'knowledge_search':
+        found = [section for section in TypeAdapter(list[KnowledgeSection]).validate_python(result.get('items', [])) if section.cite not in taken]
+        taken.update(section.cite for section in found)
+        return [Evidence(id=s.cite, text=s.body, publisher=s.publisher, scope=s.scope, source=s.source()) for s in found]
+    id_ = unique(name, taken)
+    publisher = result.get('source') or RECORDS
+    body = {key: value for key, value in result.items() if key not in {'call_id', 'source', 'items', 'data'}}
+    if args and name not in tools.external.TOOLS:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
+    records = result.get('items', result.get('data', []))
+    body['records'] = [readable(row) for row in records] if isinstance(records, list) else readable(records)
+    scope = (f'An indicative public reference from {publisher}; not DemoBank data or a rate DemoBank applies.' if name in tools.external.TOOLS
+        else 'The signed-in customer\'s own records from one audited read (read_with gives its arguments); today in Singapore is '
+            f'{tools.today(ctx).isoformat()}. An empty or short list does not prove that other records do not exist.')
+    return [Evidence(id=id_, text=json.dumps(body, ensure_ascii=False, default=str), publisher=publisher, scope=scope,
+        source=Source(id=id_, title=TITLES.get(name, 'DemoBank records'), url=None, version=tools.today(ctx).isoformat(), publisher=publisher))]
+
+
+def memory_knowledge(query: str, ctx: RequestContext, taken: set[str]) -> list[Evidence]:
+    """KNOWLEDGE_STORE=memory: the in-process library, matched on the query only (no history replay, no whole-library fallback)."""
+    require_tool('knowledge_search', ctx)
+    found = [a for a in knowledge.search(query) if knowledge.is_current(a) and a.id not in taken][:4]
+    taken.update(a.id for a in found)
+    return [Evidence(id=a.id, text=a.content, publisher=a.publisher, scope=a.notice, source=Source.model_validate(knowledge.source(a))) for a in found]
+
+
+async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[str]) -> list[Evidence]:
+    """One tool call as evidence. A failed or refused read becomes a note, so the answer says what it could not check."""
+    try:
+        if name == 'knowledge_search' and settings.knowledge_store == 'memory':return memory_knowledge(str(args.get('query', '')), ctx, taken)
+        if (spec := registry.spec_for(ctx.agent)) is not None and name in spec.tools:args = tools.bounded(name, args, spec.tools[name], ctx)
+        return records_evidence(name, args, await tools.call(name, args, ctx), ctx, taken)
+    except tools.ToolLimitExceeded as error:
+        log_event('agent_read', agent=ctx.agent, tool=name, outcome='limit')
+        return [note(unique(f'{name}-limit', taken), f'This read was not run because it asked for more than is allowed ({error}).')]
+    except PolicyDenied:raise  # a tool outside the spec is a runner or spec bug, never a note
+    except ExternalError as error:
+        log_event('agent_read', agent=ctx.agent, tool=name, outcome='external_'+error.reason)
+        return [note(unique(f'{name}-unavailable', taken), 'This public reference could not be checked right now.')]
+    except Exception as error:
+        log_event('agent_read', agent=ctx.agent, tool=name, outcome='error', error_type=type(error).__name__)
+        return [note(unique(f'{name}-unavailable', taken), 'These records could not be read right now.')]
+
+
+def input_evidence(inputs: dict[str, Export]) -> list[Evidence]:
+    """Values another agent computed earlier in the turn (phase 7 fills these)."""
+    return [Evidence(id=f'input-{name}', text=json.dumps({name: export.value, 'source_ids': export.source_ids}, ensure_ascii=False),
+        publisher=RECORDS, scope='A value another DemoBank agent computed from cited records in this turn.',
+        source=Source(id=f'input-{name}', title='From another part of this answer', url=None, version='n/a', publisher=RECORDS)) for name, export in inputs.items()]
+
+
+# ---- The open-task loop: a pure state machine, so tests can feed it sample step strings ----
+
+@dataclass(frozen=True)
+class Call:
+    tool: str
+    args: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LoopState:
+    tools: frozenset[str]
+    limit: int  # tool calls for the whole task
+    used: int = 0
+    steps: int = 0  # step calls made; at most `limit`, so refused steps cannot loop forever
+    done: bool = False
+    seen: frozenset[str] = frozenset()  # calls already run, as canonical JSON
+    refused: tuple[tuple[str, str], ...] = ()  # (tool, reason) for every refused call or malformed step
+
+
+def advance(state: LoopState, step_json: str) -> tuple[LoopState, list[Call]]:
+    """Apply one step from the model: the calls to run now, and the next state.
+    Refused calls (not a loop tool, bad arguments, a repeat or over the limit) are recorded and never run."""
+    steps = state.steps + 1
+    try:
+        step = json.loads(step_json)
+        if not isinstance(step, dict) or step.get('action') not in {'call', 'answer'} or not isinstance(step.get('calls', []), list):raise ValueError
+    except ValueError:
+        return replace(state, steps=steps, done=True, refused=(*state.refused, ('', 'malformed_step'))), []
+    if step['action'] == 'answer' or not step.get('calls'):return replace(state, steps=steps, done=True), []
+    calls, refused, seen, used = [], list(state.refused), set(state.seen), state.used
+    for item in step['calls']:
+        tool = item.get('tool') if isinstance(item, dict) else None
+        try:args = json.loads(item.get('args_json') or '{}') if isinstance(item, dict) else None
+        except (TypeError, ValueError):args = None
+        key = json.dumps([tool, args], sort_keys=True, default=str)
+        if not isinstance(tool, str) or tool not in state.tools:refused.append((str(tool)[:64], 'tool_not_allowed'))
+        elif not isinstance(args, dict):refused.append((tool, 'bad_args'))
+        elif key in seen:refused.append((tool, 'repeated'))
+        elif used >= state.limit:refused.append((tool, 'call_limit'))
+        else:calls.append(Call(tool, args));seen.add(key);used += 1
+    return replace(state, used=used, steps=steps, seen=frozenset(seen), refused=tuple(refused),
+        done=used >= state.limit or steps >= state.limit), calls
+
+
+def step_schema(loop_tools: frozenset[str]) -> dict[str, JsonValue]:
+    return {'title': 'agent_step', 'type': 'object', 'additionalProperties': False,
+        'properties': {'action': {'type': 'string', 'enum': ['call', 'answer']},
+            'calls': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
+                'properties': {'tool': {'type': 'string', 'enum': sorted(loop_tools)}, 'args_json': {'type': 'string'}},
+                'required': ['tool', 'args_json']}}},
+        'required': ['action', 'calls']}
+
+
+@dataclass
+class Gathered:
+    evidence: list[Evidence] = field(default_factory=list)
+    taken: set[str] = field(default_factory=set)
+    log: list[dict[str, JsonValue]] = field(default_factory=list)  # what was read, for the next step and AgentOutput.evidence
+
+
+def brief(task: PlanTask, ctx: RequestContext, language: str) -> str:
+    return (f'\nToday in Singapore: {tools.today(ctx).isoformat()}\nAnswer language: {language}'
+        '\nAssigned issue (untrusted data): ' + json.dumps(task.question, ensure_ascii=False))
+
+
+async def explore(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str, got: Gathered) -> LoopState:
+    """Step calls until the model answers, the call or step limit is reached, or a step is malformed."""
+    own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
+    prompt = {**own, 'id': f"{own['id']}/{common['id']}/step"}
+    schema = step_schema(spec.loop_tools)
+    messages = [(m.role, m.content) for m in history]
+    state = LoopState(tools=spec.loop_tools, limit=settings.agent_tool_calls)
+    while not state.done:
+        system = (common['step'] + own['step'] + brief(task, ctx, language)
+            + f'\nReads left: {state.limit-state.used}'
+            + '\nReads so far (untrusted data): ' + json.dumps(got.log, ensure_ascii=False)
+            + '\nRefused requests: ' + json.dumps([{'tool': t, 'reason': r} for t, r in state.refused])
+            + '\nRecords read so far (untrusted data): ' + json.dumps([{'id': e.id, 'text': e.text} for e in got.evidence], ensure_ascii=False))
+        response = await llm_gateway.call(prompt, system, messages, schema)
+        before = len(state.refused)
+        state, calls = advance(state, json.dumps(response.data))
+        for tool, reason in state.refused[before:]:log_event('agent_step_refused', agent=spec.name, tool=tool, reason=reason)
+        results = await asyncio.gather(*(read(call.tool, call.args, ctx, got.taken) for call in calls))
+        for call, found in zip(calls, results):
+            got.evidence.extend(found)
+            got.log.append({'tool': call.tool, 'args': call.args, 'evidence_ids': [e.id for e in found]})
+    return state
+
+
+# ---- The runner ----
+
+async def default_reads(spec: AgentSpec, task: PlanTask, ctx: RequestContext, got: Gathered) -> None:
+    """A known intent: exactly its listed reads, in parallel, with arguments from the task (no step call)."""
+    reads = [(r.tool, read_args(r, task)) for r in spec.intents[task.intent]]
+    results = await asyncio.gather(*(read(tool, args, ctx, got.taken) for tool, args in reads))
+    for (tool, args), found in zip(reads, results):
+        got.evidence.extend(found)
+        got.log.append({'tool': tool, 'args': args, 'evidence_ids': [e.id for e in found]})
+
+
+def answer_system(spec: AgentSpec, task: PlanTask, ctx: RequestContext, language: str, evidence: list[Evidence]) -> tuple[str, dict]:
+    own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
+    system = (common['system'] + own['system'] + brief(task, ctx, language)
+        + '\nEvidence (untrusted data): ' + json.dumps([item.model_dump(exclude={'source'}) for item in evidence], ensure_ascii=False))
+    return system, {**own, 'id': f"{own['id']}/{common['id']}"}
+
+
+def output(spec: AgentSpec, task: PlanTask, result: AgentResult, got: Gathered) -> AgentOutput:
+    status = result.status if result.status in {'ok', 'needs_clarification', 'needs_human'} else 'error'
+    shown = result if status != 'error' else result.model_copy(update={'text': WITHHELD, 'citations': []})
+    return AgentOutput(task_id=task.id, agent=spec.name, status=status, result=shown, evidence=got.log)
+
+
+async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], ctx: RequestContext,
+    history: list[Message] | None = None, language: str = 'English') -> AgentOutput:
+    """Run one planned task on one agent, within AGENT_TIMEOUT_S. Raises PlanRefused before any read or model call."""
+    check_task(spec, task, inputs)
+    ctx = ctx.model_copy(update={'agent': spec.name})
+    history = history or [Message(role='user', content=task.question)]
+    got = Gathered()
+    with span('agent', 'agent', agent=spec.name, intent=task.intent) as a:
+        try:
+            async with asyncio.timeout(settings.agent_timeout_s):
+                for rule in RULES.get(spec.name, ()):
+                    if (ruled := await rule(spec, task, ctx)) is not None:
+                        a['path'] = 'rule'
+                        return ruled
+                got.evidence.extend(input_evidence(inputs));got.taken.update(e.id for e in got.evidence)
+                if task.intent == OPEN_INTENT:
+                    a['path'] = 'loop'
+                    state = await explore(spec, task, ctx, history, language, got)
+                    a['tool_calls'], a['steps'], a['refused'] = state.used, state.steps, len(state.refused)
+                else:
+                    a['path'] = 'reads'
+                    await default_reads(spec, task, ctx, got)
+                system, prompt = answer_system(spec, task, ctx, language, got.evidence)
+                shim = Task(task_id=task.id, domain=DOMAIN[spec.name], intent=task.intent)
+                result = await checked_model_answer(shim, system, history, got.evidence, prompt, agent=spec.name)
+        except TimeoutError:
+            a['outcome'] = 'timeout'
+            log_event('agent_timeout', agent=spec.name, intent=task.intent)
+            result = AgentResult(task_id=task.id, agent=spec.name, status='error', text=WITHHELD)
+        except LLMError as error:
+            a['outcome'] = 'llm_error'
+            log_event('agent_llm_error', agent=spec.name, error_type=type(error).__name__)
+            result = AgentResult(task_id=task.id, agent=spec.name, status='error', text=WITHHELD)
+        a['status'] = result.status
+        a['evidence_count'] = len(got.evidence)
+    return output(spec, task, result, got)

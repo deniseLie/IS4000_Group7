@@ -185,7 +185,7 @@ class AgentSpec(Contract):
     tools: dict[ToolName, ToolView]
     intents: dict[str, tuple[Read, ...]]  # intent -> default reads (option B, docs/planning/agent-decisions.md)
     loop_tools: frozenset[ToolName] = frozenset()  # tools an `open` task may choose
-    external: frozenset[str] = frozenset()  # external tools (phase 2): public_holidays, fx_rate
+    external: frozenset[str] = frozenset()  # external tools (phase 2): public_holidays, fx_rate; usable in reads and loop_tools
     exports: dict[str, str] = {}  # name -> type name, computed by code (phase 7)
     imports: frozenset[str] = frozenset()
     hands_to: frozenset[TargetAgent] = frozenset()
@@ -195,8 +195,8 @@ class AgentSpec(Contract):
     @model_validator(mode='after')
     def _consistent(self):
         reads = {read.tool for reads in self.intents.values() for read in reads}
-        if missing := (reads | self.loop_tools) - set(self.tools):raise ValueError(f'{self.name}: tools not in its spec: {sorted(missing)}')
-        if text := sorted(t for t in self.loop_tools if self.tools[t].free_text):raise ValueError(f'{self.name}: free-text loop tools {text}')
+        if missing := (reads | self.loop_tools) - set(self.tools) - self.external:raise ValueError(f'{self.name}: tools not in its spec: {sorted(missing)}')
+        if text := sorted(t for t in self.loop_tools if t in self.tools and self.tools[t].free_text):raise ValueError(f'{self.name}: free-text loop tools {text}')
         if OPEN_INTENT in self.intents:raise ValueError(f'{self.name}: {OPEN_INTENT!r} is not a listed intent')
         if self.scope == 'public' and self.offers:raise ValueError(f'{self.name}: a public agent makes no offers')
         return self

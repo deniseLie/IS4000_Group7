@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     llm_request_token_budget: int = 24000
     agent_timeout_s: float = Field(default=65,gt=0,le=300)
+    # v5 agent runner (services/agents/runner.py): tool calls per `open` task, and the whole-turn deadline (phase 5).
+    agent_tool_calls: int = Field(default=4,ge=1,le=8)
+    turn_budget_s: float = Field(default=60,gt=0,le=300)
+    planner_model: str | None = None  # v5 planner (phase 5); unset uses LLM_MODEL
 
     # API Gateway Layer (core/gateway.py)
     jwt_audience: str = "authenticated"
