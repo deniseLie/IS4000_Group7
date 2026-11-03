@@ -9,71 +9,71 @@ flowchart LR
   UI[React chat] -->|POST /chat, SSE| GW[API gateway<br/>JWT, rate limit]
   GW --> GR[Input guardrail<br/>redaction, urgent help, typos]
   GR -->|fixed safety steps| UI
-  GR --> OR[Orchestrator<br/>LangGraph, 8 nodes]
+  GR --> OR[Orchestrator<br/>LangGraph, 5 nodes]
   OR --> RU[Records answers by rules]
   OR --> AG[AI agents]
   RU --> TL[Tools: services/tools.py]
   AG --> TL
   TL --> DB[(Supabase: RLS + audit)]
-  OR --> GATE[Confirm-first gate]
+  OR --> GATE[Offers: confirm by yes or button]
   GATE --> AS[Action Service: receipts]
   AS --> DB
 ```
 
-The guardrail runs first and never calls the model. Lost card and pasted secrets get fixed safety wording; "talk to a person" shows the RM preview. Urgent words are matched on a typo-tolerant copy (`services/typos.py`), so "i lsot my crad" is still a lost card.
+The guardrail runs first and never calls the model. Lost card and pasted secrets get fixed safety wording (a lost card also offers an urgent report); "talk to a person" shows the RM preview. Urgent words are matched on a typo-tolerant copy (`services/typos.py`), so "i lsot my crad" is still a lost card.
 
 ## 2. The orchestrator graph (`services/orchestrator.py`)
 
 ```mermaid
 flowchart TD
-  resume_pending -->|new message| plan --> prioritise
-  resume_pending -->|reply to our question| prioritise
-  prioritise --> dispatch
-  dispatch -->|nothing to act on, incl. guests| compose
-  dispatch -->|fraud or RM task| act
-  dispatch -->|fraud proposal, owned turn| propose_actions
-  propose_actions -->|decision pending| review_actions --> act
-  propose_actions --> act
-  act --> compose
+  planner -->|one Send per task, up to 5| agent --> gather --> compose
+  planner -->|yes / no to an open offer| act --> compose
+  planner -->|nothing to run: rephrase or expired offer| compose
 ```
 
-Edges after `resume_pending`, `dispatch` and `propose_actions` are conditional (`after_resume`, `after_dispatch`, `after_proposals`), so a node with nothing to do is skipped instead of run as a no-op.
+There is no checkpointer and no paused turn: an offer is saved on the Action Service and her next message (a typed yes or no, or the offer button) confirms or cancels it.
 
 | # | Node | What it does | Model? |
 |---|---|---|---|
-| 1 | `resume_pending` | If her message answers a pending question (fraud yes/no, lost card yes/no, RM preview choice, which card, card-limit request, meeting time), routes it straight back to that flow and skips `plan`. A fresh request matched by rules (`fixed_intent`) still wins. Also clears last turn's `pending_reviews` and `decision_sections` | No |
-| 2 | `plan` | Selected record → document/compliance; `fixed_intent` rules; `critical_route` for fraud, login and RM requests; otherwise the LLM planner (`CLIENT_INTENT_ROUTING=adaptive`, the default). `route_issues` keeps fraud/login/RM routing deterministic | Yes, unless a rule decides |
-| 3 | `prioritise` | P0 fraud, P1 security, P2 compliance deadline, P3 the rest. Marks RM matters (`rm_handover.needs_person`) as `handover`. Builds confirmation tasks for pending answers | No |
-| 4 | `dispatch` | Runs tasks in parallel with timeouts. Each agent first tries **records answers by rules**, then makes one model call if needed. A confirmed lost-card report runs here | Inside agents |
-| 5–6 | `propose_actions`, `review_actions` | Kept for older saved turns; chat no longer proposes card blocks (0081). Reached only with a fraud proposal in an owned turn; `review_actions` only when a decision is pending | No |
-| 7 | `act` | `settle_actions` then `escalate_validation`. Fraud: lists the charges for her to confirm (`ask_to_confirm`); after "Yes, report it", records the urgent fraud ticket (`report_to_fraud_team`). RM matters: shows the **preview**, then carries out her choice. Withheld answers get "try asking differently or talk to a person", with **no ticket** (`VALIDATION_HANDOFF=1` restores the old behaviour for tests). Commands have fixed ids and idempotency keys, so a retry repeats both safely | No |
-| 8 | `compose` | One reply in priority order, with sources and page buttons | No |
+| 1 | `planner` | Rules first: an open offer plus a whole short yes/no (or the `offer` button) goes to `act`; a "yes" after an expired offer gets a fixed line; a reply to our own question (which card, card limit, meeting time, RM preview choice) goes back to that agent; a selected record goes to Compliance; fraud and login wording go to Security; an explicit RM request goes to Relationship; greetings go to Guide. Otherwise one `planner/v6` call returns up to 5 tasks (agent + intent from `registry.SPECS`, or `open`). Then the rule overrides (fraud → Security P0, login → Security P1, RM handover) and the plan check (`checked`: guests get Guide only; unknown intents fixed; entities bounded). If the planner fails and no rule matched, a fixed rephrase line | Yes, unless a rule decides |
+| 2 | `agent` | `runner.run_agent` for one task, in parallel with the others, within `AGENT_TIMEOUT_S`. History is the client's last 3 redacted messages (the task's own question when one message held several issues); assistant text only for a reply to our own question | Inside agents |
+| 3 | `gather` | Wave 1 only for now; phase 7 adds a second wave from agents' exports | No |
+| 4 | `act` | Confirm or cancel the open offer group in order (`offers.confirm` / `cancel`); SQL checks owner, expiry and order, and a double confirm records once. Fixed outcome lines quote the receipt or ticket reference | No |
+| 5 | `compose` | Sections in priority order (P0 fraud, P1 login, P2 compliance deadline, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `section` event as each agent finishes, then the `answer` (with `offer`) | No |
 
 ## 3. Who answers what
 
-| Domain | Rules first (no model) | AI agent | Prompt |
+| Agent | Rules first (no model, `agents/rules.py`) | Model answer | Prompt |
 |---|---|---|---|
-| `retail` | `card_answers.py`: balance, limit, minimum payment, due date, annual fee, which card, follow-ups, card limit guidance. `transaction_answers.py`: recent transactions, fees, charge by amount/date | Explanations from articles and records | `retail/v7` |
-| `fraud` | `fraud_reports.py`: charge list to confirm, confirmed report, lost-card report | Urgent steps and description of the charge | `fraud/v7` |
-| `compliance` | — | Review status, requests, deadlines | `compliance/v3` |
-| `document` | Pre-check rules (`document_templates.py`), incl. certification and translation | Explains recorded findings | `document/v4` |
-| `relationship` | `meeting_answers.py`: free times, hold, confirm | RM introduction and requests | `relationship/v5` |
+| `guide` | `client_guidance` (signed in) | Public products, fees, how-to, greetings; guests get only this agent | `guide/v1` |
+| `accounts` | `card_answers.py` (balance, limit, minimum payment, due date, annual fee, which card, card limit guidance), `transaction_answers.py`, `account_answers.py` | Transfers and due-day checks (`retail_checks`) on the released `retail/v10`; everything else on the runner | `accounts/v1`, `retail/v10` |
+| `security` | Unrecognised charges: the released fraud responder lists the charges and offers the fraud-team report | Login, OTP, phishing | `security/v1`, `fraud/v7` |
+| `compliance` | Pre-check rules (`document_templates.py`); selected document → document responder | Review status, requests, deadlines, document findings | `compliance/v5`, `document/v5` |
+| `relationship` | RM handover (preview, then her choice), request status from her tickets, `meeting_answers.py` | RM, requests, meetings | `relationship/v5` |
 
-Guests use the shared answer agent with approved articles only. Rules exist where a wrong or withheld answer would hurt most (figures, urgent help, bookings); everything else is the AI.
+The rules call the v4 responders under their v4 names (`retail`, `fraud`, `compliance`, `document`, `relationship`), so their audits and allow-lists are unchanged; Guide, Accounts & Cards and Security are enforced from their specs.
 
-## 4. Inside one AI agent
+## 4. Inside one AI agent (`services/agents/runner.py`)
 
 ```mermaid
 flowchart LR
-  R[Read records<br/>caller JWT + RLS] --> M[Mask<br/>last 4 digits, no IDs] --> L[One model call<br/>strict JSON] --> V[Validate<br/>sources, figures]
-  V -->|pass| S[Section]
+  RU[Rules hook] -->|answered| S[Section]
+  RU -->|no rule| D{intent}
+  D -->|listed intent| R[Default reads<br/>from the spec]
+  D -->|open| L[Tool loop<br/>at most 4 calls]
+  R --> M[One model call<br/>strict JSON]
+  L --> M
+  M --> V[Validate<br/>sources, figures]
+  V -->|pass| S
   V -->|fail| W[Withheld: rephrase or talk to a person]
 ```
+
+Reads use the caller's JWT and RLS through `services/tools.py`, shaped to the spec's field view (last 4 digits, no `customer_id`). An agent may also return offers (`OfferProposal`), which `compose` saves; nothing runs until she confirms.
 
 ## 5. Multi-turn conversation
 
 - Each turn carries the chat history (saved chats: server's redacted history, about 29 messages); the planner and agents receive it.
-- When the assistant asked something, the next turn reads the assistant's **own previous reply** to know what is being answered (§2 node 1). Only that reply counts, and only if her message is about it, so a new topic is never mixed with the old one.
+- A yes or no answers the one open offer in the chat (no need to read the previous reply). For our own questions (which card, meeting time, RM preview), the planner's rules read the previous reply to know what is being answered (§2 node 1), and only that agent gets the full history.
 - Corrections: the card limit request uses the latest amount she stated (`ticketData.limitSummary`).
 - The fixed reply phrases these rules look for are pinned by tests (`test_card_answers.py`, `test_fraud_confirmation.py`, `test_rm_handover.py`).
 
@@ -82,8 +82,8 @@ flowchart LR
 | Journey | Her choice | Result |
 |---|---|---|
 | RM matter | Send to my RM / Add to TCK-… / Open a new request / Cancel | `rm_handover` ticket; same topic adds to the open one (`customer_ticket_follow_up`); different topic opens a new one, even in the same chat (`customer_open_rm_ticket`) |
-| Unrecognised charge | Yes, report it | Urgent `suspected_fraud` ticket |
-| Lost card | Yes, report my card | Urgent `card_lost` ticket |
+| Unrecognised charge | Yes (typed, or *Yes, report it*) | Urgent `suspected_fraud` ticket, from the saved offer |
+| Lost card | Yes (typed, or *Yes, report my card*) | Urgent `card_lost` ticket, from the saved offer |
 | Meeting | Book … → Confirm booking | `appointment.hold` → `appointment.confirm`; no ticket |
 | Card limit | Raise a card limit request (form) | `card_limit_change` ticket for the cards and credit team |
 
@@ -97,7 +97,7 @@ Agents and rules read through `services/tools.py` (`my_cards`, `my_transactions`
 
 ## 8. Worked example: Michelle raises her card limit
 
-1. "i wan to raise my card limit to 15000" → rules route to `retail`.
+1. "i wan to raise my card limit to 15000" → the planner sends it to Accounts & Cards.
 2. `card_answers.limit_change` answers without the model: the cards and credit team decides, no guarantee, with **Raise a card limit request**.
 3. "actually make it 12000" → the button's form now says "Requested new limit: SGD 12,000 (corrected from SGD 15,000)".
 4. She completes the form and confirms; SQL checks the card is hers and records the ticket, receipt, audit and inbox notice in one transaction.

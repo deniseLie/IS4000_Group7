@@ -38,11 +38,11 @@ def trajectory_checks(t: dict[str,Any],out: dict[str,Any]) -> list[dict[str,Any]
         acted=set(out['nodes']['acted'])
         missing,extra=[n for n in t['nodes'] if n not in acted],[n for n in t['idle'] if n in acted]
         found.append(result('nodes',not missing and not extra,'; '.join(filter(None,[missing and 'did not act: '+', '.join(missing),extra and 'should be idle: '+', '.join(extra)]))))
-    if t['agents'] or t.get('graph') is False:
+    if t.get('agents') or t.get('graph') is False:
         found.append(result('agents',Counter(out['agents'])==Counter(t['agents']),f"ran {out['agents']}, expected {t['agents']}"))
     called=out['tools']
-    if t['tools'] or t.get('no_tools') or t.get('graph') is False:
-        missing=[x for x in t['tools'] if x not in called]
+    if t.get('tools') or t.get('no_tools') or t.get('graph') is False:
+        missing=[x for x in t.get('tools',[]) if x not in called]
         banned=[x for x in called if any(fnmatch(x,p) for p in t.get('no_tools',[]))]+(called if t.get('graph') is False else [])
         found.append(result('tools',not missing and not banned,'; '.join(filter(None,[missing and 'not called: '+', '.join(missing),banned and 'must not call: '+', '.join(banned)]))))
     if 'model' in t:found.append(result('model',bool(out['model_calls'])==t['model'],f"{out['model_calls']} model calls"))
@@ -71,7 +71,8 @@ def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     if 'expected_route' in ref:found.append(result('fixed_route',out['routes'][0]==ref['expected_route'],f"route {out['routes'][0]}"))
     if 'expect_needs_human' in ref:found.append(result('needs_human',first.get('needs_human')==ref['expect_needs_human'],f"needs_human {first.get('needs_human')}"))
     if 'ticket' in ref:found.append(ticket_check(ref['ticket'],out))
-    if 'trajectory' in ref:found+=trajectory_checks(ref['trajectory'],out)
+    # A graph case also carries the v4 expectation it was written against; only the v5 one describes the running graph.
+    if t:=ref.get('trajectory_v5') or ref.get('trajectory'):found+=trajectory_checks(t,out)
     return found
 
 

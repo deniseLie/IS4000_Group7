@@ -5,7 +5,7 @@ from app.schemas.chat import Message
 from app.schemas.retail import RetailRecords
 from app.services import guardrail,typos
 from app.services.agents import card_answers
-from app.services.orchestrator import simple_issue
+from app.services.orchestrator import simple_task
 
 SIGNATURE={'card_id':'card_10021','name':'Signature Card','network':'mastercard','last4':'7310','status':'active','currency':'SGD',
     'limit':20000.0,'outstanding':5169.6,'minimum_payment':50.0,'due_date':'2026-11-20'}
@@ -68,8 +68,8 @@ def test_typos_do_not_hide_urgency_or_change_routing() -> None:
     from app.schemas.chat import ChatRequest
     risk=guardrail.assess_request(ChatRequest(messages=[Message(role='user',content='help i lsot my crad')],mode='personal'))
     assert 'lost_card' in risk.risk_flags and risk.redacted_message=='help i lsot my crad'
-    issue=simple_issue('wats my crad bal','English')
-    assert issue is not None and issue.domain=='retail' and issue.question=='wats my crad bal'
+    issue=simple_task('wats my crad bal','English')
+    assert issue is not None and issue.agent=='accounts' and issue.question=='wats my crad bal'
 
 
 # Transactions and fees from records (CR15) ---------------------------------------------------------------------------
@@ -106,9 +106,9 @@ def test_a_typed_or_tapped_meeting_time_finds_its_slot() -> None:
 @pytest.mark.parametrize('question',['why was i charged $25 on 3 oct','show my recent transactions','what fees have i been charged',
     'wat did i spend recently'])
 def test_charge_and_transaction_questions_route_to_records_not_fraud(question: str) -> None:
-    issue=simple_issue(question,'English')
-    assert issue is not None and issue.domain=='retail'
-    assert simple_issue('i dont recognise this $25 charge','English').domain=='fraud'
+    issue=simple_task(question,'English')
+    assert issue is not None and issue.agent=='accounts'
+    assert simple_task('i dont recognise this $25 charge','English').agent=='security'
 
 
 def test_a_meeting_reply_is_only_kept_in_the_booking_when_it_is_about_the_times() -> None:

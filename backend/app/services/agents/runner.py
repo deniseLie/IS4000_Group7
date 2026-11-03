@@ -2,13 +2,15 @@
 
 A known intent runs its default reads (arguments from the task's entities, never from the model) and makes one
 answer call. Only an `open` task first runs a bounded tool loop over the spec's loop_tools. Both paths end in the
-same validated answer (answer.checked_model_answer). Nothing on /chat calls the runner until the phase 5 switch-over."""
+same validated answer (answer.checked_model_answer). orchestrator.agent calls it for every planned task."""
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
-from pydantic import JsonValue, TypeAdapter
+import httpx
+from postgrest.exceptions import APIError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from app.core.config import settings
 from app.core.observability import log_event, span
 from app.schemas.agents import Evidence
@@ -16,22 +18,27 @@ from app.schemas.chat import Message
 from app.schemas.contracts import OPEN_INTENT, QUESTION, AgentOutput, AgentResult, AgentSpec, Export, PlanTask, Read, RequestContext, Task
 from app.schemas.events import Source
 from app.schemas.knowledge import KnowledgeSection
-from app.services import knowledge, llm_gateway, prompts, tools
+from app.core import data_api
+from app.services import audit, customer_data, kb, knowledge, llm_gateway, prompts, tools
 from app.services.authorization import PolicyDenied, require_tool
 from app.services.external import ExternalError
 from app.services.llm_gateway import LLMError
-from app.services.agents import registry
+from app.services.agents import fraud, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
-PROMPTS = {'accounts': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
+PROMPTS = {'guide': 'v1', 'accounts': 'v1', 'security': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
 COMMON = 'v1'  # runner_common: the shared answer contract and step format
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'DemoBank synthetic records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
     'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
-Rule = Callable[[AgentSpec, PlanTask, RequestContext], Awaitable[AgentOutput | None]]
+# services/agents/rules.py registers them: (spec, task, ctx, history, language).
+Rule = Callable[[AgentSpec, PlanTask, RequestContext, list[Message], str], Awaitable[AgentOutput | None]]
 RULES: dict[str, tuple[Rule, ...]] = {}
+# Expected provider and data failures withhold the section (the v4 dispatch_task list); anything else fails the turn.
+FAILURES = (LLMError, TimeoutError, ValidationError, APIError, httpx.TransportError, PermissionError,
+    customer_data.CustomerDataIntegrityError, kb.KnowledgeResponseError)
 
 
 class PlanRefused(ValueError):
@@ -40,7 +47,7 @@ class PlanRefused(ValueError):
 
 def check_task(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export]) -> None:
     if task.agent != spec.name:raise PlanRefused(f'task {task.id} is for {task.agent}, not {spec.name}')
-    if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no released runner prompt')
+    if spec.name not in PROMPTS and not RULES.get(spec.name):raise PlanRefused(f'{spec.name} has no released runner prompt')
     if task.intent == OPEN_INTENT:
         if not spec.loop_tools:raise PlanRefused(f'{spec.name} answers listed intents only')
     elif task.intent not in spec.intents:raise PlanRefused(f'{spec.name} has no intent {task.intent!r}')
@@ -237,10 +244,24 @@ def answer_system(spec: AgentSpec, task: PlanTask, ctx: RequestContext, language
     return system, {**own, 'id': f"{own['id']}/{common['id']}"}
 
 
-def output(spec: AgentSpec, task: PlanTask, result: AgentResult, got: Gathered) -> AgentOutput:
+def dumps(evidence: list[Evidence]) -> list[dict[str, JsonValue]]:
+    return [item.model_dump(mode='json') for item in evidence]
+
+
+def output(spec: AgentSpec, task: PlanTask, result: AgentResult, got: Gathered, prompt_id: str | None = None) -> AgentOutput:
     status = result.status if result.status in {'ok', 'needs_clarification', 'needs_human'} else 'error'
-    shown = result if status != 'error' else result.model_copy(update={'text': WITHHELD, 'citations': []})
-    return AgentOutput(task_id=task.id, agent=spec.name, status=status, result=shown, evidence=got.log)
+    shown = result if status != 'error' else result.model_copy(update={'text': result.text if result.text.endswith(WITHHELD) else WITHHELD, 'citations': []})
+    return AgentOutput(task_id=task.id, agent=spec.name, status=status, result=shown, evidence=dumps(got.evidence) if status != 'error' else [],
+        reads=got.log, origin='validation' if status == 'error' else 'ai', prompt_id=prompt_id)
+
+
+def withheld(spec: AgentSpec, task: PlanTask, error: BaseException, got: Gathered, prompt_id: str | None) -> AgentOutput:
+    fields = {'task_id': task.id, 'agent': spec.name, 'error_type': type(error).__name__,
+        'db_code': data_api.database_code(error) if isinstance(error, APIError) else None}
+    log_event('agent_failed', **fields)
+    audit.add('agent', 'agent.failed', 'failed', details=fields)
+    text = (fraud.URGENT + ' ' + WITHHELD) if spec.name == 'security' else WITHHELD  # urgent steps first, never replaced
+    return output(spec, task, AgentResult(task_id=task.id, agent=spec.name, status='error', text=text), got, prompt_id)
 
 
 async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], ctx: RequestContext,
@@ -254,9 +275,10 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
         try:
             async with asyncio.timeout(settings.agent_timeout_s):
                 for rule in RULES.get(spec.name, ()):
-                    if (ruled := await rule(spec, task, ctx)) is not None:
-                        a['path'] = 'rule'
+                    if (ruled := await rule(spec, task, ctx, history, language)) is not None:
+                        a['path'], a['status'] = 'rule', ruled.status
                         return ruled
+                if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
                 got.evidence.extend(input_evidence(inputs));got.taken.update(e.id for e in got.evidence)
                 if task.intent == OPEN_INTENT:
                     a['path'] = 'loop'
@@ -268,14 +290,16 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
                 system, prompt = answer_system(spec, task, ctx, language, got.evidence)
                 shim = Task(task_id=task.id, domain=DOMAIN[spec.name], intent=task.intent)
                 result = await checked_model_answer(shim, system, history, got.evidence, prompt, agent=spec.name)
-        except TimeoutError:
-            a['outcome'] = 'timeout'
-            log_event('agent_timeout', agent=spec.name, intent=task.intent)
-            result = AgentResult(task_id=task.id, agent=spec.name, status='error', text=WITHHELD)
-        except LLMError as error:
-            a['outcome'] = 'llm_error'
-            log_event('agent_llm_error', agent=spec.name, error_type=type(error).__name__)
-            result = AgentResult(task_id=task.id, agent=spec.name, status='error', text=WITHHELD)
+        except FAILURES as error:
+            a['outcome'] = 'timeout' if isinstance(error, TimeoutError) else 'withheld'
+            out = withheld(spec, task, error, got, prompt_id(spec))
+            a['status'] = out.status
+            return out
         a['status'] = result.status
         a['evidence_count'] = len(got.evidence)
-    return output(spec, task, result, got)
+    return output(spec, task, result, got, prompt['id'])
+
+
+def prompt_id(spec: AgentSpec) -> str | None:
+    if spec.name not in PROMPTS:return None
+    return f"{prompts.load(spec.prompt, PROMPTS[spec.name])['id']}/{prompts.load('runner_common', COMMON)['id']}"

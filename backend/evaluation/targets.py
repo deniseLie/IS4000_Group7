@@ -23,17 +23,17 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.tracers.context import register_configure_hook
 from app.core.observability import span_sink
 from app.schemas.chat import ChatRequest
-from app.services.fraud_reports import CONFIRM_REPLY
+from app.services.fraud_reports import CONFIRM_REPLY,LOST_REPLY
 from app.services.guardrail import assess_request
 
 PERSONAS={'michelle':'demo.michelle@example.com','sophie':'demo.sophie@example.com'}
-CHAT_TAPS={CONFIRM_REPLY}  # buttons whose label is sent as the next chat message
-TAP_ALIASES={'Confirm':CONFIRM_REPLY}  # graph cases tap the v5 offer button; v4 offers the same step as "Yes, report it"
-NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
+CHAT_TAPS={CONFIRM_REPLY,LOST_REPLY,'yes'}  # buttons whose label is sent as the next chat message (a typed yes confirms an offer)
+TAP_ALIASES={'Confirm':'yes'}  # the offer's Confirm button; a typed yes takes the same act path
+NODES=('planner','agent','gather','act','compose')
 
 
 class NodeLog(AsyncCallbackHandler):
-    """A graph node acted when its update changes the state (a new or different non-empty value) or it paused the turn."""
+    """A graph node acted when its update changes the state (a new or different non-empty value)."""
     def __init__(self) -> None:
         self.inputs: dict[UUID,tuple[str,Any]]={}
         self.ran: set[str]=set()
@@ -50,7 +50,7 @@ class NodeLog(AsyncCallbackHandler):
         if isinstance(outputs,dict) and any(v and v!=(state.get(k) if isinstance(state,dict) else None) for k,v in outputs.items()):self.acted.add(name)
 
     async def on_chain_error(self,error,*,run_id,**kw) -> None:
-        if (node:=self.inputs.pop(run_id,None)) is not None and type(error).__name__=='GraphInterrupt':self.acted.add(node[0])
+        self.inputs.pop(run_id,None)
 
 
 node_log: ContextVar[NodeLog | None]=ContextVar('eval_node_log',default=None)
@@ -63,12 +63,12 @@ async def _withheld(*args,**kw):
 
 
 async def _receipt_failed(*args,**kw):
-    raise RuntimeError('injected fault: fraud report executor failed')
+    raise RuntimeError('injected fault: offer executor failed')
 
 
-# fault -> (patch target, replacement) in the v4 pipeline; None means v4 has no such piece.
-FAULTS={'external_down':None,'upstream_withheld':('app.services.agents.retail.respond',_withheld),
-    'receipt_failed':('app.services.orchestrator.report_to_fraud_team',_receipt_failed),'consent_revoked':None}
+# fault -> (patch target, replacement); None means the piece is not built yet (external tools and consent-gated reads, phase 7).
+FAULTS={'external_down':None,'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
+    'receipt_failed':('app.services.offers.confirm',_receipt_failed),'consent_revoked':None}
 
 
 @contextmanager
@@ -144,7 +144,7 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
             try:
                 with inject(inputs.get('fault')):response=await http.post('/chat',headers=headers,json=body)
             finally:span_sink.reset(tokens[1]);node_log.reset(tokens[0])
-            reply: dict[str,Any]={'say':text,'status':response.status_code,'agents':[a.get('agent') for n,a in spans[start:] if n=='task'],
+            reply: dict[str,Any]={'say':text,'status':response.status_code,'agents':[a.get('agent') for n,a in spans[start:] if n=='agent'],
                 'model_calls':sum(n=='llm' for n,_ in spans[start:])}
             if response.status_code!=200:reply['error']=response.json().get('error',{}).get('code','http_error')
             for event,data in sse(response.text) if response.status_code==200 else []:
@@ -154,14 +154,12 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
                     reply.update(answer=answer['answer'],origin=answer['response_origin'],needs_human=answer['needs_human'],
                         sources=sorted({source_id(s['id']) for s in answer['sources']}),
                         sections=[{'domain':s['domain'],'priority':s['priority'],'origin':s['response_origin']} for s in answer.get('sections') or []])
-                elif event=='workflow_paused':reply.update(paused=True,answer=json.loads(data).get('preview',{}).get('answer',''))
                 elif event=='error':reply['error']=data
             replies.append(reply)
             history+=[{'role':'user','content':text},{'role':'assistant','content':reply.get('answer') or ''}]
-            if reply.get('paused') or 'error' in reply:break  # a paused or failed turn ends the conversation
+            if 'error' in reply:break  # a failed turn ends the conversation
         after=await tickets(http,headers) if token else []
-    agents=Counter(attrs.get('agent') for name,attrs in spans if name=='task')
-    if mode=='public':agents=Counter({'answer':sum(agents.values())}) if agents else Counter()  # guests use the shared answer agent
+    agents=Counter(attrs.get('agent') for name,attrs in spans if name=='agent')
     known={t['reference'] for t in before}
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':routes,'skipped':skipped,'not_offered':missing,'played':bool(replies),
         'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),

@@ -2,8 +2,9 @@
 
 TOOLS is the v4 allow-list (permission names per agent). SPECS is the v5 agent catalogue (architecture §5.6.1, §14.8):
 one AgentSpec per target agent is the single source for its tools, field views, limits, intents and default reads,
-loop tools and offers. authorization.decide and tools.call both read it. `compliance` and `relationship` keep their v4
-allow-lists until the phase 5 switch-over, so only the new names are enforced from SPECS before then (ENFORCED).
+loop tools and offers. authorization.decide and tools.call both read it. All five specs run on /chat since phase 5, but
+the rules in agents/rules.py still call the v4 responders under their v4 names (retail, fraud, compliance, document,
+relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from SPECS (ENFORCED).
 """
 from types import MappingProxyType
 from app.schemas.contracts import QUESTION, AgentName, AgentSpec, Domain, Read, TargetAgent, ToolView
@@ -118,7 +119,7 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
         'consent.grant','consent.revoke','rm.share_summary'}))
 
 SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,SECURITY,COMPLIANCE,RELATIONSHIP)})
-ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # phase 5 enforces every spec
+ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts, security; the rest once the v4 responders move into specs
 
 
 def spec_for(agent: str | None) -> AgentSpec | None:

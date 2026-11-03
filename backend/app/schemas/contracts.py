@@ -10,7 +10,7 @@ Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regula
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
 AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
 # v5 client agents (architecture §5.6.1). `compliance` and `relationship` keep their v4 names; the v4 agents use
-# registry.TOOLS until the phase 5 switch-over, when AgentName becomes this list.
+# registry.TOOLS; agents/rules.py still calls the v4 responders under these names.
 TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
@@ -151,7 +151,7 @@ class Receipt(Contract):
     audit_event_id: int | None = None
 
 
-# v5 agent catalogue and plan (architecture §14.5, §14.8). Nothing runs on these until the phase 5 switch-over.
+# v5 agent catalogue and plan (architecture §14.5, §14.8); /chat runs on these since phase 5.
 OPEN_INTENT = 'open'  # the planner found no listed intent: the agent chooses its reads in the bounded tool loop
 QUESTION = 'question'  # pseudo-entity: the task's own question, e.g. as a knowledge_search query
 ToolName = str  # a model-facing tool in services/tools.TOOLS
@@ -225,14 +225,29 @@ class Offer(Contract):
     after_offer: UUID | None = None
 
 
+class OfferProposal(Contract):
+    """One action an agent offers, before services/offers.save gives it an offer_id. The target comes from code-read
+    records, never from the model; nothing runs until the client confirms."""
+    task_id: str = Field(pattern=r'^[A-Za-z0-9_-]{1,40}$')
+    agent: TargetAgent
+    type: str
+    target: dict[str, JsonValue] = {}
+    summary: str = Field(min_length=1, max_length=300)
+
+
 class AgentOutput(Contract):
     task_id: str
     agent: TargetAgent
     status: Literal['ok', 'needs_clarification', 'needs_human', 'out_of_scope', 'error']
     result: AgentResult | None = None  # the section; None when nothing may be shown
-    evidence: list[dict[str, JsonValue]] = []
+    evidence: list[dict[str, JsonValue]] = []  # Evidence dumps with their sources, for the section's citations
+    reads: list[dict[str, JsonValue]] = []  # what was read: tool, args, evidence ids (runner)
     exports: dict[str, Export] = {}
+    decision: str | None = None  # fixed text from code shown after the answer (e.g. the charge list to confirm)
+    proposals: list[OfferProposal] = []  # saved as offers by compose
     offers: list[Offer] = []
+    origin: Literal['ai', 'safety', 'validation'] = 'ai'
+    prompt_id: str | None = None
     suggested: TargetAgent | None = None  # out_of_scope only: the agent to hand the question to
 
     @model_validator(mode='after')

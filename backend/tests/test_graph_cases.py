@@ -26,8 +26,9 @@ def test_every_pattern_has_a_failure_variant():
 
 def test_names_exist_in_both_graphs():
     for c in GRAPH:
-        sync.check_trajectory(c['id'],c);sync.check_v5(c['id'],c)
+        sync.check_trajectory(c['id'],c,sync.V4_NODES,sync.V4_AGENTS);sync.check_v5(c['id'],c)
     with pytest.raises(ValueError,match='v5 node plan'):sync.check_v5('x',{'trajectory_v5':{'nodes':['plan'],'idle':[],'agents':{}}})
+    with pytest.raises(ValueError,match='v5 agent accounts_cards'):sync.check_v5('x',{'trajectory_v5':{'nodes':[],'idle':[],'agents':{'accounts_cards':1}}})
     with pytest.raises(ValueError,match='v5 agent retail'):sync.check_v5('x',{'trajectory_v5':{'nodes':[],'idle':[],'agents':{'retail':1}}})
 
 def test_references_exist():

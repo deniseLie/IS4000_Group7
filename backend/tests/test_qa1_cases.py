@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import get_args
 import pytest
 from app.schemas.chat import ChatRequest
-from app.schemas.contracts import AgentName
+from app.schemas.contracts import TargetAgent
 from app.services import answers
 from app.services.guardrail import assess_request
 from app.services.orchestrator import build_graph
@@ -38,16 +38,17 @@ def test_each_set_has_the_agreed_mix(cases):
 def test_coverage_rules():
     assert set().union(*(c['ubs'] for c in CLIENT))==UBS
     assert MUST_CLIENT<=set().union(*(c['stories'] for c in CLIENT))
-    assert set().union(*(c['trajectory']['nodes'] for c in ALL))==set(sync.NODES)
-    assert set().union(*(c['trajectory']['agents'] for c in CLIENT))=={*get_args(AgentName),'answer'}
+    assert set().union(*(c['trajectory']['nodes'] for c in ALL))==set(sync.NODES)-{'gather'}  # gather acts only in wave 2 (phase 7)
+    assert set().union(*(c['trajectory']['agents'] for c in CLIENT))==set(get_args(TargetAgent))
     assert {'rm_assistant'}<=set().union(*(c['trajectory']['agents'] for c in RM))
 
 def test_trajectories_name_the_real_graph():
-    assert set(build_graph(None).nodes)-{'__start__'}==set(sync.NODES)
+    assert set(build_graph().nodes)-{'__start__'}==set(sync.NODES)
     for c in ALL:sync.check_trajectory(c['id'],c)  # raises on any unknown node, agent or tool
     planned={'trajectory':{'nodes':[],'idle':[],'agents':{'rm_assistant':1},'tools':['rm_tickets']},'state':'ready'}
     with pytest.raises(ValueError,match='agent rm_assistant'):sync.check_trajectory('x',planned)
-    with pytest.raises(ValueError,match='node plan both'):sync.check_trajectory('x',{'trajectory':{'nodes':['plan'],'idle':['plan'],'agents':{},'tools':[]},'state':'ready'})
+    with pytest.raises(ValueError,match='node planner both'):sync.check_trajectory('x',{'trajectory':{'nodes':['planner'],'idle':['planner'],'agents':{},'tools':[]},'state':'ready'})
+    with pytest.raises(ValueError,match='node dispatch'):sync.check_trajectory('x',{'trajectory':{'nodes':['dispatch'],'idle':[],'agents':{},'tools':[]},'state':'ready'})
     sync.check_trajectory('x',planned|{'state':'spec'})
 
 def test_references_exist():
@@ -65,7 +66,7 @@ def test_document_and_case_files_match():
 
 @pytest.mark.parametrize('case',[c for c in ALL if c.get('expected_route')],ids=lambda c:c['id'])
 def test_fixed_route_cases_run_without_a_model(case):
-    req=ChatRequest(messages=[{'role':'user','content':t['say']} for t in case['turns']])
+    req=ChatRequest(messages=[{'role':'user','content':t['say']} for t in case['turns'] if 'say' in t])
     assert assess_request(req).fixed_response.code==case['expected_route']
     result=asyncio.run(answers.make_answer(req,allow_model=False))
     assert result['response_origin']==case['expected_origin'] and result['needs_human']==case['expect_needs_human']
@@ -75,7 +76,7 @@ def test_fixed_route_cases_run_without_a_model(case):
 def test_qa1_examples_carry_persona_and_trajectory():
     built={e['metadata']['case_id']:e for e in sync.examples('demobank-qa1-client',CLIENT)}
     assert built['C01']['inputs']=={'turns':CLIENT[0]['turns'],'persona':'guest','mode':'public'}
-    assert built['C03']['inputs']['mode']=='personal' and built['C03']['outputs']['trajectory']['agents']=={'fraud':1}
+    assert built['C03']['inputs']['mode']=='personal' and built['C03']['outputs']['trajectory']['agents']=={'security':1}
     assert built['C03']['metadata']=={'case_id':'C03','dataset':'demobank-qa1-client','title':CLIENT[2]['title'],'persona':'michelle',
         'type':'normal','priority':'must','stories':['CR12'],'ubs':[2,5,6],'state':'ready'}
     assert json.loads(json.dumps(built))==built  # plain JSON for LangSmith

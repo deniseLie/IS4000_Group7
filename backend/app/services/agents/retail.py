@@ -64,6 +64,13 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         latest=history[-1].content if history and history[-1].role=='user' else question
         direct=transaction_answers.respond(task.task_id,question,latest,records)
     if direct is not None:return direct,evidence,prompts.load('retail',PROMPT)['id']
+    return await model_answer(task,question,history,language,ctx,records,evidence)
+
+
+async def model_answer(task: Task,question: str,history: list[Message],language: str,ctx: RequestContext,records: RetailRecords,
+        evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
+    """The retail prompt with computed checks (pending days, due day, fall-below status); v5 Accounts uses it for those questions."""
+    evidence=list(evidence)
     today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
     if retail_checks.relevant(records,question,today):
         computed=retail_checks.checks(records,question,today,await fall_below_threshold(ctx))

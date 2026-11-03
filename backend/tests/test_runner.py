@@ -59,7 +59,9 @@ def test_tasks_the_agent_cannot_run_are_refused(monkeypatch):
     with pytest.raises(PlanRefused, match='listed intents only'):check_task(SPECS['security'], task('open', agent='security'), {})
 
 
-def test_an_agent_without_a_released_prompt_or_an_unlisted_import_is_refused():
+def test_an_agent_without_a_released_prompt_or_an_unlisted_import_is_refused(monkeypatch):
+    monkeypatch.delitem(runner.PROMPTS, 'guide')
+    monkeypatch.delitem(runner.RULES, 'guide', raising=False)  # neither a prompt nor a rules hook
     with pytest.raises(PlanRefused, match='no released runner prompt'):check_task(SPECS['guide'], task('product_info', agent='guide'), {})
     with pytest.raises(PlanRefused, match='does not import'):
         check_task(ACCOUNTS, task('card_figures'), {'spend_total': Export(value=1, source_ids=['my_cards'])})
@@ -197,7 +199,7 @@ def test_an_answer_with_figures_not_in_the_evidence_is_withheld(served, answer, 
     raw = json.dumps({'answer': answer, 'source_ids': ['my_cards'], 'answer_kind': 'banking', 'status': 'ok', 'clarification_question': ''})
     result = validate_draft(Task(task_id='t1', domain='retail', intent='card_figures'), raw, got.evidence, 'accounts')
     out = runner.output(ACCOUNTS, task('card_figures'), result, got)
-    assert out.agent == 'accounts' and out.evidence == got.log
+    assert out.agent == 'accounts' and out.reads == got.log
     if ok:assert out.status == 'ok' and out.result.text == answer and [c.source_id for c in out.result.citations] == ['my_cards']
     else:assert out.status == 'error' and out.result.text == WITHHELD and out.result.citations == []
 
@@ -245,7 +247,7 @@ def test_live_known_intents_make_no_step_calls(counted):
     print('\n', counted, '\n', cards.status, cards.result.text, '\n', txns.status, txns.result.text)
     assert 'agent_step' not in counted and 2 <= counted.count('domain_answer') <= 4, counted
     for out, tool in ((cards, 'my_cards'), (txns, 'my_transactions')):
-        assert [entry['tool'] for entry in out.evidence] == [tool]
+        assert [entry['tool'] for entry in out.reads] == [tool]
         assert out.status == 'ok', out.model_dump_json()
         assert {c.source_id for c in out.result.citations} == {tool}, out.result
     assert '7310' in cards.result.text and '5169.6' in cards.result.text.replace(',', '')
@@ -256,8 +258,8 @@ def test_live_open_question_uses_the_bounded_loop(counted):
     michelle = persona('demo.michelle@example.com', 1002)
     out = LOOP.run_until_complete(runner.run_agent(ACCOUNTS, task('open', 'Did I spend more on dining in September than August?'), {}, michelle))
     steps = counted.count('agent_step')
-    print('\n', counted, out.evidence, '\n', out.status, out.result.text)
+    print('\n', counted, out.reads, '\n', out.status, out.result.text)
     assert 1 <= steps <= settings.agent_tool_calls and counted[-1] == 'domain_answer' and counted.count('domain_answer') in {1, 2}, counted
-    assert 1 <= len(out.evidence) <= settings.agent_tool_calls and all(e['tool'] in ACCOUNTS.loop_tools for e in out.evidence), out.evidence
-    assert all(e['args'].get('days', 90) <= 90 for e in out.evidence if e['tool'] == 'my_transactions')
+    assert 1 <= len(out.reads) <= settings.agent_tool_calls and all(e['tool'] in ACCOUNTS.loop_tools for e in out.reads), out.reads
+    assert all(e['args'].get('days', 90) <= 90 for e in out.reads if e['tool'] == 'my_transactions')
     assert out.status in {'ok', 'needs_human'}, out.model_dump_json()

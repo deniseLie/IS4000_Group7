@@ -6,10 +6,10 @@ the TTL and the order again; a double confirm records once."""
 import re
 from datetime import datetime
 from uuid import NAMESPACE_URL, UUID, uuid5
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 from app.core import data_api
 from app.schemas.actions import ActionOutcome
-from app.schemas.contracts import ActionCommand, Offer, RequestContext, TargetAgent
+from app.schemas.contracts import ActionCommand, Offer, OfferProposal, RequestContext
 from app.services.actions import canonical_target
 from app.services.actions.store import ActionIntegrityError, checked
 from app.services.authorization import PolicyDenied, require_permission
@@ -18,14 +18,7 @@ TTL_MINUTES = 30
 MAX_GROUP = 10  # SQL bounds group_order to 1..10
 
 
-class Proposal(BaseModel):
-    """One action an agent offers; the target comes from code-read records, never from the model."""
-    model_config = ConfigDict(extra='forbid')
-    task_id: str = Field(pattern=r'^[A-Za-z0-9_-]{1,40}$')
-    agent: TargetAgent
-    type: str
-    target: dict[str, JsonValue] = {}
-    summary: str = Field(min_length=1, max_length=300)
+Proposal = OfferProposal
 
 
 class OpenOffer(BaseModel):
@@ -88,7 +81,8 @@ async def open_group(ctx: RequestContext, conversation_id: UUID) -> tuple[UUID, 
 
 
 YES = {'yes', 'y', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'confirm', 'confirmed', 'go ahead', 'do it', 'please do',
-    'yes please', 'yes do it', 'yes go ahead', 'yes confirm', 'yes that s right', 'yes thanks', 'yes thank you', 'ok go ahead'}
+    'yes please', 'yes do it', 'yes go ahead', 'yes confirm', 'yes that s right', 'yes thanks', 'yes thank you', 'ok go ahead',
+    'yes report it', 'yes report my card'}  # the v4 chips (fraud_reports.CONFIRM_REPLY, LOST_REPLY)
 NO = {'no', 'n', 'nope', 'cancel', 'no thanks', 'no thank you', 'don t', 'do not', 'stop', 'not now', 'no cancel', 'no don t'}
 
 

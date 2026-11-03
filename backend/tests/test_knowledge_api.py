@@ -10,7 +10,15 @@ from pydantic import ValidationError
 from app.schemas.contracts import Principal,RequestContext,Task
 from app.schemas.knowledge import KnowledgeDetails,KnowledgeFact,KnowledgeQuery
 from app.services import kb
-from app.services.orchestrator import database_evidence
+from app.services.agents import runner
+
+
+def database_evidence(task: Task,ctx: RequestContext) -> list:
+    """A Guide default read of the task's question (KNOWLEDGE_STORE=database), as the v5 runner makes it."""
+    from app.core.config import settings
+    store,settings.knowledge_store=settings.knowledge_store,'database'
+    try:return asyncio.run(runner.read('knowledge_search',{'query':task.entities['question'],'k':4},ctx.model_copy(update={'agent':'guide'}),set()))
+    finally:settings.knowledge_store=store
 from tests.data_api_support import NativeAPI,mint_token
 
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgREST with TEST_DATA_API_LOCAL=1')
@@ -130,20 +138,19 @@ def test_orchestrator_evidence_uses_real_db_without_model(local_data_api: Native
     from app.schemas.contracts import TaskPlan
     from app.services import audit
     from app.services.agents.answer import validate_draft
-    from app.services.orchestrator import compose
+    from app.schemas.contracts import AgentOutput,PlanTask
+    from app.services.orchestrator import answer_for,section_for
     task=Task(task_id='t1',domain='retail',intent='answer_question',entities={'question':'fixed deposit'})
-    evidence=asyncio.run(database_evidence(task,guest()))
+    evidence=database_evidence(task,guest())
     assert evidence and any(item.id=='kb:sg-accounts@v1#main' for item in evidence)
     assert all(item.publisher and item.scope and item.id==item.source.id for item in evidence)
     # Validate a sample string directly, without representing it as a live model response.
     result=validate_draft(task,json.dumps({'answer':'Early withdrawal may reduce interest.',
         'source_ids':['kb:sg-accounts@v1#main'],'answer_kind':'banking','status':'ok','clarification_question':''}),evidence)
     request=ChatRequest(messages=[{'role':'user','content':'fixed deposit'}])
-    from app.schemas.workflows import ResponseMeta
-    from app.services.agents.answer import response_prompt_id
-    answer=compose({'request':request,'history':request.messages,'history_count':len(request.messages),'plan':TaskPlan(tasks=[task]),
-        'results':[result],'evidence':[evidence],'metadata':[ResponseMeta(origin='ai',prompt_id=response_prompt_id('retail'))],
-        'decision_sections':[]})['answer']
+    output=AgentOutput(task_id='t1',agent='guide',status='ok',result=result,evidence=[e.model_dump(mode='json') for e in evidence])
+    answer=answer_for([section_for(PlanTask(id='t1',agent='guide',intent='general',question='fixed deposit'),output)],
+        {'history':request.messages,'history_count':len(request.messages)})
     assert answer.sources[0].id=='kb:sg-accounts@v1#main' and not answer.needs_human
     batch=audit.start_batch(None,session_id=uuid4())
     trace=start_trace()
@@ -154,18 +161,17 @@ def test_orchestrator_evidence_uses_real_db_without_model(local_data_api: Native
         assert details['source_ids']==['sg-accounts@v1#main']
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
     missing=task.model_copy(update={'entities':{'question':'zxqvfrubble'}})
-    assert asyncio.run(database_evidence(missing,guest()))==[]
+    assert database_evidence(missing,guest())==[]
 
 
 @pytest.mark.parametrize('domain',['retail','fraud','compliance','document','relationship'])
-def test_supervisor_retrieves_shared_evidence_without_expanding_agent_tools(local_data_api: NativeAPI,
+def test_agents_retrieve_evidence_without_expanding_agent_tools(local_data_api: NativeAPI,
     native_api_client: TestClient,domain: str) -> None:
-    from app.services.agents.registry import AGENT_FOR
     from app.services.authorization import PolicyDenied
     task=Task(task_id='t1',domain=domain,intent='answer_question',entities={'question':'fixed deposit'})
-    assert asyncio.run(database_evidence(task,guest()))
-    if domain in {'fraud','document'}:
-        agent_ctx=guest().model_copy(update={'agent':AGENT_FOR[domain]})
+    assert database_evidence(task,guest())
+    if domain in {'fraud','document'}:  # v4 names the rules still read under (agents/rules.py) have no knowledge search
+        agent_ctx=guest().model_copy(update={'agent':domain})
         with SyncPostgrestClient(local_data_api.url) as db:
             with pytest.raises(PolicyDenied):
                 asyncio.run(kb.search(KnowledgeQuery(query='fixed deposit',scope='public',k=4),agent_ctx,db))

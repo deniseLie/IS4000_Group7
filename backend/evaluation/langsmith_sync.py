@@ -13,7 +13,7 @@ from typing import get_args
 from uuid import NAMESPACE_URL,uuid5
 import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
-from app.schemas.contracts import AgentName
+from app.schemas.contracts import TargetAgent
 from app.services.knowledge import INDEX
 from app.services.tools import TOOLS
 
@@ -34,13 +34,16 @@ EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_h
           'reply_has','reply_lacks','ticket','schema','trajectory','trajectory_v5','must_not','handoff','plan')
 OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','pattern','variant_of')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
-NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
-AGENTS=(*get_args(AgentName),'answer')
+NODES=('planner','agent','gather','act','compose')
+AGENTS=get_args(TargetAgent)
+# Graph cases keep the v4 expectation they were written against (architecture §14.12), checked against the v4 names.
+V4_NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
+V4_AGENTS=('retail','fraud','compliance','document','relationship','answer')
 PLANNED_AGENTS=('rm_assistant',)
 PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
-# v5 target (architecture §14, §5.6.1): graph cases also name the four-node graph, its agents and the tools still to build.
-V5_NODES=('planner','agent','act','compose')
-V5_AGENTS=('guide','accounts_cards','security','compliance_documents','relationship_service','rm_client_insight','rm_service_desk')
+# v5 (architecture §14, §5.6.1): graph cases also name the agents and tools still to build (the RM agents come in phase 9).
+V5_NODES=NODES
+V5_AGENTS=(*AGENTS,'rm_client_insight','rm_service_desk')
 V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')
 FAULTS=('external_down','upstream_withheld','receipt_failed','consent_revoked')
 
@@ -51,11 +54,11 @@ def load(dataset):
 def example_id(dataset,case_id):
     return str(uuid5(NAMESPACE_URL,f'demobank-eval/{dataset}/{case_id}'))
 
-def check_trajectory(name,case):
+def check_trajectory(name,case,nodes=NODES,agents=AGENTS):
     """Every node, agent and tool a QA1 case names must exist, so a renamed piece fails the sync instead of the run."""
     t=case['trajectory'];spec=case['state']=='spec'
-    agents=AGENTS+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
-    problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in NODES]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
+    agents=agents+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
+    problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in nodes]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
     problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
     problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
     if problems:raise ValueError(f'{name}: unknown or inconsistent {problems[0]}')
@@ -75,8 +78,8 @@ def to_example(dataset,case):
     name=f'{dataset}/{case["id"]}'
     if 'turns' in case:  # QA1: a persona's whole conversation (typed messages, taps, forms, uploads)
         inputs={'turns':case['turns'],'persona':case['persona'],'mode':'public' if case['persona']=='guest' else 'personal'}
-        check_trajectory(name,case)
-        if 'trajectory_v5' in case:check_v5(name,case)
+        if 'trajectory_v5' in case:check_trajectory(name,case,V4_NODES,V4_AGENTS);check_v5(name,case)
+        else:check_trajectory(name,case)
         if case.get('fault'):inputs['fault']=case['fault']
     elif 'say' in case:  # planner-only: one message (and history) in, the expected plan out
         inputs={'say':case['say'],'history':case.get('history',[]),'persona':case['persona'],'open_offers':case.get('open_offers',0)}

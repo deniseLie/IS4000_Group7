@@ -25,6 +25,13 @@ class RecordSelection(BaseModel):
         return self
 
 
+class OfferReply(BaseModel):
+    """A Confirm or Cancel button on one reply's offer group (v5); SQL checks the group is the caller's and still open."""
+    model_config=ConfigDict(extra='forbid')
+    offer_group: UUID
+    decision: Literal['confirm','cancel']
+
+
 class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1, max_length=61)
     mode: Literal['public','personal'] = 'public'
@@ -33,12 +40,14 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None
     turn_id: UUID | None = None
     revision: int | None = Field(default=None,strict=True,ge=0,le=9007199254740991)
+    offer: OfferReply | None = None
 
     @model_validator(mode="after")
     def validate_last_message(self):
         if self.messages[-1].role != "user":
             raise ValueError("The last message must be from the user")
         if self.record_context is not None and self.mode!='personal':raise ValueError('Record selection requires personal mode')
+        if self.offer is not None and self.mode!='personal':raise ValueError('Offers require personal mode')
         fields=(self.conversation_id,self.turn_id,self.revision)
         if any(value is not None for value in fields) and not all(value is not None for value in fields):
             raise ValueError('Saved chats require conversation_id, turn_id and revision together')

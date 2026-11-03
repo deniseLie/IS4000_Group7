@@ -48,6 +48,13 @@ class AnswerSection(BaseModel):  # one per task, priority order
     decision: str | None = None  # fixed text for a recorded action outcome on this section's task
 
 
+class OfferGroupEvent(BaseModel):  # v5: one reply's offers, confirmed or cancelled together (services/offers.py)
+    model_config = ConfigDict(extra='forbid')
+    offer_group: UUID
+    expires_at: datetime
+    offers: list[ActionRequiredEvent] = Field(min_length=1, max_length=10)
+
+
 class AnswerEvent(BaseModel):  # today's answer object + optional sections
     answer: str
     sources: list[Source] = []
@@ -59,6 +66,7 @@ class AnswerEvent(BaseModel):  # today's answer object + optional sections
     prompt_version: str | None = None
     response_origin: Origin
     sections: list[AnswerSection] | None = None
+    offer: OfferGroupEvent | None = None  # v5: Confirm/Cancel buttons send offer_group (phase 6)
 
 
 class WorkflowStatus(BaseModel):
@@ -74,16 +82,3 @@ class WorkflowStatus(BaseModel):
     pending_commands: list[UUID]=Field(max_length=5)
     lease_expires_at: AwareDatetime | None
     error_code: Literal['resume_failed','cancelled','assistant_unavailable','interrupted'] | None
-
-
-class WorkflowPausedEvent(BaseModel):
-    model_config=ConfigDict(extra='forbid')
-    workflow: WorkflowStatus
-    actions: list[ActionRequiredEvent]=Field(min_length=1,max_length=5)
-    preview: AnswerEvent  # every section, shown while the customer decides
-
-
-class WorkflowPreview(BaseModel):
-    model_config=ConfigDict(extra='forbid')
-    workflow: WorkflowStatus
-    preview: AnswerEvent

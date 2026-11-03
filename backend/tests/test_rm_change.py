@@ -15,7 +15,7 @@ from app.schemas.customer_data import CustomerEnvelope,CustomerProfile
 from app.schemas.relationship import RelationshipRequest
 from app.schemas.relationship_intro import HandoverDraft,Introduction
 from app.services import handover
-from app.services.orchestrator import simple_issue,topic_domain
+from app.services.orchestrator import simple_task,topic_agent
 from tests.data_api_support import NativeAPI,mint_token
 
 NATIVE=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgREST with TEST_DATA_API_LOCAL=1')
@@ -48,15 +48,15 @@ def request(**change: object) -> RelationshipRequest:
 @pytest.mark.parametrize('message',['why did my old guy leave? will things stay the same?','can someone send me my annual portfolio statement',
     'whats happening with my requests?','can i meet her next week'])
 def test_davids_messages_route_to_the_relationship_agent(message: str) -> None:
-    assert topic_domain(message.split('?')[0])=='relationship'
-    single=simple_issue(message,'English')
-    assert single is None or single.domain=='relationship'
+    assert topic_agent(message.split('?')[0])=='relationship'
+    single=simple_task(message,'English')
+    assert single is None or single.agent=='relationship'
 
 
-@pytest.mark.parametrize('message,domain',[('How do I find my statement?','retail'),('whats my balance','retail'),
-    ('my transfer to my landlord still says pending','retail'),('theres a $2400 charge i dont recognise','fraud'),('what is the status of my compliance review','compliance')])
-def test_existing_workflow_routing_is_unchanged(message: str,domain: str) -> None:
-    assert topic_domain(message)==domain
+@pytest.mark.parametrize('message,agent',[('How do I find my statement?','accounts'),('whats my balance','accounts'),
+    ('my transfer to my landlord still says pending','accounts'),('theres a $2400 charge i dont recognise','security'),('what is the status of my compliance review','compliance')])
+def test_existing_workflow_routing_is_unchanged(message: str,agent: str) -> None:
+    assert topic_agent(message)==agent
 
 
 def test_introduction_requires_the_matching_approved_wording() -> None:
