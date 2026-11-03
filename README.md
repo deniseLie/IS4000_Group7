@@ -103,6 +103,13 @@ Then open http://127.0.0.1:5173 and sign in as Michelle, or as Sophie for the re
 2. In Supabase, open **Connect** and copy the **Session pooler** connection string. Replace the user `postgres` with `demobank_reminders` (keep the `.<project-ref>` after it) and put in the password. Save it in `backend/.env` as `WORKER_DATABASE_URL=…`.
 3. Set `RUN_WORKER_IN_API=true` in `backend/.env` and restart the backend. (Or leave it `false` and run `../.venv/bin/python -m app.worker` from `backend/` in a third terminal.)
 
+**6. Hybrid knowledge search (optional).** With `KNOWLEDGE_STORE=database`, set `KNOWLEDGE_SEARCH=hybrid` to rank knowledge sections by keywords *and* meaning (migration 0099). It needs its own embedding key, never the model key: `EMBEDDING_API_KEY`, plus `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` and `EMBEDDING_MIN_SIMILARITY=0.4` (see `.env.example`). Store the section vectors once, and again after every knowledge migration, using the owner connection string:
+```bash
+cd backend
+../.venv/bin/python -m scripts.embed_knowledge --database-url "postgresql://..."           # add --check to only report
+```
+Set `KNOWLEDGE_SEARCH=keyword` and restart to switch back. Each search logs a `knowledge_search` line (and a LangSmith `kb.search` run) with the mode and how long the embedding and database steps took, so the two can be compared. `KNOWLEDGE_RESPELL=false` turns off the chat-spelling table for search only.
+
 Reminders are sent from 7 days before a due date, only for documents she still has to send, and disappear from her Inbox once she has sent everything (or the file the bank asked for). Michelle's review is due 30 Nov, so to see one today, ask for a correction due in 3 days (see *Demo data*); it reaches her Inbox within a minute.
 
 ## If something doesn't work
@@ -153,6 +160,7 @@ cd ../frontend && npm test                                                # fron
 - The local database tests start a temporary PostgreSQL and PostgREST. They never touch the hosted project.
 - Browser tests (`npm run test:e2e`, `playwright.native.config.js`) call the real AI provider and are opt-in.
 - Offline answer evaluation: `python -m evaluation.run --output evaluation-results.json`. See [docs/evaluation/README.md](docs/evaluation/README.md).
+- Knowledge search comparison (keyword vs hybrid, spelling table on/off, quality and timing): `python -m evaluation.retrieval --local --search keyword,hybrid --respell on,off`. Hybrid runs call the real embedding provider; the opt-in check is `TEST_DATABASE_LOCAL=1 TEST_EMBEDDINGS_LIVE=1 pytest tests/test_retrieval_eval.py`.
 
 ## Tracing and audit
 

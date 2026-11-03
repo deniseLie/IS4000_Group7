@@ -9,6 +9,12 @@ from langgraph.graph import END,START,StateGraph
 from langgraph.types import interrupt
 from evaluation import evaluators,langsmith_run,langsmith_sync,targets
 
+def test_requested_cases_cannot_be_silently_omitted():
+    langsmith_run.require_requested_cases(['C07','C20'],{'C07','C20'})
+    langsmith_run.require_requested_cases(None,{'C07'})
+    with pytest.raises(ValueError,match='C20'):
+        langsmith_run.require_requested_cases(['C07','C20'],{'C07'})
+
 def out(**kw):
     base={'answer':'','replies':[{'say':'q','answer':'','origin':'ai','needs_human':False,'sources':[]}],'routes':[None],'skipped':[],'played':True,
         'nodes':{'ran':[],'acted':[]},'agents':{},'tools':[],'model_calls':0,'tickets':{'opened':[],'all':[]}}

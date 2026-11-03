@@ -12,6 +12,9 @@ as $$ select nullif(current_setting('request.jwt.claims',true),'')::jsonb $$;
 create function auth.uid() returns uuid language sql stable
 as $$ select (auth.jwt()->>'sub')::uuid $$;
 grant usage on schema auth to anon,authenticated;
+-- Supabase installs extensions such as pgvector into this schema and lets the API roles use it.
+create schema extensions;
+grant usage on schema extensions to anon,authenticated;
 
 -- Storage catalogue prerequisites for SQL/RLS tests only. This is not a Storage HTTP server
 -- and these rows do not assert that blob bytes exist. Hosted tests exercise the real service.

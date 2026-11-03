@@ -3,13 +3,18 @@
 Callers supply the public or user-JWT client and flush their audit batch before releasing data.
 The approved in-memory v1 library remains independent of this database service.
 """
+import logging
+import time
 from postgrest import SyncPostgrestClient
 from pydantic import TypeAdapter
+from app.core.config import settings
 from app.core.data_api import execute
+from app.core.observability import log_event,span
 from app.schemas.contracts import RequestContext
 from app.schemas.knowledge import FactId,KnowledgeFact,KnowledgeQuery,KnowledgeSection,SectionKey,StoredSection
-from app.services import audit
+from app.services import audit,embeddings
 from app.services.authorization import require_permission
+from app.services.typos import for_search
 
 STUB=False
 
@@ -19,15 +24,36 @@ class KnowledgeResponseError(ValueError):
 
 
 async def search(query: KnowledgeQuery,ctx: RequestContext,db: SyncPostgrestClient) -> list[KnowledgeSection]:
+    """KNOWLEDGE_SEARCH=hybrid fuses keyword and embedding ranks (0099). If the embedding provider fails, the keyword
+    search still runs and the fallback is recorded (mode keyword_only) in the audit event, log and LangSmith run."""
     require_permission(ctx.principal,'kb.search',None,ctx)
-    response=await execute(lambda:db.rpc('kb_search',{'p_query':query.query,
-        'p_categories':[] if query.scope=='public' else [query.scope],'p_k':query.k}).execute(),'kb.search')
+    text=for_search(query.query)
+    args={'p_query':text,'p_categories':[] if query.scope=='public' else [query.scope],'p_k':query.k}
+    hybrid=settings.knowledge_search=='hybrid'
+    timing,failure={},None
+    with span('kb.search','tool',mode=settings.knowledge_search,respell=settings.knowledge_respell) as attrs:
+        if hybrid:
+            try:
+                embedded=await embeddings.embed_query(text)
+                args|={'p_embedding':embedded.vectors[0],'p_model':embedded.model,'p_min_similarity':settings.embedding_min_similarity}
+                timing['embed_ms']=embedded.ms
+            except embeddings.EmbeddingError as error:failure=error.reason
+        start=time.perf_counter()
+        name='kb_hybrid_search' if 'p_embedding' in args else 'kb_search'
+        response=await execute(lambda:db.rpc(name,args).execute(),'kb.search')
+        timing['sql_ms']=round((time.perf_counter()-start)*1000)
+        mode='keyword' if not hybrid else 'keyword_only' if failure else 'hybrid'
+        attrs.update(mode=mode,count=len(response.data or []),embedding_error=failure,**timing)
+    log_event('knowledge_search',logging.WARNING if failure else logging.INFO,mode=mode,embedding_error=failure,
+        result_count=len(response.data or []),**timing)
     sections=TypeAdapter(list[KnowledgeSection]).validate_python(response.data)
     if len(sections)>query.k or len({item.cite for item in sections})!=len(sections):
         raise KnowledgeResponseError('kb_search returned too many results or duplicate citations')
     if any(item.score<=0 or not item.current for item in sections):
         raise KnowledgeResponseError('kb_search returned an unranked or out-of-review section')
-    audit.add('data','data.read',resource_type='kb.sections',details={'tool':'kb.search','result_count':len(sections)})
+    details={'tool':'kb.search','result_count':len(sections)}
+    if hybrid:details|={'mode':mode,**({'embedding_error':failure} if failure else {})}
+    audit.add('data','data.read',resource_type='kb.sections',details=details)
     return sections
 
 

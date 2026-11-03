@@ -19,6 +19,11 @@ from types import SimpleNamespace
 STATUSES=('pass','fail','skipped','error')
 
 
+def require_requested_cases(requested: list[str] | None,runnable: set[str]) -> None:
+    missing=set(requested or [])-runnable
+    if missing:raise ValueError('Requested cases are absent or not runnable: '+', '.join(sorted(missing))+'. Sync the current dataset and check manual/spec case states.')
+
+
 def status(row) -> str:
     if row['run'].error:return 'error'
     scores=[r.score for r in row['evaluation_results']['results'] if not r.key.startswith('judge')]
@@ -67,6 +72,7 @@ async def run(args) -> dict:
     client=langsmith_client.client()
     examples=[e for e in client.list_examples(dataset_name=args.dataset)
         if (e.metadata or {}).get('state') not in ('spec','manual') and (not args.case or (e.metadata or {}).get('case_id') in args.case)]
+    require_requested_cases(args.case,{case_id for e in examples if isinstance(case_id:=(e.metadata or {}).get('case_id'),str)})
     if not examples:raise SystemExit('No runnable examples (spec and manual cases are skipped)')
     personas={e.inputs.get('persona') for e in examples}-{None,'guest'}
     tokens={}
