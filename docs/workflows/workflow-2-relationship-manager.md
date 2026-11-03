@@ -13,11 +13,11 @@ flowchart LR
   UI[RM workspace<br/>RmWorkspace.jsx] -->|/rm/*, JWT| API[api/rm.py<br/>app_metadata role=rm]
   UI -->|POST /rm/assistant SSE| AS[services/rm/assistant.py]
   AS --> BC[Book check: rm_match_clients<br/>outside book = refused + audited, no model]
-  AS --> PL[Planner model<br/>rm_planner/v1]
+  AS --> PL[Planner model<br/>rm_planner/v3]
   AS --> RS[Deterministic resolution<br/>client, ticket, meeting, note]
   AS --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
   TL --> DB[(SQL: rm.current_advisor + rm.in_book<br/>audit every read and refusal)]
-  AS --> LLM[Answer model<br/>rm_assistant/v1 + task file]
+  AS --> LLM[Answer model<br/>rm_assistant/v3 + task file]
   LLM --> CK[Item-level checks<br/>services/rm/checks.py]
   CK --> UI
   UI -->|approve| W[Write RPCs: documentation, tasks,<br/>service requests, client messages, availability]
@@ -26,7 +26,7 @@ flowchart LR
 - **Identity (RM1).** Sophie signs in with the normal login. The browser shows the RM workspace when the token's administrator-set `app_metadata.demobank_role` is `rm`. The API checks the same claim (never `user_metadata`) and every SQL function resolves her advisor id from the claim **and** `rm.staff_logins.auth_user_id = auth.uid()`; both must agree. Customers cannot call any RM function, and no RM table is readable by a client.
 - **Book (RM1).** Every RM function checks `rm.assignments` (current assignment, `ended_on is null`). A client outside the book returns `{"denied": true}` after a `policy.rm_client_denied` audit event; the refusal commits, the data never leaves. Names in a chat message are matched in SQL before the model runs, so "Show me Ong Wei Ming's transactions" is refused with no model call and no record read (R06). The reply is the same whether or not the person exists.
 - **Reads (F14).** `rm_book`, `rm_client_profile` (360 view with gaps), `rm_meeting_notes` (previous RMs' shared notes included, private notes withheld and counted), `rm_shared_summary` (only under an active `rm_brief` consent to her; the check is audited), `rm_tickets` / `rm_ticket` (her tickets in full; specialist-managed ones with client-safe status, fraud and login detail withheld), `rm_review_status`, `rm_appointments`, `rm_availability`, `rm_tasks`, `rm_followups`, `rm_handover_sources`. Each returns `call_id` and `as_of`, and writes one `data.read` audit event with the RM as `staff` actor.
-- **The assistant is not hard-coded.** Intent is chosen by the planner model; answers are written by the model from the records read for that question. Only three things are fixed: the out-of-book refusal, clarification questions when the records give several candidates (with the candidates as buttons), and "no reassignment recorded" for a handover brief. If the model is unavailable, the RM is told; nothing is substituted.
+- **The assistant is not hard-coded.** Intent is chosen by the planner model; answers are written by the model from the records read for that question. Fixed boundaries cover out-of-book refusals, specialist-note and chat-write restrictions, clarification when records give several candidates (with buttons), and "no reassignment recorded" for a handover brief. If the model is unavailable, the RM is told; nothing is substituted.
 - **Every item is labelled and cited.** Record, Client said, AI suggestion or Gap, with chips that open the source record (title, recorded time, fields). Items whose figures, dates or TCK- references are not in their cited records (or any supplied record), or that give advice, an approval decision or claim something was done, are withheld and counted ("1 point could not be verified…").
 - **Context and switching (RM2-RM4, RM7, RM12).** The active client, ticket and meeting are shown above the chat. Follow-ups stay with that client. Choosing another client (or naming one) starts a clean context; only turns about the same client are sent to the model.
 - **Nothing leaves without approval.** Drafts are labelled *AI draft – not sent*; documentation is *not saved* until approved; each task and service request is confirmed separately; a service request needs the identity/authorisation tick and returns its reference only after the ticket exists. Earlier draft revisions are never treated as approved.

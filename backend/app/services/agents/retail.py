@@ -13,7 +13,7 @@ from app.services import kb,knowledge,llm_gateway,prompts
 from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers,client_guidance
 from app.services.agents.answer import checked_model_answer
 
-PROMPT='v10'
+PROMPT='v11'
 LINKED='\nLinked context (DemoBank rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
 
 
@@ -46,6 +46,10 @@ async def fall_below_threshold(ctx: RequestContext) -> tuple[Decimal,str] | None
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Retail task question must be text')
+    existing=await request_status_answers.existing_statement_request(task.task_id,question,ctx)
+    if existing is not None:
+        result,record_evidence=existing
+        return result,[*public_evidence,*record_evidence],prompts.load('retail',PROMPT)['id']
     # Read existing request status from its authoritative ticket service *before*
     # card-limit intake or LLM generation. Errors are handled by orchestrator.
     status=await request_status_answers.respond(task.task_id,question,ctx)

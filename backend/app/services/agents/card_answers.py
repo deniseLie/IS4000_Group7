@@ -17,7 +17,8 @@ from app.services.typos import normalise
 from app.services import limit_context
 from app.services.client_intents import explanation,request_status
 
-LABELS={'balance':'outstanding balance','limit':'credit limit','minimum':'minimum payment','due':'payment due date','annual_fee':'annual fee'}
+LABELS={'balance':'outstanding balance','limit':'credit limit','minimum':'minimum payment','due':'payment due date','annual_fee':'annual fee',
+    'due_and_limit':'payment due date and credit limit'}
 INTENTS=(
     ('annual_fee',re.compile(r"\b(?:annual|card)\s+fees?\b|\bfees?\b[^.?!]{0,30}\b(?:annual|every year|each year)\b",re.I)),
     ('minimum',re.compile(r"\bminimum\b|\bleast i (?:can|have to|need to|must) pay\b",re.I)),
@@ -32,7 +33,7 @@ ELSEWHERE=re.compile(r"\b(?:increase|raise|higher|lower|reduce|change|changing|a
     r"transactions?|purchases?|waive|refund|reverse)\b",re.I)
 WHY=re.compile(r"\bwhy\b",re.I)
 ALL=re.compile(r"\b(?:both|all|each|every|everything|all of them)\b|\b(?:2|two) cards\b",re.I)
-ASKED=re.compile(r"Which card['’]s (outstanding balance|credit limit|minimum payment|payment due date|annual fee) do you mean:")
+ASKED=re.compile(r"Which card['’]s (outstanding balance|credit limit|minimum payment|payment due date and credit limit|payment due date|annual fee) do you mean:")
 ANNUAL=re.compile(r'\bannual\b',re.I)
 
 
@@ -49,6 +50,8 @@ def name_of(card: CreditCard) -> str:
 
 
 def intent_of(text: str) -> str | None:
+    found={key for key,pattern in INTENTS if pattern.search(text)}
+    if {'due','limit'}<=found and not re.search(r'\b(?:loan|transfer|atm|withdrawal)\b',text,re.I):return 'due_and_limit'
     return next((key for key,pattern in INTENTS if pattern.search(text)),None)
 
 
@@ -77,6 +80,9 @@ def clarify(intent: str,cards: Sequence[CreditCard]) -> str:
 
 def line(intent: str,card: CreditCard,fees: Sequence[CustomerTransaction]) -> str:
     status='' if card.status=='active' else f' (the card is {card.status.replace("_"," ")})'
+    if intent=='due_and_limit':
+        due=f'on {when(card.due_date)}' if card.due_date else 'not recorded'
+        return f'Your {name_of(card)}{status} has a payment due date {due} and a credit limit of {money(card,card.limit)}.'
     if intent=='balance':return f'Your {name_of(card)}{status} has an outstanding balance of {money(card,card.outstanding)}.'
     if intent=='limit':return f'Your {name_of(card)}{status} has a credit limit of {money(card,card.limit)}.'
     if intent in ('minimum','due'):
@@ -232,7 +238,7 @@ def respond(task_id: str,question: str,history: Sequence[Message],records: Retai
         intent=intent_of(text)
         named=cards_named(text,cards) or remembered(history,cards)
         # An annual fee is always a card fee; other figures need the word card, a named card or a card we just discussed.
-        if intent is None or (intent!='annual_fee' and not (CARD_WORD.search(text) or named)):return None
+        if intent is None or (intent not in ('annual_fee','due_and_limit') and not (CARD_WORD.search(text) or named)):return None
         if WHY.search(text) and intent!='annual_fee':return None
     else:
         named=cards_named(text,cards)

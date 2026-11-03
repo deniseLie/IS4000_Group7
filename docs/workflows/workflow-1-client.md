@@ -4,7 +4,7 @@ The client side of DemoBank: one persona who uses the assistant for everyday ban
 
 Demo login: `demo.michelle@example.com` (customer 1002).
 
-There is one client persona. The relationship manager is not a separate persona in the client view: the assistant hands questions to the RM, and the RM answers through **My requests**.
+There is one client persona: Michelle combines everyday banking and compliance review. The downloaded backlog’s `Persona` sheet also defines Sophie as the separate relationship-manager persona; `Persona (new)` retains the older Alex/Michelle/David split. Sophie uses Workflow 2, while Michelle follows RM updates through **My requests**.
 
 ## Michelle Ng — established private client
 
@@ -20,7 +20,7 @@ There is one client persona. The relationship manager is not a separate persona 
 
 1. **General questions (within guardrails).** Accounts, cards, loans, transactions and banking concepts, from her own records and approved knowledge. No invented figures, no personalised investment, legal or tax advice.
 2. **Compliance review.** Explains what is still needed and by when; each requested document shows what it must contain with a made-up example; every upload gets a quick template check (name, Singapore address and postal code, recent date, statement months, signature) before it goes to the bank.
-3. **Handover to her RM.** When a question needs a person (advice, fee or rate requests, complaints, "talk to my RM", or anything the assistant can't answer reliably), the assistant says so kindly, passes the question to her RM with the chat context, and gives her a `TCK-` reference to follow in My requests.
+3. **Handover to her RM.** When a question needs a person (advice, fee or rate requests, complaints, "talk to my RM", or anything the assistant can't answer reliably), the assistant previews her redacted question, asks her to confirm sending or adding it to an existing request, and then gives her a `TCK-` reference to follow in My requests.
 4. **Urgent safety and card controls.** An unrecognised charge gets the urgent steps and is passed to the fraud team as urgent, with a `TCK-` reference; fraud goes to the fraud team, not the RM. Since 0096 she can freeze and unfreeze her own card, replace a lost, stolen or damaged card and dispute a charge she recognises from Overview → Cards → *Manage*; only the bank cancels a card, unfreezes one it froze, or decides a limit or a refund (see *Card controls* below).
 5. **Not sure what to ask next?** Under the latest answer the chat suggests up to 3 next questions for that topic (for example after a pending transfer: *What if it is still pending tomorrow?*, *How long do transfers usually take?*, *Show my recent transactions*). They come from fixed lists, not the model, never repeat what she asked, offer personal questions only when she is signed in, and never raise a ticket by themselves (`lib/followUps.js`).
 6. **Meetings and statements.** Asking for a meeting suggests free times and a *Book a time with your RM* button; asking for a statement points to Overview → Statements, or to a statement copy request for older or certified ones.
@@ -35,7 +35,9 @@ There is one client persona. The relationship manager is not a separate persona 
 
 ## Handover to her relationship manager (CR8)
 
-Questions about advice, fees or rates, complaints, "talk to my RM" or "call me back" are not answered by the model. The assistant says politely it can't help with that part, records a support handoff with her redacted question, and migration 0073 opens an *rm_handover* ticket owned by her RM. The reply quotes the `TCK-` reference; she follows it in **My requests**. Answers the agent marks as needing a person, and answers withheld by the validator, are handed over the same way. "Talk to a person" in the header also goes to the RM. Details: [how-agents-run.md §9](../how-agents-run.md).
+Questions about advice, fee or rate negotiation, complaints, "talk to my RM" or "call me back" receive a preview of the client’s redacted question. The client confirms **Send to my RM**, **Add to TCK-…**, opens a separate request or cancels. A confirmed handover records a support receipt; migration 0073 opens the RM-owned *rm_handover* ticket, or the existing same-topic ticket receives the approved follow-up. The reply quotes its `TCK-` reference for **My requests**. Fraud reports go separately to the fraud team and require their own confirmation; confirming either issue preserves the other pending preview.
+
+An ordinary withheld answer creates no ticket by itself; the client can rephrase or request a person. `VALIDATION_HANDOFF=1` retains the original automatic validation-handoff path for its native tests, and `RM_HANDOVER_CONFIRM=0` is the legacy test path without the preview. The header’s **Talk to a person** remains an explicit direct handover request. Bank document acceptance is never inferred from a preliminary check or an RM handover.
 
 ## Compliance review and documents (CR3–CR4)
 

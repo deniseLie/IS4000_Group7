@@ -102,12 +102,14 @@ async def call(prompt,system,messages,schema):
     max_tokens=min(settings.max_tokens,left)
     start=time.perf_counter()
     outcome='error'
-    with span('llm','llm',agent=prompt['agent'],model=model,prompt_version=prompt['id'],transport=name) as a:
+    inputs={'system':system,'messages':[{'role':role,'content':content} for role,content in messages]} if name=='codex' else None
+    with span('llm','llm',agent=prompt['agent'],model=model,prompt_version=prompt['id'],transport=name,model_inputs=inputs) as a:
         try:
             try:
                 if name=='codex':
                     from app.services import codex_cli  # own timeout; no retries, each run is a subscription turn
                     data,usage=await codex_cli.answer(system,schema,messages)
+                    a['model_outputs']=data
                     tokens=(usage.get('input_tokens'),usage.get('output_tokens'))
                 else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a)
             except TimeoutError as e:

@@ -39,6 +39,19 @@ CLARIFICATION = (
     "or understand a correction request?"
 )
 
+PROMPT='v6'
+
+
+def submission_summary(case: ComplianceCase) -> dict[str,JsonValue]:
+    """Explain item progress separately from the bank's unchanged overall case status."""
+    counts={status:sum(item.submission_status==status for item in case.requested_items)
+        for status in ('not_submitted','rejected','submitted_awaiting_review','accepted','unknown')}
+    all_sent=bool(case.requested_items) and len(case.requested_items)<200 and all(
+        item.submission_status in ('submitted_awaiting_review','accepted') for item in case.requested_items)
+    return {'item_counts':counts,'all_requested_items_sent':all_sent,'items_may_be_truncated':len(case.requested_items)==200,
+        'overall_status_still_awaits_documents':all_sent and case.status in ('documents_requested','documents_partially_received','awaiting_client_documents'),
+        'open_bank_questions':sum(item.status=='open' for item in case.info_requests)}
+
 
 async def load(ctx: RequestContext) -> CustomerEnvelope[ComplianceCase | None]:
     result=ToolResult.model_validate(await tools.call('my_compliance_case',{},ctx))
@@ -48,7 +61,8 @@ async def load(ctx: RequestContext) -> CustomerEnvelope[ComplianceCase | None]:
 
 def evidence_for(snapshot: CustomerEnvelope[ComplianceCase | None]) -> list[Evidence]:
     case=snapshot.data
-    rows: list[tuple[str,str,JsonValue]]=[('case','Authenticated synthetic review case',case.model_dump(mode='json',exclude={'case_id','requested_items','status_history','info_requests'}) if case else None),
+    rows: list[tuple[str,str,JsonValue]]=[('case','Authenticated synthetic review case',
+        {**case.model_dump(mode='json',exclude={'case_id','requested_items','status_history','info_requests'}),'submission_summary':submission_summary(case)} if case else None),
         ('items','Authenticated synthetic review checklist',[item.model_dump(mode='json',exclude={'item_id'}) for item in case.requested_items] if case else []),
         ('history','Authenticated synthetic review status history',[item.model_dump(mode='json') for item in case.status_history] if case else []),
         ('requests','Authenticated synthetic review information requests',[item.model_dump(mode='json',exclude={'request_id'}) for item in case.info_requests] if case else [])]
@@ -67,7 +81,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         return (AgentResult(task_id=task.task_id,agent='compliance',
                     status='needs_clarification',answer_kind='conversation',
                     text=CLARIFICATION,question=CLARIFICATION),
-                [],prompts.load('compliance','v5')['id'])
+                [],prompts.load('compliance',PROMPT)['id'])
     snapshot=await load(ctx)
     chosen=compliance_selection.selection.get()
     if chosen is not None:
@@ -82,7 +96,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         if workspace.review is None or workspace.review.case_id!=snapshot.data.case_id:
             raise customer_data.CustomerDataIntegrityError('Compliance review changed while loading current document checks')
         evidence.append(document.evidence_for(workspace,workspace.review.requested_items,checked.as_of))
-    pv=prompts.load('compliance','v5')
+    pv=prompts.load('compliance',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

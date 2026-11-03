@@ -15,15 +15,19 @@ from contextvars import ContextVar
 from typing import Any
 from uuid import UUID,uuid4
 import httpx
+from pydantic import TypeAdapter
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.tracers.context import register_configure_hook
-from app.core.observability import span_sink
+from app.core.observability import span_sink,evidence_sink
+from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest
-from app.services.fraud_reports import CONFIRM_REPLY
+from app.schemas.tickets import CustomerTicket
+from app.services.fraud_reports import CONFIRM_REPLY,LOST_REPLY
+from app.services.rm_handover import SEND_REPLY,PREVIEW_MARK,OFFERED
 from app.services.guardrail import assess_request
 
 PERSONAS={'michelle':'demo.michelle@example.com','sophie':'demo.sophie@example.com'}
-CHAT_TAPS={CONFIRM_REPLY}  # buttons whose label is sent as the next chat message
+CHAT_TAPS={CONFIRM_REPLY,LOST_REPLY,SEND_REPLY}  # buttons whose label is sent as the next chat message
 NODES=('plan','prioritise','dispatch','propose_actions','review_actions','settle_actions','escalate_validation','compose')
 
 
@@ -86,14 +90,23 @@ def turns_of(inputs: dict[str,Any]) -> list[dict[str,str]]:
 async def tickets(http: httpx.AsyncClient,headers: dict[str,str]) -> list[dict[str,Any]]:
     response=await http.get('/tickets',headers=headers)
     response.raise_for_status()
-    return [{k:row.get(k) for k in ('reference','category','status')} for row in response.json()['data']]
+    rows=TypeAdapter(list[CustomerTicket]).validate_python(response.json()['data'])
+    return [row.model_dump(mode='json',include={'reference','category','summary','source','status','updated_at','last_update'}) for row in rows]
+
+
+def handover_reply(answer: str) -> str | None:
+    """Choose the actual offered reuse/send button; never submit without a visible preview."""
+    if PREVIEW_MARK not in answer:return None
+    offered=OFFERED.search(answer)
+    if offered:return 'Add to '+offered.group(1)
+    return SEND_REPLY if '“'+SEND_REPLY+'”' in answer else None
 
 
 async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     """Run every playable turn in one new saved chat and return the replies plus what ran."""
     mode,language=inputs.get('mode','public'),inputs.get('language','English')
     headers={'Authorization':f'Bearer {token}'} if token else {'X-Conversation-Token':secrets.token_urlsafe(32)}
-    log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[]
+    log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[];evidence: list[Evidence]=[]
     replies: list[dict[str,Any]]=[];skipped: list[dict[str,str]]=[];missing: list[dict[str,str]]=[];routes: list[str | None]=[];history: list[dict[str,str]]=[]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://evaluation',timeout=300) as http:
         before=await tickets(http,headers) if token else []
@@ -103,6 +116,10 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
         revision=created.json()['revision']
         for step in turns_of(inputs):
             text=step.get('say') or (step.get('tap') if step.get('tap') in CHAT_TAPS else None)
+            if 'confirm_rm_handover' in step:
+                if step['confirm_rm_handover']!='reuse_or_send':raise ValueError('Unknown RM handover confirmation policy')
+                text=handover_reply(replies[-1].get('answer') or '') if replies else None
+                if text is None:missing.append(step);break
             if text is None:
                 skipped.append(step);continue
             if 'tap' in step and not (replies and text in (replies[-1].get('answer') or '')):
@@ -112,9 +129,9 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
             routes.append(fixed.code if fixed else None)
             body={'messages':[{'role':'user','content':text}],'mode':mode,'language':language,
                 'conversation_id':session,'turn_id':str(uuid4()),'revision':revision}
-            tokens=(node_log.set(log),span_sink.set(spans));start=len(spans)
+            tokens=(node_log.set(log),span_sink.set(spans),evidence_sink.set(evidence));start=len(spans);evidence_start=len(evidence)
             try:response=await http.post('/chat',headers=headers,json=body)
-            finally:span_sink.reset(tokens[1]);node_log.reset(tokens[0])
+            finally:evidence_sink.reset(tokens[2]);span_sink.reset(tokens[1]);node_log.reset(tokens[0])
             reply: dict[str,Any]={'say':text,'status':response.status_code,'agents':[a.get('agent') for n,a in spans[start:] if n=='task'],
                 'model_calls':sum(n=='llm' for n,_ in spans[start:])}
             if response.status_code!=200:reply['error']=response.json().get('error',{}).get('code','http_error')
@@ -122,7 +139,9 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
                 if event=='conversation':revision=json.loads(data)['revision']
                 elif event=='answer':
                     answer=json.loads(data)
+                    cited={(s['id'],s['version']) for s in answer['sources']}
                     reply.update(answer=answer['answer'],origin=answer['response_origin'],needs_human=answer['needs_human'],
+                        evidence=[item.model_dump(mode='json') for item in evidence[evidence_start:] if (item.source.id,item.source.version) in cited],
                         sources=sorted({source_id(s['id']) for s in answer['sources']}),
                         sections=[{'domain':s['domain'],'priority':s['priority'],'origin':s['response_origin']} for s in answer.get('sections') or []])
                 elif event=='workflow_paused':reply.update(paused=True,answer=json.loads(data).get('preview',{}).get('answer',''))
@@ -137,5 +156,6 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':routes,'skipped':skipped,'not_offered':missing,'played':bool(replies),
         'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
+        'service_reads':sorted({attrs['tool'] for _,attrs in spans if 'call_id' in attrs and 'tool' in attrs}),
         'model_calls':sum(name=='llm' for name,_ in spans),
         'tickets':{'opened':[t for t in after if t['reference'] not in known],'all':after}}

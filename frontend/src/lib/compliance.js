@@ -66,6 +66,7 @@ export function closedRequestOutcome(outcome){
 export function reviewNextStep(review){
  if(review.requested_items.some(item=>['not_submitted','rejected'].includes(item.submission_status))||review.info_requests.some(item=>item.status==='open'))return {label:'Action needed',needsAttention:true};
  if(review.requested_items.some(item=>item.submission_status==='unknown'))return {label:'Document status needs checking',needsAttention:true};
+ if(review.requested_items.length>=200)return {label:'Document list may be incomplete – check with the bank',needsAttention:true};
  if(review.requested_items.some(item=>item.submission_status==='submitted_awaiting_review'))return {label:'Documents with bank – awaiting review',needsAttention:false};
  return {label:'No requested actions remaining',needsAttention:false};
 }

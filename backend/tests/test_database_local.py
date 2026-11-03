@@ -117,6 +117,14 @@ def test_native_row_change_and_audit_commit_together(database: 'Connection[SqlRo
     assert database.execute('select count(*) from audit.events').fetchone()==(initial,)
 
 
+def test_nested_test_transaction_cannot_commit_to_the_seed_template(database: 'Connection[SqlRow]') -> None:
+    with database.transaction():
+        original=database.execute('select status from banking.credit_cards where card_id=10011').fetchone()
+        database.execute("update banking.credit_cards set status='temporarily_blocked' where card_id=10011")
+    database.rollback()
+    assert database.execute('select status from banking.credit_cards where card_id=10011').fetchone()==original
+
+
 def test_audit_events_are_immutable_even_for_table_owner(database: 'Connection[SqlRow]') -> None:
     from psycopg.errors import FeatureNotSupported,RaiseException
     database.execute("select audit.record('chat','chat.message_received')")

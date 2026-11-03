@@ -15,8 +15,33 @@ UNIT_AFTER = re.compile(r'(?<![\w.])('+VALUE+r')\s*('+UNIT+r')(?!\w)',re.I)
 MONEY_FIELDS = {'balance','amount','credit_limit','outstanding_balance','minimum_payment_due',
                 'annual_fee','outstanding_amount','monthly_repayment','min_income','min_loan_amount','max_loan_amount',
                 # Card and loan reads (0083 records their currency): a figure counts only with the currency on the same record.
-                'limit','outstanding','minimum_payment','principal','next_amount'}
+                'limit','outstanding','minimum_payment','principal','next_amount','charge_amount'}
 POLICY_CLAIM = re.compile(r"\b(?:our|DemoBank['’]s)\s+(?:card\s+)?(?:terms|policy|policies)\s+(?:say|says|state|states|require|requires|is|are)\b|\b(?:under|according to)\s+our\s+(?:card\s+)?(?:terms|policy)\b",re.I)
+
+
+MONTHS={m:i for i,m in enumerate(['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],1)}
+_MON=r'(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?'
+DAY_MONTH=re.compile(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+'+_MON+r'(?:,?\s+(\d{4}))?',re.I)
+MONTH_DAY=re.compile(r'\b'+_MON+r'\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b',re.I)
+ISO=re.compile(r'\b(\d{4})-(\d{2})-(\d{2})\b')
+
+
+def dates(text: str) -> set[tuple[int|None,int,int]]:
+    text=unicodedata.normalize('NFKC',text)
+    found: set[tuple[int|None,int,int]]=set()
+    for d,m,y in DAY_MONTH.findall(text):
+        if 1<=int(d)<=31:found.add((int(y) if y else None,MONTHS[m[:3].lower()],int(d)))
+    for m,d,y in MONTH_DAY.findall(text):
+        if 1<=int(d)<=31:found.add((int(y) if y else None,MONTHS[m[:3].lower()],int(d)))
+    for y,m,d in ISO.findall(text):
+        if 1<=int(m)<=12 and 1<=int(d)<=31:found.add((int(y),int(m),int(d)))
+    return found
+
+
+def dates_supported(claimed: set[tuple[int|None,int,int]],recorded: set[tuple[int|None,int,int]]) -> bool:
+    full={(m,d) for _,m,d in recorded}
+    return all((y,m,d) in recorded if y else (m,d) in full for y,m,d in claimed)
+
 
 
 def unit_values(text):

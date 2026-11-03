@@ -22,7 +22,7 @@ from pydantic import TypeAdapter,ValidationError
 from postgrest.exceptions import APIError
 from app.core.config import settings
 from app.core import data_api
-from app.core.observability import log_event,span
+from app.core.observability import log_event,span,evidence_sink
 from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest, Message
 from app.schemas.customer_data import CustomerTransaction
@@ -37,7 +37,7 @@ from app.services import actions,audit,case_summary,customer_data,fraud_reports,
 from app.services.llm_gateway import LLMError
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError
-from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks,client_guidance
+from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks,client_guidance,request_status_answers
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
 from app.services.answers import NOTICE, clean_history, retrieve
@@ -189,8 +189,9 @@ async def plan(state: Turn) -> PlanUpdate:
     # A request-status question is a read, even in an active card-limit draft.
     # This must precede limit-context continuation and the LLM planner, so a
     # bank-decision question never starts another limit-change application.
-    if req.mode=='personal' and client_intents.request_status(question):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
+    status_question=request_status_answers.follow_up(question,state['history'])
+    if req.mode=='personal' and client_intents.request_status(status_question):
+        return {'issues':[PlannedIssue(domain='retail',question=status_question)]}
     if client_guidance.PERSONAL_DETAILS.search(question) or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
         return {'issues':[PlannedIssue(domain='retail',question=question)]}
     if client_guidance.UNCLEAR_HELP.search(question):
@@ -273,12 +274,17 @@ def prioritise(state: Turn) -> PriorityUpdate:
         issues=([*issues[:charge],PlannedIssue(domain='fraud',question=issues[charge].question),*issues[charge+1:]] if charge is not None
             else [PlannedIssue(domain='fraud',question=risk.redacted_message),*issues])
     fraud_reported=any(issue.domain=='fraud' for issue in issues)
+    handovers=rm_handover.requested_questions(risk.redacted_message)
+    if handovers:
+        if len(issues)==1 and issues[0].domain!='fraud':issues=[]
+        else:issues=[issue for issue in issues if issue.domain=='fraud' or (issue.domain!='relationship' and not rm_handover.needs_person(issue.question))]
+        issues=[*issues,*(PlannedIssue(domain='relationship',question=q) for q in handovers)]
     # A sign-in problem raised with a suspected charge is answered as a security step; the link is a rule, not a finding.
     tasks = [Task(task_id=f't{i+1}', domain=issue.domain, intent='answer_question',
         priority=task_priority(issue), entities={'question':issue.question,
             **({'linked':'card_fraud'} if fraud_reported and issue.domain=='retail' and LOGIN.search(issue.question) else {}),
             # Advice, fee/rate negotiation, complaints and asks for the RM go to the RM; the model never answers them.
-            **({'handover':'rm'} if issue.domain!='fraud' and rm_handover.needs_person(issue.question) and rm_handover.needs_person(risk.redacted_message) else {})})
+            **({'handover':'rm'} if issue.domain!='fraud' and issue.question in handovers else {})})
         for i,issue in enumerate(issues)]
     return {'plan':TaskPlan(tasks=tasks)}
 
@@ -333,7 +339,7 @@ def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
     if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
     if task.domain=='document':return prompts.load('document','v5')['id']
     if task.domain=='relationship':return prompts.load(agent,relationship.PROMPT)['id']
-    if task.domain=='compliance':return prompts.load(agent,'v5')['id']
+    if task.domain=='compliance':return prompts.load(agent,compliance.PROMPT)['id']
     return None
 
 
@@ -373,6 +379,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
     else:
         result=AgentResult(task_id=task.task_id,agent=agent,status='error',
             text='This personal service is not connected yet. Please use your bank’s official support channel.')
+    if (collected:=evidence_sink.get()) is not None:collected.extend(evidence)
     return {'result':result,'evidence':evidence,'proposal':proposal,'dispute':dispute,
         'metadata':ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id)}
 
@@ -519,6 +526,11 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
     if owned is not None and not state['pending_reviews']:
         sections+=await ask_to_confirm(state,ctx)
         sections+=await report_to_fraud_team(state,ctx,owned)
+        if any(task.entities.get('fraud_confirmed') for task in state['plan'].tasks):
+            pending_rm=rm_handover.unanswered_preview(state['history'])
+            if pending_rm:
+                sections.append(AnswerSection(task_id='pending_rm',domain='relationship',priority='P2',answer_kind='conversation',
+                    answer=pending_rm,needs_human=True,response_origin='safety'))
     return {'decision_sections':sections}
 
 
@@ -687,6 +699,10 @@ async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> 
             text,sources=handover.reply(),[] if handover.failed else [receipt_source(task_id)]
         sections.append(AnswerSection(task_id=task.task_id+'_decision',domain=task.domain,priority=task.priority,answer_kind='conversation',
             answer=text,sources=sources,needs_human=True,response_origin='safety',prompt_version=None))
+        if task.entities.get('handover_choice'):
+            for i,prompt in enumerate(fraud_reports.unanswered_prompts(state['history'])):
+                sections.append(AnswerSection(task_id=f'pending_fraud_{i}',domain='fraud',priority='P0',answer_kind='conversation',
+                    answer=prompt,needs_human=True,response_origin='safety'))
     failed=[task for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True)
         if result.status=='error' and meta.origin=='validation']
     if not failed:return {'decision_sections':sections}

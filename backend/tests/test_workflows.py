@@ -87,10 +87,10 @@ def test_review_resumes_persisted_graph_once(local_data_api: NativeAPI,native_ap
     assert again.status_code==200 and again.json()['state']=='completed'
     with psycopg.connect(local_data_api.database_uri) as db:
         # Only a blocked card is handed to staff; declining leaves the card active and records no handoff.
-        assert db.execute('select count(*) from support.handoffs').fetchone()==((1 if decision=='confirm' else 0),)
+        assert db.execute('select count(*) from support.handoffs where case_id=%s',(owned.turn.case_id,)).fetchone()==((1 if decision=='confirm' else 0),)
         assert db.execute('select count(*) from actions.receipts').fetchone()==((2 if decision=='confirm' else 0),)
         assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==(('temporarily_blocked' if decision=='confirm' else 'active'),)
-        assert db.execute('select count(*) from conversation.messages where role=\'assistant\'').fetchone()==(1,)
+        assert db.execute("select count(*) from conversation.messages where role='assistant' and session_id=%s",(owned.access.session_id,)).fetchone()==(1,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
@@ -116,7 +116,7 @@ def test_block_and_dispute_are_two_decisions_in_one_paused_turn_with_one_case_su
     assert len(answer['sections'])==1 and decision.startswith('Your card ending 4821 is temporarily blocked.' if block=='confirm' else 'You chose not to block')
     assert ('Your dispute draft for 2 charges on the card ending 4821 is recorded' in decision)==(dispute=='confirm')
     with psycopg.connect(local_data_api.database_uri) as db:
-        handoffs=db.execute('select reason,priority,summary from support.handoffs').fetchall()
+        handoffs=db.execute('select reason,priority,summary from support.handoffs where case_id=%s',(owned.turn.case_id,)).fetchall()
         assert [(reason,priority) for reason,priority,_ in handoffs]==[('card_dispute' if dispute=='confirm' else 'card_verification','P0')]
         summary=handoffs[0][2]
         assert 'Card ending 4821.' in summary and 'Reported charge: 2026-10-17 TECHVAULT ELECTRONICS SGD -2400.00.' in summary
@@ -234,7 +234,7 @@ def test_handoff_failure_preserves_confirmed_card_and_retry_deduplicates_effects
     response=native_api_client.post(f'/workflows/{owned.turn.turn_id}/resume',headers=headers(ctx))
     assert response.status_code==200 and response.json()['state']=='completed',response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from support.handoffs').fetchone()==(1,)
+        assert db.execute('select count(*) from support.handoffs where case_id=%s',(owned.turn.case_id,)).fetchone()==(1,)
         assert db.execute('select count(*) from actions.receipts').fetchone()==(2,)
 
 
@@ -252,9 +252,9 @@ def test_personal_chat_missing_provider_reads_owned_records_but_never_proposes(l
     assert 'event: answer' in response.text and 'event: workflow_paused' not in response.text,response.text
     assert '"response_origin": "validation"' in response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
-        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
-        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
+        assert db.execute('select type,state from actions.commands where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
+        assert db.execute('select count(*) from actions.receipts where customer_id=%s',(ctx.principal.customer_id,)).fetchone()==(0,)
+        assert db.execute('select reason from support.handoffs where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
         assert db.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('active',)
         assert db.execute('select state from conversation.turns where session_id=%s',(sid,)).fetchone()==('completed',)
 

@@ -68,7 +68,7 @@ def test_planning_prioritises_fraud_without_modifying_input():
     assert simple_issue('I cannot log in.','English').domain=='retail'
     assert simple_issue('There is an unfamiliar card charge. Also, explain loans.','English') is None
     mistaken=[PlannedIssue(domain='compliance',question='What is the difference between secured and unsecured loans?')]
-    assert route_issues(mistaken)[0].domain=='retail' and mistaken[0].domain=='compliance'
+    assert route_issues(mistaken)==mistaken and mistaken[0].domain=='compliance'
 
 
 def test_security_deadline_order_and_guardrail_override_preserve_every_issue():

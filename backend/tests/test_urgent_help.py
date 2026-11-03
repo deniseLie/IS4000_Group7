@@ -17,7 +17,7 @@ from app.schemas.fraud import FraudProposal
 from app.schemas.disputes import DisputeItem,StoredDisputeTarget
 from app.schemas.workflows import PendingReview,ResponseMeta
 from app.services import prompts
-from app.services.agents import fraud
+from app.services.agents import fraud,retail
 from app.services.agents.answer import validate_draft
 from app.services.agents.fraud import decision_for,evidence_for
 from app.services.agents.fraud_records import eligible_proposals
@@ -216,9 +216,9 @@ def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions
 
 def test_personal_retail_and_fraud_use_the_new_prompt_versions() -> None:
     task=Task(task_id='t1',domain='retail',intent='answer_question',entities={'question':'car loan'})
-    assert task_prompt_id(task,personal())==prompts.load('retail','v7')['id']
+    assert task_prompt_id(task,personal())==prompts.load('retail',retail.PROMPT)['id']
     assert task_prompt_id(task.model_copy(update={'domain':'fraud'}),personal())==prompts.load('fraud','v7')['id']
-    assert prompts.current('planner')['version']=='v2'
+    assert prompts.current('planner')['agent']=='planner'
 
 
 def retail_records(cards: list[dict[str,object]]):
@@ -359,7 +359,7 @@ def test_linked_otp_and_lock_get_the_unexpected_code_guidance_by_id() -> None:
         'including callers, bank staff and this chat','cannot see sign-in attempts, devices or where a sign-in came from']:
         assert guidance in evidence[0].text
     assert asyncio.run(linked_evidence(task.model_copy(update={'entities':{'question':'locked out'}}),ctx))==[]
-    system=prompts.load('retail','v7')['system']
+    system=prompts.load('retail',retail.PROMPT)['system']
     assert 'likely linked to the card charges' in system and 'Never say that DemoBank or its systems detected' in system
     assert 'Never say that DemoBank or its systems detected a sign-in' in prompts.load('fraud','v7')['system']
 
@@ -381,7 +381,7 @@ def test_card_figures_are_supported_with_their_recorded_currency() -> None:
     assert 'currency unrecorded' not in next(item for item in evidence_for(retail_records([travel])) if item.id=='retail-cards').source.title
     assert check_sources('Your Travel Card ending 5592 has an outstanding balance of SGD 316.20.',['retail-cards'],evidence) is None
     assert check_sources('Your Travel Card ending 5592 has an outstanding balance of USD 316.20.',['retail-cards'],evidence)=='unsupported_unit'
-    assert 'currency recorded on that same card or loan record' in prompts.load('retail','v7')['system']
+    assert 'currency recorded on that same card or loan record' in prompts.load('retail',retail.PROMPT)['system']
 
 
 def test_two_cards_need_a_which_card_question_without_figures() -> None:
@@ -396,7 +396,7 @@ def test_two_cards_need_a_which_card_question_without_figures() -> None:
     assert validate_draft(task,raw,evidence).status=='needs_clarification'
     suffixed=raw.replace('credit cards do you mean','cards, ending 4821 or 7755, do you mean')
     assert validate_draft(task,suffixed,evidence).status=='error'
-    assert 'more than one card record' in prompts.load('retail','v7')['system']
+    assert 'more than one card record' in prompts.load('retail',retail.PROMPT)['system']
 
 
 def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
@@ -405,7 +405,7 @@ def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
     issue=simple_issue('can i get a car loan','English')
     assert issue is not None and issue.domain=='retail'
     assert search('can i get a car loan')[0].id=='car-loans'
-    assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail','v7')['system']
+    assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail',retail.PROMPT)['system']
 
 
 @pytest.mark.parametrize('raw',['not json',json.dumps({'answer':'Contact your bank.','source_ids':['customer-records']}),

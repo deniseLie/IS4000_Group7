@@ -1,11 +1,25 @@
 """Team-only Quality page: role gate through the real gateway and JWT checks (locally minted tokens, as in
 test_gateway), and the mapping from LangSmith feedback stats. LangSmith reads are replaced only in the gate tests."""
 from datetime import datetime,timezone
+import os
+import pytest
 from app.schemas.quality import Check,Experiment
 from app.services import quality
 from tests.test_gateway import bearer,client,code,env  # noqa: F401  (env is the autouse JWKS/database fixture)
 
 EXPERIMENT=Experiment(name='demobank-qa1-client-v2-abc',dataset='demobank-qa1-client',started_at=datetime(2026,10,31,tzinfo=timezone.utc))
+
+
+@pytest.mark.skipif(os.getenv('TEST_LANGSMITH_QUALITY_LIVE')!='1',reason='Opt in to real LangSmith trace read-back')
+def test_quality_includes_the_actual_rm_trace() -> None:
+    """Read an existing RM run through the same project query used by the Quality page."""
+    expected=os.environ['TEST_LANGSMITH_RM_RUN_ID']
+    rows=quality.traces(30)
+    matches=[row for row in rows if row.run_id==expected]
+    assert len(matches)==1 and matches[0].mode=='rm'
+    spans=quality.trace(expected)
+    assert any(span.name=='rm_assistant' for span in spans)
+    assert any(span.name=='tool_call' for span in spans)
 
 
 def test_only_team_roles_from_app_metadata_can_read(monkeypatch):

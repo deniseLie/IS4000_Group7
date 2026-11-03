@@ -59,7 +59,7 @@ def test_fixed_routes_integrate_without_model_calls(question, code):
     result = asyncio.run(make_answer(req, allow_model=False))
     assert result['response_origin'] == 'safety' and result['prompt_version'] is None
     assert '1234' not in json.dumps(result)
-    if 'card' in question:assert 'immediately' in result['answer']
+    if 'card' in question:assert 'Freeze card' in result['answer']
 
 
 def test_personal_mode_does_not_get_guest_balance_response():

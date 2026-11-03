@@ -11,7 +11,7 @@ from app.core import data_api
 from app.services.knowledge import search, source, INDEX, ARTICLES, is_current
 from app.services.retrieval_context import retrieval_query
 from app.services.privacy import redact
-from app.services.guardrail import assess_request
+from app.services.guardrail import assess_request,DELEGATE_CLAIM
 from app.services.source_checks import check_sources, numbers
 from app.services.llm import llm
 from app.services import kb,prompts
@@ -129,10 +129,12 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
     if risk.fixed_response and risk.fixed_response.code=='other_customer_data':
         decide(info,'other_customer_data')
         result.update(answer="I can't access or disclose another client's account balances, transactions or records. I can only help you with information you are authorised to view.",needs_human=False)
+        if req.mode=='public' and DELEGATE_CLAIM.search(question):
+            result['answer']="I can’t verify delegate access through chat or share a client’s review details or accept documents for them. The client needs to sign in herself. I can offer general banking help, or you can use Talk to a person."
         return result
     if risk.fixed_response and risk.fixed_response.code=='instruction_override':
         decide(info,'instruction_override')
-        result.update(answer='I cannot bypass access checks or approve a loan or banking request. Only the authorised bank team can assess and decide an application. I can explain the application process or help you find the appropriate service.',needs_human=False)
+        result.update(answer='I cannot bypass access checks, approve a banking request, mark documents accepted, or show another customer’s private records. Only the authorised bank team can make those decisions. I can help you understand your own review status, required steps or the application process.',needs_human=False)
         return result
     if risk.fixed_response and risk.fixed_response.code=='human_support':
         decide(info,'human_support')

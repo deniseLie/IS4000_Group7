@@ -71,6 +71,7 @@ def reconcile(question: str, issues: list) -> list:
     # One turn, one conceptual question: no multiplication of sub-agents.
     if explanation(question) and all(i.domain=='retail' for i in corrected):
         return [factory(domain='retail',question=question)]
+    if len(corrected)==1:return [factory(domain=corrected[0].domain,question=question)]
     return corrected
 
 # Status enquiries are *reads of existing bank tickets*, not permissions to

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from pydantic import JsonValue
 
 _request_lock=asyncio.Lock()
 
@@ -57,24 +58,30 @@ def parse_events(output):
             if item.get('type')=='error' and item.get('message','').startswith('Code Mode is unavailable because code-mode host is disabled.'):
                 continue
             if item.get('type') not in ('agent_message','reasoning'):
-                raise RuntimeError('Codex attempted a non-answer action')
+                kind=item.get('type')
+                label=kind if isinstance(kind,str) and kind.isascii() and kind.replace('_','').isalpha() and len(kind)<=40 else 'unrecognised_item'
+                raise RuntimeError(f'Codex attempted a non-answer action ({label})')
             if kind=='item.completed' and item.get('type')=='agent_message':answer=item.get('text')
         if kind=='turn.completed':usage=event.get('usage',{})
     if usage is None or not answer:
         raise RuntimeError('Codex did not complete an answer')
     parsed=json.loads(answer)
     if not isinstance(parsed,dict):raise RuntimeError('Codex returned an invalid answer')
-    return parsed,{key:usage[key] for key in ('input_tokens','output_tokens') if isinstance(usage.get(key),int)}
+    for key in ('input_tokens','output_tokens'):
+        if key in usage and (type(usage[key]) is not int or usage[key]<0):raise ValueError('Codex '+key+' must be a non-negative integer')
+    return parsed,{key:usage[key] for key in ('input_tokens','output_tokens') if key in usage}
 
 async def answer(prompt, schema, messages):
-    if _request_lock.locked():raise RuntimeError('Codex is busy; retry after the current answer')
-    async with _request_lock:
-        return await _answer(prompt,schema,messages)
+    return await answer_with_model(prompt,schema,messages,os.getenv('CODEX_MODEL','gpt-5.6-luna'))
 
-async def _answer(prompt, schema, messages):
+async def answer_with_model(prompt: str,schema: dict[str,JsonValue],messages: list[tuple[str,str]],model: str) -> tuple[dict[str,JsonValue],dict[str,int]]:
+    """Queue subscription calls serially, including parallel agents, without changing application or user settings."""
+    async with _request_lock:
+        return await _answer(prompt,schema,messages,model)
+
+async def _answer(prompt, schema, messages,model):
     binary=shutil.which(os.getenv('CODEX_CLI_PATH','codex'))
     if not binary:raise RuntimeError('Codex CLI not found; install it and sign in with ChatGPT')
-    model=os.getenv('CODEX_MODEL','gpt-5.6-luna')
     # A new private directory/turn for each request; no resume and no repo access
     # through the working directory. Files are removed even on timeout/failure.
     with tempfile.TemporaryDirectory(prefix='demobank-codex-') as folder:
@@ -92,5 +99,5 @@ async def _answer(prompt, schema, messages):
                 proc.kill()
                 await proc.wait()
         if proc.returncode:
-            raise RuntimeError('Codex CLI failed; check CLI version, ChatGPT sign-in and model access')
+            raise RuntimeError(f'Codex CLI exited with status {proc.returncode}; check CLI version, ChatGPT sign-in and model access')
         return parse_events(stdout.decode('utf-8'))

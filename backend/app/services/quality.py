@@ -1,4 +1,4 @@
-"""Team-only Quality page (LangSmith read-back): evaluation experiments and recent /chat traces.
+"""Team-only Quality page (LangSmith read-back): evaluation experiments and recent client/RM traces.
 
 The backend reads LangSmith with its own server key; the browser never sees it. Only signed-in staff whose
 administrator-owned app_metadata.demobank_role is a team role may read it (user_metadata is never trusted). Results are
@@ -74,6 +74,7 @@ def experiment(name: str) -> list[Case]:
             checks=checks_of(run.feedback_stats)
             cases.append(Case(case_id=ids.get(run.reference_example_id),status=status(checks,run.error),checks=checks,
                 answer=(out.get('answer') or '')[:2000],agents=out.get('agents') or {},tools=out.get('tools') or [],
+                service_reads=out.get('service_reads') or [],
                 model_calls=out.get('model_calls'),latency_s=run.latency,tokens=run.total_tokens,error=(run.error or '')[:300] or None,
                 run_id=str(run.id)))
         return sorted(cases,key=lambda c:c.case_id or '')
@@ -86,9 +87,9 @@ def project() -> str:
 
 def traces(limit: int=30) -> list[Trace]:
     def load():
-        runs=islice(client().list_runs(project_name=project(),is_root=True,filter='eq(name, "chat")',limit=limit),limit)
+        runs=islice(client().list_runs(project_name=project(),is_root=True,filter='or(eq(name, "chat"), eq(name, "rm_assistant"))',limit=limit),limit)
         return [Trace(run_id=str(r.id),started_at=r.start_time,latency_s=r.latency,status=r.status,tokens=r.total_tokens,
-            mode=(r.extra or {}).get('metadata',{}).get('mode'),error=(r.error or '')[:300] or None) for r in runs]
+            mode='rm' if r.name=='rm_assistant' else (r.extra or {}).get('metadata',{}).get('mode'),error=(r.error or '')[:300] or None) for r in runs]
     return cached(('traces',limit),load)
 
 

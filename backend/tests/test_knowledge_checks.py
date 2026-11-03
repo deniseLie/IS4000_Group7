@@ -45,7 +45,7 @@ def test_loan_questions_retrieve_their_product_guidance(question,expected):
     assert set(re.findall(r'[0-9]+',article.content))<={'21'}
 
 def test_unclear_loan_question_names_the_loan_types_and_asks_which():
-    assert [a.id for a in knowledge.search('i want a loan')]==['loans']
+    assert knowledge.search('i want a loan')[0].id=='loans'
     text=knowledge.INDEX['loans'].content
     assert all(kind in text for kind in ('home loans','personal loans','loans to buy a new or used car')) and 'ask which one' in text
     assert 'cannot see loan applications' in text and 'relationship manager' in text

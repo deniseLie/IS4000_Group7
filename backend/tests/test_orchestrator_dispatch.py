@@ -18,7 +18,7 @@ from app.schemas.contracts import RequestContext
 from app.schemas.workflows import PipelineContext
 from app.services import audit,prompts
 from app.services.guardrail import assess_request
-from app.services.agents import retail
+from app.services.agents import compliance,retail
 from app.services.orchestrator import DispatchUpdate,compose,dispatch,prioritise
 from tests.data_api_support import NativeAPI
 from tests.test_actions_api import context
@@ -76,7 +76,7 @@ def test_independent_personal_tasks_overlap_and_keep_owned_failures(local_data_a
     assert [result.task_id for result in update['results']]==['t2','t1']
     assert all(result.status=='error' and result.citations==[] for result in update['results'])
     assert update['evidence']==[[],[]] and update['proposals']==[None,None]
-    assert [meta.prompt_id for meta in update['metadata']]==[prompts.load('compliance','v5')['id'],prompts.load('retail',retail.PROMPT)['id']]
+    assert [meta.prompt_id for meta in update['metadata']]==[prompts.load('compliance',compliance.PROMPT)['id'],prompts.load('retail',retail.PROMPT)['id']]
     tasks={run['metadata']['agent']:run for run in langsmith_runs.ended('task')}
     assert tasks['compliance']['metadata']['error_type']=='LLMNotConfigured'
     assert tasks['retail']['metadata']['error_type']=={'provider':'LLMNotConfigured','reader':'APIError','timeout':'TimeoutError'}[failure]

@@ -10,14 +10,9 @@ import re
 import unicodedata
 from dataclasses import dataclass,field
 from app.services.privacy import redact
-from app.services.source_checks import numbers,unit_values,record_units,unit_matches
+from app.services.source_checks import numbers,unit_values,record_units,unit_matches,dates,dates_supported
 from app.services.rm.evidence import Bundle
 
-MONTHS={m:i for i,m in enumerate(['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],1)}
-_MON=r'(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?'
-DAY_MONTH=re.compile(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+'+_MON+r'(?:,?\s+(\d{4}))?',re.I)
-MONTH_DAY=re.compile(r'\b'+_MON+r'\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b',re.I)
-ISO=re.compile(r'\b(\d{4})-(\d{2})-(\d{2})\b')
 TICKET=re.compile(r'\bTCK-\d{6,}\b')
 URL=re.compile(r'https?://|www\.',re.I)
 # The assistant is read-only: it never says it sent, booked or changed anything.
@@ -29,23 +24,6 @@ ADVICE=re.compile(r"\b(?:I|we)\s+(?:would\s+)?(?:recommend|advise)\b|\brecommend
     r"(?:buy|sell|invest|refinance|switch to|take up)\b|\b(?:you|we|I)\s+should\s+(?:approve|reject|decline)\b|\bshould\s+be\s+(?:approved|rejected|declined)\b|"
     r"\brecommend(?:s|ed|ing)?\s+(?:approving|rejecting|declining|approval|rejection)\b|\b(?:is|are)\s+likely\s+to\s+be\s+(?:approved|rejected)\b|"
     r"\bguaranteed?\s+(?:return|rate|approval)\b",re.I)
-
-
-def dates(text: str) -> set[tuple[int|None,int,int]]:
-    text=unicodedata.normalize('NFKC',text)
-    found=set()
-    for d,m,y in DAY_MONTH.findall(text):
-        if 1<=int(d)<=31:found.add((int(y) if y else None,MONTHS[m[:3].lower()],int(d)))
-    for m,d,y in MONTH_DAY.findall(text):
-        if 1<=int(d)<=31:found.add((int(y) if y else None,MONTHS[m[:3].lower()],int(d)))
-    for y,m,d in ISO.findall(text):
-        if 1<=int(m)<=12 and 1<=int(d)<=31:found.add((int(y),int(m),int(d)))
-    return found
-
-
-def dates_supported(claimed: set,recorded: set) -> bool:
-    full={(m,d) for _,m,d in recorded}
-    return all((y,m,d) in recorded if y else (m,d) in full for y,m,d in claimed)
 
 
 def _record_units(source: str) -> set:

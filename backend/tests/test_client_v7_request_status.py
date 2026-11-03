@@ -38,7 +38,7 @@ def test_status_answer_uses_owned_records_and_never_infers_approval(monkeypatch)
     assert 'TCK-001040' in answer.text
     assert 'Resolved' in answer.text
     assert 'does not confirm' in answer.text
-    assert 'has been approved' not in answer.text
+    assert 'does not confirm that the requested credit limit has been approved or changed' in answer.text
     assert answer.citations[0].source_id=='retail-tickets'
 
 def test_multiple_requests_require_reference(monkeypatch):

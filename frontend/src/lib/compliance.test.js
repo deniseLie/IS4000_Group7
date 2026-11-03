@@ -23,6 +23,8 @@ test('Overview uses recorded required actions instead of the general case headin
  for(const status of ['not_submitted','rejected','unknown'])assert.equal(reviewNextStep({...review,requested_items:[{submission_status:status}]}).needsAttention,true);
  assert.equal(reviewNextStep({...review,info_requests:[{status:'open'}]}).needsAttention,true);
  assert.equal(reviewNextStep({...review,requested_items:[{submission_status:'accepted'}]}).needsAttention,false);
+ assert.equal(reviewNextStep({...review,requested_items:Array.from({length:199},()=>({submission_status:'accepted'}))}).needsAttention,false);
+ assert.equal(reviewNextStep({...review,requested_items:Array.from({length:200},()=>({submission_status:'accepted'}))}).needsAttention,true);
 });
 test('inconsistent or foreign check envelopes cannot render as a success',()=>{
  assert.equal(parseCheck({...report}).status,'no_issues');

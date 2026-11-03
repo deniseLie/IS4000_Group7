@@ -16,6 +16,7 @@ def legacy_card_actions(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatc
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("update actions.executors set validator='actions.card_block_target(jsonb,bigint)'::regprocedure where type='card.temporary_block'")
         db.execute("update actions.executors set validator='actions.dispute_target(jsonb,bigint)'::regprocedure where type='card.dispute'")
+    monkeypatch.setattr(authorization,'CLIENT_ONLY_CARD_ACTIONS',frozenset())
     monkeypatch.setattr(authorization,'BANK_ONLY_CARD_ACTIONS',frozenset({'card.unblock','card.cancel_permanently'}))
     monkeypatch.setitem(authorization.AGENT_ACTIONS,'fraud',frozenset({'card.temporary_block','card.dispute','card.order_replacement'}))
     monkeypatch.setattr(orchestrator,'propose_actions',orchestrator.offer_card_actions)

@@ -29,7 +29,7 @@ def test_handover_is_marked_on_the_task_but_never_on_fraud() -> None:
     issues=[PlannedIssue(domain='fraud',question='I did not make this charge, can you waive the fee?'),
         PlannedIssue(domain='retail',question='Can you waive my late fee?')]
     from app.schemas.contracts import RiskAssessment
-    risk=RiskAssessment(redacted_message='x')
+    risk=RiskAssessment(redacted_message='I did not make this charge. Can you waive my late fee?')
     tasks=prioritise({'issues':issues,'risk':risk})['plan'].tasks
     assert 'handover' not in tasks[0].entities and tasks[1].entities['handover']=='rm'
 

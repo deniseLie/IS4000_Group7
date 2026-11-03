@@ -58,6 +58,7 @@ def test_ticket_checks():
     assert scores(evaluators.checks(reused,{'ticket':'rm_handover'}))['ticket']==0
     assert scores(evaluators.checks(out(tickets={'opened':[fraud],'all':[fraud]}),{'ticket':None}))['ticket']==0
     assert scores(evaluators.checks(out(skipped=[{'form':'x'}]),{'ticket':'card_limit_change'}))['ticket'] is None
+    assert scores(evaluators.checks(reused,{'ticket_categories':['suspected_fraud','rm_handover']}))=={'completed':1,'ticket_suspected_fraud':1,'ticket_rm_handover':0}
 
 def test_trajectory_checks():
     t={'nodes':['plan','dispatch','compose'],'idle':['propose_actions'],'agents':{'retail':1},'tools':['my_cards'],'no_tools':['my_t*'],'model':True}
@@ -70,6 +71,20 @@ def test_trajectory_checks():
     fixed={'nodes':[],'idle':[],'agents':{},'tools':[],'model':False,'graph':False}
     assert set(scores(evaluators.checks(out(),{'trajectory':fixed})).values())=={1}
     assert scores(evaluators.checks(out(nodes={'ran':['plan'],'acted':['plan']},tools=['x']),{'trajectory':fixed}))=={'completed':1,'nodes':0,'agents':1,'tools':0,'model':1}
+    rm={'pipeline':'rm','nodes':[],'idle':[],'agents':{},'tools':['rm_book'],'model':True}
+    assert set(scores(evaluators.checks(out(tools=['rm_book'],model_calls=1),{'trajectory':rm})).values())=={1}
+
+def test_direct_record_reads_are_distinct_from_mcp_tool_calls():
+    ref={'trajectory':{'nodes':[],'idle':[],'agents':{},'tools':[], 'service_reads':['tickets.list']}}
+    assert scores(evaluators.checks(out(service_reads=['tickets.list']),ref))['service_reads']==1
+    assert scores(evaluators.checks(out(tools=['tickets.list']),ref))['service_reads']==0
+
+def test_handover_confirmation_requires_the_actual_visible_preview():
+    from app.services import rm_handover
+    question='Can my RM review my annual fee?'
+    assert targets.handover_reply(rm_handover.preview(question))==rm_handover.SEND_REPLY
+    assert targets.handover_reply(rm_handover.preview(question,existing='TCK-001234'))=='Add to TCK-001234'
+    assert targets.handover_reply('You can check TCK-001234 in My requests.') is None
 
 @pytest.mark.parametrize('name',sorted(langsmith_sync.DATASETS))
 def test_every_case_reference_is_checkable(name):
@@ -84,6 +99,28 @@ def test_judge_needs_its_own_model(monkeypatch):
     monkeypatch.setenv('JUDGE_MODEL','same');monkeypatch.setenv('LLM_MODEL','same')
     with pytest.raises(RuntimeError,match='must differ'):evaluators.judge_model()
     assert 'Must not' not in evaluators.transcript(out(replies=[{'say':'hi','answer':'hello','sources':['support']}]))
+
+def test_codex_judge_compares_the_actual_subscription_model(monkeypatch):
+    monkeypatch.setenv('CHAT_TRANSPORT','codex');monkeypatch.setenv('CODEX_MODEL','answer-model')
+    monkeypatch.setenv('LLM_MODEL','unused-api-model');monkeypatch.setenv('JUDGE_MODEL','answer-model')
+    with pytest.raises(RuntimeError,match='must differ'):evaluators.judge_name()
+    monkeypatch.setenv('JUDGE_MODEL','independent-model')
+    assert evaluators.judge_name()=='independent-model'
+
+def test_judge_transcript_redacts_questions_and_source_records():
+    secret='4111 1111 1111 1111'
+    text=evaluators.transcript(out(replies=[{'say':'My card is '+secret,'answer':'Use the official app.',
+        'sources':['security'],'evidence':[{'record':{'card':secret}}]}]))
+    assert secret not in text and 'Use the official app.' in text
+
+def test_rm_ticket_envelope_and_record_citations():
+    from evaluation.rm_target import ticket_rows
+    import json
+    item={'reference':'TCK-001055','customer_id':1002,'category':'rm_handover','status':'submitted','rm_owned':True,'age_hours':1.5}
+    rows=ticket_rows(json.dumps({'data':{'rm_owned':[item],'specialist':[]}}))
+    assert rows[0].reference=='TCK-001055'
+    with pytest.raises(ValueError):ticket_rows('{"data": []}')
+    assert scores(evaluators.checks(out(replies=[{'say':'q','sources':['ticket-TCK-001055']}]),{'source_prefix':'ticket-'}))['record_sources']==1
 
 def test_case_status_from_feedback():
     row=lambda error=None,*scores:{'run':SimpleNamespace(error=error),'evaluation_results':{'results':[SimpleNamespace(key=k,score=s) for k,s in scores]}}

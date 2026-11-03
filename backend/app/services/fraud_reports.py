@@ -35,6 +35,8 @@ from app.services.privacy import redact
 from app.services import rm_handover
 
 CONFIRM_REPLY='Yes, report it'
+ASK_END='the report function in the official app now.'
+ASK_PROMPT=re.compile(r'Before I send this to our fraud team,[\s\S]+?'+re.escape(ASK_END))
 ASK_HEADER=re.compile(r'charges you don[’\']t recognise on your card ending ([0-9]{4}):')
 REFERENCE=re.compile(r'\(ref\. ([1-9][0-9]{0,17})\)')
 AFFIRM=re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|confirm(?:ed)?|that(?:['’]?s| is) (?:right|correct|it|them|the one|the ones)"
@@ -72,7 +74,13 @@ def ask_text(last4: str,charges: Sequence[SecurityTransaction]) -> str:
         f'{lines}\n'
         f'If they are, reply “{CONFIRM_REPLY}” and I’ll pass them to the fraud team as urgent. If something is different, tell me '
         'which charge you mean. Don’t wait for me if your card is at risk: call the fraud line on the back of your card or use '
-        'the report function in the official app now.')
+        +ASK_END)
+
+
+def unanswered_prompts(history: Sequence[Message]) -> list[str]:
+    """Keep the separate charge confirmation visible after an RM choice, without reporting anything."""
+    if len(history)<2 or history[-2].role!='assistant':return []
+    return [text for text in ASK_PROMPT.findall(history[-2].content) if ASK_HEADER.search(text) and REFERENCE.search(text)]
 
 
 def pending(history: Sequence[Message]) -> list[Confirmation]:

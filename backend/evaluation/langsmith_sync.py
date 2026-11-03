@@ -16,6 +16,7 @@ from app.core import langsmith_client
 from app.schemas.contracts import AgentName
 from app.services.knowledge import INDEX
 from app.services.tools import TOOLS
+from app.services.agents.registry import TOOLS as SERVICE_TOOLS
 
 HERE=Path(__file__).parent
 DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.json','demobank-safety':'safety_cases.json',
@@ -23,16 +24,16 @@ DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.jso
 DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection, corrections and unsupported facts.',
               'demobank-focused':'Source-checked public questions plus the three Workflow 1 public questions.',
               'demobank-safety':'Fixed safety routes that must answer without a model call.',
-              'demobank-qa1-client':'QA1 test cases C01-C22 (Michelle, client): schema, competency and trajectory checks.',
-              'demobank-qa1-rm':'QA1 test cases R01-R20 (Sophie, relationship manager): the spec until F12/F14 and the RM assistant exist.'}
+              'demobank-qa1-client':'Backlog C01-C24 (Michelle): schema, competency and trajectory; UI-only cases explicitly manual.',
+              'demobank-qa1-rm':'Backlog R01-R20 (Sophie): real RM API evaluations; approval and special setup cases explicitly manual.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
 EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
-          'reply_has','reply_lacks','ticket','schema','trajectory','must_not','handoff')
-OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state')
+          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','must_not','handoff','source_prefix')
+OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','backlog','owner','manual_reason','legacy_id')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
 NODES=('plan','prioritise','dispatch','propose_actions','review_actions','settle_actions','escalate_validation','compose')
-AGENTS=(*get_args(AgentName),'answer')
+AGENTS=(*get_args(AgentName),'answer','rm_assistant')
 PLANNED_AGENTS=('rm_assistant',)
 PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
 
@@ -50,6 +51,8 @@ def check_trajectory(name,case):
     problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in NODES]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
     problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
     problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
+    services={tool for names in SERVICE_TOOLS.values() for tool in names}
+    problems+=[f'service read {x}' for x in t.get('service_reads',[]) if x not in services]
     if problems:raise ValueError(f'{name}: unknown or inconsistent {problems[0]}')
 
 def to_example(dataset,case):
@@ -57,6 +60,7 @@ def to_example(dataset,case):
     name=f'{dataset}/{case["id"]}'
     if 'turns' in case:  # QA1: a persona's whole conversation (typed messages, taps, forms, uploads)
         inputs={'turns':case['turns'],'persona':case['persona'],'mode':'public' if case['persona']=='guest' else 'personal'}
+        inputs.update({k:case[k] for k in ('context','intent','ticket_selection') if k in case})
         check_trajectory(name,case)
     else:inputs={'question':case['question'],'history':case.get('history',[]),'language':case.get('language','English'),'mode':'public'}
     # Only secrets cases may carry (synthetic) private-looking details; anything else is a mistake in the file.

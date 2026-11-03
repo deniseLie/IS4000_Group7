@@ -3,11 +3,11 @@ by the model from the RM's own records and then checked item by item (services/r
 
 1. Redact the message, then a fixed book check: names in the message are matched in SQL; anyone outside the RM's book is
    refused and audited before any record is read or the model is called (R06).
-2. Planner (model, prompt rm_planner/v2) picks the intent and what the message points at, unless a workspace button set it.
+2. Planner (model, prompt rm_planner/v3) picks the intent and what the message points at, unless a workspace button set it.
 3. Deterministic resolution of the client, ticket, appointment or note against the RM's book; ambiguity becomes a
    question with options. Switching client resets the context, and only turns about the same client go to the model.
 4. Read the records for that intent through the RM tools (SQL book checks, consent checks, audit).
-5. One model call (prompt rm_assistant/v2 + the intent's task file) with strict JSON output and cited record ids.
+5. One model call (prompt rm_assistant/v3 + the intent's task file) with strict JSON output and cited record ids.
 6. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
    links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
    missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
@@ -25,8 +25,8 @@ from app.services.privacy import redact
 from app.services.rm import checks
 from app.services.rm import evidence as ev
 
-PLANNER_VERSION='v2'
-ASSISTANT_VERSION='v2'
+PLANNER_VERSION='v3'
+ASSISTANT_VERSION='v3'
 SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
@@ -48,7 +48,7 @@ def _obj(props: dict) -> dict:return {'type':'object','additionalProperties':Fal
 S={'type':'string'}
 CLARIFY={'clarification_question':S,'clarification_options':{'type':'array','items':S}}
 PLANNER_SCHEMA={'title':'rm_plan',**_obj({'intent':{'type':'string','enum':INTENTS},'client_name':S,'uses_active_client':{'type':'boolean'},
-    'ticket_ref':S,'appointment_hint':S,'is_new_notes':{'type':'boolean'},'clarification_question':S})}
+    'ticket_ref':S,'draft_scope':{'type':'string','enum':['client','ticket']},'appointment_hint':S,'is_new_notes':{'type':'boolean'},'clarification_question':S})}
 
 
 def brief_schema(ids: list[str]) -> dict:
@@ -164,6 +164,21 @@ def refusal(context: dict) -> dict:
         'context':context,'sources':[],'validation':{'checked':0,'withheld':0,'reasons':[]},'origin':'access_check'}
 
 
+SPECIALIST_NOTES=re.compile(r'\b(?:fraud|specialist)\b.{0,80}\b(?:internal|restricted|private)\b.{0,40}\bnotes\b',re.I)
+CHAT_WRITE=re.compile(r'^\s*(?:please\s+)?(?:(?:mark|close|resolve)\b.{0,70}\bticket\b|(?:block|freeze|unfreeze|cancel)\b.{0,50}\bcard\b)',re.I)
+
+
+def capability_refusal(message: str,context: dict) -> dict | None:
+    """Explain a forbidden capability before asking which ticket; never reads specialist detail or writes."""
+    if not (SPECIALIST_NOTES.search(message) or CHAT_WRITE.search(message)):return None
+    return {'status':'denied','intent':'access_check','summary':'I can’t show specialist teams’ internal notes, change ticket status or carry out card actions from this chat. '
+        'The specialist team controls its investigation and ticket status; card operations handles card actions. '
+        'Select a reference in Ticket inbox to see its client-safe status. '
+        'For a ticket assigned to you, use the workspace controls and review the exact update before approving it. Nothing has been changed.',
+        'sections':[],'clarification':None,'context':context,'sources':[],
+        'validation':{'checked':0,'withheld':0,'reasons':[]},'origin':'access_check'}
+
+
 # The pipeline -------------------------------------------------------------------------------------------------------
 class Turn:
     def __init__(self,req: RmAssistantRequest,ctx: RequestContext,say: Say):
@@ -181,6 +196,7 @@ class Turn:
     async def plan(self) -> dict:
         req=self.req
         if req.intent:return {'intent':req.intent,'client_name':'','uses_active_client':True,'ticket_ref':'','appointment_hint':self.message,
+            'draft_scope':'ticket' if req.context.ticket_ref else 'client',
             'is_new_notes':req.intent=='document_interaction' and req.context.documentation is None,'clarification_question':''}
         pv=prompts.load('rm_planner',PLANNER_VERSION)
         self.prompt_ids.append(pv['id'])
@@ -206,7 +222,9 @@ class Turn:
             candidates=[x['customer_id'] for x in self.book if names_match(plan['client_name'],x['name'])]
             if not candidates:
                 found=(await tools.call('rm_book',{'query':plan['client_name'][:80]},self.ctx))['data']  # audits a refused lookup
-                if not found:return None,refusal(self.context(None))
+                if not found:
+                    return None,clarify('Which client is this about?',[{'label':x['name'],'client_id':x['customer_id']} for x in self.book],
+                        intent,self.context(c.client_id))
                 candidates=[x['customer_id'] for x in found]
         if not candidates:
             if intent=='document_interaction' and c.documentation and not plan.get('is_new_notes'):candidates=[c.documentation.customer_id]
@@ -296,8 +314,11 @@ async def respond(req: RmAssistantRequest,ctx: RequestContext,say: Say) -> dict:
     turn=Turn(req,ctx,say)
     await say('Checking your client book…')
     turn.book=(await tools.call('rm_book',{},ctx))['data']
+    if req.context.client_id is not None and turn.name(req.context.client_id) is None:return refusal(turn.context(None))
     named=await tools.call('rm_match_clients',{'text':turn.message},ctx)
     if named['outside_book'] and not named['in_book']:return refusal(turn.context(req.context.client_id))
+    restricted=capability_refusal(turn.message,turn.context(req.context.client_id))
+    if restricted is not None:return restricted
     plan=await turn.plan()
     intent=plan['intent']
     if intent not in TASK_FILE:intent='help'
@@ -432,7 +453,7 @@ async def h_draft(t: Turn,plan,client_id):
     c=t.req.context
     profile=await tools.call('rm_client_profile',{'customer_id':client_id},t.ctx)
     recap=bool(c.note_id and RECAP.search(t.message)) and not (plan.get('ticket_ref') or '').strip()
-    ref,stop=(None,None) if recap else await _ticket_ref(t,plan,client_id,profile)
+    ref,stop=await _ticket_ref(t,plan,client_id,profile) if not recap and plan['draft_scope']=='ticket' else (None,None)
     if stop:return stop
     internal: list[str]=[]
     bundle=ev.Bundle()
@@ -475,7 +496,7 @@ async def h_draft(t: Turn,plan,client_id):
             f'({reason.replace("_"," ")}), so none is shown. Try asking again or write it yourself.','sections':[],'clarification':None,'context':ctx,
             'sources':_sources(bundle,cited),'validation':report.as_dict(),'origin':'ai','draft':None}
     revision=(current.revision+1) if current else 1
-    return {'status':'ok','intent':'draft_message','summary':'Here is a draft for you to review. It has not been sent.','sections':facts,'clarification':None,
+    return {'status':'ok','intent':'draft_message','summary':'Here is a draft for you to review. It has not been sent. Review this exact version and use Approve and send to approve sending it.','sections':facts,'clarification':None,
         'context':{**ctx,'draft':{'customer_id':client_id,'reference':ref,'text':text,'revision':revision}},'sources':_sources(bundle,cited),
         'validation':report.as_dict(),'origin':'ai','draft':{'customer_id':client_id,'client':t.name(client_id),'reference':ref,'text':text,'revision':revision,
         'cautions':cautions,'suggested_status':status,'can_change_status':bool(ticket and ticket.get('rm_owned')),

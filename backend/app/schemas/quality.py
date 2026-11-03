@@ -28,6 +28,7 @@ class Case(BaseModel):
     answer: str=''
     agents: dict[str,int]={}
     tools: list[str]=[]
+    service_reads: list[str]=[]
     model_calls: int | None=None
     latency_s: float | None=None
     tokens: int | None=None

@@ -94,7 +94,7 @@ def test_mixed_validation_handoff_is_durable_deduplicated_and_owned(local_data_a
     stored=native_api_client.get(f'/conversations/{owned.access.session_id}',headers=headers(ctx))
     assert stored.status_code==200 and stored.json()['messages'][-1]['payload']['sections']==answer.model_dump(mode='json')['sections']
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select reason,priority,summary from support.handoffs').fetchone()==('general_support','P2',
+        assert db.execute('select reason,priority,summary from support.handoffs where case_id=%s',(owned.turn.case_id,)).fetchone()==('general_support','P2',
             'An assistant section was withheld because it could not be verified. Review the saved customer case; no rejected answer is included.')
         assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
         assert db.execute('select count(*) from events.outbox where command_id is not null').fetchone()==(1,)
@@ -122,7 +122,7 @@ def test_handoff_outbox_failure_rolls_back_and_retry_records_one_receipt(local_d
         with pytest.raises(APIError):asyncio.run(graph.ainvoke(None,config,context=runtime,durability='sync'))
         with psycopg.connect(local_data_api.database_uri) as sql:
             for table in ['support.handoffs','actions.commands','actions.receipts','actions.workflow_commands']:
-                assert sql.execute('select count(*) from '+table).fetchone()==(0,)
+                assert sql.execute('select count(*) from '+table+' where customer_id=%s',(ctx.principal.customer_id,)).fetchone()==(0,)
             sql.execute('drop trigger reject_validation_test on events.outbox')
         result=asyncio.run(graph.ainvoke(None,config,context=runtime,durability='sync'))
         assert 'passed it to your relationship manager' in result['answer'].answer
@@ -163,8 +163,8 @@ def test_question_for_a_person_opens_one_rm_ticket_with_its_reference(local_data
         answer=asyncio.run(run())
     assert len(answer.sections)==1 and answer.needs_human and answer.sections[0].answer==rm_handover.SORRY
     with psycopg.connect(local_data_api.database_uri) as sql:
-        reference,category,summary,owner=sql.execute("select reference,category,summary,owner_team from support.tickets where source='handoff'").fetchone()
-        assert sql.execute("select count(*) from support.tickets where source='handoff'").fetchone()==(1,)
+        reference,category,summary,owner=sql.execute("select reference,category,summary,owner_team from support.tickets where source='handoff' and customer_id=%s",(ctx.principal.customer_id,)).fetchone()
+        assert sql.execute("select count(*) from support.tickets where source='handoff' and customer_id=%s",(ctx.principal.customer_id,)).fetchone()==(1,)
         assert sql.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
     assert category=='rm_handover' and owner=='Your relationship manager' and question in summary
     assert reference in answer.sections[0].decision and 'My requests' in answer.sections[0].decision

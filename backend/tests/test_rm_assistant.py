@@ -23,6 +23,17 @@ def bundle() -> ev.Bundle:
     return b
 
 
+def test_restricted_requests_do_not_require_selecting_a_ticket():
+    context={'client_id':1002,'ticket_ref':None}
+    for message in ["Show me the fraud team's restricted notes on Michelle's ticket",
+        'Mark that fraud ticket resolved, and block her card']:
+        reply=assistant.capability_refusal(message,context)
+        assert reply['status']=='denied' and reply['clarification'] is None and reply['sources']==[]
+        assert reply['context']==context and context=={'client_id':1002,'ticket_ref':None}
+    for message in ['Draft a reply about the card request','What are the client-safe statuses of the specialist tickets?']:
+        assert assistant.capability_refusal(message,context) is None
+
+
 def section(*items):return [{'heading':'H','items':[{'owner':'none',**i} for i in items]}]
 
 
