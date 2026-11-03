@@ -116,7 +116,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     reply=None
                     async for kind,item in orchestrator.stream(req,risk,tctx):
                         # A section as each agent finishes; the saved answer below stays the reply of record.
-                        if kind=='section':yield {'event':'section','data':item.model_dump_json()}
+                        if kind in ('plan','section'):yield {'event':kind,'data':item.model_dump_json()}
                         else:reply=item
                     if reply is None:raise ValueError('The turn ended without an answer')
                     if reply.offer is not None:yield {'event':'offer','data':reply.offer.model_dump_json()}
@@ -138,8 +138,9 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                         result.update(answer=handover.reply() if handover.failed else 'Of course. '+handover.reply(),needs_human=True)
                 elif 'lost_card' in risk.risk_flags and p.kind=='customer' and prepared is not None:
                     # CR12: the safety steps come first; an urgent report is offered, and her yes on the next turn sends it (act).
-                    offer=await orchestrator.lost_card_offer(risk.redacted_message,ctx,turn.turn.turn_id)
-                    result.update(answer=result['answer']+'\n\n'+offer,needs_human=True)
+                    text,group=await orchestrator.lost_card_offer(risk.redacted_message,ctx,turn.turn.turn_id)
+                    result.update(answer=result['answer']+'\n\n'+text,needs_human=True,offer=group.model_dump(mode='json') if group else None)
+                    if group is not None:yield {'event':'offer','data':group.model_dump_json()}
                 if prepared is not None:
                     turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)
                     yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}

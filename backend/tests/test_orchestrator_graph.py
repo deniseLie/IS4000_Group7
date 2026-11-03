@@ -53,7 +53,8 @@ def test_a_turn_streams_each_section_then_the_answer_in_priority_order(monkeypat
     async def main():
         return [item async for item in orchestrator.stream(req,assess_request(req),context(conversation=False))]
     items=asyncio.run(main())
-    assert [(kind,getattr(item,'task_id',None)) for kind,item in items]==[('section','t1'),('section','t2'),('answer',None)]
+    assert [(kind,getattr(item,'task_id',None)) for kind,item in items]==[('plan',None),('section','t1'),('section','t2'),('answer',None)]
+    assert [(t.task_id,t.domain,t.priority) for t in items[0][1].tasks]==[('t2','fraud','P1'),('t1','retail','P3')]  # placeholders in priority order
     answer=items[-1][1]
     assert [(s.task_id,s.priority) for s in answer.sections]==[('t2','P1'),('t1','P3')] and answer.offer is None
     assert answer.answer.startswith('security: I am locked out of the app')

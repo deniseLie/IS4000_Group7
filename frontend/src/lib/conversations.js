@@ -1,4 +1,5 @@
 import {parseWorkflow} from './workflows.js';
+import {parseOffer} from './offers.js';
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MODES=['public','personal'],LANGUAGES=['English','Chinese','Malay','Tamil'];
@@ -33,6 +34,8 @@ export function parseSavedAnswer(value) {
         decision:section.decision===null||section.decision===undefined?null:text(section.decision)};
     });
   }
+  const offer=parseOffer(value.offer);
+  if(offer)result.offer=offer;
   return result;
 }
 export function parseSession(value) {

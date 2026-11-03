@@ -60,16 +60,10 @@ test('handoff summary uses topic labels and recorded outcomes only, never custom
   {task_id:'t3',domain:'retail',priority:'P3',answer:'Withheld.',response_origin:'validation'}]},
   {role:'user',content:'whats my balance'},{role:'assistant',content:'error',error:true}];
  const s=handoffSummary(messages);
- assert.equal(s,'Customer asked for a person. Topics: Fraud & security (urgent), Complex banking needs ×2. Card block: confirmed. Answers withheld: 1.');
+ assert.equal(s,'Customer asked for a person. Topics: Fraud & security (urgent), Complex banking needs ×2. Answers withheld: 1.');
  for(const word of ['4821','2400','1,800','123456','landlord','recognise','balance'])assert.ok(!s.includes(word),word);
  assert.ok(s.length<=1000);
  assert.equal(handoffSummary([{role:'user',content:'hi'}]),'Customer asked for a person. Topics: General questions.');
- assert.ok(handoffSummary([{role:'assistant',content:'x',sections:[{task_id:'t1',domain:'fraud',priority:'P0',answer:'a',response_origin:'ai',decision:'You chose not to block the card ending 4821; it stays active.'}]}]).includes('Card block: declined.'));
- const urgent=decision=>handoffSummary([{role:'assistant',content:'x',sections:[{task_id:'t1',domain:'fraud',priority:'P0',answer:'a',response_origin:'ai',decision}]}]);
- const sent='Your dispute draft for 3 charges on the card ending 4821 is recorded for bank staff review. Staff decide any refund or cancellation.';
- assert.equal(urgent('You chose not to block the card ending 4821; it stays active. '+sent),'Customer asked for a person. Topics: Fraud & security (urgent). Card block: declined. Dispute draft: sent to staff.');
- assert.ok(urgent('Your card ending 4821 is temporarily blocked. You chose not to send the dispute draft.').endsWith('Card block: confirmed. Dispute draft: declined.'));
- assert.ok(!urgent(sent).includes('4821'));
 });
 test('sent questions are recalled newest first without back-to-back repeats',()=>{
  const messages=[{role:'user',content:'a'},{role:'assistant',content:'x'},{role:'user',content:'b'},{role:'user',content:'b'},{role:'assistant',content:''},{role:'user',content:'a'}];

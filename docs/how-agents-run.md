@@ -39,7 +39,7 @@ There is no checkpointer and no paused turn: an offer is saved on the Action Ser
 | 2 | `agent` | `runner.run_agent` for one task, in parallel with the others, within `AGENT_TIMEOUT_S`. History is the client's last 3 redacted messages (the task's own question when one message held several issues); assistant text only for a reply to our own question | Inside agents |
 | 3 | `gather` | Wave 1 only for now; phase 7 adds a second wave from agents' exports | No |
 | 4 | `act` | Confirm or cancel the open offer group in order (`offers.confirm` / `cancel`); SQL checks owner, expiry and order, and a double confirm records once. Fixed outcome lines quote the receipt or ticket reference | No |
-| 5 | `compose` | Sections in priority order (P0 fraud, P1 login, P2 compliance deadline, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `section` event as each agent finishes, then the `answer` (with `offer`) | No |
+| 5 | `compose` | Sections in priority order (P0 fraud, P1 login, P2 compliance deadline, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `plan` event after the planner (task ids, domains, priorities: the UI shows a placeholder per task), a `section` event as each agent finishes (filling its placeholder), then the `answer` (with `offer`: the UI shows one Confirm and one Cancel) | No |
 
 ## 3. Who answers what
 

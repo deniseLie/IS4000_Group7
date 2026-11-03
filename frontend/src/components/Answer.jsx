@@ -5,15 +5,13 @@ function Sources({sources,onSource}) {
   return <details className="answer-sources" data-testid="answer-sources"><summary>Sources</summary><p>These sources were supplied to the assistant. A citation does not guarantee that every claim is correct.</p>{sources.map(s=><div key={s.id}>{s.url?<button className="source-link" data-source-id={s.id} onClick={()=>onSource(s)}>{s.title}</button>:<span data-source-id={s.id}>{s.title}</span>} <small>{s.version}</small></div>)}</details>;
 }
 
-export default function Answer({message,pendingText,onSource,onAction}) {
-  if(message.sections?.length)return <div className="answer-sections" data-testid="answer-sections">{message.sections.map(section=><section className="answer-section" key={section.task_id} data-domain={section.domain} data-priority={section.priority} data-response-origin={section.response_origin} data-prompt-version={section.prompt_version}>
+export default function Answer({message,pendingText,onSource}) {
+  if(message.sections?.length)return <div className="answer-sections" data-testid="answer-sections">{message.sections.map(section=><section className="answer-section" key={section.task_id} data-domain={section.domain} data-priority={section.priority} data-response-origin={section.response_origin} data-prompt-version={section.prompt_version} data-pending={section.pending?'true':undefined} aria-busy={section.pending||undefined}>
     <h3>{DOMAIN_LABELS[section.domain]}{section.priority==='P0'&&<small>Urgent</small>}</h3>
-    <span className="answer-text">{section.answer}</span>
+    {section.pending?<span className="answer-text loading" role="status" data-testid="section-placeholder"><span className="skeleton-text" aria-hidden="true"/><span className="sr-only">Preparing this part…</span></span>
+      :<span className="answer-text">{section.answer}</span>}
     {section.response_origin==='validation'&&<small className="answer-origin">Could not verify</small>}
     {section.decision&&<p className="answer-decision" data-testid="answer-decision">{section.decision}</p>}
-    {onAction&&section.pending_actions?.map(action=>action.type==='card.dispute'
-      ?<button key={action.command_id} className="primary-button block-card" data-testid="review-dispute" onClick={()=>onAction(action)}>Review dispute draft…</button>
-      :<button key={action.command_id} className="primary-button block-card" data-testid="block-card" onClick={()=>onAction(action)}>Block card temporarily…</button>)}
     <Sources sources={section.sources} onSource={onSource}/>
   </section>)}</div>;
   return <>{message.content?<span className="answer-text">{message.content}</span>:pendingText?<span className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{pendingText}</span>:<span className="answer-text"/>}<Sources sources={message.sources} onSource={onSource}/></>;

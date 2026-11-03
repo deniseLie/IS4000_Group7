@@ -48,6 +48,18 @@ class AnswerSection(BaseModel):  # one per task, priority order
     decision: str | None = None  # fixed text for a recorded action outcome on this section's task
 
 
+class PlannedSection(BaseModel):  # v5: a placeholder the client fills from the matching `section` event
+    model_config = ConfigDict(extra='forbid')
+    task_id: str = Field(min_length=1, max_length=40)
+    domain: Domain
+    priority: Priority
+
+
+class PlanEvent(BaseModel):  # v5: the turn's tasks in priority order, sent once after the planner
+    model_config = ConfigDict(extra='forbid')
+    tasks: list[PlannedSection] = Field(min_length=1, max_length=5)
+
+
 class OfferGroupEvent(BaseModel):  # v5: one reply's offers, confirmed or cancelled together (services/offers.py)
     model_config = ConfigDict(extra='forbid')
     offer_group: UUID

@@ -22,7 +22,7 @@ from app.schemas.actions import ActionOutcome, HandoffResult
 from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest, Message
 from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
-from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, Source
+from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, PlanEvent, PlannedSection, Source
 from app.services import fraud_reports, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
 from app.services.llm_gateway import LLMError
 from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, retail_checks, runner, rules  # noqa: F401 (rules registers)
@@ -455,9 +455,13 @@ async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     for proposal, _ in (pair for pairs in by_task.values() for pair in pairs):
         sections.append(fixed_section(proposal.task_id, f'Would you like me to: {proposal.summary}? {line}', domain='relationship', needs_human=True))
     sections += state.get('lines') or []
-    group = OfferGroupEvent(offer_group=offers.group_for(ctx.case_id), expires_at=min(o.expires_at for o in saved),
-        offers=[ActionRequiredEvent(command_id=o.offer_id, type=o.type, summary=o.summary, expires_at=o.expires_at) for o in saved]) if saved else None
-    return {'answer': answer_for(sections, state, group)}
+    return {'answer': answer_for(sections, state, offer_event(saved, ctx))}
+
+
+def offer_event(saved: list, ctx: RequestContext) -> OfferGroupEvent | None:
+    if not saved:return None
+    return OfferGroupEvent(offer_group=offers.group_for(ctx.case_id), expires_at=min(o.expires_at for o in saved),
+        offers=[ActionRequiredEvent(command_id=o.offer_id, type=o.type, summary=o.summary, expires_at=o.expires_at) for o in saved])
 
 
 def answer_for(sections: list[AnswerSection], state: Turn, offer: OfferGroupEvent | None = None) -> AnswerEvent:
@@ -497,12 +501,16 @@ def start(req: ChatRequest, risk: RiskAssessment) -> Turn:
 
 
 async def stream(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> AsyncIterator[tuple[str, BaseModel]]:
-    """('section', AnswerSection) as each agent finishes (no offers yet), then ('answer', AnswerEvent)."""
+    """('plan', PlanEvent) once tasks are planned, ('section', AnswerSection) as each agent finishes (no offers yet),
+    then ('answer', AnswerEvent)."""
     tasks: dict[str, PlanTask] = {}
     with span('route', 'agent', route='llm', pipeline='v5'):
         async for chunk in GRAPH.astream(start(req, risk), context=tctx, stream_mode='updates'):
             for node, update in chunk.items():
-                if node == 'planner':tasks = {t.id: t for t in (update or {}).get('tasks') or []}
+                if node == 'planner':
+                    tasks = {t.id: t for t in (update or {}).get('tasks') or []}
+                    if tasks:yield 'plan', PlanEvent(tasks=[PlannedSection(task_id=t.id, domain=DOMAIN[t.agent], priority=t.priority)
+                        for t in sorted(tasks.values(), key=lambda t: t.priority)])
                 elif node == 'agent':
                     for output in update['outputs']:
                         if output.task_id in tasks:yield 'section', section_for(tasks[output.task_id], output, output.decision)
@@ -515,17 +523,17 @@ async def answer(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> A
     raise ValueError('The turn ended without an answer')
 
 
-async def lost_card_offer(question: str, ctx: RequestContext, turn_id: UUID) -> str:
+async def lost_card_offer(question: str, ctx: RequestContext, turn_id: UUID) -> tuple[str, OfferGroupEvent | None]:
     """CR12 with offers: the fixed lost-card reply offers an urgent card_lost report; an open report is quoted instead."""
     try:
         if (existing := await fraud_reports.open_lost_card_ticket(ctx)) is not None:
-            return fraud_reports.LOST_REUSED.format(reference=f' (reference {existing})')
+            return fraud_reports.LOST_REUSED.format(reference=f' (reference {existing})'), None
         from app.services.agents import fraud_records
         records = await fraud_records.load(ctx.model_copy(update={'agent': 'fraud'}))
-        await offers.save([OfferProposal(task_id='lost_card', agent='security', type='handoff.create', summary='Report your card as lost or stolen to our fraud team as urgent',
+        saved = await offers.save([OfferProposal(task_id='lost_card', agent='security', type='handoff.create', summary='Report your card as lost or stolen to our fraud team as urgent',
             target={'reason': 'card_lost', 'priority': 'P0', 'summary': fraud_reports.lost_summary(question, records)})], ctx, turn_id)
     except fraud_reports.HANDOFF_ERRORS as error:
         log_event('lost_card_offer_failed', error_type=type(error).__name__)
-        return fraud_reports.LOST_FAILED
-    return fraud_reports.LOST_OFFER
+        return fraud_reports.LOST_FAILED, None
+    return fraud_reports.LOST_OFFER, offer_event(saved, ctx)
 
