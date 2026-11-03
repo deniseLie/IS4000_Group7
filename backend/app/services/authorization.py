@@ -71,7 +71,8 @@ def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | 
         if not allowed:return Decision(allow=False,reasons=['agent_tool_forbidden'])
     obligations: list[str] = []
     if action == 'customer.get_credit_cards':obligations.append('mask:pan')
-    if action in CONFIRM_TYPES:obligations.append('require:confirmation')
+    # Every action a v5 agent offers waits for the client (services/offers.py, 0100); AUTO_TYPES run unconfirmed only from UI forms.
+    if action in CONFIRM_TYPES or (spec is not None and action in spec.offers):obligations.append('require:confirmation')
     if action == 'rm.share_summary':obligations.append('require:consent:rm_brief')
     return Decision(allow=True,reasons=['explicit_rule'],obligations=obligations)
 
