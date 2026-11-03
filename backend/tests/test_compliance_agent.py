@@ -31,6 +31,12 @@ def compliance_audit_context() -> Iterator[None]:
     finally:audit.current_batch.reset(token)
 
 
+@pytest.fixture(scope='module')
+def compliance_provider_runner() -> Iterator[asyncio.Runner]:
+    """Both live cases use the event loop owned by the SDK's cached HTTP client."""
+    with asyncio.Runner() as runner:yield runner
+
+
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
 @pytest.mark.parametrize('cid',[1001,1002,1003])
 def test_compliance_snapshot_is_owned_and_excludes_internal_assessments(local_data_api: NativeAPI,native_api_client: TestClient,cid: int) -> None:
@@ -83,21 +89,36 @@ def test_missing_compliance_provider_preserves_case_and_checklist(local_data_api
         'conversation_id':str(sid),'turn_id':str(uuid4()),'revision':0})
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
-        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
-        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
+        # A provider outage is not an explicit RM request; it must not create an action or handoff.
+        assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
+        assert db.execute('select count(*) from actions.receipts').fetchone()==(0,)
+        assert db.execute('select count(*) from support.handoffs where customer_id=1002').fetchone()==(0,)
         assert db.execute("select status from compliance.cases where customer_id=1002").fetchone()==('awaiting_client_documents',)
         assert db.execute("select count(*) from compliance.requested_items where customer_id=1002 and client_mark='not_prepared'").fetchone()==(4,)
         assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool'='compliance.get_case'").fetchone()==(1,)
 
 
 @pytest.mark.skipif(os.getenv('TEST_COMPLIANCE_LIVE')!='1',reason='Opt in to actual synthetic compliance model calls')
-def test_real_compliance_provider_keeps_preparation_distinct_from_bank_status(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
+def test_real_compliance_provider_keeps_preparation_distinct_from_bank_status(local_data_api: NativeAPI,native_api_client: TestClient,compliance_provider_runner: asyncio.Runner) -> None:
     import psycopg
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("update compliance.requested_items set client_mark='prepared',client_marked_at=clock_timestamp() where customer_id=1002 and sort_order=1")
     task=Task(task_id='live1',domain='compliance',intent='answer_question',entities={'question':'Does my prepared proof of residential address mean the bank accepted it?'})
-    result,_,prompt=asyncio.run(compliance.respond(task,[],'English',context(local_data_api,1002).model_copy(update={'agent':'compliance'}),[]))
+    result,_,prompt=compliance_provider_runner.run(compliance.respond(task,[],'English',context(local_data_api,1002).model_copy(update={'agent':'compliance'}),[]))
     assert result.status in {'ok','needs_human'} and result.answer_kind=='banking',result.model_dump_json()
     assert re.search(r'not.submitted|not.*accept|does not mean|doesn.t mean|not.*confirm',result.text,re.I),result.text
-    assert 'compliance-items' in {item.source_id for item in result.citations} and prompt.startswith('v2+')
+    assert 'compliance-items' in {item.source_id for item in result.citations} and prompt.startswith('v5+')
+
+
+@pytest.mark.skipif(os.getenv('TEST_COMPLIANCE_LIVE')!='1',reason='Opt in to actual synthetic compliance model calls')
+def test_real_provider_does_not_treat_submitted_items_as_missing(local_data_api: NativeAPI,native_api_client: TestClient,compliance_provider_runner: asyncio.Runner) -> None:
+    import psycopg
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute("update compliance.requested_items set submission_status='submitted_awaiting_review',client_mark='not_prepared' where customer_id=1002")
+    task=Task(task_id='live-submitted',domain='compliance',intent='answer_question',entities={'question':'Which requested compliance documents have I not sent yet?'})
+    result,_,_=compliance_provider_runner.run(compliance.respond(task,[],'English',context(local_data_api,1002).model_copy(update={'agent':'compliance'}),[]))
+    assert result.status=='ok' and result.answer_kind=='banking',result.model_dump_json()
+    assert re.search(r'all.*(?:submitted|sent|bank)|no.*(?:outstanding|remain|left|need.*send)|(?:nothing|none).*send',result.text,re.I),result.text
+    assert not re.search(r'(?:please|need to|must) (?:upload|submit|send)',result.text,re.I),result.text
+    assert not re.search(r'(?:bank is|bank has started) (?:now |currently )?reviewing',result.text,re.I),result.text
+    assert 'compliance-items' in {item.source_id for item in result.citations}

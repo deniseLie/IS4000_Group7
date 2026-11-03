@@ -70,6 +70,12 @@ def schema_for(evidence: list[Evidence]) -> dict[str,JsonValue]:
         'required':['card_id','transaction_id']}}},'required':[*required,'proposals']}
 
 
+def one_card(pairs: list[FraudProposal]) -> FraudProposal | None:
+    """CR12: several reported charges on ONE card ("the London charges") still give one offer; the charge list for her to
+    confirm then covers every related charge on that card. Charges on different cards stay ambiguous (she is asked)."""
+    return max(pairs,key=lambda pair:int(pair.transaction_id[4:])) if pairs and len({pair.card_id for pair in pairs})==1 else None
+
+
 def decision_for(task: Task,raw: str,evidence: list[Evidence],pairs: list[FraudProposal],prompt_id: str,flagged: bool=False) -> FraudDecision:
     """A rule-flagged report with exactly one eligible pair is always offered; offers execute nothing until confirmed.
 
@@ -82,14 +88,14 @@ def decision_for(task: Task,raw: str,evidence: list[Evidence],pairs: list[FraudP
         proposal=draft.proposals[0] if draft.proposals else None
         if proposal is not None and proposal not in pairs:raise llm_gateway.LLMBadOutput('Fraud proposal is outside the eligible customer card/transaction pairs')
     except (ValidationError,llm_gateway.LLMBadOutput) as error:
-        if not (flagged and len(pairs)==1):raise
+        if not (flagged and one_card(pairs)):raise
         fields={'task_id':task.task_id,'agent':'fraud','error_type':type(error).__name__,'db_code':None}
         log_event('agent_failed',**fields)
         audit.add('agent','agent.failed','failed',details=fields)
         return FraudDecision(result=AgentResult(task_id=task.task_id,agent='fraud',status='error',text=URGENT+' '+WITHHELD),
-            proposal=pairs[0],prompt_id=prompt_id)
+            proposal=one_card(pairs),prompt_id=prompt_id)
     if result.status=='error':proposal=None
-    if flagged and proposal is None and len(pairs)==1:proposal=pairs[0]
+    if flagged and proposal is None and one_card(pairs):proposal=one_card(pairs)
     if flagged and result.status=='error':result=result.model_copy(update={'text':URGENT+' '+result.text})
     return FraudDecision(result=result,proposal=proposal,prompt_id=prompt_id)
 

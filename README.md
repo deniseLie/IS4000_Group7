@@ -1,21 +1,24 @@
+> **Client v6 patch (31 Oct 2026):** speech-act and planner-scope fixes, record-backed account balance + sourced statement navigation, no unrequested RM handover. See `docs/client-v6-intent-routing-fixes.md` for test results and live test cases. RM features unchanged.
+
+<!-- Source review package: generated from original code; caches, local credentials and Git internals excluded. -->
 # DemoBank – AI banking assistant (IS4000 Group 7)
 
-A coursework demo of an AI assistant for a private bank. FastAPI backend with a LangGraph multi-agent pipeline, React (Vite) frontend, Supabase for login and data, an OpenRouter model through LangChain, and LangSmith for tracing. All data is fictional. It is not a real bank product.
+A coursework demo of an AI assistant for a private bank. Both workflows are built: the client assistant (Michelle) and the relationship manager workspace and assistant (Sophie). FastAPI backend with a LangGraph multi-agent pipeline, React (Vite) frontend, Supabase for login and data, an OpenRouter model through LangChain, and LangSmith for tracing. All data is fictional. It is not a real bank product.
 
 ## The two workflows
 
 | Workflow | Who | Status | Doc |
 |---|---|---|---|
 | 1 – Client | Michelle (`demo.michelle@example.com`) | Built | [docs/workflows/workflow-1-client.md](docs/workflows/workflow-1-client.md) |
-| 2 – Relationship manager | Sophie | Planned, not built | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) |
+| 2 – Relationship manager | Sophie (`demo.sophie@example.com`, app_metadata `demobank_role=rm`) | Built (1 Nov 2026: RM1–RM12, RM16) | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) |
 
 The client uses the assistant for:
 - everyday banking questions, within guardrails;
 - her compliance review: checklist, upload, a quick template check, then submit;
-- **handover to her relationship manager**: anything the assistant can't or shouldn't answer goes to the RM as a ticket with a `TCK-` reference, which she follows in **My requests**;
+- **appropriate human handover**: relationship-specific enquiries go to the assigned RM; card, fraud and other operational issues follow the relevant specialist route, where supported. Trackable requests receive a backend ticket reference, which she follows in **My requests**;
 - **meetings** with her RM (My requests → Meetings) and **monthly statements** she can print or save as PDF (Overview → Statements).
 
-Stories and IDs are in [docs/planning/product-backlog.xlsx](docs/planning/product-backlog.xlsx): F1–F28 foundation, CR1–CR18 client, RM1–RM13 relationship manager. What's done and what's open is in [docs/planning/status.md](docs/planning/status.md).
+Stories and IDs are in [docs/planning/product-backlog.xlsx](docs/planning/product-backlog.xlsx): F1–F28 foundation, CR1–CR18 client, RM1–RM16 relationship manager. What's done and what's open is in [docs/planning/status.md](docs/planning/status.md).
 
 ## Folder map
 
@@ -54,7 +57,7 @@ tests/fixtures/     privacy cases shared by backend and frontend tests
 | [docs/evaluation/test-cases.md](docs/evaluation/test-cases.md) | Michelle's 10 test cases (QA1) and the run record |
 | [docs/planning/status.md](docs/planning/status.md) | What is done and what is open |
 
-`AGENTS.md` is a code map for AI coding tools, and `docs/prompt-log/` holds one note per prompt version (required by the tests); neither needs reading.
+`AGENTS.md` is a code map for AI coding tools, and `docs/prompt-log/` holds the prompt-version change history; neither is required for a first look.
 
 ## Run it locally
 
@@ -66,12 +69,14 @@ You need Python 3.12 and Node.js 22. You don't need Docker.
 - `CHECKPOINT_SIGNING_KEY` (any long random string);
 - `DOCUMENT_PRECHECK_SIGNING_KEY`, from `select secret from compliance.precheck_keys where key_id='v1';` in the SQL editor.
 
-Keep `PIPELINE=v2` and `CONVERSATION_STORE=database`. Never use a service-role key.
+Keep `PIPELINE=v2`, `CONVERSATION_STORE=database`, and `CLIENT_INTENT_ROUTING=adaptive`. For the approved database KB, use `KNOWLEDGE_STORE=database` once migrations are ready. Never use a service-role key.
+
+**Client intelligence updates:** [docs/client-ai-improvements.md](docs/client-ai-improvements.md) describes AI-first intent routing, context-aware knowledge retrieval, answer repair, bounded multi-turn card-limit handling and verification. These are client-only changes; the RM assistant is described in the Workflow 2 doc.
 
 **2. Install (first time).**
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e './backend[dev,mcp]'
+.venv/bin/python -m pip install -e './backend[dev]'
 cd frontend && npm ci && cd ..
 ```
 
@@ -85,7 +90,7 @@ In a second terminal:
 cd frontend
 VITE_API_URL=/api BACKEND_PORT=5001 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
-Then open http://127.0.0.1:5173 and sign in as Michelle.
+Then open http://127.0.0.1:5173 and sign in as Michelle, or as Sophie for the relationship manager workspace (hosted set-up: apply `backend/supabase/hosted/16_apply_0089_0090_hosted.sql`, then follow *Set up on the hosted project* in the Workflow 2 doc).
 
 **4. Hosted database.** Apply any new SQL from `backend/supabase/hosted/` in order. Its README lists what each file does.
 
@@ -98,7 +103,7 @@ Then open http://127.0.0.1:5173 and sign in as Michelle.
 2. In Supabase, open **Connect** and copy the **Session pooler** connection string. Replace the user `postgres` with `demobank_reminders` (keep the `.<project-ref>` after it) and put in the password. Save it in `backend/.env` as `WORKER_DATABASE_URL=…`.
 3. Set `RUN_WORKER_IN_API=true` in `backend/.env` and restart the backend. (Or leave it `false` and run `../.venv/bin/python -m app.worker` from `backend/` in a third terminal.)
 
-**6. Hybrid knowledge search (optional).** With `KNOWLEDGE_STORE=database`, set `KNOWLEDGE_SEARCH=hybrid` to rank knowledge sections by keywords *and* meaning (migration 0088). It needs its own embedding key, never the model key: `EMBEDDING_API_KEY`, plus `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` and `EMBEDDING_MIN_SIMILARITY=0.4` (see `.env.example`). Store the section vectors once, and again after every knowledge migration, using the owner connection string:
+**6. Hybrid knowledge search (optional).** With `KNOWLEDGE_STORE=database`, set `KNOWLEDGE_SEARCH=hybrid` to rank knowledge sections by keywords *and* meaning (migration 0099). It needs its own embedding key, never the model key: `EMBEDDING_API_KEY`, plus `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` and `EMBEDDING_MIN_SIMILARITY=0.4` (see `.env.example`). Store the section vectors once, and again after every knowledge migration, using the owner connection string:
 ```bash
 cd backend
 ../.venv/bin/python -m scripts.embed_knowledge --database-url "postgresql://..."           # add --check to only report
@@ -112,12 +117,12 @@ Reminders are sent from 7 days before a due date, only for documents she still h
 | What happens | What to check |
 |---|---|
 | `vite: command not found` | Run `npm ci` in `frontend/` (the zip has no `node_modules`). |
-| `No module named …` | Recreate `.venv` and run `pip install -e './backend[dev,mcp]'`. |
+| `No module named …` | Recreate `.venv` and run `pip install -e './backend[dev]'`. |
 | "Document checks are not switched on yet" | `DOCUMENT_PRECHECK_SIGNING_KEY` missing or wrong in `backend/.env`; restart the backend. |
 | The assistant doesn't use Michelle's records | `PIPELINE=v2` and `CONVERSATION_STORE=database` in `backend/.env`; restart the backend. |
 | Browser can't reach the backend | Both terminals running; frontend started with `VITE_API_URL=/api BACKEND_PORT=5001`. |
 | Nothing appears in LangSmith | `LANGSMITH_TRACING=true` and `LANGSMITH_ENDPOINT=https://apac.api.smith.langchain.com` (the API host, not the website); restart. |
-| "Answer withheld" | The model's answer failed the fact check and was passed to the RM. That is expected behaviour, not a crash. |
+| "Could not verify" or "Answer withheld" | Inspect `agent_validation` and `agent_revision` in the backend trace. The system will not bypass source checks. Check approved KB matches and model configuration; an RM handover may require a signed-in saved conversation. |
 
 ## Demo data
 
@@ -167,4 +172,38 @@ cd ../frontend && npm test                                                # fron
 - RLS stays on, and every customer query filters by `customer_id`. Only `VITE_` variables reach the browser.
 - Lost card, shared secrets and "talk to a person" are fixed responses that never call the model.
 - Don't edit a released migration or prompt version. Add a new one, with a prompt-log note for prompts (`docs/prompt-log/`).
-- Never commit `.env` files or keys. More detail for coding agents is in [AGENTS.md](AGENTS.md).
+- Never commit `.env` files or keys. Review [UBS_Project_Code_Cleanup_Audit.md](UBS_Project_Code_Cleanup_Audit.md) before sharing any source archive.
+
+
+## Client chatbot v5 regression update
+
+See [`docs/client-v5-regression-guide.md`](docs/client-v5-regression-guide.md) for the informal-fraud/reporting CTA and ambiguous-spending-intent changes, safety controls, new prompt versions and the testing checklist. The manual 99-case workbook is shared separately.
+
+## Sharing a clean source ZIP
+
+From the project root, run:
+
+```bash
+python3 scripts/package_source.py
+```
+
+This creates `IS4000_Group7-Source.zip` beside the project folder. Share that
+ZIP instead of using Finder's Compress option, which includes ignored files.
+The script excludes installed dependencies, virtual environments, Git history,
+builds, caches, test reports, macOS metadata and local `.env` files. It keeps
+`.env.example`, source code, migrations, documentation, package lockfiles and
+Vite configuration. Recipients follow **Run it locally** to recreate `.venv`
+and run `npm ci` in `frontend/` to install Vite and other dependencies.
+
+`.gitignore` prevents new local/generated files being added to Git; it does not
+remove files already tracked. In an existing clone, refresh the index once
+from the project root (local files stay on disk):
+
+```bash
+git rm -r --cached .
+git add .
+git status
+```
+
+Review the staged changes before committing. No Git commits are made by the
+packaging script. Keep local settings privately; they are absent from sharing ZIPs.

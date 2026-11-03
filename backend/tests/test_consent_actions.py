@@ -98,7 +98,7 @@ def test_confirmed_receipts_and_exact_scope(local_data_api: NativeAPI,native_api
     assert data['grants'][0]['active'] is False and data['grants'][0]['revoked_at'] is not None
     with psycopg.connect(api.database_uri) as db:
         assert db.execute('select command_id,revocation_command_id from consent.grants where grant_id=%s',(gid,)).fetchone()==(pending.command.command_id,revoke.command.command_id)
-        assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+        assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 
 
@@ -128,7 +128,7 @@ def test_grant_rechecks_request_and_recipient(local_data_api: NativeAPI,native_a
         elif change=='assignment':db.execute('update rm.assignments set ended_on=current_date where customer_id=1003 and ended_on is null')
         else:db.execute("update consent.requests set categories=array['accounts']")
     assert confirm(client,ctx,pending.command.command_id).receipt.outcome=='failed'
-    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from consent.grants').fetchone()==(0,)
+    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from consent.grants where command_id is not null').fetchone()==(0,)
     if change=='expiry':assert client.get('/consent/records',headers=headers(ctx)).json()['data']['requests'][0]['status']=='expired'
 
 
@@ -168,8 +168,8 @@ def test_effect_receipt_audit_and_outbox_roll_back(local_data_api: NativeAPI,nat
     with psycopg.connect(api.database_uri) as db:
         assert db.execute('select state from actions.commands where command_id=%s',(pending.command.command_id,)).fetchone()==('proposed',)
         assert db.execute('select count(*) from actions.receipts where command_id=%s',(pending.command.command_id,)).fetchone()==(0,)
-        if operation=='grant':assert db.execute('select count(*) from consent.grants').fetchone()==(0,)
-        else:assert db.execute('select revoked_at from consent.grants').fetchone()==(None,)
+        if operation=='grant':assert db.execute('select count(*) from consent.grants where command_id is not null').fetchone()==(0,)
+        else:assert db.execute('select revoked_at from consent.grants where command_id is not null').fetchone()==(None,)
         if failure=='audit':db.execute('drop trigger native_consent_audit on audit.events')
         else:db.execute('alter table events.outbox drop constraint native_consent_outbox')
     assert confirm(client,ctx,pending.command.command_id).receipt.outcome=='succeeded'

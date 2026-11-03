@@ -1,4 +1,5 @@
-"""Card unblock and permanent cancellation are the bank's (0081; client self-service from 0068 is refused). Real temporary PostgreSQL.
+"""Permanent cancellation and the fraud dispute draft are the bank's (0081); since 0096 the client may freeze and unfreeze her own
+card, but never one the bank froze (tests/test_card_controls.py). Real temporary PostgreSQL.
 
 Run from backend/: TEST_DATABASE_LOCAL=1 ../.venv/bin/python -m pytest tests/test_card_self_service.py -q
 SQL claims are set directly (tests/database_support.py). Staff unblock/cancel keep their own path; the last test
@@ -51,12 +52,14 @@ def blocked_by_the_bank(db: 'Connection[SqlRow]') -> UUID:
     return case_id
 
 
-@pytest.mark.parametrize('kind',['card.unblock','card.cancel_permanently','card.temporary_block','card.dispute'])
-def test_a_customer_cannot_change_or_dispute_a_card(database: 'Connection[SqlRow]',kind: str) -> None:
+# 0096: a card the bank froze cannot be unfrozen (P1002, a reason written for the client) or frozen again; cancelling
+# and the fraud dispute draft stay bank-only (42501).
+@pytest.mark.parametrize('kind,code',[('card.unblock','P1002'),('card.cancel_permanently','42501'),('card.temporary_block','P1002'),('card.dispute','42501')])
+def test_a_customer_cannot_change_or_dispute_a_card_the_bank_blocked(database: 'Connection[SqlRow]',kind: str,code: str) -> None:
     blocked_by_the_bank(database)
     case_id=owned_case(database)
     target={'card_id':'card_10011','transaction_ids':['txn_100111']} if kind=='card.dispute' else CARD
-    assert sqlstate(database,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case_id,kind,json.dumps(target),f'{case_id}:t:{kind}'))=='42501'
+    assert sqlstate(database,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case_id,kind,json.dumps(target),f'{case_id}:t:{kind}'))==code
     database.execute('reset role')
     assert database.execute('select status from banking.credit_cards where card_id=10011').fetchone()==('temporarily_blocked',)
     assert database.execute("select count(*) from actions.commands where type=%s",(kind,)).fetchone()==(0,)

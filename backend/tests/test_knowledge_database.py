@@ -49,7 +49,7 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(41,)  # 0087 seven new articles, support v5, security v2, statements v3, overseas-transfers v2; 0085 overseas-transfers; 0071 card-limit-change; 0077 statements v2; 0081 lost-card v3, unrecognised-charge v3, support v4
+    assert database.execute('select count(*) from kb.articles').fetchone()==(47,)  # 0098 seven new articles, support v5, security v2, statements v3, overseas-transfers v2; 0096 lost-card v4, card-limit-change v2, card-controls; 0086-0087 home-loans, personal-loans, loans v2; 0085 overseas-transfers; 0071 card-limit-change; 0077 statements v2; 0081 lost-card v3, unrecognised-charge v3, support v4
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:
@@ -155,10 +155,21 @@ def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', que
     assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
 
 
+@pytest.mark.parametrize('query,expected',[('can i get a home loan','home-loans'),('refinance my mortgage','home-loans'),
+ ('how do i apply for a personal loan','personal-loans'),('which loans do you offer','loans')])
+def test_loan_guidance_is_searchable(database: 'Connection[SqlRow]', query: str, expected: str) -> None:
+    # CR16: home and personal loans (0086) join car loans; the general article v2 (0087) replaces v1, which stays citable.
+    database.execute('set local role anon')
+    rows=search(database,query,[],4)
+    assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
+    assert database.execute("select version from kb.articles where article_id='loans' and status='published'").fetchall()==[(2,)]
+    assert database.execute("select article_id from public.kb_get_section('loans',1,'main')").fetchall()==[('loans',)]
+
+
 def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
-    assert database.execute("select article_id,version from kb.articles where article_id in ('lost-card','support') and status='published' order by 1").fetchall()==[('lost-card',3),('support',5)]  # 0081, 0087
-    assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={3}
+    assert database.execute("select article_id,version from kb.articles where article_id in ('lost-card','support') and status='published' order by 1").fetchall()==[('lost-card',4),('support',5)]  # 0096, 0098
+    assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={4}
     assert database.execute("select article_id from public.kb_get_section('support',1,'main')").fetchall()==[('support',)]
     assert database.execute("select * from public.kb_get_fact('savings.fall_below_fee')").fetchall()==[(2,'SGD','kb:savings-fees@v1#main')]
 
@@ -181,7 +192,7 @@ def test_workflow_one_part_b_guidance_is_published(database: 'Connection[SqlRow]
     assert database.execute("select article_id from public.kb_get_section('unrecognised-charge',1,'urgent-steps')").fetchall()==[('unrecognised-charge',)]
 
 
-# Hybrid search (0088). Vectors here are hand-made 3-number fixtures that test the SQL ranking rules only;
+# Hybrid search (0099). Vectors here are hand-made 3-number fixtures that test the SQL ranking rules only;
 # real embeddings come from the provider (scripts/embed_knowledge.py, evaluation/retrieval.py --search hybrid).
 FIXTURE_MODEL='test/fixture'
 

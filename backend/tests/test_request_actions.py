@@ -31,7 +31,7 @@ def test_confirmed_intake_and_historical_worker_receipt(local_data_api: NativeAP
     api=local_data_api;client=native_api_client;ctx=action_case(client,api,1003);values=target(api)
     values.update({'who':'Forged customer','recipient_name':'Forged advisor','status':'answered'})
     pending=request(client,ctx,values,'first');assert pending.receipt is None and pending.command.state=='proposed'
-    assert pending.command.target.who=='David Lee (DEMO)' and pending.command.target.recipient_name=='Marcus Chua (DEMO)'
+    assert pending.command.target.who=='David Lee (DEMO)' and pending.command.target.recipient_name=='Sophie Lim (DEMO)'
     with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.requests where command_id is not null').fetchone()==(0,)
     def execute(_: int) -> ActionOutcome:return confirm(client,ctx,pending.command.command_id)
     with ThreadPoolExecutor(max_workers=3) as pool:results=list(pool.map(execute,range(3)))

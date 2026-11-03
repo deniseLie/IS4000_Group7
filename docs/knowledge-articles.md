@@ -1,11 +1,11 @@
 # Knowledge articles
 
-The approved articles the assistant can retrieve, as of 2 Nov 2026 (migrations up to `0087`).
+The approved articles the assistant can retrieve, as of 3 Nov 2026 (migrations up to `0099`).
 
-**Two stores, same 28 articles:**
+**Two stores, same 31 articles:**
 - **Memory** (`backend/app/services/knowledge.py`, `KNOWLEDGE_STORE=memory`) keeps each article as one text: its sections joined in order.
 - **Database** (`kb.articles`, `kb.sections`, `kb.facts`, `KNOWLEDGE_STORE=database`) keeps the sections separately (anchors below), plus retired versions.
-- **Section vectors** (`kb.section_embeddings`, migration `0088`) are used only by hybrid search (`KNOWLEDGE_SEARCH=hybrid`). Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
+- **Section vectors** (`kb.section_embeddings`, migration `0099`) are used only by hybrid search (`KNOWLEDGE_SEARCH=hybrid`). Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
 
 All content is synthetic demo guidance or a summary of an allowed public source. The 2 Nov articles were informed by [research on how a private bank explains these topics](research/ubs-practices.md). They are written as DemoBank guidance and do not name or quote that bank.
 
@@ -28,9 +28,12 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 | `sg-accounts` | Singapore bank account basics | MoneySense | v1 · main | Savings, current and fixed deposit accounts; early withdrawal; what to check before opening |
 | `personal-details` | Updating your personal details | DemoBank | v1 · how-to, proof | My requests → Update personal details for address, phone or email; proof of a new address; why the registered phone matters; moving abroad may change tax residency |
 | `cards` | Demo credit card enquiries | DemoBank | v1 · main | Card terms only from a product record; card not working (ATM, online, shop) |
-| `card-limit-change` | Changing your credit card limit | DemoBank | v1 · main | Temporary or permanent limit requests; the cards and credit team decides |
+| `card-limit-change` | Changing your credit card limit | DemoBank | v2 · main | Temporary or permanent limit requests (steps of SGD 1,000, up to 90 days, one per card every 30 days); the cards and credit team decides |
+| `card-controls` | Freezing, replacing and disputing a card | DemoBank | v1 · freeze, replace, dispute | Freeze and unfreeze your own card; replacement for a lost, stolen or damaged card; disputing a recognised charge within 60 days |
 | `sg-card-payments` | Singapore credit card payments | MoneySense | v1 · main | Credit limits, minimum payments, interest on unpaid balances, due dates |
-| `loans` | Demo loan enquiries | DemoBank | v1 · main | Loan enquiries are preliminary; only the bank decides; the chatbot cannot apply |
+| `loans` | Demo loan enquiries | DemoBank | v2 · main | Home, personal and car loans; ask which one; only the bank decides; the chatbot cannot apply |
+| `home-loans` | Home loans | DemoBank | v1 · main | Buying or refinancing a home, general eligibility and documents, how to apply |
+| `personal-loans` | Personal loans | DemoBank | v1 · main | Unsecured personal loans, general eligibility, how to apply |
 | `car-loans` | Car loans | DemoBank | v1 · products, eligibility, apply | Car loan products, general eligibility, how to apply |
 | `sg-loan-types` | Singapore loan types | MoneySense | v1 · main | Secured vs unsecured, term loans, revolving credit |
 | `statements` | Getting a statement | DemoBank | v3 · monthly, older-copies, missing | Overview → Statements for the last 3 full months; older, certified or paper copies and bank letters by request; why the current month or a pending payment is not shown |
@@ -47,7 +50,7 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 
 | Article id | Title | Publisher | DB version · sections | Covers |
 |---|---|---|---|---|
-| `lost-card` | Lost or stolen card guidance | DemoBank | v3 · main | Report immediately; only the bank blocks a card; urgent fraud-team reference when signed in |
+| `lost-card` | Lost or stolen card guidance | DemoBank | v4 · main | Freeze it on Overview, then request a replacement; unrecognised charges go to the fraud team; unfreezing rules; never share secrets |
 | `unrecognised-charge` | Unrecognised card charge | DemoBank | v3 · urgent-steps, patterns, replacement-card | Urgent steps, card-testing patterns, replacement card after a block |
 | `sg-card-disputes` | Singapore card payment disputes | Association of Banks in Singapore | v1 · main | Unauthorised transactions and non-delivery disputes with the issuing bank |
 | `security` | Protecting private information | DemoBank | v2 · never-share, warning-signs, if-shared | What DemoBank never asks for (passwords, PINs, codes, sign-in links, remote access, "safe accounts"); signs of a scam; steps after sharing a code or clicking a link |
@@ -75,7 +78,7 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 | `statements.months_available` | 3 months | `statements` · monthly | Database and memory |
 | `transfers.overseas_business_days` | "1-3" business days | `overseas-transfers` · fees-timing | Database and memory |
 
-**Where the 0087 figures come from.** Each one restates a rule the app already enforces or text that was already approved:
+**Where the 0098 figures come from.** Each one restates a rule the app already enforces or text that was already approved:
 - the proof-of-address and statement rules come from `document_templates.py`;
 - the upload limit comes from the `0051` storage bucket and `schemas/document_uploads.py`;
 - the three statement months come from `lib/statements.js`;
@@ -85,7 +88,9 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 
 Kept so old citations still open; search never returns them:
 - `app-login-recovery` v1
-- `lost-card` v1–v2
+- `card-limit-change` v1
+- `loans` v1
+- `lost-card` v1–v3
 - `overseas-transfers` v1
 - `security` v1
 - `statements` v1–v2

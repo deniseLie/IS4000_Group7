@@ -1,6 +1,6 @@
 # DemoBank system architecture (v4, as built)
 
-Status: **as built** (2026-10-27). This document describes the system that is in the code today, using the component names of the v3.1 proposal (the draw.io diagram "DemoBank — Proposed Multi-Agent Architecture"). Every place where the build differs from that proposal is listed in [§10](#10-differences-from-the-v31-proposal). `chatbot-architecture.md` describes the original single-path (v1) answer flow; `multi-capability-architecture.md` describes the intent-router step. The stories are in [the product backlog](planning/product-backlog.xlsx); the two workflows (client, relationship manager) are in `docs/workflows/`. Coursework demo with synthetic data only.
+Status: **as built** (2026-10-31; client view CR1–CR17 refined to the finalised product backlog, see §5.1.1). This document describes the system that is in the code today, using the component names of the v3.1 proposal (the draw.io diagram "DemoBank — Proposed Multi-Agent Architecture"). Every place where the build differs from that proposal is listed in [§10](#10-differences-from-the-v31-proposal). `chatbot-architecture.md` describes the original single-path (v1) answer flow; `multi-capability-architecture.md` describes the intent-router step. The stories are in [the product backlog](planning/product-backlog.xlsx); the two workflows (client, relationship manager) are in `docs/workflows/`. Coursework demo with synthetic data only.
 
 v4 changes from v3.1: the document now records what was built rather than what was planned. The overall shape is unchanged (one FastAPI process, the same components and contracts), but the orchestrator has eight nodes instead of four, agents read their data in code and make one model call instead of calling tools themselves, only the Fraud & Security agent proposes actions, most other changes start from forms in the Web Client, the Background Worker sends notifications only, and the multi-agent pipeline is switched on with `PIPELINE=v2` (v1 is still the default).
 
@@ -211,6 +211,43 @@ Five fields per component: **Category**, **Responsibility & boundaries**, **Inpu
 - **Infrastructure / pattern:** React + Vite. SSE is read with `fetch()` + `ReadableStream` and a small parser, because `EventSource` supports only `GET` without an `Authorization` header.
 - **Dependencies:** ↓ Identity Provider, API Gateway Layer, Document Storage, Notification Service (Realtime).
 
+#### 5.1.1 Client view (Michelle) by story — finalised backlog, 31 Oct 2026
+
+The client stories are all implemented. The RM stories (RM1–RM16) are **not built yet**, so the RM side of handovers,
+ticket status and meetings is the shared database record plus the support staff queue (`scripts/staff_support.py`).
+
+| Story | Where it lives in the client | How it decides |
+|---|---|---|
+| CR1 Login | `Login.jsx` (masked password, Show/Hide, Forgot password guidance, one neutral error); sign in from the header, the sidebar and every locked page; sign out from the sidebar | Supabase Auth; personal pages locked without a session |
+| CR2 General help | Assistant (guest mode); "Go to …" page buttons (`lib/pageLinks.js`) | Approved articles only; personal questions ask her to sign in |
+| CR3–CR6 Compliance | Compliance review: checklist marks, upload, preliminary check, bank status | Her mark, the system's "Submitted", and the bank's decision are separate fields; only the bank sets Accepted/Correction |
+| CR7 Reminders | Inbox | Recorded deadlines only |
+| CR8–CR10 Handover and tickets | Assistant preview ("Here's what I'd send…") with Send to my RM / Add to TCK / Open a new request / Cancel; My requests | Rules choose RM vs specialist; nothing is sent until she chooses; fraud never goes to the RM |
+| CR11 Card limit | Assistant explanation + request form (latest stated amount) | Cards and credit team decides |
+| CR12–CR13 Fraud, lost card, pending | Assistant: urgent steps, charge list + "Yes, report it"; lost card "Yes, report my card" | Rules from records; urgent fraud ticket only after she confirms |
+| CR14–CR15 Cards and account | Assistant (records answers, "which card?", follow-ups), Overview | Figures copied from records |
+| CR16 Loans | Assistant (home, personal, car loan articles) | No eligibility, rate or approval promises |
+| CR17 Meetings | Assistant (free times → hold → Confirm booking) and My requests > Meetings | Same hold and confirm actions in both places |
+
+**Rules versus AI.** Actions and safety (handover, fraud and lost-card reports, bookings, confirmations) are decided by rules,
+with her explicit confirmation. Explanations are written by the AI from approved articles and her records and checked by the
+Response Validator. Several record questions (card figures, transactions, fees, card limit) are currently answered by rules
+because the validator withheld correct AI answers; moving them back to AI wording with record facts is the planned next step.
+
+#### 5.1.2 UI conventions (web client)
+
+- **Buttons:** three kinds only. *Primary* (`.primary-button`, red) for the one main action on a screen; *secondary*
+  (`.bank-chat-logout`, outline) for everything else; *icon* (`.icon-button`, round) for icon-only actions with an
+  `aria-label`. All share one height (38 px), radius (8 px), weight, hover, press (scale .97) and keyboard focus ring.
+  One-tap replies in the chat (`.follow-ups button`) are pills.
+- **Signing in and out** are offered in the same places: header (Sign in), sidebar session area (Sign in when signed out,
+  Sign out when signed in) and every locked page.
+- **Motion:** pages settle in when opened (`.page-enter`, 0.3 s, children staggered); replies and one-tap replies rise in;
+  loading shows a moving red bar with pulsing text (`.loading`) or shimmering skeletons for lists and cards. All motion is
+  switched off under `prefers-reduced-motion`.
+- **Colours** are unchanged (`--red`, `--ink`, `--line`, `--canvas`, `--tint`); new tokens are only `--btn-h`,
+  `--btn-radius`, `--ease-out` and `--focus-ring`.
+
 ### 5.2 Identity Provider
 - **Category:** OAuth2 / OIDC identity provider.
 - **Responsibility & boundaries:** Sign-in, sign-out, token refresh, JWKS, MFA (`aal2`). Keeps its own auth log. Staff accounts carry an administrator-set `app_metadata.demobank_role=support`. Does not authorise banking operations.
@@ -290,8 +327,8 @@ Stories without an agent are handled by platform components: CR1 login (Identity
 |---|---|
 | In-memory library (default, `KNOWLEDGE_STORE=memory`) | `services/knowledge.py`: small curated library, keyword search, no embeddings |
 | Articles / sections | `kb.articles`, `kb.sections` (versioned, cited as `article_id@vN#anchor`), migration `0008`; approved seed `0009`; Workflow 1 content `0055` |
-| Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`); since `0086` a section matches only when a question word is in its heading or keywords. Retrieval quality: `backend/evaluation/retrieval.py` ([results](evaluation/README.md#knowledge-retrieval-offline-no-model)) |
-| Hybrid search (optional, `KNOWLEDGE_SEARCH=hybrid`) | Migration `0088`: pgvector, `kb.section_embeddings` (one vector per section and model, written by the owner with `scripts/embed_knowledge.py`), `kb_hybrid_search` fuses the keyword ranking with embedding similarity (reciprocal rank fusion); a section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY` (0.4). The question is embedded by `services/embeddings.py` with its own key (`EMBEDDING_API_KEY`, never `LLM_API_KEY`). If the embedding call fails, keyword search runs and the audit event records `mode: keyword_only`. Database store only ([results](evaluation/README.md#3-nov-2026-hybrid-search-migration-0088)) |
+| Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`); since `0097` a section matches only when a question word is in its heading or keywords. Retrieval quality: `backend/evaluation/retrieval.py` ([results](evaluation/README.md#knowledge-retrieval-offline-no-model)) |
+| Hybrid search (optional, `KNOWLEDGE_SEARCH=hybrid`) | Migration `0099`: pgvector, `kb.section_embeddings` (one vector per section and model, written by the owner with `scripts/embed_knowledge.py`), `kb_hybrid_search` fuses the keyword ranking with embedding similarity (reciprocal rank fusion); a section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY` (0.4). The question is embedded by `services/embeddings.py` with its own key (`EMBEDDING_API_KEY`, never `LLM_API_KEY`). If the embedding call fails, keyword search runs and the audit event records `mode: keyword_only`. Database store only ([results](evaluation/README.md#3-nov-2026-hybrid-search-migration-0099)) |
 | Exact source lookup | Migration `0011`; `GET /knowledge/sections/{article}/{version}/{anchor}` |
 | Fact table | `kb.facts`, used for figure checks |
 | Read-only access | RLS on `kb` tables; content changes only through migrations |
@@ -740,7 +777,7 @@ Worker-started AI turns, pg_cron, email, replacement-card ordering, AI agenda dr
 | Separate Response Composer | Orchestrator node |
 | Separate Case Escalation, Appointment, Card Adapter services | Executors behind one `run_action()` |
 | Policy decision log, data-access audit, action ledger | Unified Audit Log Service |
-| Embeddings, vector search, re-ranker | Keyword search in Postgres; optional hybrid keyword + pgvector search (`0088`); no re-ranker |
+| Embeddings, vector search, re-ranker | Keyword search in Postgres; optional hybrid keyword + pgvector search (`0099`); no re-ranker |
 | OPA | Python rules |
 
 ---
@@ -797,7 +834,7 @@ Status: **proposal**. Detailed design of the Knowledge Service in §5.7. The con
 #### 1. Summary
 
 - **Retrieval-augmented generation (RAG):** agents retrieve approved sections, and the LLM answers only from them, with citations.
-- **Keyword retrieval:** Postgres full-text search over article sections. Optional hybrid search (`0088`, `KNOWLEDGE_SEARCH=hybrid`) adds embedding similarity in the same database, fused with the keyword ranking.
+- **Keyword retrieval:** Postgres full-text search over article sections. Optional hybrid search (`0099`, `KNOWLEDGE_SEARCH=hybrid`) adds embedding similarity in the same database, fused with the keyword ranking.
 - **No new infrastructure:** everything lives in the hosted Supabase Postgres that the app already uses.
 - **Three tables, one search function.** All content is public guidance; the app can only read it.
 - **No content workflow:** whatever is in the tables is live. Content changes arrive only through migrations.

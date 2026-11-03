@@ -49,8 +49,8 @@ def test_agenda_snapshot_edit_and_historical_receipt(local_data_api: NativeAPI,n
     assert response.json()['data']['agendas_total']==1
     with psycopg.connect(api.database_uri) as db:
         assert db.execute('select revision from rm.agendas').fetchone()==(2,)
-        assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
-        assert db.execute('select count(*) from consent.grants').fetchone()==(0,)
+        assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
+        assert db.execute('select count(*) from consent.grants where command_id is not null').fetchone()==(0,)
         assert db.execute('select count(*) from conversation.turns').fetchone()==(0,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
 

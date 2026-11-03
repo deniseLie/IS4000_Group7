@@ -2,7 +2,7 @@
 
 How answers are tested and the results so far. Raw evidence is in `evidence/`.
 
-The QA1 case set for Michelle (C01–C10, with setup, expected output, must-not-happen and pass criteria) is in [test-cases.md](test-cases.md).
+The QA1 case set (Michelle C01–C22, Sophie R01–R20, with setup, expected output, must-not-happen and S/C/T checks) is in [test-cases.md](test-cases.md). The same cases are eval data in `backend/evaluation/qa1_client_cases.json` and `qa1_rm_cases.json` (LangSmith datasets `demobank-qa1-client` and `demobank-qa1-rm`); `tests/test_qa1_cases.py` keeps the two in step.
 
 ## Knowledge retrieval (offline, no model)
 
@@ -22,11 +22,11 @@ Results on 31 Oct 2026, before → after (overall English cases; held-out split 
 | Memory | 0.52 → 0.95 (0.61 → 0.89) | 0.84 → 1.00 (0.89 → 1.00) | 0.67 → 0.97 (0.74 → 0.94) | 0.72 → 0.76 (0.50 → 0.50) |
 | Database | 0.83 → 0.94 (0.89 → 0.96) | 0.98 → 1.00 (1.00 → 1.00) | 0.90 → 0.96 (0.94 → 0.97) | 0.16 → 0.56 (0.13 → 0.38) |
 
-Changes: memory keyword phrases score by word count (a specific phrase beats one broad word) and both stores apply the explicit chat-spelling table (`typos.respell`, not the close-match guesses that turn "change" into "charge"); customer wording added to keywords and broad words removed from `support` and `cards`; migration `0086` makes a database section match only when a question word is in its heading or keywords (before, any shared body word matched, so "Tell me a joke" returned four articles). A score threshold was tried and rejected: unrelated questions scored up to 0.86, correct ones as low as 0.29.
+Changes: memory keyword phrases score by word count (a specific phrase beats one broad word) and both stores apply the explicit chat-spelling table (`typos.respell`, not the close-match guesses that turn "change" into "charge"); customer wording added to keywords and broad words removed from `support` and `cards`; migration `0097` makes a database section match only when a question word is in its heading or keywords (before, any shared body word matched, so "Tell me a joke" returned four articles). A score threshold was tried and rejected: unrelated questions scored up to 0.86, correct ones as low as 0.29.
 
 Limits: the cases are small and written by the developers, so tune-split results are optimistic. Questions about topics with no article (home loans, transfer limits) still often return a loosely related article; keywords cannot tell "related" from "answers it". That needs the missing articles and a fixed "not covered" reply. Non-English questions match nothing in either store.
 
-### 2 Nov 2026: client guidance articles (migration `0087`)
+### 2 Nov 2026: client guidance articles (migration `0098`)
 
 **What changed:**
 - Seven new articles: compliance review statuses, review documents, uploading documents, answering the bank's questions, review reminders, updating personal details, and working with your RM.
@@ -42,15 +42,15 @@ Limits: the cases are small and written by the developers, so tune-split results
 
 | Store | Articles | hit@1 | hit@4 | MRR | no-match |
 |---|---|---|---|---|---|
-| Memory | before 0087 | 0.57 | 0.61 | 0.59 | 0.67 |
+| Memory | before 0098 | 0.57 | 0.61 | 0.59 | 0.67 |
 | Memory | after (tune · held-out) | 0.94 (1.00 · 0.87) | 0.97 (1.00 · 0.94) | 0.96 | 0.67 (0.82 · 0.50) |
-| Database | before 0087 | 0.57 | 0.62 | 0.59 | 0.48 |
+| Database | before 0098 | 0.57 | 0.62 | 0.59 | 0.48 |
 | Database | after (tune · held-out) | 0.93 (0.95 · 0.90) | 0.99 (1.00 · 0.98) | 0.96 | 0.48 (0.64 · 0.30) |
 
 **Reading the results:**
 - **Held-out baseline.** On their first run, before any tuning, the new held-out cases scored hit@1 0.87 in memory and 0.92 in the database.
 - **Old cases unchanged.** On the original 31 Oct cases, hit@1 and hit@4 did not move (memory 0.95 / 1.00, database 0.94 / 1.00).
-- **No-match is unchanged, not worse.** It does not differ with or without `0087` on the same cases. It fell against the 31 Oct figures only because the six relabelled cases used to count as correct empty results. The no-match floors in `test_retrieval_eval.py` were lowered to sit under the new figures: memory 0.6, database 0.45.
+- **No-match is unchanged, not worse.** It does not differ with or without `0098` on the same cases. It fell against the 31 Oct figures only because the six relabelled cases used to count as correct empty results. The no-match floors in `test_retrieval_eval.py` were lowered to sit under the new figures: memory 0.6, database 0.45.
 
 **Tuning:**
 - **Memory.** New keyword phrases were added, plus the spellings `addr`/`adress` → `address` in `typos.CHAT`.
@@ -63,7 +63,7 @@ Limits: the cases are small and written by the developers, so tune-split results
 - "wat counts as proof of my address" (memory)
 - "I need more time to send my documents" (database)
 
-### 3 Nov 2026: hybrid search (migration `0088`)
+### 3 Nov 2026: hybrid search (migration `0099`)
 
 **What was compared.** Keyword search against hybrid search (keyword ranks fused with embedding similarity, `openai/text-embedding-3-small` through OpenRouter), each with the chat-spelling table (`KNOWLEDGE_RESPELL`) on and off, on a temporary local database with every migration:
 
@@ -133,13 +133,21 @@ These times are from this machine to OpenRouter and to the local database. The a
 **Limits:**
 - The developers wrote both case sets. The paraphrase batch is small (26 covered questions).
 - The sweep printed held-out figures next to tune figures. The minimum was chosen by the tune rule above, but the held-out numbers were visible when it was chosen.
-- Not yet run against the hosted project or through PostgREST (the native Data API suite needs the Mac). After applying `17_apply_0088_hosted.sql` and embedding the sections, check one hybrid chat turn and its `knowledge_search` log line.
+- Not yet run against the hosted project or through PostgREST (the native Data API suite needs the Mac). After applying `27_apply_0097_0099_hosted.sql` and embedding the sections, check one hybrid chat turn and its `knowledge_search` log line.
+
+**Re-run after merging `main` (3 Nov 2026).** `main` added home and personal loans, loans v2, lost-card v4, card-limit-change v2 and card-controls (`0086`, `0087`, `0096`), so this branch's migrations became `0097`–`0099`. `0097` also removes broad words from the new card sections' keywords (card-limit-change: change, steps, days; card-controls: card, new, not working, charge, amount, received). Two tune cases now also accept `card-controls`, which answers them ("How do I dispute a charge?", "When will my replacement card arrive?"). Memory search keeps word-count phrase scoring: `main`'s alias and fuzzy-match search scored hit@1 0.947 but no-match 0.476 on the merged library, below the 0.6 memory floor.
+
+| Store, search | hit@1 | hit@4 | MRR | no-match | held-out hit@1 | paraphrase hit@1 | non-English hit@4 (batch) |
+|---|---|---|---|---|---|---|---|
+| Memory, keyword | 0.930 | 0.974 | 0.950 | 0.667 | 0.865 | 0.308 | 0.0 |
+| Database, keyword | 0.921 | 0.991 | 0.954 | 0.476 | 0.904 | 0.462 | 0.25 |
+| Database, hybrid 0.4 | 0.947 | 1.000 | 0.971 | 0.476 | 0.942 | 0.769 | 1.00 |
 
 ## LangSmith evaluations (current)
 
 Goal: one stack, LangChain (model calls), LangGraph (v2 orchestration) and LangSmith (tracing, datasets, experiments, human review), with evaluations that score live answers automatically instead of stopping at `needs_human_review`.
 
-Status: steps 1–2 built, and request tracing moved to LangSmith (§2.1). Reverses decision 2 in `docs/architecture/tracing-plan.md` §10 ("LangSmith removed").
+Status: steps 1–4 built and step 5's judge built (annotation queue not yet), and request tracing moved to LangSmith (§2.1). Reverses decision 2 in `docs/architecture/tracing-plan.md` §10 ("LangSmith removed").
 
 ### 1. Where we are today
 
@@ -168,6 +176,8 @@ New `backend/evaluation/langsmith_sync.py`: idempotent upload of local case file
 | `demobank-standard` | `cases.json` | languages, injection, follow-up correction |
 | `demobank-focused` | `focused_cases.json` | source questions plus the three Workflow 1 public questions |
 | `demobank-safety` (new) | new `safety_cases.json` | lost card, secrets, human support, guest "my balance": must route to fixed responses with no model call |
+| `demobank-qa1-client` | `qa1_client_cases.json` | QA1 C01–C22: whole conversations (`turns`, `persona`, `mode` personal or public) with `reply_has`/`reply_lacks`, `ticket`, `schema`, `check` and `trajectory` (nodes, agents, tools, model) |
+| `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20, `state: spec` until F12/F14 and the RM assistant exist; may name the planned RM tools. Client cases marked `state: manual` (C20) are skipped by the runner |
 
 Each example: `inputs={question, history, language, mode:'public'}`, `outputs={check, expected_sources?, expected_origin?, expect_needs_human?}`, `metadata={case_id}`. Example ids are `uuid5(dataset, case_id)` so re-syncing updates rather than duplicates. After each sync, tag the dataset version with the file's sha256 so every experiment points to an exact dataset version.
 
@@ -175,38 +185,39 @@ Case files gain optional structured fields (`expected_sources`, `expected_origin
 
 ### 4. Targets (what is evaluated)
 
-`backend/evaluation/targets.py`, one async target per pipeline, both decorated with `@traceable`:
+`backend/evaluation/targets.py` (built): `play(inputs, app, token)` runs the real app in process (`httpx.ASGITransport`), so nothing between the browser and the database is skipped. Each example becomes one new saved chat (`CONVERSATION_STORE=database`): a guest with a fresh `X-Conversation-Token`, or a persona signed in with its own JWT (password login from the git-ignored persona fixture, as in `test_rls_live.py`). Every turn goes to `POST /chat` exactly as the browser sends it; the pipeline is chosen with `settings.pipeline`. A *tap* whose label is sent back as chat (`fraud_reports.CONFIRM_REPLY`) is played; form, upload and other button steps are skipped and listed.
 
-- `v1(inputs)`: `ChatRequest` → `guardrail.assess_request` → `answers.make_answer`.
-- `v2(inputs)`: same guard, then `orchestrator.answer_public(req, risk, guest_ctx, None)` with a guest `RequestContext` built like `core/gateway.py` does for guests; fixed-response cases go through the same no-model path the API uses.
-
-Both return the `AnswerEvent` dump plus the guard's fixed-route name and whether a model was called. LangChain and LangGraph calls inside are traced automatically under the target run. `codex_cli.answer` gets `@traceable(run_type='llm')` so the Codex transport also appears.
+It returns the joined reply and each turn's reply, origin, `needs_human` and cited source ids; the guard's fixed route per turn; which graph nodes *acted* (a LangChain configure hook: a node acted when its update changes the state or it paused the turn); agents, tools and model calls (an `observability.span_sink` that collects `task`/`tool_call`/`llm` spans while the target runs, `None` in the app); and the persona's tickets before and after. Guests' agent count is reported as `answer`.
 
 ### 5. Evaluators
 
-`backend/evaluation/evaluators.py`. Deterministic checks reuse production code, so evals and runtime cannot drift:
+`backend/evaluation/evaluators.py` (built). `checks(out, ref)` scores only the checks a case defines, one LangSmith feedback each (1 pass, 0 fail, `None` with the reason when the check depends on a step the chat cannot play). The app's own answer validation (`source_checks`) already runs inside every turn; a withheld answer shows up as `origin` and `needs_human`.
 
-| Key | Pass when | Reuses |
-|---|---|---|
-| `source_check` | `source_check` is not a rejection and every cited id was retrieved | `source_checks.check_sources` |
-| `expected_sources` | cited ids include `expected_sources` | — |
-| `no_leak` | no secret, URL or action claim in the answer | `source_checks` / `privacy` checks |
-| `safety_route` | `response_origin == expected_origin`; fixed routes made no model call | target output |
-| `language` | answer is in the requested language (script check for zh/ta, keyword check for ms) | — |
-| `needs_human` | matches `expect_needs_human` when set | — |
-| `latency_ms`, `tokens`, `cost_usd` | recorded as scores, not pass/fail | `llm` span attributes |
+| Key | Pass when |
+|---|---|
+| `completed` | every played turn returned an answer (no HTTP or SSE error) |
+| `reply_has` / `reply_lacks` | every pattern matches / no pattern matches the joined reply (regex, case-sensitive) |
+| `cites` | some turn cites one of `cites_any` |
+| `origin`, `needs_human` | the first turn's `response_origin` / `needs_human` match the case |
+| `fixed_route` | the guard chose `expected_route` on the first turn |
+| `ticket` | a new or quoted (reused) ticket of the expected category; `null` means no new ticket |
+| `nodes` | every listed node acted and no `idle` node did; `graph: false` means no node ran |
+| `agents` | agent run counts equal the case's exactly |
+| `tools` | every listed tool was called and none matching `no_tools` (globs) |
+| `model` | a model was or was not called, as the case says |
 
-**`rubric` (LLM-as-judge):** grades the answer against the case's `check` text and the cited evidence → `{score: 0|0.5|1, reason}`. It is built with `init_chat_model` and strict structured output like the gateway, using its own `JUDGE_MODEL` (stronger than the answer model and never the same one). It is an aid to review, not proof: the AGENTS.md rule that live results need human review still applies.
+**`judge_rubric` (LLM-as-judge, `--judge`):** grades the conversation against the case's `check` and `must_not` → `{score: 0|0.5|1, reason}` with the prompt in `evaluation/judge/v1.md`. It is built with `init_chat_model` and strict structured output, using its own `JUDGE_MODEL` (refused when unset or equal to `LLM_MODEL`). It is an aid to review, not proof, and never decides a case's pass/fail: the AGENTS.md rule that live results need human review still applies.
 
 **Human review:** a LangSmith annotation queue (`demobank-review`) automatically receives runs where `rubric < 1`, any deterministic check fails, or the answer was withheld. Reviewer feedback (`human_correct`) is stored as feedback on the run. Confirmed failures become new cases (closing the loop in tracing-plan §7).
 
 ### 6. Build order (one commit per step on one branch)
 
-1. **Setup (done):** `langsmith>=0.14,<0.15` declared; `LANGSMITH_*` keys in `.env.example` (the SDK reads them itself, so no `config.py` fields; `JUDGE_MODEL` arrives with step 5). `app/core/langsmith_client.py` builds a client whose `anonymizer` runs `privacy.redact` over every string in run inputs, outputs, metadata and errors, and `langsmith.configure` makes it the client LangChain/LangGraph trace through. `app/main.py` installs it only when tracing is on, because the client starts a background upload thread. Tests: `tests/test_langsmith_client.py`.
+1. **Setup (done):** `langsmith>=0.14,<0.15` declared; `LANGSMITH_*` keys in `.env.example` (the SDK reads them itself, so no `config.py` fields; `JUDGE_MODEL` is read only by the evaluation runner). `app/core/langsmith_client.py` builds a client whose `anonymizer` runs `privacy.redact` over every string in run inputs, outputs, metadata and errors, and `langsmith.configure` makes it the client LangChain/LangGraph trace through. `app/main.py` installs it only when tracing is on, because the client starts a background upload thread. Tests: `tests/test_langsmith_client.py`.
 2. **Datasets (done):** `python -m evaluation.langsmith_sync [--dataset NAME] [--dry-run]` validates every file before uploading, then creates/updates/removes examples and tags the version `sha-<file hash>`. Case files gained `cites_any` (passes when at least one listed article is cited) and `expected_origin`; new `safety_cases.json` (8 cases) adds `expected_route` and `expect_needs_human`. Only `secrets` cases may hold private-looking (synthetic) details, since dataset examples are not run through the trace anonymizer. Tests: `tests/test_langsmith_sync.py`, including every safety case through the real no-model path. Note: `cases.json` changed, so `--compare` against the old `before.json`/`after.json` now reports a dataset mismatch.
-3. **Targets + deterministic evaluators:** `targets.py`, `evaluators.py`; unit-test the evaluators on sample outputs (allowed: validators on sample strings).
-4. **Runner:** `python -m evaluation.langsmith_run --dataset demobank-focused --pipeline v1|v2 [--judge]` calls `langsmith.aevaluate(..., experiment_prefix=f'{pipeline}-{prompt_version}', metadata={model, transport, prompt_version, pipeline, knowledge_sha256, implementation_sha256}, max_concurrency=2)`. It prints the experiment URL and a pass/fail/error summary, exits non-zero on deterministic failures and writes the existing local JSON/HTML report as an offline record. `run.py --live` then points to the new runner; offline mode is unchanged.
-5. **LLM judge + annotation queue:** `rubric` evaluator, queue creation in `langsmith_sync.py`, routing rule for failed runs.
+3. **Targets + deterministic evaluators (done):** §4 and §5. Tests: `tests/test_langsmith_eval.py` (SSE parsing, node tracking on a small real LangGraph graph including a pause, every check on sample outputs, every case file's reference fields).
+4. **Runner (done):** `python -m evaluation.langsmith_run --dataset demobank-qa1-client [--case C01 ...] [--pipeline v1|v2] [--judge] [--project demobank-dev]` calls `langsmith.aevaluate(..., experiment_prefix=f'{dataset}-{pipeline}', max_concurrency=1, metadata={dataset, pipeline, answer_prompt, prompt_versions, model, transport, judge_model, dataset_file})`. Spec cases are skipped; signed-in cases need `TEST_PERSONA_FIXTURE_FILE` (or `--personas`). One case at a time, so ticket before/after reads stay attributable. It prints the experiment URL, a pass/fail/skipped/error summary and each failed check, writes the local JSON/HTML report (`--output`) and exits 1 on any deterministic failure or error. With `--project NAME` the runner instead traces each case into that existing tracing project (beside the app's own traces, e.g. `demobank-dev`) as one `eval <case>` run with the app trace nested inside, tagged `eval` and the run label (`<dataset>-<pipeline>-<UTC time>`), and attaches every check as feedback; LangSmith only allows experiments in dataset-linked projects, so this mode has no experiment comparison view. The runner loads the app's `.env` itself (`--env-file` overrides). Side effects: real model calls, and saved chats, audit events and (for cases that ask) tickets or handoffs in the database the `.env` points at. First runs (31 Oct 2026, v2, hosted database, raw results still to be reviewed): guest C01–C02 passed (`demobank-qa1-client-v2-84944bbe`). Michelle C03–C10 (`…-4ff52d31`, C03/C10 rerun in `…-5f49e96d` after the runner stopped playing buttons the reply did not offer): C07 and C09 pass, C08 skipped (upload step). Failures: C03 turn 1 never shows the fixed "Yes, report it" charge list (model answer once, withheld by validation once), so no fraud ticket; in the first run, before the runner fix, a typed "Yes, report it" got a model reply saying the charges were reported although no handoff was recorded. C04 and C05 were withheld by validation (C05's validation handoff opened an `rm_handover` ticket the case says must not exist). C06 omits the 12,000 amount and cites only records, not `transfer-timing`. C10's "status of my request" turn runs the relationship agent on RM requests rather than quoting the ticket, so it sees two relationship runs where the case expects one. `run.py --live` is unchanged for now.
+Results are also visible in the app: the team-only **Quality** page (`#quality`, for logins whose administrator-set `app_metadata.demobank_role` is `rm` or `support`) lists experiments with each case's checks, answer, agents and timing, and the latest `chat` traces step by step. The backend reads LangSmith with its own key; nothing LangSmith-related reaches the browser.
+5. **LLM judge (done) + annotation queue (to do):** `judge_rubric` evaluator above; still to build: queue creation in `langsmith_sync.py` and the routing rule for failed runs.
 6. **Baseline:** run `demobank-focused` and `demobank-standard` on v1 and v2 with the current model; record results and limitations in `docs/core-results-review.md`.
 7. **Docs:** README section (keys, how to run, what is uploaded, region), AGENTS.md "Evaluate quality" row, tracing-plan §10 decision 2 amended, new `docs/evaluation-langsmith.md` covering evaluator definitions and limits.
 
@@ -222,3 +233,15 @@ Later (needs agreement): **phase 4** personal-mode and Workflow 1–3 datasets. 
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.
+
+## Client compliance document coverage
+
+`backend/tests/test_compliance_formats.py` exercises real DOCX, PNG/JPEG and scanned-PDF bytes through parsing, local OCR, caller JWT/RLS, preliminary checks and submission. It covers unreadable and encrypted files, mismatched content, unknown pagination, issue-date boundaries, ambiguous dates, and exact byte/page/pixel/filename limits. `test_document_parsers.py` also checks malformed packages and decompression limits; `test_compliance_followup.py` checks the selected-document support request, approved RM reply, client timeline/Inbox, ownership and retries.
+
+Run from `backend/` with `TEST_DATABASE_LOCAL=1 TEST_DATA_API_LOCAL=1 ../.venv/bin/python -m pytest tests/test_compliance_formats.py tests/test_document_parsers.py tests/test_compliance_followup.py tests/test_document_templates.py`. OCR pass cases require an actual configured local helper; setup is in [Workflow 1](../workflows/workflow-1-client.md). They are explicitly skipped when no helper is configured. No OCR or model response is fabricated.
+
+These are functional and safety checks, not an AI accuracy score. A successful preliminary check never establishes document authenticity or bank acceptance. Model grounding, agent/orchestrator trajectories and multilingual quality still need the separate LangSmith evaluations. Hosted RM testing requires an operator-provisioned RM login; the native follow-up tests do not establish hosted Auth readiness.
+
+## RM assistant (Sophie)
+
+Manual prompt tests for the relationship manager assistant, with expected results and a results table: [rm-assistant-prompt-tests.md](rm-assistant-prompt-tests.md). The LangSmith runner (`langsmith_run.py`) plays client cases through `/chat`; the RM cases R01–R10 are run by hand with this guide until the runner supports `/rm/assistant`.

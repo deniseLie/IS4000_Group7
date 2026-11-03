@@ -7,6 +7,7 @@ import json
 import os
 from typing import TYPE_CHECKING
 from uuid import UUID,uuid4
+from datetime import date,timedelta
 import pytest
 from tests.database_support import SqlRow,set_customer
 
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native temporary PostgreSQL with TEST_DATABASE_LOCAL=1')
 LIMIT={'category':'card_limit_change','summary':'Higher limit for a trip to Japan.','urgency':'normal',
-    'details':{'card':'7310','new_limit':'30000','duration':'temporary','until':'2099-12-31','reason':'Travel'}}
+    'details':{'card':'7310','new_limit':'30000','duration':'temporary','until':(date.today()+timedelta(days=30)).isoformat(),'reason':'Travel','declaration':'yes'}}  # 0096 rules
 
 
 def owned_case(db: 'Connection[SqlRow]',customer: int=1002) -> UUID:

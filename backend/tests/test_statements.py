@@ -22,7 +22,7 @@ def test_card_payments_clear_the_previous_month_and_lead_to_todays_balance(datab
 
 
 def test_only_the_latest_statements_version_is_searchable_and_it_matches_the_app(database) -> None:
-    # 0087 split v3 into sections; the memory copy is the sections joined in order.
+    # 0098 split v3 into sections; the memory copy is the sections joined in order.
     assert database.execute("select version,status from kb.articles where article_id='statements' order by 1").fetchall()==[(1,'retired'),(2,'retired'),(3,'published')]
     body,=database.execute("""select string_agg(body,' ' order by array_position(array['monthly','older-copies','missing'],anchor))
         from kb.sections where article_id='statements' and version=3""").fetchone()

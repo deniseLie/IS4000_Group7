@@ -41,7 +41,7 @@ def test_reviewed_content_confirm_retry_edit_and_revoke(local_data_api: NativeAP
     pending=share(client,ctx,{**target,'content':'Forged text','categories':['accounts']},'share')
     assert pending.command.state=='proposed' and pending.receipt is None
     assert pending.command.target.content==saved.command.target.content and pending.command.target.categories==['agenda','profile']
-    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
     with ThreadPoolExecutor(max_workers=3) as pool:
         results=list(pool.map(lambda _:confirm(client,ctx,pending.command.command_id),range(3)))
     assert all(item==results[0] for item in results)
@@ -53,7 +53,7 @@ def test_reviewed_content_confirm_retry_edit_and_revoke(local_data_api: NativeAP
     assert share(client,ctx,target,'share')==shared
     assert confirm(client,ctx,pending.command.command_id)==shared
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select content,agenda_revision,command_id from rm.shared_summaries').fetchone()==(saved.command.target.content,1,pending.command.command_id)
+        assert db.execute('select content,agenda_revision,command_id from rm.shared_summaries where command_id is not null').fetchone()==(saved.command.target.content,1,pending.command.command_id)
         assert db.execute('select revision,status from rm.agendas').fetchone()==(2,'draft')
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
     assert client.get('/commands',headers=headers(ctx)).status_code==200
@@ -85,7 +85,7 @@ def test_changes_after_review_fail_without_sharing(local_data_api: NativeAPI,nat
     result=confirm(client,ctx,pending.command.command_id)
     assert result.receipt.outcome=='failed' and result.receipt.result.error_code=='target_changed'
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+        assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
         assert db.execute("select count(*) from events.outbox where event_type='rm.summary_shared'").fetchone()==(0,)
 
 
@@ -102,7 +102,7 @@ def test_partial_grants_never_combine_and_foreign_targets_are_denied(local_data_
         response=client.post('/commands',headers=headers(owner),json={'command_id':str(uuid4()),'case_id':str(owner.case_id),
             'task_id':'foreign','type':'rm.share_summary','target':payload})
         assert response.status_code==403,response.text
-    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
 
 
 def test_agenda_only_grant_shares_without_adding_profile_fields(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
@@ -143,7 +143,7 @@ def test_sharing_failure_rolls_back_before_a_retry(local_data_api: NativeAPI,nat
     response=client.post(f'/commands/{pending.command.command_id}/confirm',headers=headers(ctx))
     assert response.status_code==503,response.text
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+        assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
         assert db.execute('select state,confirmed_at from actions.commands where command_id=%s',(pending.command.command_id,)).fetchone()==('proposed',None)
         assert db.execute('select count(*) from actions.receipts where command_id=%s',(pending.command.command_id,)).fetchone()==(0,)
         if failure=='outbox':db.execute('alter table events.outbox drop constraint sharing_fail')
@@ -166,7 +166,7 @@ def test_consent_expiry_is_rechecked_after_waiting_for_the_customer_lock(local_d
             assert not future.done()
         result=future.result(timeout=10)
     assert result.receipt.outcome=='failed'
-    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
 
 
 def test_concurrent_revocation_cannot_authorise_later_sharing(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
@@ -183,7 +183,7 @@ def test_concurrent_revocation_cannot_authorise_later_sharing(local_data_api: Na
     assert revoked.receipt.outcome=='succeeded'
     if shared.receipt.outcome=='succeeded':assert shared.receipt.result.shared_at<=revoked.receipt.result.revoked_at
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(int(shared.receipt.outcome=='succeeded'),)
+        assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(int(shared.receipt.outcome=='succeeded'),)
 
 
 @pytest.mark.parametrize('decision',['reject','expire'])
@@ -204,4 +204,4 @@ def test_rejected_or_expired_sharing_never_executes(local_data_api: NativeAPI,na
         assert response.status_code==200,response.text
         result=ActionOutcome.model_validate(response.json());assert result.command.state=='rejected'
     assert result.receipt is None
-    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
+    with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)

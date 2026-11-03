@@ -24,7 +24,7 @@ class KnowledgeResponseError(ValueError):
 
 
 async def search(query: KnowledgeQuery,ctx: RequestContext,db: SyncPostgrestClient) -> list[KnowledgeSection]:
-    """KNOWLEDGE_SEARCH=hybrid fuses keyword and embedding ranks (0088). If the embedding provider fails, the keyword
+    """KNOWLEDGE_SEARCH=hybrid fuses keyword and embedding ranks (0099). If the embedding provider fails, the keyword
     search still runs and the fallback is recorded (mode keyword_only) in the audit event, log and LangSmith run."""
     require_permission(ctx.principal,'kb.search',None,ctx)
     text=for_search(query.query)

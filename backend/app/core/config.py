@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     max_tokens: int = 4096
     pipeline: Literal['v1', 'v2'] = 'v1'
     knowledge_store: Literal['memory','database'] = 'memory'
-    # Knowledge search (services/kb.py, migration 0088). hybrid: database store only, keyword ranks fused with embedding
+    # Knowledge search (services/kb.py, migration 0099). hybrid: database store only, keyword ranks fused with embedding
     # similarity; the embedding client has its own key and endpoint, never LLM_API_KEY. Restart after switching.
     knowledge_search: Literal['keyword','hybrid'] = 'keyword'
     knowledge_respell: bool = True  # typos.respell before search in both stores; off measures search without the spelling table
@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     embedding_min_similarity: float = Field(default=0.4,ge=-1,le=1)  # a section found only by similarity must reach this (tuned 3 Nov 2026)
     embedding_timeout_s: float = Field(default=5,gt=0,le=30)
     conversation_store: Literal['off','database'] = 'off'
+    client_intent_routing: Literal['adaptive','rules'] = 'adaptive'  # LLM-first for ordinary client intents; critical deterministic safeguards remain
     tool_transport: Literal['direct','mcp'] = 'direct'  # mcp: agent tool calls go through app/mcp_server.py
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     prompt_version: str = "v3"
-    prompt_versions: dict[str, str] = {'planner':'v2','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
+    prompt_versions: dict[str, str] = {'planner':'v5','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
 
     # LLM Gateway limits (services/llm_gateway.py)
     llm_timeout_s: float = 30

@@ -1,4 +1,4 @@
-"""Embeddings for hybrid knowledge search (KNOWLEDGE_SEARCH=hybrid, migration 0088).
+"""Embeddings for hybrid knowledge search (KNOWLEDGE_SEARCH=hybrid, migration 0099).
 
 The client has its own key and endpoint (EMBEDDING_API_KEY, EMBEDDING_BASE_URL; any OpenAI-compatible embeddings API,
 OpenRouter by default), so the chat model's LLM_API_KEY is never sent here. Questions are redacted again before they

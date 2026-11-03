@@ -21,6 +21,7 @@ from tests.data_api_support import NativeAPI,mint_token
 NATIVE=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgREST with TEST_DATA_API_LOCAL=1')
 SGT=timezone(timedelta(hours=8))
 MARCUS=UUID('00000000-0000-4000-8000-100300000002')
+SOPHIE=UUID('00000000-0000-4000-8000-100200000002')  # David's current RM since 0088
 RACHEL=UUID('00000000-0000-4000-8000-100300000001')
 
 
@@ -141,13 +142,13 @@ def test_introduction_and_meeting_options_are_owned_and_audited(local_data_api: 
     data=intro.json()['data']
     assert 'team_restructure' not in intro.text and 'transition_reason_code' not in intro.text
     if cid==1003:
-        assert data['current']['name']=='Marcus Chua (DEMO)' and data['current']['contact']=={'email':'marcus.chua@demobank.example','phone':'+65 6000 0000'}
+        assert data['current']['name']=='Sophie Lim (DEMO)' and data['current']['contact']=={'email':'sophie.lim@demobank.example','phone':'+65 6000 0003'}
         assert data['previous']['name']=='Rachel Goh (DEMO)' and data['previous']['ended_on']=='2026-10-14'
         assert [item['anchor'] for item in data['notice']]==['team-restructure','continuity']
         assert data['notice'][0]['body'].startswith('Your relationship manager changed because DemoBank reorganised')
         assert {row['format'] for row in options.json()['data']}=={'video','phone','in_person'}
     else:  # 0063: one long-standing advisor, no change, so no change wording
-        assert data['current']['name']==('Priya Nair (DEMO)' if cid==1001 else 'Daniel Tan (DEMO)') and data['previous'] is None and data['notice']==[]
+        assert data['current']['name']==('Priya Nair (DEMO)' if cid==1001 else 'Sophie Lim (DEMO)') and data['previous'] is None and data['notice']==[]
         assert {row['format'] for row in options.json()['data']}=={'video','phone','in_person'}
         assert native_api_client.get('/relationship/handover-draft',headers=headers).status_code==200
     with psycopg.connect(local_data_api.database_uri) as db:
@@ -186,33 +187,33 @@ def test_davids_workflow_records_request_note_sharing_and_booking(local_data_api
     assert [(row['status'],row['customer_action'],row['advisor_id']) for row in old]==[('seen','Confirm the new quarterly transfer amount with your relationship manager',str(RACHEL))]
     # RC4: structured intake (what, urgency, deadline) lands in the current RM's queue only after confirmation.
     deadline=(datetime.now(SGT).date()+timedelta(days=10)).isoformat()
-    proposal=command(client,headers,'requests.create',{'advisor_id':str(MARCUS),'what':'can someone send me my annual portfolio statement',
+    proposal=command(client,headers,'requests.create',{'advisor_id':str(SOPHIE),'what':'can someone send me my annual portfolio statement',
         'urgency':'normal','deadline':deadline,'country':None,'currency':None})
-    assert proposal['command']['state']=='proposed' and proposal['command']['target']['recipient_name']=='Marcus Chua (DEMO)'
+    assert proposal['command']['state']=='proposed' and proposal['command']['target']['recipient_name']=='Sophie Lim (DEMO)'
     with psycopg.connect(local_data_api.database_uri) as db:assert db.execute('select count(*) from rm.requests where customer_id=1003').fetchone()==(1,)
     sent=confirm(client,headers,proposal)['receipt']['result']
-    assert sent['status']=='sent' and sent['recipient_name']=='Marcus Chua (DEMO)' and sent['deadline']==deadline
-    queue=[row for row in client.get('/relationship/requests',headers=headers).json()['data'] if row['advisor_id']==str(MARCUS)]
+    assert sent['status']=='sent' and sent['recipient_name']=='Sophie Lim (DEMO)' and sent['deadline']==deadline
+    queue=[row for row in client.get('/relationship/requests',headers=headers).json()['data'] if row['advisor_id']==str(SOPHIE)]
     assert [(row['what'],row['status'],row['customer_action']) for row in queue]==[('can someone send me my annual portfolio statement','sent',None)]
     # RC2: draft from authorised records, add organised agenda topics, save privately, then consent and share.
     draft=client.get('/relationship/handover-draft',headers=headers).json()
-    assert draft['recipient_name']=='Marcus Chua (DEMO)' and draft['profile_fields']==['name','preferred_language']
+    assert draft['recipient_name']=='Sophie Lim (DEMO)' and draft['profile_fields']==['name','preferred_language']
     assert {source['tool'] for source in draft['sources']}=={'customer.get_profile','requests.list','rm.get_introduction'}
     assert any('annual portfolio statement' in topic for topic in draft['topics'])
     topics=[*draft['topics'],'Agenda item 1: Estate planning','Agenda item 2: Review of fees','Agenda item 3: How often we meet']
-    saved=command(client,headers,'agenda.save',{'agenda_id':str(uuid4()),'advisor_id':str(MARCUS),'expected_revision':0,'topics':topics,'profile_fields':draft['profile_fields']})
+    saved=command(client,headers,'agenda.save',{'agenda_id':str(uuid4()),'advisor_id':str(SOPHIE),'expected_revision':0,'topics':topics,'profile_fields':draft['profile_fields']})
     note=saved['receipt']['result']
     assert saved['receipt']['outcome']=='succeeded' and note['categories']==['agenda','profile'] and 'Agenda item 2: Review of fees' in note['content']
-    with psycopg.connect(local_data_api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries').fetchone()==(0,)
-    requested=command(client,headers,'consent.request',{'purpose':'rm_brief','recipient':str(MARCUS),'categories':note['categories'],'duration_days':30})
+    with psycopg.connect(local_data_api.database_uri) as db:assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
+    requested=command(client,headers,'consent.request',{'purpose':'rm_brief','recipient':str(SOPHIE),'categories':note['categories'],'duration_days':30})
     grant=confirm(client,headers,command(client,headers,'consent.grant',{'request_id':requested['receipt']['result']['request_id']}))['receipt']['result']
     shared=confirm(client,headers,command(client,headers,'rm.share_summary',{'agenda_id':note['agenda_id'],'agenda_revision':note['revision'],
-        'advisor_id':str(MARCUS),'consent_grant_id':grant['grant_id']}))['receipt']['result']
-    assert shared['status']=='shared' and shared['recipient_name']=='Marcus Chua (DEMO)' and shared['content']==note['content']
+        'advisor_id':str(SOPHIE),'consent_grant_id':grant['grant_id']}))['receipt']['result']
+    assert shared['status']=='shared' and shared['recipient_name']=='Sophie Lim (DEMO)' and shared['content']==note['content']
     # RC3: suggested slots → ten-minute hold → booking confirmed only by the scheduling system, with recorded joining details.
     today=datetime.now(SGT).date();monday=today+timedelta(days=7-today.weekday())
     slots=client.post('/relationship/slots',headers=headers,json={'from_date':monday.isoformat(),'to_date':(monday+timedelta(days=4)).isoformat(),'limit':6}).json()['data']
-    assert slots and all(row['advisor_id']==str(MARCUS) for row in slots)
+    assert slots and all(row['advisor_id']==str(SOPHIE) for row in slots)
     case_id=str(uuid4())  # the hold endpoint creates its own owned case
     held=client.post('/relationship/holds',headers=headers,json={'command_id':str(uuid4()),'session_id':str(uuid4()),'case_id':case_id,
         'target':{'advisor_id':slots[0]['advisor_id'],'starts_at':slots[0]['starts_at'],'ends_at':slots[0]['ends_at'],'format':'video'}})

@@ -1,4 +1,4 @@
-"""Store embedding vectors for published knowledge sections (migration 0088, KNOWLEDGE_SEARCH=hybrid).
+"""Store embedding vectors for published knowledge sections (migration 0099, KNOWLEDGE_SEARCH=hybrid).
 
 Run as the database owner (app roles only read kb.section_embeddings) after every knowledge migration. Uses the
 embedding settings (EMBEDDING_API_KEY, EMBEDDING_BASE_URL, EMBEDDING_MODEL), never LLM_API_KEY. A section is embedded
@@ -58,7 +58,7 @@ def store(db,model: str,rows: list[tuple[str,int,str,str]],runner=None) -> int:
 def main(argv=None) -> int:
     from app.core.config import settings
     ap=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--database-url',required=True,help='Owner connection to the database with migration 0088 applied')
+    ap.add_argument('--database-url',required=True,help='Owner connection to the database with migration 0099 applied')
     ap.add_argument('--model',default=settings.embedding_model)
     ap.add_argument('--check',action='store_true',help='Report missing or stale vectors without embedding')
     a=ap.parse_args(argv)

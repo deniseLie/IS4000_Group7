@@ -36,7 +36,7 @@ async def extract(payload: bytes,mime: str,pages: int | None) -> tuple[str,int |
             value=json.loads(stdout)
             text=value.get('text')
             count=value.get('pages')
-            if not isinstance(text,str) or len(text)>32000 or not isinstance(count,int) or not 1<=count<=20:return '',pages
+            if not isinstance(text,str) or not text.strip() or len(text)>32000 or type(count) is not int or not 1<=count<=20:return '',pages
             return text,count
     except (TimeoutError,ValueError,DocumentParserError,psutil.Error):return '',pages
     finally:

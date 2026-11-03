@@ -9,6 +9,7 @@ export default function Login({onBack}) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [forgot, setForgot] = useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -18,7 +19,8 @@ export default function Login({onBack}) {
     try {
       if (!supabase) throw new Error('Sign-in is not configured.');
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
+      // CR1: one message for every sign-in failure, so it never reveals whether an account exists.
+      if (error) setError("Incorrect email or password. Please try again.");
     } catch {
       setError("Unable to sign in. Please try again.");
     } finally {
@@ -72,6 +74,9 @@ export default function Login({onBack}) {
             </div>
 
             {error && <p className="login-error" role="alert" data-testid="login-error">{error}</p>}
+            {/* CR1: password recovery guidance; the assistant never asks for a password. */}
+            <button type="button" className="source-link" data-testid="forgot-password" aria-expanded={forgot} onClick={() => setForgot(!forgot)}>Forgot password?</button>
+            {forgot && <p className="rm-small" data-testid="forgot-password-help">To reset your password, use “Forgot password” in the official DemoBank app or website, or call client services. DemoBank staff and this assistant will never ask for your password, PIN or one-time code. In this demo, use the persona password your team was given.</p>}
 
             <button data-testid="submit-login" className="login-submit primary-button" type="submit" disabled={loading}>
               {loading ? "Signing in..." : <>Sign in<Icon name="arrow"/></>}

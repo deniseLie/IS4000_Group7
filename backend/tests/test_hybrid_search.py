@@ -1,4 +1,4 @@
-"""Hybrid knowledge search switches and fallback (KNOWLEDGE_SEARCH, KNOWLEDGE_RESPELL, migration 0088).
+"""Hybrid knowledge search switches and fallback (KNOWLEDGE_SEARCH, KNOWLEDGE_RESPELL, migration 0099).
 
 No vectors are made up here: the fallback test uses a real unconfigured embedding client, and the database stub only
 records which RPC was called. SQL ranking is in test_knowledge_database.py; real-provider retrieval quality is the

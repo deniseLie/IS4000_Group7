@@ -43,14 +43,14 @@ def test_relationship_snapshots_are_dynamic_owned_bounded_and_checkpoint_safe(lo
     body=json.dumps([item.model_dump() for item in evidence])
     assert not any(key in body for key in ['request_id','rm_id','advisor_id','appointment_id','customer_id','transition_reason_code','team_restructure','demobank.example'])
     if cid==1003:
-        assert records.assignment.data.current.name=='Marcus Chua (DEMO)'
+        assert records.assignment.data.current.name=='Sophie Lim (DEMO)'
         assert records.assignment.data.previous.name=='Rachel Goh (DEMO)'
         assert records.requests.data[0].status=='seen' and records.slots.data
         assert json.loads(evidence[1].text)['records'][0]['advisor_name']=='Rachel Goh (DEMO)'
         with psycopg.connect(local_data_api.database_uri) as db:db.execute("update rm.requests set status='answered' where customer_id=1003")
         assert asyncio.run(relationship_records.load(ctx)).requests.data[0].status=='answered'
     else:  # 0063: Alex and Michelle have one long-standing advisor and no change, so no transition wording
-        assert records.assignment.data.current.name==('Priya Nair (DEMO)' if cid==1001 else 'Daniel Tan (DEMO)') and records.assignment.data.previous is None
+        assert records.assignment.data.current.name==('Priya Nair (DEMO)' if cid==1001 else 'Sophie Lim (DEMO)') and records.assignment.data.previous is None
         assert records.requests.data==[] and records.appointments.data==[] and records.slots.data
         assert evidence[-1].id=='relationship-transition' if records.introduction.data.notice else len(evidence)==4
     with pytest.raises(PolicyDenied):asyncio.run(relationship_records.load(ctx.model_copy(update={'agent':'retail'})))
@@ -120,7 +120,7 @@ def test_real_relationship_provider_explains_owned_assignments_and_request_statu
             result,_,prompt=await relationship.respond(task,[],'English',context(local_data_api,cid).model_copy(update={'agent':'relationship'}),[])
             assert result.status in {'ok','needs_human'} and prompt.startswith('v2+'),result.model_dump_json()
             if cid==1003:
-                assert 'Marcus Chua' in result.text and 'relationship-assignment' in {item.source_id for item in result.citations},result.text
+                assert 'Sophie Lim' in result.text and 'relationship-assignment' in {item.source_id for item in result.citations},result.text
             else:assert 'Marcus' not in result.text and 'Rachel' not in result.text
         task=Task(task_id='live2',domain='relationship',intent='answer_question',entities={'question':'What is the recorded status of my relationship request?'})
         result,_,_=await relationship.respond(task,[],'English',context(local_data_api,1003).model_copy(update={'agent':'relationship'}),[])

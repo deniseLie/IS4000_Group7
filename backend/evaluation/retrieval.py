@@ -4,7 +4,7 @@ Memory store (default): python -m evaluation.retrieval
 Database store:         python -m evaluation.retrieval --database-url postgresql://...   (calls public.kb_search, k=4)
 Compare set-ups:        python -m evaluation.retrieval --local --search keyword,hybrid --respell on,off --embedding-cache .cache/embeddings.json
 
-Keyword runs make no model calls. Hybrid runs (migration 0088) embed each question with the real embedding provider
+Keyword runs make no model calls. Hybrid runs (migration 0099) embed each question with the real embedding provider
 (EMBEDDING_API_KEY, EMBEDDING_MODEL; never LLM_API_KEY) and call public.kb_hybrid_search. --local starts a temporary
 pgserver database (dbtest extra) with every migration and embeds its sections first. --embedding-cache keeps question
 vectors between quality runs; leave it out when timing, so each question is a real embedding request. Times are

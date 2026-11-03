@@ -5,7 +5,7 @@ DemoBank is a fictional coursework bank. To write clearer client guidance, we re
 **How to read this:**
 - UBS has few Singapore client-help pages. Where no Singapore page exists, we used Swiss or global pages and say so. A few details come from Indian or Australian forms; those follow local regulators' rules and are not general UBS practice.
 - Pages were read with an automated fetch tool that summarises each page. Before quoting anything from a page, check the original.
-- Each topic ends with **Informs**: the DemoBank article it shaped. The articles are in migration `0087` and `backend/app/services/knowledge.py`.
+- Each topic ends with **Informs**: the DemoBank article it shaped. The articles are in migration `0098` and `backend/app/services/knowledge.py`.
 
 ## 1. Periodic client review (KYC)
 

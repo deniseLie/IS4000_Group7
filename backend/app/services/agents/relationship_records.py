@@ -5,8 +5,9 @@ from app.schemas.appointments import AppointmentRecord
 from app.schemas.contracts import RequestContext
 from app.schemas.customer_data import CustomerEnvelope,RelationshipAssignment
 from app.schemas.relationship import SlotsQuery
+from app.schemas.relationship import AvailableSlot
 from app.schemas.relationship_records import RelationshipRecords
-from app.services import customer_data
+from app.services import customer_data,tools
 
 
 async def load(ctx: RequestContext) -> RelationshipRecords:
@@ -15,7 +16,7 @@ async def load(ctx: RequestContext) -> RelationshipRecords:
     assignment=await customer_data.get_rm_assignment(ctx)
     requests=await customer_data.get_request_records(ctx)
     appointments=await customer_data.get_appointments(ctx)
-    slots=await customer_data.get_available_slot_records(search,ctx)
+    slots=CustomerEnvelope[list[AvailableSlot]].model_validate(await tools.call('free_slots',search.model_dump(mode='json'),ctx))
     introduction=await customer_data.get_introduction_record(ctx)
     return RelationshipRecords(assignment=CustomerEnvelope[RelationshipAssignment | None](customer_id=ctx.principal.customer_id,
         call_id=assignment.call_id,as_of=assignment.as_of,data=assignment.data),requests=requests,

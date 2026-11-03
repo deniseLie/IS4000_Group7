@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {boundedHistory,handoffSummary,recallStep,redact,readEvents,sentHistory,supportSummary} from './chatTools.js';
+import {boundedHistory,handoffMessage,handoffSummary,recallStep,redact,readEvents,sentHistory,supportSummary} from './chatTools.js';
 
 for(const c of JSON.parse(fs.readFileSync(new URL('../../../tests/fixtures/privacy-cases.json',import.meta.url),'utf8'))) {
  test(`shared privacy case: ${c.text}`,()=>{
@@ -38,6 +38,18 @@ test('interrupted stream fails rather than pretending completion',async()=>{
 });
 test('support draft removes private details and does not claim a ticket was sent',()=>{
  const s=supportSummary([{role:'user',content:'My PIN is 1234'}]);assert.ok(!s.includes('1234'));assert.ok(s.includes('not sent'));
+});
+
+test('reviewed handoffs retain selected compliance context and redact both parts',()=>{
+ const context='Compliance review support. Preliminary outcome: issues_found. Findings: missing_field.';
+ const sent=handoffMessage('Please explain the address finding. My PIN is 1234',context);
+ assert.ok(sent.includes('Please explain the address finding.'));
+ assert.ok(sent.includes(context));assert.ok(!sent.includes('1234'));
+ assert.equal(handoffMessage('Please help.',''),'Please help.');
+ assert.ok(!handoffMessage('Please help.','My OTP is 123456').includes('123456'));
+ assert.equal(handoffMessage('x'.repeat(1000),'').length,1000);
+ assert.throws(()=>handoffMessage('x'.repeat(1000),context),/Shorten/);
+ assert.throws(()=>handoffMessage('   ',context),/Write a short message/);
 });
 
 test('handoff summary uses topic labels and recorded outcomes only, never customer text',()=>{

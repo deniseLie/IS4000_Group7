@@ -1,12 +1,12 @@
 """Retrieval quality floors for both knowledge stores (evaluation/retrieval.py, synthetic hand-labelled cases).
 
 The memory check always runs. The database check needs TEST_DATABASE_LOCAL=1 (see test_database_local.py). The hybrid
-check (0088) also needs TEST_EMBEDDINGS_LIVE=1 and EMBEDDING_API_KEY: it embeds every section and question with the real
+check (0099) also needs TEST_EMBEDDINGS_LIVE=1 and EMBEDDING_API_KEY: it embeds every section and question with the real
 provider (about 230 short texts) and runs services/kb.search itself against the database, with a psycopg stand-in for
 the Data API client; PostgREST argument handling is covered by the hosted check, not here.
 Floors sit a little under the 31 Oct 2026 results so new articles can reshuffle ranks; a larger drop is a regression.
-No-match floors were lowered on 2 Nov 2026 (0087): six gap cases became covered, and they had counted as correct
-empty results. On the remaining gap cases both stores score the same with or without 0087 (memory 0.667, database 0.476).
+No-match floors were lowered on 2 Nov 2026 (0098): six gap cases became covered, and they had counted as correct
+empty results. On the remaining gap cases both stores score the same with or without 0098 (memory 0.667, database 0.476).
 """
 import os
 from typing import TYPE_CHECKING

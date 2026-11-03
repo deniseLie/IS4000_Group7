@@ -52,7 +52,7 @@ class CategoryField(BaseModel):
     model_config=ConfigDict(extra='ignore')
     key: Annotated[str,StringConstraints(pattern=r'^[a-z_]{2,30}$')]
     label: str
-    kind: Literal['text','amount','date','date_past','choice','card']
+    kind: Literal['text','amount','date','date_past','choice','card','confirm','transaction']  # confirm, transaction: 0096
     required: StrictBool
     choices: list[str] | None=None
 
@@ -77,6 +77,16 @@ class TicketUpdate(BaseModel):
     at: AwareDatetime
     status: TicketStatus
     note: str | None
+
+
+class TicketFollowUp(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    message: Annotated[str,StringConstraints(strict=True,min_length=1,max_length=480,pattern=r'\S')]
+
+
+class TicketFollowUpResult(BaseModel):
+    reference: Reference
+    added: StrictBool
 
 
 class TicketAttachment(BaseModel):

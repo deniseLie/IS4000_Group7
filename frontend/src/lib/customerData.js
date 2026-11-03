@@ -33,7 +33,9 @@ function account(value) {
 function card(value) {
   return {card_id:match(value?.card_id,/^card_[1-9][0-9]{0,17}$/),name:text(value?.name),last4:match(value?.last4,/^[0-9]{4}$/),
     status:choice(value?.status,['active','temporarily_blocked','cancelled','blocked','expired']),currency:currency(value?.currency),limit:number(value?.limit),
-    outstanding:number(value?.outstanding),minimum_payment:number(value?.minimum_payment),due_date:nullable(value?.due_date,day)};
+    outstanding:number(value?.outstanding),minimum_payment:number(value?.minimum_payment),due_date:nullable(value?.due_date,day),
+    // 0096: why she cannot unfreeze this card herself; older servers send nothing.
+    unfreeze_blocked_reason:nullable(value?.unfreeze_blocked_reason??null,text)};
 }
 function loan(value) {
   return {loan_id:match(value?.loan_id,/^loan_[1-9][0-9]{0,17}$/),type:choice(value?.type,['home','car','personal','securities_backed']),currency:currency(value?.currency),
@@ -57,7 +59,8 @@ function review(value) {
       'awaiting_client_documents','under_review','information_requested','completed','closed']),
     requested_items:rows(value?.requested_items,item=>({item_id:match(item?.item_id,UUID),label:text(item?.label),
       instructions:nullable(item?.instructions,text),submission_status:choice(item?.submission_status,['not_submitted','submitted_awaiting_review','accepted','rejected','unknown']),
-      client_mark:choice(item?.client_mark,['prepared','not_prepared']),client_marked_at:nullable(item?.client_marked_at,timestamp)}),'item_id')};
+      client_mark:choice(item?.client_mark,['prepared','not_prepared']),client_marked_at:nullable(item?.client_marked_at,timestamp)}),'item_id'),
+    info_requests:rows(value?.info_requests,request=>({request_id:match(request?.request_id,UUID),status:choice(request?.status,['open','responded','closed'])}),'request_id')};
 }
 function advisor(value) {
   if(value===null)return null;
@@ -89,6 +92,17 @@ const RESOURCES={profile,accounts:value=>rows(value,account,'account_id'),cards:
 export async function loadSections(token,paths,signal) {
   const headers={Authorization:`Bearer ${token}`};
   return Object.fromEntries(await Promise.all(paths.map(async path=>[path,parseRecord(await body(await fetch(`${API_URL}/customer/${path}`,{headers,signal})),RESOURCES[path])])));
+}
+// 0096: her posted card charges from the last 60 days, the ones a dispute can name (newest first).
+export const DISPUTE_DAYS=60;
+export function disputableCharges(transactions,today=new Date()) {
+  const from=new Date(today.getTime()-DISPUTE_DAYS*86400000).toISOString().slice(0,10);
+  return transactions.filter(row=>row.card_id&&row.status==='posted'&&row.amount<0&&row.date>=from).sort((a,b)=>b.date.localeCompare(a.date));
+}
+export async function loadCardCharges(token,signal) {
+  const charges=parseRecord(await body(await fetch(`${API_URL}/customer/transactions`,{method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({from_date:null,to_date:null,filters:null}),signal})),value=>rows(value,transaction,'txn_id'));
+  return disputableCharges(charges.data);
 }
 export async function loadRecords(token,query,signal) {
   const headers={Authorization:`Bearer ${token}`};

@@ -10,6 +10,7 @@ import langsmith
 request_id=ContextVar('request_id',default='-')
 logger=logging.getLogger('demobank')
 current_trace=ContextVar('current_trace',default=None)
+span_sink=ContextVar('span_sink',default=None)  # evaluation/targets.py collects (name, attrs) of every span here; None in the app
 
 class JsonFormatter(logging.Formatter):
     def format(self,record):
@@ -61,6 +62,7 @@ def span(name,kind,**attrs):
             raise
         finally:
             run.add_metadata(attrs)
+            if (sink:=span_sink.get()) is not None:sink.append((name,dict(attrs)))
 
 def add_span(name,kind,**attrs):
     with span(name,kind,**attrs):pass
