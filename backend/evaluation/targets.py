@@ -6,13 +6,17 @@ is faked: the real guardrail, v2 graph, agents, tools, model, database and RLS r
 records which graph nodes acted (a LangChain callback hook) and which agents, tools and model calls ran (the
 observability span sink), and it reads the persona's tickets before and after so evaluators can see what opened.
 Steps the chat cannot play (form, upload, a button other than a chat reply) are skipped and listed in the output; a chat
-reply button is played only when the previous reply offers it, otherwise the conversation stops there (`not_offered`)."""
+reply button is played only when the previous reply offers it, otherwise the conversation stops there (`not_offered`).
+Graph cases may name a `fault` (architecture §14.12); `inject` makes that one piece fail for the whole case and the output
+says whether the pipeline has the piece at all (v4 has no external tools, so `external_down` changes nothing there)."""
 import json
 import re
 import secrets
 from collections import Counter
+from contextlib import ExitStack,contextmanager
 from contextvars import ContextVar
 from typing import Any
+from unittest.mock import patch
 from uuid import UUID,uuid4
 import httpx
 from langchain_core.callbacks import AsyncCallbackHandler
@@ -24,6 +28,7 @@ from app.services.guardrail import assess_request
 
 PERSONAS={'michelle':'demo.michelle@example.com','sophie':'demo.sophie@example.com'}
 CHAT_TAPS={CONFIRM_REPLY}  # buttons whose label is sent as the next chat message
+TAP_ALIASES={'Confirm':CONFIRM_REPLY}  # graph cases tap the v5 offer button; v4 offers the same step as "Yes, report it"
 NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
 
 
@@ -50,6 +55,28 @@ class NodeLog(AsyncCallbackHandler):
 
 node_log: ContextVar[NodeLog | None]=ContextVar('eval_node_log',default=None)
 register_configure_hook(node_log,True)  # every LangChain/LangGraph run in this context reports to the active NodeLog
+
+
+async def _withheld(*args,**kw):
+    from app.services.llm_gateway import LLMError
+    raise LLMError('injected fault: upstream agent unavailable')
+
+
+async def _receipt_failed(*args,**kw):
+    raise RuntimeError('injected fault: fraud report executor failed')
+
+
+# fault -> (patch target, replacement) in the v4 pipeline; None means v4 has no such piece.
+FAULTS={'external_down':None,'upstream_withheld':('app.services.agents.retail.respond',_withheld),
+    'receipt_failed':('app.services.orchestrator.report_to_fraud_team',_receipt_failed),'consent_revoked':None}
+
+
+@contextmanager
+def inject(fault: str | None):
+    """Yields whether the fault was applied."""
+    with ExitStack() as stack:
+        if fault and (spec:=FAULTS[fault]):stack.enter_context(patch(spec[0],spec[1]))
+        yield bool(fault and FAULTS[fault])
 
 
 def sign_in(persona: str,fixture: list[dict[str,str]],url: str,public_key: str) -> str:
@@ -102,7 +129,8 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
         created.raise_for_status()
         revision=created.json()['revision']
         for step in turns_of(inputs):
-            text=step.get('say') or (step.get('tap') if step.get('tap') in CHAT_TAPS else None)
+            tap=TAP_ALIASES.get(step.get('tap'),step.get('tap'))
+            text=step.get('say') or (tap if tap in CHAT_TAPS else None)
             if text is None:
                 skipped.append(step);continue
             if 'tap' in step and not (replies and text in (replies[-1].get('answer') or '')):
@@ -113,7 +141,8 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
             body={'messages':[{'role':'user','content':text}],'mode':mode,'language':language,
                 'conversation_id':session,'turn_id':str(uuid4()),'revision':revision}
             tokens=(node_log.set(log),span_sink.set(spans));start=len(spans)
-            try:response=await http.post('/chat',headers=headers,json=body)
+            try:
+                with inject(inputs.get('fault')):response=await http.post('/chat',headers=headers,json=body)
             finally:span_sink.reset(tokens[1]);node_log.reset(tokens[0])
             reply: dict[str,Any]={'say':text,'status':response.status_code,'agents':[a.get('agent') for n,a in spans[start:] if n=='task'],
                 'model_calls':sum(n=='llm' for n,_ in spans[start:])}
@@ -138,4 +167,5 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
         'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
         'model_calls':sum(name=='llm' for name,_ in spans),
+        'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,
         'tickets':{'opened':[t for t in after if t['reference'] not in known],'all':after}}
