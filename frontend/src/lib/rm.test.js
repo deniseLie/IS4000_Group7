@@ -197,3 +197,24 @@ test('Today hands the Requests tab to Schedule once',async()=>{
   assert.equal(location.hash,'rm-schedule');
   assert.equal(takeScheduleTab(),'requests');assert.equal(takeScheduleTab(),null);
 });
+
+test('the Calendar agent’s availability card becomes the Schedule page’s calls, in order (3a)',async()=>{
+  const {availabilitySteps,availabilityNotice,runStep,REPORT_TITLES}=await import('./rm.js');
+  const card={kind:'block',blocks:[{starts_at:'2026-11-06T12:00:00+08:00',ends_at:'2026-11-06T14:00:00+08:00',when:'Fri 6 Nov 2026, 12:00 pm – 2:00 pm'}],
+    removals:[{block_id:'b/1',when:'Fri 6 Nov 2026, 9:00 am – 10:00 am'}],hours:[{weekday:1,day:'Monday',starts:'10:00',ends:'18:00',current:'09:00 – 17:00'},
+      {weekday:6,day:'Saturday',starts:null,ends:null,current:'10:00 – 12:00'}],kept:[]};
+  const steps=availabilitySteps(card);
+  assert.deepEqual(steps.map(s=>[s.method,s.path]),[['POST','/availability/blocks'],['DELETE','/availability/blocks/b%2F1'],['PUT','/availability/hours'],['PUT','/availability/hours']]);
+  assert.deepEqual(steps[0].body,{starts_at:'2026-11-06T12:00:00+08:00',ends_at:'2026-11-06T14:00:00+08:00',reason:'Unavailable'});
+  assert.deepEqual([steps[2].body,steps[3].body],[{weekday:1,starts:'10:00',ends:'18:00'},{weekday:6,starts:null,ends:null}]);
+  assert.deepEqual(steps.map(s=>s.label),['Block Fri 6 Nov 2026, 12:00 pm – 2:00 pm','Open Fri 6 Nov 2026, 9:00 am – 10:00 am again',
+    'Monday: 10:00 – 18:00 (now 09:00 – 17:00)','Saturday: not working (now 10:00 – 12:00)']);
+  assert.deepEqual(availabilitySteps(null),[]);
+  assert.match(availabilityNotice({kind:'hours'}),/Working hours saved/);assert.match(availabilityNotice(card),/^Blocked/);
+  const sent=[];const real=globalThis.fetch;
+  globalThis.fetch=async(url,init)=>{sent.push([init.method,url,init.body?JSON.parse(init.body):null]);return {ok:true,status:200,json:async()=>({})};};
+  try{for(const step of steps.slice(0,2))await runStep(step,'token');}finally{globalThis.fetch=real;}
+  assert.deepEqual(sent.map(([m,u])=>[m,u.replace(/^.*\/rm/,'')]),[['POST','/availability/blocks'],['DELETE','/availability/blocks/b%2F1']]);
+  assert.equal(sent[0][2].reason,'Unavailable');
+  assert.equal(REPORT_TITLES.decide_request,'Answer a meeting request');assert.equal(REPORT_TITLES.open,'From your records');
+});

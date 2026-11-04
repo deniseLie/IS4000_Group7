@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MIN_COMPARE,counted,defaultPair,delta,filterGroups,firstLine,isAdmin,mix,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
+import {KINDS,MIN_COMPARE,SIDES,counted,defaultPair,delta,filterGroups,firstLine,isAdmin,loadAgents,mix,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -82,6 +82,17 @@ test('a waterfall places each step on the request time axis', () => {
 });
 
 test('repeated agent names are counted', () => {
-  assert.equal(counted(['rm_client_insight','rm_service_desk','rm_client_insight']),'rm_client_insight ×2, rm_service_desk');
+  assert.equal(counted(['rm_client','rm_requests','rm_client']),'rm_client ×2, rm_requests');
   assert.equal(counted([]),'');
+});
+
+test('refusal and consent-gap counts read largest first, and the pages filter by who asked', async () => {
+  assert.equal(tally({'rm_tickets: limit':1,'rm_ticket: not_in_book':2}),'rm_ticket: not_in_book ×2, rm_tickets: limit');
+  assert.equal(tally({}),'');
+  assert.deepEqual(SIDES.map(([key])=>key),['all','client','rm']);
+  assert.equal(KINDS.loop_cap,'Read limit reached');
+  const seen=[];const real=globalThis.fetch;
+  globalThis.fetch=async url=>{seen.push(url);return {ok:true,json:async()=>({agents:[]})};};
+  try{await loadAgents('7d','live','rm','token');}finally{globalThis.fetch=real;}
+  assert.equal(seen[0],'/api/admin/agents?window=7d&source=live&side=rm');
 });

@@ -240,7 +240,7 @@ def test_agent_scorecards_and_orchestration_panels():
     rows=[req(1,trace='t1'),req(2,trace='t2',route='lost_card'),req(3,trace='t3',offered=2),req(4,trace='t4',offered=0)]
     steps=[step('agent','t1',agent='accounts',intent='card_limit',path='rule',status='ok',evidence_count=2,exports=1),
         step('agent','t3',agent='accounts',intent='open',path='loop',status='withheld',tool_calls=3,refused=1),
-        step('agent','t3',agent='rm_client_insight',intent='client_brief'),
+        step('agent','t3',agent='rm_client',intent='client_brief'),
         step('agent','t3'),step('planner','t1'),  # LangGraph node runs of the same names
         step('planner','t1',route='model',tasks=2,dependent=1),step('planner','t3',route='act'),
         step('planner','t4',route='expired'),step('planner','t5',side='rm',route='button',tasks=1,dependent=0),
@@ -254,14 +254,14 @@ def test_agent_scorecards_and_orchestration_panels():
     client_run['cases'][0]['agents']={'accounts':1}
     planner_run=exp('p1','demobank-planner',1,[('P01','pass'),('P02','fail',('agents',))])
     planner_run['cases'][0]['checks']['agents']={'score':1,'comment':''}
-    out=insights.agents(rows,steps,[client_run,planner_run],{'accounts':'accounts','rm_client_insight':'rm_assistant'},{'accounts':'v1','rm_assistant':'v4'})
+    out=insights.agents(rows,steps,[client_run,planner_run],{'accounts':'accounts','rm_client':'rm_assistant'},{'accounts':'v1','rm_assistant':'v4'})
     cards={c['agent']:c for c in out['agents']}
-    assert list(cards)==['accounts','rm_client_insight']
+    assert list(cards)==['accounts','rm_client']
     acc=cards['accounts']
     assert acc['runs']==2 and acc['share']==0.5 and acc['outcomes']=={'ok':1,'withheld':1} and acc['bad_rate']==0.5
     assert acc['paths']=={'rule':1,'loop':1} and acc['tool_calls_per_loop']==3 and acc['refused']==1 and acc['exports']==1
     assert acc['live_prompt']=='v1' and acc['eval_cases']==1 and acc['eval_pass_rate']==1.0
-    assert cards['rm_client_insight']['paths']=={'handler':1} and cards['rm_client_insight']['side']=='rm' and cards['rm_client_insight']['live_prompt']=='v4'
+    assert cards['rm_client']['paths']=={'handler':1} and cards['rm_client']['side']=='rm' and cards['rm_client']['live_prompt']=='v4'
     assert out['fixed_routes']=={'requests':1,'share':0.25,'routes':{'lost_card':1}}
     plan=out['planner']
     assert plan['client']['routes']=={'model':1,'act':1,'expired':1} and plan['client']['tasks_per_plan']==2 and plan['client']['multi_agent']==1.0
@@ -283,7 +283,7 @@ def test_latency_percentiles_breakdown_fan_out_and_slowest():
     steps=[timed(step('llm','b',agent='accounts',model='haiku',prompt_version='v1+aa',outcome='ok',input_tokens=900,output_tokens=100,retries=1),3),
         timed(step('tool_call','b',tool='my_cards'),2),timed(step('tool_call','b',tool='kb_search'),0.8),
         timed(step('kb.search','b',mode='hybrid',count=2),0.5),step('planner','b'),
-        *[step('agent','c',agent=a,intent='client_brief') for a in ('rm_client_insight','rm_service_desk','rm_service_desk')],
+        *[step('agent','c',agent=a,intent='client_brief') for a in ('rm_client','rm_requests','rm_requests')],
         step('gather','c',sends=1),node:=step('gather','c'),{**step('gather','c'),'parent_id':node['run_id']}]  # a node run and the span inside it
     out=insights.latency(rows,steps,7)
     assert out['surfaces']['all']['n']==3 and out['surfaces']['rm']['p50_s']==70 and out['surfaces']['public']['first_section_p50_s']==1.5
@@ -296,7 +296,7 @@ def test_latency_percentiles_breakdown_fan_out_and_slowest():
     assert out['models'][0]['name']=='haiku' and out['models'][0]['retries']==1 and out['prompts'][0]['name']=='accounts/v1'
     assert out['tokens']['budget_hits']==1 and out['tokens']['by_family']==[{'family':'accounts','calls':1,'input':900,'output':100}]
     slow=out['slowest'][0]
-    assert slow['latency_s']==70 and slow['agents']==['rm_client_insight','rm_service_desk','rm_service_desk'] and slow['question']=='Brief me on all my clients'
+    assert slow['latency_s']==70 and slow['agents']==['rm_client','rm_requests','rm_requests'] and slow['question']=='Brief me on all my clients'
     assert out['throughput']['peak_requests']==1 and out['throughput']['per_hour']==round(3/168,4)
 
 
@@ -306,6 +306,32 @@ def test_agent_and_latency_routes(monkeypatch):
     monkeypatch.setattr(quality,'experiment_runs',lambda:[])
     body=client.get('/admin/agents?window=7d&source=live',headers=ADMIN).json()
     assert body['agents'][0]['agent']=='guide' and body['agents'][0]['prompt']=='guide' and body['source']=='live' and not body['capped']
+    assert client.get('/admin/agents?side=rm',headers=ADMIN).json()['agents']==[] and client.get('/admin/agents?side=staff',headers=ADMIN).status_code==422
+    assert client.get('/admin/failures?side=client',headers=ADMIN).json()['side']=='client'
     body=client.get('/admin/latency?window=24h',headers=ADMIN).json()
     assert body['surfaces']['all']['n']==1 and body['window_days']==1 and body['source']=='all'
     assert client.get('/admin/latency?source=prod',headers=ADMIN).status_code==422
+
+
+def test_agents_and_failures_filter_by_side_and_count_stops_refusals_and_consent_gaps():
+    """Build plan 3a: the Agents and Failures pages filter by who asked (client chat or RM workspace); a loop that hit its
+    read limit is listed as a failure, while tool refusals and consent gaps are counts (the checks working)."""
+    rows=[req(1,trace='c1'),req(1,trace='r1',name='rm_assistant',surface='rm',side='rm')]
+    steps=[step('agent','c1',agent='accounts',intent='open',path='loop',status='ok',stop='answered',tool_calls=1,refused=0),
+        step('agent','r1',agent='rm_requests',intent='open',path='loop',status='ok',stop='cap',tool_calls=4,limit=4,refused=1),
+        step('agent','r1',agent='rm_client',intent='client_overview',path='reads',status='ok'),
+        step('tool_call','r1',tool='rm_ticket',agent='rm_requests',allowed=False,reason='not_in_book'),
+        step('tool_call','r1',tool='rm_transaction_insights',agent='rm_client',allowed=True,shared=False,category='transaction_insights'),
+        step('tool_call','c1',tool='my_accounts',agent='accounts',allowed=True,rows=2)]
+    rm=insights.agents(rows,steps,[],{},{},'rm')
+    cards={c['agent']:c for c in rm['agents']}
+    assert rm['side']=='rm' and rm['requests']==1 and list(cards)==['rm_client','rm_requests']
+    assert cards['rm_requests']['stops']=={'cap':1} and cards['rm_requests']['tool_refusals']==1 and cards['rm_requests']['refused']==1
+    assert cards['rm_client']['consent_gaps']==1 and cards['rm_client']['tool_refusals']==0
+    assert [c['agent'] for c in insights.agents(rows,steps,[],{},{},'client')['agents']]==['accounts']
+    assert [c['agent'] for c in insights.agents(rows,steps,[],{},{})['agents']]==['accounts','rm_client','rm_requests']  # all
+    failures=insights.failures(rows,steps,[],NOW,1,'live','rm')
+    assert [(g['kind'],g['agent'],g['title']) for g in failures['groups']]==[('loop_cap','rm_requests','rm_requests reached its read limit')]
+    assert (failures['side'],failures['tool_refusals'],failures['loop_stops'],failures['consent_gaps'])==(
+        'rm',{'rm_ticket: not_in_book':1},{'cap':1},{'transaction_insights':1})
+    assert insights.failures(rows,steps,[],NOW,1,'live','client')['groups']==[]

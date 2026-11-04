@@ -118,7 +118,7 @@ def shared_evidence(result: dict|None,customer_id: int) -> Evidence:
 
 async def category_guidance(result: dict,read: Callable[[str,dict],Awaitable[dict]]) -> list[KnowledgeSection]:
     """The approved article a ticket's request type points to (category_info.kb_article), read with the agent's own
-    tool call (`knowledge_article`, Turn.read), so the Service Desk spec's allow-list and audit apply."""
+    tool call (`knowledge_article`, Turn.read), so the Requests spec's allow-list and audit apply."""
     article_id=(result['data'].get('category_info') or {}).get('kb_article')
     if not article_id:return []
     return TypeAdapter(list[KnowledgeSection]).validate_python((await read('knowledge_article',{'article_id':article_id}))['items'])
@@ -311,3 +311,58 @@ def book_bundle(result: dict,question: str='',today: date | None=None) -> Bundle
         bundle.add(Evidence('facts-'+slug,f"Book facts: {row['client']}",'record',_in_period(_strip(row,'customer_id'),period,today),str(result.get('as_of')),row['customer_id']))
     if not bundle.items:bundle.add(Evidence('facts-none','Your book','record',{'clients':0},str(result.get('as_of'))))
     return bundle
+
+
+# Calendar agent (build plan 3a) ---------------------------------------------------------------------------------------
+FORMAT_WORDS={'video':'video','phone':'phone','in_person':'in person'}
+
+
+def request_ids(rows: list[dict]) -> list[str]:
+    """meeting-request-<first name>, with -2, -3 for a client's second and third request."""
+    seen: dict[str,int]={}
+    out=[]
+    for row in rows:
+        base='meeting-request-'+(re.sub(r'[^a-z]+','-',(row.get('client') or 'client').lower()).strip('-').split('-')[0] or 'client')
+        seen[base]=seen.get(base,0)+1
+        out.append(base if seen[base]==1 else f'{base}-{seen[base]}')
+    return out
+
+
+def meeting_requests_bundle(result: dict) -> Bundle:
+    """Clients' meeting requests (0106). The purpose is the client's own words: quoted data under
+    `purpose_in_client_words`, never an instruction; ids, the decline code and times in ISO are left out."""
+    bundle=Bundle()
+    as_of=str(result.get('as_of'))
+    rows=result.get('data') or []
+    for source_id,row in zip(request_ids(rows),rows):
+        data={'client':row.get('client'),'status':row.get('status'),'format':FORMAT_WORDS.get(row.get('format'),row.get('format')),
+            'topics':row.get('topics') or [],'received':row.get('created_text'),'respond_by':row.get('respond_by_text'),'overdue':bool(row.get('overdue')),
+            'proposal_lapsed':bool(row.get('proposal_lapsed')),'preferred_times':[{'when':t.get('when'),'cannot_accept_because':t.get('problem')}
+                for t in row.get('preferred_times') or []],
+            'meeting':{k:v for k,v in (row.get('meeting') or {}).items() if k in ('when','status','hold_expires')} or None,
+            'purpose_in_client_words':row.get('purpose')}
+        bundle.add(Evidence(source_id,f"Meeting request from {row.get('client')} (received {row.get('created_text')})",'record',data,as_of,row.get('customer_id')))
+    if not rows:bundle.add(Evidence('meeting-requests-none','Meeting requests','record',{'open_requests':0},as_of))
+    return bundle
+
+
+def availability_evidence(result: dict) -> Evidence:
+    """Her weekly hours and, per day of the next 14, the hours, blocks, bookings and free half hours clients can book."""
+    days=[{'date':d.get('date'),'weekday':d.get('weekday'),'hours':d.get('hours'),'free':d.get('free') or [],
+        'blocked':[{'starts':b.get('starts'),'ends':b.get('ends')} for b in d.get('blocks') or []],
+        'booked':[{k:v for k,v in b.items() if k in ('starts','ends','client','status')} for b in d.get('bookings') or []]} for d in result.get('days') or []]
+    return Evidence('availability','Your working hours and free times (next 14 days)','calendar',
+        {'today':result.get('today'),'weekly_hours':result.get('weekly_hours') or [],'days':days},str(result.get('as_of')))
+
+
+def merge(bundle: Bundle,items: list[Evidence]) -> list[str]:
+    """Add items read in a loop; an id already in the bundle gets the client id (or a number) appended. Returns the ids."""
+    ids=[]
+    for item in items:
+        if item.id in {e.id for e in bundle.items}:
+            base=f'{item.id}-{item.customer_id}' if item.customer_id else item.id
+            n,new=1,base
+            while new in {e.id for e in bundle.items}:n+=1;new=f'{base}-{n}'
+            item=Evidence(new,item.title,item.kind,item.data,item.as_of,item.customer_id)
+        bundle.add(item);ids.append(item.id)
+    return ids

@@ -33,8 +33,9 @@ function query(params) {
 }
 export const WINDOWS=[['24h','Last 24 hours'],['7d','Last 7 days'],['30d','Last 30 days'],['90d','Last 90 days']];
 export const SOURCES=[['all','Live and evaluations'],['live','Live only'],['eval','Evaluations only']];
+export const SIDES=[['all','Client and RM'],['client','Client chat'],['rm','RM workspace']];  // who asked (build plan 3a)
 export const loadOverview=(window,token,signal)=>get(`/overview${query({window})}`,token,signal);
-export const loadFailures=(window,source,token,signal)=>get(`/failures${query({window,source})}`,token,signal);
+export const loadFailures=(window,source,side,token,signal)=>get(`/failures${query({window,source,side})}`,token,signal);
 export const loadFailure=(runId,token,signal)=>get(`/failures/${encodeURIComponent(runId)}`,token,signal);
 
 const missing=value=>value===null||value===undefined||Number.isNaN(value);
@@ -67,7 +68,7 @@ export function sparkSegments(values,height=28) {
 }
 
 export const KINDS={request_error:'Request failed',held_back:'Held back',agent_withheld:'Agent withheld',agent_timeout:'Agent timed out',
-  agent_error:'Agent failed',model_call:'Model call',tool_error:'Tool failed',eval_case:'Eval case'};
+  agent_error:'Agent failed',model_call:'Model call',tool_error:'Tool failed',eval_case:'Eval case',loop_cap:'Read limit reached',loop_malformed:'Lookup unfinished'};
 
 // Failure groups shown for the chosen kind and search text (title, error, agent, tool, case or any item's question).
 export function filterGroups(groups,{kind='',text=''}={}) {
@@ -108,7 +109,7 @@ export function versionPair(a,b) {
 }
 
 // ---- Agents and latency ----
-export const loadAgents=(window,source,token,signal)=>get(`/agents${query({window,source})}`,token,signal);
+export const loadAgents=(window,source,side,token,signal)=>get(`/agents${query({window,source,side})}`,token,signal);
 export const loadLatency=(window,source,token,signal)=>get(`/latency${query({window,source})}`,token,signal);
 export const SURFACES={all:'All requests',public:'Public chat',personal:'Signed-in chat',rm:'RM assistant'};
 
@@ -126,6 +127,9 @@ export function waterfall(spans,limit=60) {
   if(!total)return {total:0,rows:[]};
   return {total,rows:timed.slice(0,limit).map(span=>({...span,left:Math.max(span.start_s,0)/total,width:Math.max(span.latency_s/total,0.004)}))};
 }
+
+// {'rm_ticket: not_in_book':2,'rm_tickets: limit':1} -> 'rm_ticket: not_in_book ×2, rm_tickets: limit' (largest first).
+export function tally(counts) {return mix(counts).map(row=>row.count>1?`${row.key} ×${row.count}`:row.key).join(', ');}
 
 // ['a','b','a'] -> 'a ×2, b' (agents a request ran, in first-seen order).
 export function counted(names) {

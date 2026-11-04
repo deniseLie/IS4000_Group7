@@ -17,6 +17,7 @@ from app.services.agents import registry
 
 WINDOW=Query('7d',pattern='^(24h|7d|30d|90d)$')
 SOURCE=Query('all',pattern='^(live|eval|all)$')
+SIDE=Query('all',pattern='^(all|client|rm)$')  # who asked: the client chat or the RM workspace (build plan 3a)
 NAME=r'^demobank-[A-Za-z0-9_.-]{1,120}$'  # an experiment of a synced dataset (quality.DATASET_PREFIX)
 
 router=APIRouter(prefix='/admin')
@@ -64,9 +65,9 @@ def overview_of(days: int) -> dict[str,Any]:
     return {**insights.overview(rows,steps,exps,quality.now(),days,untested),'capped':capped(rows,steps)}
 
 
-def failures_of(days: int,source: str) -> dict[str,Any]:
+def failures_of(days: int,source: str,side: str='all') -> dict[str,Any]:
     rows,steps,exps=together((quality.requests,source,2*days),(quality.steps,source,2*days),(quality.experiment_runs,))
-    return {**insights.failures(rows,steps,exps,quality.now(),days,source),'capped':capped(rows,steps)}
+    return {**insights.failures(rows,steps,exps,quality.now(),days,source,side),'capped':capped(rows,steps)}
 
 
 @router.get('/overview')
@@ -75,8 +76,8 @@ async def overview(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> dic
 
 
 @router.get('/failures')
-async def failures(window: str=WINDOW,source: str=SOURCE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
-    return await read(failures_of,quality.WINDOWS[window],source)
+async def failures(window: str=WINDOW,source: str=SOURCE,side: str=SIDE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(failures_of,quality.WINDOWS[window],source,side)
 
 
 @router.get('/failures/{run_id}')
@@ -121,10 +122,10 @@ async def prompt_page(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> 
     return await read(prompts_of,quality.WINDOWS[window])
 
 
-def agents_of(days: int,source: str) -> dict[str,Any]:
+def agents_of(days: int,source: str,side: str='all') -> dict[str,Any]:
     rows,steps,exps=together((quality.requests,source,days),(quality.steps,source,days),(quality.experiment_runs,))
     since=quality.now()-timedelta(days=days)
-    return {**insights.agents(rows,steps,[e for e in exps if e['started_at']>=since],{n:s.prompt for n,s in registry.SPECS.items()},prompts.in_use()),
+    return {**insights.agents(rows,steps,[e for e in exps if e['started_at']>=since],{n:s.prompt for n,s in registry.SPECS.items()},prompts.in_use(),side),
         'window_days':days,'source':source,'capped':capped(rows,steps)}
 
 
@@ -134,8 +135,8 @@ def latency_of(days: int,source: str) -> dict[str,Any]:
 
 
 @router.get('/agents')
-async def agent_page(window: str=WINDOW,source: str=SOURCE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
-    return await read(agents_of,quality.WINDOWS[window],source)
+async def agent_page(window: str=WINDOW,source: str=SOURCE,side: str=SIDE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(agents_of,quality.WINDOWS[window],source,side)
 
 
 @router.get('/latency')

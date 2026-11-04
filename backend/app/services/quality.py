@@ -27,7 +27,7 @@ _client=None
 WINDOWS={'24h':1,'7d':7,'30d':30,'90d':90}  # days; source 'live' is the app's tracing project, 'eval' the requests inside experiments
 REQUEST_NAMES=('chat','rm_assistant')
 REQUESTS='or(eq(name, "chat"), eq(name, "rm_assistant"))'
-STEPS=('llm','agent','tool_call','kb.search','planner','gather','act','compose','embed')
+STEPS=('llm','agent','tool_call','kb.search','planner','gather','act','compose','embed','loop_step')
 STEP_FILTER='or('+', '.join(f'eq(name, "{n}")' for n in STEPS)+')'
 EVAL_FILTER='or('+', '.join(f'eq(name, "{n}")' for n in REQUEST_NAMES+STEPS)+')'
 MAX_REQUESTS,MAX_STEPS,MAX_TRACE=2000,20000,500  # bounded reads; the page says "sampled" when a cap is reached
@@ -40,7 +40,10 @@ STEP_FIELDS=['id','name','run_type','trace_id','session_id','parent_run_id','sta
 # Step metadata the dashboard reads (names, statuses, counts and ms; never text).
 STEP_KEYS=('agent','intent','path','status','outcome','tool_calls','steps','refused','evidence_count','exports','wave','prompt_version','model','transport',
     'input_tokens','output_tokens','retries','cause','error_type','tool','mode','count','embedding_error','embed_ms','sql_ms','route','tasks','dependent','side',
-    'sends','skipped','rerouted','decision','offers','chained','failed','langgraph_node')
+    'sends','skipped','rerouted','decision','offers','chained','failed','langgraph_node',
+    # build plan 3a: the loop's stop and limit, plan source and refusals, tool outcomes (allowed, reason, consent), cards and exports
+    'stop','limit','step','reads_left','source','refusal','allowed','reason','shared','category','purpose','rows','cards','withheld','export_names',
+    'unlinked','fan_out','passed','merged','fixed_lines')
 
 
 def is_admin(claims: dict[str,Any]) -> bool:
@@ -140,6 +143,8 @@ def as_request(run,source: str) -> dict[str,Any]:
         'model_calls':m.get('model_calls'),'agents':m.get('agents'),'agent_status':m.get('agent_status'),'prompt_ids':m.get('prompt_ids'),'model':m.get('model'),
         'first_section_ms':m.get('first_section_ms'),'app_version':m.get('app_version'),'error_type':m.get('error_type'),
         'offered':m.get('offered'),'llm_ms':m.get('llm_ms'),
+        'side':m.get('side') or ('rm' if rm else 'client'),'role':m.get('role'),'tool_calls':m.get('tool_calls'),'loop_stops':m.get('loop_stops') or {},
+        'refusals':m.get('refusals'),'step_refusals':m.get('step_refusals'),'refused_tools':m.get('refused_tools') or [],'consent_gaps':m.get('consent_gaps'),
         'question':question(run.inputs),'answer':next((out[k][:600] for k in ('answer','summary') if isinstance(out.get(k),str) and out[k]),''),  # RM replies carry a summary
         'sources':[s['id'] for s in out.get('sources') or [] if isinstance(s,dict) and isinstance(s.get('id'),str)][:20]}
 

@@ -27,7 +27,7 @@ def ctx(agent=None,kind='customer') -> RequestContext:
 
 
 def test_every_spec_tool_is_a_registered_tool_with_known_permissions():
-    assert set(SPECS)=={'guide','accounts','security','compliance','relationship','rm_client_insight','rm_service_desk'}
+    assert set(SPECS)=={'guide','accounts','security','compliance','relationship','rm_client','rm_requests','rm_calendar'}
     assert set(registry.CLIENT_SPECS)=={'guide','accounts','security','compliance','relationship'}
     for spec in SPECS.values():
         for tool in spec.tools:
@@ -58,7 +58,7 @@ def test_default_reads_name_real_tool_arguments_and_entities():
 def test_free_text_tools_are_never_loop_tools():
     text={(s.name,t) for s in SPECS.values() for t,v in s.tools.items() if v.free_text}
     assert ('relationship','my_tickets') in text and ('compliance','my_compliance_case') in text
-    assert not any(t in SPECS[a].loop_tools for a,t in text)
+    assert not any(t in SPECS[a].loop_tools for a,t in text if SPECS[a].role!='rm')  # RM loops hide such reads from the step (h_open)
     base=SPECS['relationship'].model_dump()
     with pytest.raises(ValidationError,match='free-text loop tools'):
         AgentSpec.model_validate({**base,'loop_tools':base['loop_tools']|{'my_tickets'}})
@@ -106,8 +106,9 @@ def test_policy_reads_the_spec_for_new_agents():
         c=ctx(agent)
         assert decide(c.principal,allowed,{'customer_id':1001},c).allow, (agent,allowed)
         assert decide(c.principal,forbidden,None,c).reasons==['agent_tool_forbidden'], (agent,forbidden)
-    # Ticket guidance (knowledge_article) is the Service Desk's only knowledge read; Client Insight has none.
-    assert 'kb.search' in registry.permissions(SPECS['rm_service_desk']) and 'kb.search' not in registry.permissions(SPECS['rm_client_insight'])
+    # Ticket guidance (knowledge_article) is the Requests agent's only knowledge read; Client and Calendar have none.
+    assert 'kb.search' in registry.permissions(SPECS['rm_requests'])
+    assert 'kb.search' not in registry.permissions(SPECS['rm_client'])|registry.permissions(SPECS['rm_calendar'])
     c=ctx('security')
     assert decide(c.principal,'card.temporary_block',{'customer_id':1001},c).reasons==['customer_only_action']
     assert decide(c.principal,'card.dispute',{'customer_id':1001},c).reasons==['bank_only_action']
@@ -117,7 +118,7 @@ def test_policy_reads_the_spec_for_new_agents():
 
 
 def test_v4_agents_keep_their_allow_lists_until_the_switch_over():
-    assert registry.ENFORCED=={'guide','accounts','security','rm_client_insight','rm_service_desk'}
+    assert registry.ENFORCED=={'guide','accounts','security','rm_client','rm_requests','rm_calendar'}
     for agent in ('compliance','relationship','retail'):assert registry.spec_for(agent) is None
     c=ctx('compliance')
     assert decide(c.principal,'compliance.update_checklist_item',{'customer_id':1001},c).allow
@@ -141,3 +142,58 @@ def test_tool_calls_outside_the_spec_are_refused_before_any_read(agent,name,args
 def test_agent_output_handoff_shape():
     AgentOutput(task_id='t1',agent='accounts',status='out_of_scope',suggested='relationship')
     with pytest.raises(ValidationError,match='out_of_scope'):AgentOutput(task_id='t1',agent='accounts',status='ok',suggested='relationship')
+
+
+# Build plan 3a: three RM agents split by data class ----------------------------------------------------------------
+RM_DATA={'rm_client_profile','rm_meeting_notes','rm_shared_summary','rm_handover_sources','rm_cash_events','rm_book_facts','rm_review_status',
+    'rm_transaction_insights','rm_talking_points','rm_tickets','rm_ticket','rm_followups','rm_appointments','rm_availability','rm_meeting_requests',
+    'request_categories','knowledge_article'}
+WRITES=('handoff.create','ticket.create','appointment.','consent.','rm.','actions.','agenda.','document.','compliance.update','compliance.answer')
+
+
+def test_every_rm_data_tool_has_exactly_one_owning_agent():
+    rm=registry.RM_SPECS
+    assert set(rm)=={'rm_client','rm_requests','rm_calendar'} and set(registry.RM_OWNER)==RM_DATA
+    for tool in RM_DATA:
+        owners={name for name,spec in rm.items() if tool in spec.tools and tool not in registry.BORROWED.get(name,frozenset())}
+        assert owners=={registry.RM_OWNER[tool]}, tool
+    for name,borrowed in registry.BORROWED.items():  # another class's record, read only as a fixed read, never consent-gated
+        assert borrowed<=set(rm[name].tools) and not borrowed&rm[name].loop_tools and not borrowed&registry.CONSENT_GATED
+        assert all(registry.RM_OWNER[t]!=name for t in borrowed)
+    assert set(registry.BORROWED)=={'rm_requests'}  # the Client and Calendar agents read only their own class
+    assert set(rm['rm_calendar'].tools)=={'rm_appointments','rm_availability','rm_meeting_requests'}  # never client financial data
+    assert all(rm[name].loop_tools<={t for t in rm[name].tools if registry.RM_OWNER.get(t)==name} for name in rm)  # loops read their own class
+
+
+def test_no_loop_reaches_a_consent_gated_or_write_tool():
+    for spec in SPECS.values():
+        assert not spec.loop_tools&registry.CONSENT_GATED, spec.name
+        assert not any(t.startswith(WRITES) or t in KNOWN_TOOLS-set(TOOL_PERMISSION) for t in spec.loop_tools), spec.name
+        assert spec.loop_tools<=set(tools.TOOLS)|spec.external
+    assert not set(SPECS['rm_requests'].tools)&registry.CONSENT_GATED  # the Requests agent never sees consent-gated data
+    assert all(registry.RM_OWNER[t]=='rm_client' for t in registry.CONSENT_GATED)
+    assert not any(spec.offers for spec in registry.RM_SPECS.values())  # RM cards are approved through the /rm routes, never offers
+
+
+def test_gated_reads_take_their_purpose_from_the_intent():
+    purposes={(intent,r.tool):r.fixed for intent,reads in registry.RM_CLIENT.intents.items() for r in reads if r.tool in {'rm_transaction_insights','rm_talking_points'}}
+    assert purposes=={('client_overview','rm_transaction_insights'):{'purpose':'client_view'},('client_overview','rm_talking_points'):{'purpose':'client_view'},
+        ('meeting_brief','rm_transaction_insights'):{'purpose':'meeting_prep'},('meeting_brief','rm_talking_points'):{'purpose':'meeting_prep'}}
+    assert all(not r.entities for reads in registry.RM_CLIENT.intents.values() for r in reads)  # never a model or planner argument
+
+
+def test_book_facts_carry_no_talking_points():
+    assert registry.RM_CLIENT.intents['book_question']==(Read(tool='rm_book_facts'),)
+    assert 'rm_talking_points' not in registry.RM_CLIENT.loop_tools and 'rm_book_facts' not in registry.CONSENT_GATED
+    assert set(inspect.signature(tools.TOOLS['rm_book_facts']).parameters)==set()  # book-wide and never per client topic
+
+
+def test_rm_exports_and_imports_follow_the_plan():
+    rm=registry.RM_SPECS
+    assert set(rm['rm_client'].exports)=={'client_ref','latest_note','reviews_due','clients_due','consent_active'}
+    assert rm['rm_calendar'].exports=={'meetings_next_7d':'list[meeting_ref]'}
+    assert set(rm['rm_requests'].exports)=={'needs_meeting','topics'}
+    assert {'client_ref','latest_note','reviews_due','meetings_next_7d'}<=rm['rm_requests'].imports
+    assert {'needs_meeting','topics'}<=rm['rm_calendar'].imports
+    assert registry.INTENT_AGENT['priorities']=='rm_requests' and registry.INTENT_AGENT['schedule']=='rm_calendar'
+    assert {i for i,a in registry.INTENT_AGENT.items() if a=='rm_calendar'}=={'schedule','meeting_requests','decide_request','availability_change'}

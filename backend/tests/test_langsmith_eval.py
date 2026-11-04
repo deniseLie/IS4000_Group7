@@ -126,8 +126,8 @@ def test_the_consent_fault_reads_the_grant_as_revoked(monkeypatch):
 
 
 def test_agent_counts_may_be_a_range():
-    assert evaluators.counts_match({'rm_client_insight':1,'rm_service_desk':3},{'rm_client_insight':1,'rm_service_desk':'1-5'})
-    assert not evaluators.counts_match({'rm_client_insight':1,'rm_service_desk':6},{'rm_client_insight':1,'rm_service_desk':'1-5'})
+    assert evaluators.counts_match({'rm_client':1,'rm_requests':3},{'rm_client':1,'rm_requests':'1-5'})
+    assert not evaluators.counts_match({'rm_client':1,'rm_requests':6},{'rm_client':1,'rm_requests':'1-5'})
     assert not evaluators.counts_match({'accounts':1,'relationship':1},{'accounts':1})
 
 def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
@@ -148,7 +148,7 @@ def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
     async def rows(rt,message):return [{'intent':'reviews','depends_on':0},{'intent':'draft_message','depends_on':1,'for_each':'clients_due'}]
     monkeypatch.setattr(graph,'model_plan',rows)
     rm=asyncio.run(targets.plan_only(examples['P13']['inputs']))
-    assert [t['agent'] for t in rm['plan']['tasks']]==['rm_client_insight','rm_service_desk'] and rm['plan']['unlinked']==0
+    assert [t['agent'] for t in rm['plan']['tasks']]==['rm_client','rm_requests'] and rm['plan']['unlinked']==0
     assert set(scores(evaluators.checks(rm,examples['P13']['outputs'])).values())=={1}
 
 

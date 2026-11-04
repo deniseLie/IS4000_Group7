@@ -51,8 +51,10 @@ class Trace:
         self.llm_calls=[]  # one dict per model call, for agent.llm_call audit events
         self.agents=[]  # one dict per agent run (names, statuses, counts and ms only), for the root run's summary
         self.tokens=0  # LLM tokens used so far; the gateway enforces the per-request budget
+        self.tools=[]  # one dict per tool call (tool, agent, allowed, reason, shared, category; never arguments or rows)
 
-AGENT_FACTS=('agent','intent','path','status','outcome','tool_calls','wave')
+AGENT_FACTS=('agent','intent','path','status','outcome','tool_calls','wave','stop','refused')
+TOOL_FACTS=('tool','agent','allowed','reason','shared','category')
 WORST=('ok','needs_clarification','needs_human','withheld','timeout','error')  # an agent that ran twice keeps its worst status
 
 @lru_cache
@@ -75,9 +77,18 @@ def request_facts(trace):
     calls=trace.llm_calls
     tokens=[(c.get('input_tokens') or 0)+(c.get('output_tokens') or 0) for c in calls if c.get('input_tokens') is not None]
     models=Counter(c['model'] for c in calls)
+    facts=trace.attrs
+    role=facts.get('role') or (('customer' if facts['authenticated'] else 'guest') if 'authenticated' in facts else None)
+    refused=[t for t in trace.tools if t.get('allowed') is False]
     return {'agents':[a['agent'] for a in trace.agents],'agent_status':status,'model_calls':len(calls),'model_failures':sum(not c['ok'] for c in calls),
         'llm_ms':sum(c.get('ms') or 0 for c in calls),'llm_tokens':sum(tokens) if tokens else None,'model':models.most_common(1)[0][0] if models else None,
-        'prompt_ids':sorted({f"{c['agent']}/{c['prompt_version']}" for c in calls if c.get('agent')}),'app_version':app_version()}
+        'prompt_ids':sorted({f"{c['agent']}/{c['prompt_version']}" for c in calls if c.get('agent')}),'app_version':app_version(),
+        # Build plan 3a: who asked and what the agents did with their tools, so the Agents and Failures pages can filter.
+        'side':facts.get('side') or 'client','role':role,'tool_calls':len(trace.tools),
+        'loop_stops':dict(Counter(x['stop'] for x in trace.agents if x.get('stop'))),
+        'refusals':len(refused)+int(facts.get('plan_route')=='refused'),'step_refusals':sum(x.get('refused') or 0 for x in trace.agents),
+        'refused_tools':sorted({f"{t.get('tool')}:{t.get('reason')}" for t in refused})[:10],
+        'consent_gaps':sum(1 for t in trace.tools if t.get('shared') is False)}
 
 def start_trace():
     trace=Trace()
@@ -113,6 +124,8 @@ def span(name,kind,**attrs):
                 if name=='agent' and attrs.get('agent'):
                     trace.agents.append({**{k:attrs[k] for k in AGENT_FACTS if attrs.get(k) is not None},'ms':round((time.perf_counter()-start)*1000)})
                 elif name=='planner' and attrs.get('route'):trace.attrs.update(plan_route=attrs['route'],tasks=attrs.get('tasks'))
+            if name=='tool_call' and (trace:=current_trace.get()) is not None:
+                trace.tools.append({k:attrs[k] for k in TOOL_FACTS if attrs.get(k) is not None})
 
 def add_span(name,kind,**attrs):
     with span(name,kind,**attrs):pass

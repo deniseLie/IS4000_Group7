@@ -22,7 +22,7 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | 1 | ~~Seam for the meeting side (`0106`, `0107`)~~ **Done 5 Nov 2026**, on hosted | L | – | Delivered |
 | 2a | ~~Meeting requests end to end: client request, RM accept / propose / decline, `care` flag~~ **Done 5 Nov 2026** | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
 | 2b | Remove the Security agent | S–M | 1 | No |
-| 3 | RM copilot: three agents, tracing, daily work | L | 2a | No |
+| 3 | RM copilot: ~~three agents, tracing~~ (3a **done 5 Nov 2026**), daily work | L | 2a | No |
 | 4 | Talking-point pipeline, on seeded consent (`0108`) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
 | 5 | Connect to the meeting graph, evaluate, demo, document | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
 | 6 | Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log (`0109`–`0113`) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
@@ -117,6 +117,14 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 One `rm_planner/v5` and one `rm_assistant/v5` cover both parts.
 
 ### 3a. RM agents split by data, hybrid like the client agents
+
+**Status:** built 5 Nov 2026 (no migration; `rm_planner/v5`, `rm_assistant/v5`). Differences from the plan:
+- RM free-text tools (profile, notes, tickets, meeting requests) are loop tools, but the step model sees only their ids and titles; the answer step reads them as quoted data. The free-text loop check therefore applies to client specs only.
+- Requests holds the profile, notes, availability and appointments as borrowed fixed reads (`BORROWED`), never in its loop; `rm_tasks` is not a tool.
+- Decision and availability cards are built by code (no model).
+- `reviews` exports `reviews_due` as well as `clients_due`.
+- The Failures page lists only loops stopped at the cap or malformed; tool refusals and consent gaps are counted as checks working.
+- No planner cases for the Calendar intents or `open` yet, and no live run of v5.
 
 **Goal:** three RM agents. Each is the only reader of one data class and the only proposer of one kind of change. Each answers known intents with fixed reads (no model step) and anything else with a bounded tool loop. This is the same hybrid the client agents already use: `runner.run_agent` does intent reads, or an `open` loop over `loop_tools` capped by `AGENT_TOOL_CALLS`.
 

@@ -6,6 +6,7 @@ orchestrator and over stdio by external MCP clients (python -m scripts.mcp_serve
 (require_permission), JWT + RLS and audit are applied inside the tool, never by the caller or the model.
 """
 import inspect
+from collections import Counter
 from collections.abc import Awaitable,Callable
 from datetime import date,timedelta
 from contextvars import ContextVar
@@ -304,16 +305,39 @@ async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,An
     """The one way agents call a tool. The transport is a setting; the tool, policy and audit are the same.
     A v5 agent (registry.spec_for) may call only its spec's tools, within its limits, and receives only its field view."""
     if name not in TOOLS:raise KeyError(f'Unknown tool {name}')
-    require_tool(name,ctx)
-    spec=registry.spec_for(ctx.agent)
-    view=(spec.tools.get(name) or ToolView()) if spec is not None else None  # an external tool returns public data whole
-    if view is not None:args=bounded(name,args,view,ctx)
-    token=TOOL_CTX.set(ctx)
-    try:
-        with span('tool_call','tool',tool=name,transport=settings.tool_transport):
+    with span('tool_call','tool',tool=name,agent=ctx.agent,transport=settings.tool_transport) as facts:
+        try:
+            require_tool(name,ctx)
+            spec=registry.spec_for(ctx.agent)
+            view=(spec.tools.get(name) or ToolView()) if spec is not None else None  # an external tool returns public data whole
+            if view is not None:args=bounded(name,args,view,ctx)
+        except PolicyDenied as error:
+            facts.update(allowed=False,reason='limit' if isinstance(error,ToolLimitExceeded) else str(error).rsplit(': ',1)[-1][:40]);raise
+        facts['allowed']=True
+        token=TOOL_CTX.set(ctx)
+        try:
             if settings.tool_transport=='mcp':
                 from app.mcp_server import call_in_process
                 result=await call_in_process(name,args)
             else:result=await TOOLS[name](**args)
-    finally:TOOL_CTX.reset(token)
+        except rm_records.RmDenied:
+            facts.update(allowed=False,reason='not_in_book');raise
+        except PolicyDenied as error:
+            facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1][:40]);raise
+        finally:TOOL_CTX.reset(token)
+        facts.update(result_facts(name,args,result))
     return shaped(result,view) if view is not None else result
+
+
+def result_facts(name: str,args: dict[str,Any],result: Any) -> dict[str,JsonValue]:
+    """The tool_call span's outcome (ids, codes and counts only): rows returned and, for a consent-gated RM read, whether
+    the client shared it, under which category, grant and purpose; talking points also by origin."""
+    if not isinstance(result,dict):return {}
+    rows=result.get('items',result.get('data'))
+    out: dict[str,JsonValue]={'rows':len(rows) if isinstance(rows,list) else int(rows is not None)} if 'items' in result or 'data' in result else {}
+    if 'shared' in result:
+        out.update(shared=result['shared'],category=result.get('category'),grant_id=str(result['grant_id']) if result.get('grant_id') else None,
+            purpose=args.get('purpose'))
+    if name=='rm_talking_points' and isinstance(rows,list):
+        out['origins']=dict(Counter(str(r.get('origin')) for r in rows if isinstance(r,dict)))
+    return out

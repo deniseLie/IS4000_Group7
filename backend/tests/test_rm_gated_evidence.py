@@ -1,6 +1,6 @@
 """Consent-gated RM reads (0106, 0107) become cited evidence or an explicit gap, never an empty record."""
 import inspect
-from app.services.agents.registry import RM_INSIGHT,SPECS,TOOL_PERMISSION
+from app.services.agents.registry import RM_CALENDAR,RM_CLIENT,SPECS,TOOL_PERMISSION
 from app.services.rm import evidence as ev
 from app.services.tools import TOOLS
 
@@ -40,10 +40,10 @@ def test_shared_reads_keep_their_records() -> None:
     assert shared.kind=='record' and shared.data['points'][0]['label']=='ai_suggestion' and 'withheld' not in shared.data
 
 
-def test_the_new_rm_reads_are_registered_tools_of_the_client_agent() -> None:
-    for name in ('rm_transaction_insights','rm_talking_points','rm_meeting_requests'):
-        assert name in TOOLS and name in TOOL_PERMISSION and name in RM_INSIGHT.tools
-    assert RM_INSIGHT.tools['rm_meeting_requests'].free_text  # purposes are the client's own words
+def test_the_new_rm_reads_are_registered_tools_of_their_agents() -> None:
+    for name,spec in (('rm_transaction_insights',RM_CLIENT),('rm_talking_points',RM_CLIENT),('rm_meeting_requests',RM_CALENDAR)):  # build plan 3a
+        assert name in TOOLS and name in TOOL_PERMISSION and name in spec.tools
+    assert RM_CALENDAR.tools['rm_meeting_requests'].free_text  # purposes are the client's own words
 
 
 def test_code_sets_the_purpose_of_a_gated_read_and_no_tool_loop_reaches_one() -> None:

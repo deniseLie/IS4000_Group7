@@ -190,7 +190,7 @@ Judge scores are always labelled **model-graded**. They never decide pass or fai
 
 ### 2.3 Agents: how well each agent handles requests
 
-**One scorecard per agent**: `planner`, `guide`, `accounts`, `security`, `compliance`, `relationship`, `rm_client_insight`, `rm_service_desk`, plus the fixed safety routes as their own row.
+**One scorecard per agent**: `planner`, `guide`, `accounts`, `security`, `compliance`, `relationship`, `rm_client`, `rm_requests`, `rm_calendar` (build plan 3a; previously `rm_client_insight`, `rm_service_desk`), plus the fixed safety routes as their own row.
 
 | Column | Meaning |
 |---|---|

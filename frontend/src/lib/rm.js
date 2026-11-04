@@ -94,7 +94,8 @@ export function receivedText(hours) {
 
 export const REPORT_TITLES={ticket_inbox:'Ticket triage',priorities:'Follow-up priorities',reviews:'Review deadlines',schedule:'Your schedule',
   client_overview:'Client overview',meeting_history:'Meeting history',meeting_brief:'Meeting briefing',ticket_summary:'Ticket summary',
-  draft_message:'Client message',document_interaction:'Interaction record',actions_from_note:'Follow-up actions',handover_brief:'Handover brief',book_question:'Across your book',help:'RM assistant'};
+  draft_message:'Client message',document_interaction:'Interaction record',actions_from_note:'Follow-up actions',handover_brief:'Handover brief',book_question:'Across your book',help:'RM assistant',
+  open:'From your records',meeting_requests:'Meeting requests',decide_request:'Answer a meeting request',availability_change:'Your availability'};
 
 // A reply as plain text with numbered references and a source list (for Copy).
 export function reportText(reply,client) {
@@ -231,6 +232,19 @@ export function decisionNotice(result) {
   if(r.status==='countered')return `${again}You proposed ${r.meeting?.when} to ${r.client}. The time is held for the client until ${r.meeting?.hold_expires}.`;
   if(r.status==='declined')return `${again}You declined ${r.client}’s request${reason?` (${reason})`:''}. The client gets an Inbox notice.`;
   return `${again}${r.client}’s request: ${requestLabel(r)}.`;
+}
+// The Calendar agent's availability card as the Schedule page's calls, in order: blocks, blocks opened again, weekly hours.
+export function availabilitySteps(card) {
+  if(!card)return [];
+  return [...(card.blocks||[]).map(b=>({method:'POST',path:'/availability/blocks',body:{starts_at:b.starts_at,ends_at:b.ends_at,reason:'Unavailable'},label:`Block ${b.when}`})),
+    ...(card.removals||[]).map(r=>({method:'DELETE',path:`/availability/blocks/${encodeURIComponent(r.block_id)}`,label:`Open ${r.when} again`})),
+    ...(card.hours||[]).map(h=>({method:'PUT',path:'/availability/hours',body:{weekday:h.weekday,starts:h.starts||null,ends:h.starts?h.ends:null},
+      label:`${h.day}: ${h.starts?`${h.starts} – ${h.ends}`:'not working'} (now ${h.current})`}))];
+}
+export function runStep(step,token) {return step.method==='POST'?rmPost(step.path,step.body,token):step.method==='PUT'?rmPut(step.path,step.body,token):rmDelete(step.path,token);}
+export function availabilityNotice(card) {
+  if(card?.kind==='hours')return 'Working hours saved. Clients can book only inside them.';
+  return card?.kind==='unblock'?'Opened again. Clients can book these times.':'Blocked. Clients can no longer book these times.';
 }
 export function moveNotice(result,client) {
   return `${result?.replayed?'Already recorded. ':''}${client}’s meeting moved to ${result?.when}. The client gets an Inbox notice.`;

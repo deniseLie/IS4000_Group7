@@ -3,16 +3,20 @@
 api/rm.py runs it only for a verified `rm` login (rm_caller); a client never reaches it.
 
 - planner: a fixed book check first (anyone outside the RM's book is refused and audited before any record is read or
-  the model is called, R06); then a workspace button's intent, or one rm_planner/v4 call. Each intent belongs to one
-  agent (registry.INTENT_AGENT), so the model never picks an agent; orchestrator.linked drops a link the specs do not
-  declare.
+  the model is called, R06); then a workspace button's intent, or one rm_planner/v5 call. Each intent belongs to one of
+  the three agents (Client, Requests, Calendar; registry.INTENT_AGENT), so the model picks an agent only for an `open`
+  question; orchestrator.linked drops a link the specs do not declare.
 - agent: resolves the client, ticket or meeting against the book with the RM's own context, then runs the intent's
-  handler (rm/handlers.py) with the agent's context, so the tool layer allows only that spec's tools. Exports are
-  computed here by code from what the handler read: `clients_due` (reviews due in the asked period, overdue ones
-  included), `latest_note` (the client's latest saved note) and `consent_active` (the handover read's consent check).
+  handler (rm/handlers.py) with the agent's context, so the tool layer allows only that spec's tools. An `open` task runs
+  the runner's bounded loop over the spec's loop_tools (handlers.h_open, build plan 3a). Exports are computed here by
+  code from what the handler read (exports_for), never by the model.
 - gather: orchestrator.gather unchanged (conditions, fan-out of at most 5 with "first 5 of N", fixed skip wording).
 - compose: one task's reply is returned as it is (the workspace reply shape the UI already shows); several are merged
   in plan order: sections in order, every draft as a review card, sources and checks added up.
+
+Tracing (build plan 3a): the planner, agent, loop_step, tool_call, gather and compose spans carry ids, codes and counts
+only (side, source, tasks, refusal, path, stop reason, evidence ids, exports, cards); client text reaches LangSmith only
+through the redacting client.
 
 The assistant never writes: drafts, documentation and proposed actions are review cards the RM approves one by one
 through the separate write routes, so the RM graph has no `act` node and saves no client offers.
@@ -26,7 +30,7 @@ from langgraph.graph import END,START,StateGraph
 from langgraph.runtime import Runtime
 from app.core.observability import span
 from app.schemas.chat import Message
-from app.schemas.contracts import AgentOutput,Export,PlanTask,RequestContext
+from app.schemas.contracts import OPEN_INTENT,AgentOutput,Export,PlanTask,RequestContext
 from app.schemas.events import AnswerSection
 from app.schemas.rm import RmAssistantRequest
 from app.services import llm_gateway,orchestrator,prompts,tools
@@ -36,7 +40,7 @@ from app.services.rm import evidence as ev
 from app.services.rm import handlers
 from app.services.rm.handlers import Say,capability_refusal,clarify,refusal,today
 
-PLANNER_VERSION='v4'
+PLANNER_VERSION='v5'
 MAX_TASKS=5
 SEVERAL='Here are the parts of your request in order. Review each draft or proposal on its own: nothing goes to a client and nothing is saved or created until you approve it.'
 
@@ -67,7 +71,9 @@ class RmTurn(TypedDict,total=False):
 
 def plan_schema() -> dict:
     o=handlers._obj
-    task=o({'intent':{'type':'string','enum':sorted(registry.INTENT_AGENT)},'client_name':handlers.S,'uses_active_client':{'type':'boolean'},
+    task=o({'intent':{'type':'string','enum':[*sorted(registry.INTENT_AGENT),OPEN_INTENT]},
+        'agent':{'type':'string','enum':['',*sorted(n for n,s in registry.RM_SPECS.items() if s.loop_tools)]},  # for `open` only
+        'client_name':handlers.S,'uses_active_client':{'type':'boolean'},
         'ticket_ref':handlers.S,'draft_scope':{'type':'string','enum':['client','ticket']},'appointment_hint':handlers.S,'is_new_notes':{'type':'boolean'},
         'depends_on':{'type':'integer','minimum':0,'maximum':MAX_TASKS},'condition':handlers.S,'for_each':handlers.S})
     return {'title':'rm_plan',**o({'tasks':{'type':'array','items':task},'clarification_question':handlers.S})}
@@ -89,18 +95,20 @@ async def model_plan(rt: RmRuntime,message: str) -> list[dict]:
 
 
 def tasks_from(rows: list[dict],message: str) -> list[PlanTask]:
-    """Model rows → tasks: the agent comes from the intent, depends_on is the 1-based number of another row (0: none)."""
+    """Model rows → tasks: the agent comes from the intent (an `open` row names one of the three agents), depends_on is the
+    1-based number of another row (0: none)."""
     rows=rows or [{'intent':'help'}]
     def text(row: dict,key: str) -> str:return value.strip()[:80] if isinstance(value:=row.get(key),str) else ''
     plan=[]
     for i,row in enumerate(rows):
-        intent=row.get('intent') if row.get('intent') in registry.INTENT_AGENT else 'help'
+        is_open=row.get('intent')==OPEN_INTENT and row.get('agent') in registry.RM_SPECS and registry.RM_SPECS[row['agent']].loop_tools
+        intent=OPEN_INTENT if is_open else row.get('intent') if row.get('intent') in registry.INTENT_AGENT else 'help'
         n=row.get('depends_on')
         up=f't{n}' if isinstance(n,int) and not isinstance(n,bool) and 1<=n<=len(rows) and n!=i+1 else None
         entities={'client_name':text(row,'client_name'),'uses_active_client':bool(row.get('uses_active_client')),
             'ticket_ref':text(row,'ticket_ref'),'draft_scope':'ticket' if row.get('draft_scope')=='ticket' else 'client',
             'appointment_hint':text(row,'appointment_hint'),'is_new_notes':bool(row.get('is_new_notes'))}
-        plan.append(PlanTask(id=f't{i+1}',agent=registry.INTENT_AGENT[intent],intent=intent,question=message,entities=entities,
+        plan.append(PlanTask(id=f't{i+1}',agent=row['agent'] if is_open else registry.INTENT_AGENT[intent],intent=intent,question=message,entities=entities,
             **({'depends_on':up,'condition':text(row,'condition')[:40] or None,'for_each':text(row,'for_each')[:40] or None} if up else {})))
     # R23: a handover brief whose client note is a dependent step leaves the note to that step (shown once, under consent).
     noted={t.depends_on for t in plan if t.intent=='shared_note'}
@@ -110,53 +118,76 @@ def tasks_from(rows: list[dict],message: str) -> list[PlanTask]:
 async def planner(state: RmTurn,runtime: Runtime[RmRuntime]) -> dict:
     rt=runtime.context
     message,_=redact(rt.req.message)
-    with span('planner','agent',side='rm') as attrs:
+    with span('planner','agent',side='rm',source='rule') as attrs:
         await rt.say('Checking your client book…')
         rt.book=(await tools.call('rm_book',{},rt.ctx))['data']
         turn=handlers.Turn(rt.req,rt.ctx,rt.say,book=rt.book)
         active=rt.req.context.client_id
         if active is not None and turn.name(active) is None:  # the selected client has left her book
-            attrs['route']='refused'
+            attrs.update(route='refused',refusal='left_book')
             return {'tasks':[],'lines':[],'reply':refusal(turn.context(None))}
         named=await tools.call('rm_match_clients',{'text':message},rt.ctx)
         rt.named,rt.outside=named['in_book'],bool(named['outside_book'])
+        attrs.update(named_in_book=len(rt.named),named_outside=len(named['outside_book']))
         if named['outside_book'] and not named['in_book']:
-            attrs['route']='refused'
+            attrs.update(route='refused',refusal='outside_book')
             return {'tasks':[],'lines':[],'reply':refusal(turn.context(active))}
         if (restricted:=capability_refusal(message,turn.context(active))) is not None:  # specialist notes, ticket status, card actions
-            attrs['route']='refused'
+            attrs.update(route='refused',refusal='capability')
             return {'tasks':[],'lines':[],'reply':restricted}
         if rt.req.intent:
-            attrs['route']='button'
+            attrs.update(route='button',source='button')
             tasks=[PlanTask(id='t1',agent=registry.INTENT_AGENT[rt.req.intent],intent=rt.req.intent,question=message,
                 entities={'client_name':'','uses_active_client':True,'ticket_ref':'','appointment_hint':message,
                     'draft_scope':'ticket' if rt.req.context.ticket_ref else 'client',
                     'is_new_notes':rt.req.intent=='document_interaction' and rt.req.context.documentation is None,'button':True})]
         else:
-            attrs['route']='model'
+            attrs.update(route='model',source='model')
             tasks=tasks_from(await model_plan(rt,message),message)
-        tasks,lines=orchestrator.linked(tasks,rt.req)
+        tasks,lines=orchestrator.linked(tasks,rt.req,attrs)
         if len(tasks)>1:tasks=[t.model_copy(update={'entities':{**t.entities,'several':True}}) for t in tasks]
         attrs['tasks'],attrs['dependent']=len(tasks),sum(1 for t in tasks if t.depends_on)
+        attrs['plan']=orchestrator.plan_facts(tasks)
     return {'tasks':tasks,'lines':lines}
 
 
 # ---- Agents ----
 
-def exports_for(intent: str,turn: handlers.Turn) -> dict[str,Export]:
-    """Small values computed by code from what the handler read (§14.6 rule 4), never by the model."""
+def exports_for(intent: str,turn: handlers.Turn,client_id: int|None=None) -> dict[str,Export]:
+    """Small values computed by code from what the handler read (§14.6 rule 4), never by the model. Only the agent's
+    own declared exports leave it (agent() filters by spec.exports); an `open` task exports from what its loop read.
+    Never transaction, talking-point or note content: references, dates, counts and codes only."""
     reads,found=turn.reads,{}
-    if intent=='reviews' and (rows:=reads.get('rm_review_status')) is not None:
+    if intent in ('reviews',OPEN_INTENT) and (rows:=reads.get('rm_review_status')) is not None:
         period=ev.asked_period(turn.message,today())
         end=period[1] if period else today()+timedelta(days=30)
         due=[{'customer_id':r['customer_id'],'name':r['client'],'due_date':str(r['due_date'])} for r in rows['data']
             if r.get('due_date') and date.fromisoformat(str(r['due_date'])[:10])<=end]  # an overdue review is still due
-        found['clients_due']=Export(value=due,source_ids=[f"review-{r['customer_id']}" for r in due] or ['reviews-none'])
-    if intent in ('meeting_brief','meeting_history') and (notes:=reads.get('rm_meeting_notes')) is not None and notes['data']['notes']:
+        for name in ('clients_due','reviews_due'):found[name]=Export(value=due,source_ids=[f"review-{r['customer_id']}" for r in due] or ['reviews-none'])
+    if intent in ('meeting_brief','meeting_history',OPEN_INTENT) and (notes:=reads.get('rm_meeting_notes')) is not None and notes['data']['notes']:
         found['latest_note']=Export(value=str(notes['data']['notes'][0]['note_id']),source_ids=[ev.note_ids(notes['data']['notes'])[0]])
     if intent=='handover_brief' and (sources:=reads.get('rm_handover_sources')) is not None and sources['data'].get('eligible'):
         found['consent_active']=Export(value=bool((sources['data'].get('shared') or {}).get('consent_active')),source_ids=['consent-status'])
+    if client_id and (profile:=reads.get('rm_client_profile')) is not None:
+        found['client_ref']=Export(value={'customer_id':client_id,'name':turn.name(client_id)},source_ids=['profile'])
+        tickets=profile['data'].get('tickets') or []
+        confirmed=[a for a in profile['data'].get('appointments') or [] if a.get('status')=='confirmed']
+        found['needs_meeting']=Export(value=bool(tickets) and not confirmed,source_ids=['profile'])  # open requests and no meeting booked
+        found['topics']=Export(value=sorted({str(t['category']) for t in tickets if t.get('category')}),source_ids=[f"ticket-{t['reference']}" for t in tickets] or ['profile'])
+    if (rows:=reads.get('rm_appointments')) is not None and intent in ('schedule',OPEN_INTENT):
+        week=today()+timedelta(days=7)
+        soon=[{'appointment_id':str(a['appointment_id']),'customer_id':a['customer_id'],'name':a.get('client'),'starts_at':str(a['starts_at'])}
+            for a in rows['data'] if a.get('status')=='confirmed' and date.fromisoformat(str(a.get('date') or str(a['starts_at'])[:10]))<=week]
+        found['meetings_next_7d']=Export(value=soon,source_ids=['appointments'])
     return found
+
+
+def cards_of(reply: dict) -> dict[str,int]:
+    """The review cards a reply proposes, by type (each is approved separately through the /rm write routes)."""
+    found={'draft':int(bool(reply.get('draft')))+len(reply.get('drafts') or []),'documentation':int(bool(reply.get('documentation'))),
+        'decision':int(bool(reply.get('decision'))),'availability':int(bool(reply.get('availability')))}
+    if (doc:=reply.get('documentation')) and isinstance(doc.get('draft'),dict):found['actions']=len(doc['draft'].get('actions') or [])
+    return {k:v for k,v in found.items() if v}
 
 
 def status_of(reply: dict) -> str:
@@ -171,7 +202,8 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
     plan={'intent':task.intent,'client_name':e.get('client_name') or '','uses_active_client':bool(e.get('uses_active_client')),
         'ticket_ref':e.get('ticket_ref') or '','draft_scope':e.get('draft_scope') or 'client','appointment_hint':e.get('appointment_hint') or '',
         'is_new_notes':bool(e.get('is_new_notes')),'shared':e.get('shared',True),'fan_out':isinstance(e.get('item'),dict)}
-    with span('agent','agent',agent=spec.name,intent=task.intent,wave=2 if task.depends_on else 1) as facts:
+    with span('agent','agent',agent=spec.name,intent=task.intent,wave=2 if task.depends_on else 1,side='rm',
+            path='loop' if task.intent==OPEN_INTENT else 'reads') as facts:  # 'rule' when the book check or resolution answers first
         if plan['fan_out']:  # one client from the upstream's list; checked against the book again
             client_id=e['item'].get('customer_id')
             stop=None if any(c['customer_id']==client_id for c in rt.book) else refusal(turn.context(None))
@@ -183,13 +215,17 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
             if rt.req.intent and rt.req.context.client_id and not client_id:client_id=rt.req.context.client_id
         if 'latest_note' in inputs and client_id:  # R22: follow-ups from the note the brief read
             turn.req=rt.req.model_copy(update={'context':rt.req.context.model_copy(update={'client_id':client_id,'note_id':inputs['latest_note'].value})})
-        reply=stop or await handlers.HANDLERS[task.intent](turn,plan,client_id)
-        facts['status']=status_of(reply)
+        if stop:reply=stop
+        elif task.intent==OPEN_INTENT:reply=await handlers.h_open(turn,plan,client_id,spec,inputs,facts)
+        else:reply=await handlers.HANDLERS[task.intent](turn,plan,client_id)
+        status=status_of(reply)
+        exports={k:v for k,v in exports_for(task.intent,turn,client_id).items() if k in spec.exports} if status=='ok' else {}
+        facts.update(status=status,reads=sorted(turn.reads),evidence=[s.get('id') for s in reply.get('sources') or []][:40],export_names=sorted(exports),
+            cards=cards_of(reply),withheld=(reply.get('validation') or {}).get('withheld',0),origin=reply.get('origin'))
+        if stop:facts['path']='rule'
     rt.prompt_ids+=turn.prompt_ids
     reply=json.loads(json.dumps(reply,ensure_ascii=False,default=str))
     if plan['fan_out']:reply['client']=e['item'].get('name')
-    status=status_of(reply)
-    exports={k:v for k,v in exports_for(task.intent,turn).items() if k in spec.exports} if status=='ok' else {}
     return {'outputs':[AgentOutput(task_id=task.id,agent=task.agent,status=status,origin='ai' if reply.get('origin')=='ai' else 'safety',
         exports=exports,reply=reply,prompt_id=turn.prompt_ids[-1] if turn.prompt_ids else None)]}
 
@@ -226,12 +262,18 @@ def merged(rows: list[tuple[PlanTask,AgentOutput]],lines: list[AnswerSection]) -
         'sections':sections,'clarification':None,'context':context,'sources':list(sources.values()),
         'validation':{'checked':checked,'withheld':withheld,'reasons':list(dict.fromkeys(reasons))[:10]},
         'origin':'ai' if any(r.get('origin')=='ai' for _,r in replies) else 'records','draft':drafts[0] if len(drafts)==1 else None,
-        'drafts':drafts if len(drafts)>1 else [],'documentation':next((r['documentation'] for _,r in replies if r.get('documentation')),None)}
+        'drafts':drafts if len(drafts)>1 else [],'documentation':next((r['documentation'] for _,r in replies if r.get('documentation')),None),
+        **{card:found for card in ('decision','availability') if (found:=next((r[card] for _,r in replies if r.get(card)),None))}}
 
 
 def compose(state: RmTurn) -> dict:
     if state.get('reply') is not None:return {}
-    return {'reply':merged(orchestrator.ordered(state),state.get('lines') or [])}
+    rows,lines=orchestrator.ordered(state),state.get('lines') or []
+    with span('compose','decision',side='rm') as facts:
+        reply=merged(rows,lines)
+        facts.update(sections=[{'task':t.id,'agent':t.agent,'intent':t.intent,'status':o.status} for t,o in rows],fixed_lines=len(lines),
+            cards=cards_of(reply),merged=len(rows)>1 or bool(lines),status=reply.get('status'))
+    return {'reply':reply}
 
 
 def build_graph():

@@ -53,7 +53,7 @@ PLANNED_AGENTS=('rm_assistant',)
 PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
 # v5 (architecture §14, §5.6.1): graph cases also name the tools still to build; the RM agents are built (phase 9).
 V5_NODES=NODES
-V5_AGENTS=get_args(TargetAgent)  # the built v5 agents (phase 9 added the two RM agents)
+V5_AGENTS=get_args(TargetAgent)  # the built v5 agents (phase 9 added the RM agents; 3a split them into three)
 V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')
 FAULTS=('external_down','upstream_withheld','receipt_failed','consent_revoked')
 

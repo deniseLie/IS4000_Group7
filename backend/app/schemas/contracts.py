@@ -11,7 +11,7 @@ Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 's
 AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
 # v5 agents (architecture §5.6.1): five client agents and two RM agents (phase 9). `compliance` and `relationship` keep
 # their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still calls the v4 responders under these names.
-TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship', 'rm_client_insight', 'rm_service_desk']
+TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship', 'rm_client', 'rm_requests', 'rm_calendar']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py
@@ -157,7 +157,8 @@ OPEN_INTENT = 'open'  # the planner found no listed intent: the agent chooses it
 QUESTION = 'question'  # pseudo-entity: the task's own question, e.g. as a knowledge_search query
 ToolName = str  # a model-facing tool in services/tools.TOOLS
 # Export types (§14.6, phase 7): small values computed by code, never raw rows, balances or free text.
-EXPORT_TYPES = frozenset({'bool', 'date', 'reference', 'label', 'list[date]', 'list[account_ref]', 'list[client_ref]'})  # client_ref: RM side, code only
+EXPORT_TYPES = frozenset({'bool', 'date', 'reference', 'label', 'list[date]', 'list[label]', 'list[account_ref]', 'client_ref', 'list[client_ref]',
+    'list[meeting_ref]'})  # client_ref, meeting_ref: RM side, code only
 
 
 class ToolView(Contract):
@@ -165,7 +166,8 @@ class ToolView(Contract):
     fields: frozenset[str] | None = None  # None: the whole record
     max_days: int | None = Field(default=None, gt=0)  # oldest record, counted back from today
     max_rows: int | None = Field(default=None, gt=0)
-    free_text: bool = False  # returns text written by other people (ticket messages, notes): a default read only
+    free_text: bool = False  # returns text written by other people (ticket messages, notes): a default read only, except in an
+    # RM loop, whose step model sees only the ids and counts of such a read (runner.loop `hidden`; build plan 3a)
 
 
 class Read(Contract):
@@ -200,11 +202,12 @@ class AgentSpec(Contract):
     def _consistent(self):
         reads = {read.tool for reads in self.intents.values() for read in reads}
         if missing := (reads | self.loop_tools) - set(self.tools) - self.external:raise ValueError(f'{self.name}: tools not in its spec: {sorted(missing)}')
-        if text := sorted(t for t in self.loop_tools if t in self.tools and self.tools[t].free_text):raise ValueError(f'{self.name}: free-text loop tools {text}')
+        if self.role != 'rm' and (text := sorted(t for t in self.loop_tools if t in self.tools and self.tools[t].free_text)):
+            raise ValueError(f'{self.name}: free-text loop tools {text}')
         if OPEN_INTENT in self.intents:raise ValueError(f'{self.name}: {OPEN_INTENT!r} is not a listed intent')
         if self.scope == 'public' and self.offers:raise ValueError(f'{self.name}: a public agent makes no offers')
         if bad := sorted(n for n, t in self.exports.items() if t not in EXPORT_TYPES):raise ValueError(f'{self.name}: unknown export types {bad}')
-        if bad := sorted(n for n, t in self.exports.items() if t.startswith('list[') and t != 'list[date]' and n not in self.sort_by):
+        if bad := sorted(n for n, t in self.exports.items() if t.startswith('list[') and t not in {'list[date]', 'list[label]'} and n not in self.sort_by):
             raise ValueError(f'{self.name}: list exports without a sort field {bad}')
         return self
 

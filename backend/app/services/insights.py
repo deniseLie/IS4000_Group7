@@ -12,6 +12,7 @@ FIXED_ROUTES=frozenset({'secrets','lost_card','human_support','guest_balance','o
 BAD_AGENT=('withheld','timeout','error')  # needs_human and needs_clarification are intended outcomes, not failures
 STATUSES=('pass','fail','error','skipped')
 NODES=('planner','agent','gather','act','compose')
+LOOP_STOPS=('cap','malformed')  # a loop that stopped before the model answered (build plan 3a)
 # Starting thresholds for "needs attention"; the team tunes them.
 HELD_BACK_MAX,ERROR_RATE_MAX,P95_MAX_S,STALE_DAYS,MIN_RUNS=0.15,0.02,30.0,7,3
 LEVELS=('high','medium','info')
@@ -180,6 +181,9 @@ def events(rows: list[dict],steps: list[dict],experiments: list[dict],since: dat
             if status in BAD_AGENT:
                 found.append(base('agent_'+status,s['source'],s['trace_id'],s['started_at'],agent=m['agent'],error=m.get('error_type') or status,
                     detail=f"intent {m['intent']}"+(f", path {m['path']}" if m.get('path') else ''),step_id=s['run_id']));covered.add(s['trace_id'])
+            elif m.get('stop') in LOOP_STOPS:  # build plan 3a: the reply says it could not answer fully
+                found.append(base('loop_'+m['stop'],s['source'],s['trace_id'],s['started_at'],agent=m['agent'],error=m['stop'],
+                    detail=f"intent {m['intent']}, {m.get('tool_calls')} of {m.get('limit')} reads",step_id=s['run_id']))
         elif s['name']=='llm' and m.get('prompt_version') and m.get('outcome') not in (None,'ok'):
             found.append(base('model_call',s['source'],s['trace_id'],s['started_at'],agent=m.get('agent'),prompt=f"{m.get('agent')} {version(m['prompt_version'])}",
                 error=m['outcome'],detail=', '.join(filter(None,[m.get('cause'),f"{m['retries']} retries" if m.get('retries') else None,m.get('model')])) or None,step_id=s['run_id']))
@@ -219,7 +223,7 @@ def signature(e: dict) -> str:
 def title(e: dict) -> str:
     who=e.get('agent') or e.get('tool') or ''
     return {'request_error':f"Request failed: {e['error']}",'held_back':f"Answer held back by the checks ({e['error']})",
-        'agent_withheld':f"{who} withheld its answer",'agent_timeout':f"{who} timed out",'agent_error':f"{who} failed: {e['error']}",
+        'agent_withheld':f"{who} withheld its answer",'loop_cap':f"{who} reached its read limit",'loop_malformed':f"{who} could not finish its lookup",'agent_timeout':f"{who} timed out",'agent_error':f"{who} failed: {e['error']}",
         'model_call':f"Model call {e['error']} in {e.get('prompt')}",'tool_error':f"Tool {who} failed: {e['error']}",
         'eval_case':f"{e['case_id']} failing in {e['dataset']}"}.get(e['kind'],e['kind'])
 
@@ -243,13 +247,31 @@ def groups(found: list[dict],since: datetime,experiments: list[dict] | None=None
     return sorted((g for g in out.values() if g['in_window']),key=lambda g:g['last_seen'],reverse=True)
 
 
-def failures(rows: list[dict],steps: list[dict],experiments: list[dict],now: datetime,days: int,source: str) -> dict[str,Any]:
+def on_side(rows: list[dict],steps: list[dict],side: str | None) -> tuple[list[dict],list[dict]]:
+    """Requests and steps of one side ('client' or 'rm'; anything else keeps both). A step goes with its request's side, or,
+    when its request was not read, with its own: an RM agent's name or the side its span records."""
+    if side not in ('client','rm'):return rows,steps
+    sides={r['trace_id']:r.get('side') or ('rm' if r.get('surface')=='rm' else 'client') for r in rows}
+    own=lambda s:'rm' if str(s['meta'].get('agent') or '').startswith('rm_') else s['meta'].get('side')
+    return [r for r in rows if sides[r['trace_id']]==side],[s for s in steps if (sides.get(s['trace_id']) or own(s) or 'client')==side]
+
+
+def refusal_counts(steps: list[dict],since: datetime) -> dict[str,Any]:
+    """Tool refusals by tool and reason, loop stops and consent gaps (counts only; refusals are the checks working)."""
+    tools=[s for s in own_spans(steps,'tool_call') if s['started_at']>=since]
+    return {'tool_refusals':dict(Counter(f"{s['meta'].get('tool')}: {s['meta'].get('reason') or 'refused'}" for s in tools if s['meta'].get('allowed') is False)),
+        'loop_stops':dict(Counter(s['meta']['stop'] for s in agent_runs(steps) if s['meta'].get('stop') and s['started_at']>=since)),
+        'consent_gaps':dict(Counter(s['meta'].get('category') or 'unknown' for s in tools if s['meta'].get('shared') is False))}
+
+
+def failures(rows: list[dict],steps: list[dict],experiments: list[dict],now: datetime,days: int,source: str,side: str | None=None) -> dict[str,Any]:
     since=now-timedelta(days=days)
+    rows,steps=on_side(rows,steps,side)
     found=events(rows,steps,experiments,since-timedelta(days=days),with_eval=source in ('eval','all'))
     found=[e for e in found if source=='all' or e['source']==source]
     grouped=groups(found,since,experiments)
     refused=sum(1 for s in steps if s['name']=='planner' and s['meta'].get('route')=='refused' and s['started_at']>=since)
-    return {'window_days':days,'source':source,'groups':grouped,'refusals':refused,
+    return {'window_days':days,'source':source,'side':side or 'all','groups':grouped,'refusals':refused,**refusal_counts(steps,since),
         'counts':dict(Counter(g['source'] for g in grouped for _ in range(g['in_window'])))}
 
 
@@ -534,7 +556,7 @@ def card(detail: dict) -> dict[str,Any]:
 
 # ---- Agents (§2.3) ----
 
-AGENT_ORDER=('guide','accounts','security','compliance','relationship','rm_client_insight','rm_service_desk')
+AGENT_ORDER=('guide','accounts','security','compliance','relationship','rm_client','rm_requests','rm_calendar')
 LAT_EDGES=(2,5,10,20,30,60)  # seconds; histogram buckets of request latency
 
 
@@ -562,7 +584,7 @@ def timing(values) -> dict[str,Any]:
     return {'n':len(xs),'p50_s':pct(xs,.5),'p95_s':pct(xs,.95)}
 
 
-def scorecard(agent: str,runs: list[dict],total: int,cases: list[dict],family: str | None,live: str | None) -> dict[str,Any]:
+def scorecard(agent: str,runs: list[dict],total: int,cases: list[dict],family: str | None,live: str | None,tools: list[dict] | None=None) -> dict[str,Any]:
     loops=[s for s in runs if s['meta'].get('path')=='loop']
     statuses=Counter(agent_status(s) for s in runs)
     return {'agent':agent,'side':'rm' if agent.startswith('rm_') else 'client','runs':len(runs),
@@ -570,6 +592,8 @@ def scorecard(agent: str,runs: list[dict],total: int,cases: list[dict],family: s
         'bad_rate':ratio(sum(statuses.get(k,0) for k in BAD_AGENT),len(runs)),
         'paths':dict(Counter(s['meta'].get('path') or 'handler' for s in runs)),  # RM agents run one handler per intent
         'tool_calls_per_loop':mean(s['meta'].get('tool_calls') for s in loops),'refused':sum(s['meta'].get('refused') or 0 for s in loops),
+        'stops':dict(Counter(s['meta']['stop'] for s in loops if s['meta'].get('stop'))),  # answered, cap, malformed, timeout, error
+        'tool_refusals':sum(t['meta'].get('allowed') is False for t in tools or []),'consent_gaps':sum(t['meta'].get('shared') is False for t in tools or []),
         'evidence_per_answer':mean(s['meta'].get('evidence_count') for s in runs),
         'exports':sum(s['meta']['exports'] for s in runs if isinstance(s['meta'].get('exports'),int)),
         **timing(s['latency_s'] for s in runs),'prompt':family,'live_prompt':live,'eval_cases':len(cases),'eval_pass_rate':pass_rate(cases)}
@@ -639,16 +663,19 @@ def knowledge_panel(steps: list[dict]) -> dict[str,Any]:
         'embed_ms_p50':pct([s['meta'].get('embed_ms') for s in found],.5),'sql_ms_p50':pct([s['meta'].get('sql_ms') for s in found],.5)}
 
 
-def agents(rows: list[dict],steps: list[dict],experiments: list[dict],prompt_of: dict[str,str],in_use: dict[str,str]) -> dict[str,Any]:
+def agents(rows: list[dict],steps: list[dict],experiments: list[dict],prompt_of: dict[str,str],in_use: dict[str,str],side: str | None=None) -> dict[str,Any]:
     """One scorecard per agent, the fixed safety routes, and the planner, gather, offers, tools and knowledge-search panels."""
-    runs=defaultdict(list)
+    rows,steps=on_side(rows,steps,side)
+    runs,tools=defaultdict(list),defaultdict(list)
     for s in agent_runs(steps):runs[s['meta']['agent']].append(s)
+    for s in own_spans(steps,'tool_call'):tools[s['meta'].get('agent')].append(s)
     total=len({r['trace_id'] for r in rows}) or len({s['trace_id'] for s in steps})
     cases=[c for e in experiments for c in e['cases']]
     names=[a for a in AGENT_ORDER if a in runs]+sorted(a for a in runs if a not in AGENT_ORDER)
     fixed=Counter(r['route'] for r in rows if r.get('route') in FIXED_ROUTES)
     return {'requests':len(rows),
-        'agents':[scorecard(a,runs[a],total,[c for c in cases if a in (c.get('agents') or {})],prompt_of.get(a),in_use.get(prompt_of.get(a))) for a in names],
+        'agents':[scorecard(a,runs[a],total,[c for c in cases if a in (c.get('agents') or {})],prompt_of.get(a),in_use.get(prompt_of.get(a)),tools[a]) for a in names],
+        'side':side or 'all',
         'fixed_routes':{'requests':sum(fixed.values()),'share':ratio(sum(fixed.values()),len(rows)),'routes':dict(fixed)},
         'planner':planner_panel(steps,experiments),'gather':gather_panel(steps),'offers':offers_panel(rows,steps),
         'tools':tool_rows(steps),'knowledge':knowledge_panel(steps)}

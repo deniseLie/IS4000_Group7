@@ -1,7 +1,8 @@
 import {useState} from 'react';
 import Icon from '../Icon';
 import {formatDateTime} from '../../lib/format';
-import {KINDS,SOURCES,filterGroups,firstLine,kindCounts,loadFailure,loadFailures,seconds} from '../../lib/admin';
+import {KINDS,SOURCES,filterGroups,firstLine,kindCounts,loadFailure,loadFailures,seconds,tally} from '../../lib/admin';
+import {SidePicker} from './AgentsPage';
 import {History} from './charts';
 import {WindowPicker} from './OverviewPage';
 import {Failed,Loading,Page,Status,useLoad} from './shared';
@@ -13,7 +14,7 @@ function ErrorText({text}) {
   return head===text.trim()?<span className="admin-mono">{head}</span>:
     <details className="admin-error"><summary className="admin-mono">{head}</summary><pre className="admin-answer admin-mono">{text}</pre></details>;
 }
-const TONE={held_back:'withheld',agent_withheld:'withheld',agent_timeout:'timeout'};
+const TONE={held_back:'withheld',agent_withheld:'withheld',agent_timeout:'timeout',loop_cap:'withheld'};
 const yesNo=value=>value===true?'yes':value===false?'no':value;
 
 // Everything needed to debug one failing request or evaluation case without opening LangSmith.
@@ -111,16 +112,18 @@ function Group({group,open,onToggle,chosen,onChoose}) {
 export default function FailuresPage({filter}) {
   const [range,setRange]=useState('7d');
   const [source,setSource]=useState('all');
+  const [side,setSide]=useState('all');
   const [kind,setKind]=useState('');
   const [text,setText]=useState('');
   const [open,setOpen]=useState(filter?.signature||null);
   const [chosen,setChosen]=useState(null);
-  const [state,refresh]=useLoad((auth,signal)=>loadFailures(range,source,auth,signal),`${range}|${source}`);
+  const [state,refresh]=useLoad((auth,signal)=>loadFailures(range,source,side,auth,signal),`${range}|${source}|${side}`);
   const data=state.data,groups=data?filterGroups(data.groups,{kind,text}):[],counts=data?kindCounts(data.groups):{};
   return <Page id="failures" title="Failures" intro="Failed requests, withheld answers, agent, model and tool errors, and failing evaluation cases, grouped by what went wrong."
     actions={<div className="admin-controls"><WindowPicker value={range} onChange={setRange}/>
       <label>Source <select value={source} onChange={event=>setSource(event.target.value)} data-testid="admin-source">
         {SOURCES.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+      <SidePicker value={side} onChange={setSide}/>
       <button className="bank-chat-logout" onClick={refresh} disabled={state.busy}><Icon name="refresh"/>Refresh</button></div>}>
     <Failed error={state.error}/>
     {state.busy&&!data&&<><Loading label="Loading failures"/><p className="admin-muted">Reading LangSmith. With evaluations, the first load after a restart can take up to a minute (LangSmith rate-limits run queries); later loads are cached.</p></>}
@@ -133,6 +136,10 @@ export default function FailuresPage({filter}) {
         <input className="admin-search" type="search" placeholder="Search question, error, agent or case" value={text} onChange={event=>setText(event.target.value)} aria-label="Search failures"/>
       </div>
       {data.refusals>0&&<p className="admin-muted">{data.refusals} RM request{data.refusals===1?' was':'s were'} refused as outside the RM's book: intended, not counted as failures.</p>}
+      {(Object.keys(data.tool_refusals||{}).length>0||Object.keys(data.consent_gaps||{}).length>0)&&<p className="admin-muted" data-testid="admin-refusals">
+        Checks working, not failures: {[tally(data.tool_refusals)&&`tool calls refused (${tally(data.tool_refusals)})`,
+          tally(data.consent_gaps)&&`consent-gated reads not shared (${tally(data.consent_gaps)})`].filter(Boolean).join('; ')}.
+        {Object.keys(data.loop_stops||{}).length>0&&` Loop stops: ${tally(data.loop_stops)}.`}</p>}
       {data.capped&&<p className="admin-muted">Sampled: this window has more runs than the dashboard reads at once.</p>}
       {chosen&&<FailureCard runId={chosen} onClose={()=>setChosen(null)}/>}
       {!data.groups.length&&<p className="admin-empty" data-testid="admin-no-failures">No failures in this window.</p>}

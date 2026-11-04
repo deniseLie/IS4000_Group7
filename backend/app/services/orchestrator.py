@@ -101,7 +101,7 @@ OUT_OF_SCOPE = 'I can’t help with that part here. Say “talk to a person” a
 ASK_WHICH = 'You have more than one open offer. Use the Confirm or Cancel button on the offer you mean; nothing has been sent.'
 OFFER_MARKS = (CONFIRM_LINE, fraud_reports.CONFIRM_REPLY, fraud_reports.LOST_REPLY)
 DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship',
-    'rm_client_insight': 'relationship', 'rm_service_desk': 'relationship'}
+    'rm_client': 'relationship', 'rm_requests': 'relationship', 'rm_calendar': 'relationship'}
 
 
 class TurnContext(BaseModel):
@@ -343,27 +343,42 @@ def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
     return [t.model_copy(update={'priority': t.priority if t.priority != 'P3' else priority(t)}) for t in plan]
 
 
-def linked(tasks: list[PlanTask], req: ChatRequest) -> tuple[list[PlanTask], list[AnswerSection]]:
+def unlinked(item: PlanTask, up: PlanTask | None) -> str | None:
+    """Why a dependency is not declared by the specs (a code for the planner span), or None when it is."""
+    exports = registry.SPECS[up.agent].exports if up else {}
+    if item.depends_on is None:return None
+    if up is None or up.id == item.id:return 'no_upstream'
+    if up.depends_on is not None:return 'chained_upstream'
+    if (registry.SPECS[up.agent].role == 'rm') != (registry.SPECS[item.agent].role == 'rm'):return 'other_side'
+    if item.condition is not None and exports.get(item.condition) != 'bool':return 'condition_not_bool_export'
+    if item.for_each is not None and not exports.get(item.for_each, '').startswith('list['):return 'for_each_not_list_export'
+    return None
+
+
+def linked(tasks: list[PlanTask], req: ChatRequest, facts: dict | None = None) -> tuple[list[PlanTask], list[AnswerSection]]:
     """The dependency check (§14.6 rules 3 and 5): the upstream is another planned task that depends on nothing (so no
     cycles and at most 2 waves), both agents are on the same side (client or RM), and the condition is a bool export
     and for_each a list export of the upstream's spec. Guests get no dependent tasks. A task that fails is dropped with
     a fixed line; nothing runs on a link the specs do not declare."""
+    dropped = [] if facts is None else facts.setdefault('unlinked', [])  # the planner span: links dropped and why
     if getattr(req, 'mode', 'personal') != 'personal':  # the RM request (rm/graph.py) has no mode: an RM is always signed in
+        dropped += [{'task': t.id, 'agent': t.agent, 'reason': 'guest'} for t in tasks if t.depends_on]
         return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None}) for t in tasks], []
     by_id = {t.id: t for t in tasks}
     kept, lines = [], []
     for item in tasks:
-        up = by_id.get(item.depends_on) if item.depends_on else None
-        exports = registry.SPECS[up.agent].exports if up else {}
-        ok = item.depends_on is None or (up is not None and up.id != item.id and up.depends_on is None
-            and (registry.SPECS[up.agent].role == 'rm') == (registry.SPECS[item.agent].role == 'rm')
-            and (item.condition is None or exports.get(item.condition) == 'bool')
-            and (item.for_each is None or exports.get(item.for_each, '').startswith('list[')))
-        if ok:kept.append(item)
+        why = unlinked(item, by_id.get(item.depends_on) if item.depends_on else None)
+        if why is None:kept.append(item)
         else:
             log_event('plan_unlinked', task=item.id, agent=item.agent)
+            dropped.append({'task': item.id, 'agent': item.agent, 'reason': why})
             lines.append(fixed_section(item.id, UNLINKED, DOMAIN[item.agent], item.priority))
     return kept, lines
+
+
+def plan_facts(tasks: list[PlanTask]) -> list[dict]:
+    """The planner span's tasks: agent, intent and dependency only (never the question or entities)."""
+    return [{'id': t.id, 'agent': t.agent, 'intent': t.intent, 'depends_on': t.depends_on, 'condition': t.condition, 'for_each': t.for_each} for t in tasks]
 
 
 async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired', 'ambiguous'] | None:
@@ -396,8 +411,9 @@ async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     question = risk.redacted_message
     with span('planner', 'agent') as attrs:
         reply = await confirmation(req, question, history, runtime.context)
+        attrs['side'] = 'client'
         if isinstance(reply, Confirmation):
-            attrs['route'] = 'act'
+            attrs['route'], attrs['source'] = 'act', 'button' if req.offer is not None else 'rule'
             return {'confirm': reply, 'tasks': [], 'lines': []}
         if reply == 'ambiguous':
             attrs['route'] = 'ask_which'
@@ -418,8 +434,9 @@ async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
                     if single is None:return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', REPHRASE)]}
                     tasks = [single]
             tasks = overridden(tasks, risk) if req.language == 'English' else tasks
-        tasks, lines = linked(checked(tasks, req), req)
+        tasks, lines = linked(checked(tasks, req), req, attrs)
         attrs['tasks'], attrs['dependent'] = len(tasks), sum(1 for t in tasks if t.depends_on)
+        attrs.update(side='client', source='rule' if attrs['route'] == 'rules' else 'model', plan=plan_facts(tasks))
     return {'confirm': None, 'tasks': tasks, 'lines': lines}
 
 
@@ -477,6 +494,7 @@ def passed(up: AgentOutput, to: PlanTask, inputs: dict[str, Export], facts: dict
     for name, export in inputs.items():
         count = len(export.value) if isinstance(export.value, list) else 1
         if (fact := f'{up.agent}>{to.agent}:{name}') not in facts['exports']:facts['exports'].append(fact)
+        facts.setdefault('passed', []).append({'from': up.agent, 'to': to.agent, 'name': name, 'count': count})
         audit.add('agent', 'agent.export_passed', details={'from': up.agent, 'to': to.agent, 'name': name, 'count': count})
 
 
@@ -528,6 +546,7 @@ def next_wave(state: Turn, facts: dict) -> dict:
             passed(up, one, mine, facts)
             sends.append(AgentInput(task=one, history=own, language=language, inputs=mine));tasks.append(one)
         if len(values) > MAX_ITEMS:
+            facts.setdefault('fan_out', []).append({'task': item.id, 'shown': MAX_ITEMS, 'total': len(values)})
             lines.append(fixed_section(f'{item.id}-more', MORE_ITEMS.format(shown=MAX_ITEMS, total=len(values)), DOMAIN[item.agent], item.priority))
     return {'next': sends, 'tasks': tasks, 'outputs': extra, 'lines': lines}
 

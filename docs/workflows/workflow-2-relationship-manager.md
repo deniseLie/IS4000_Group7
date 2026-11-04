@@ -13,12 +13,12 @@ flowchart LR
   UI[RM workspace<br/>RmWorkspace.jsx] -->|/rm/*, JWT| API[api/rm.py<br/>app_metadata role=rm]
   UI -->|POST /rm/assistant SSE| AS[services/rm/graph.py<br/>v5 RM graph, phase 9]
   AS --> BC[Book check: rm_match_clients<br/>outside book = refused + audited, no model]
-  AS --> PL[Planner model<br/>rm_planner/v4: up to 5 tasks]
+  AS --> PL[Planner model<br/>rm_planner/v5: up to 5 tasks]
   AS --> RS[Per agent: deterministic resolution<br/>client, ticket, meeting, note]
-  RS --> AG[RM Client Insight / RM Service Desk<br/>handlers.py, own spec's tools only]
+  RS --> AG[RM Client / Requests / Calendar<br/>handlers.py or the open loop, own spec's tools only]
   AG --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
   TL --> DB[(SQL: rm.current_advisor + rm.in_book<br/>audit every read and refusal)]
-  AG --> LLM[Answer model<br/>rm_assistant/v3 + task file]
+  AG --> LLM[Answer model<br/>rm_assistant/v5 + task file]
   LLM --> CK[Item-level checks<br/>services/rm/checks.py]
   CK --> UI
   UI -->|approve| W[Write RPCs: documentation, tasks,<br/>service requests, client messages, availability]
@@ -30,6 +30,8 @@ flowchart LR
 - **The assistant is not hard-coded.** Intent is chosen by the planner model; answers are written by the model from the records read for that question. Fixed boundaries cover out-of-book refusals, specialist-note and chat-write restrictions, clarification when records give several candidates (with buttons), and "no reassignment recorded" for a handover brief. If the model is unavailable, the RM is told; nothing is substituted.
 - **Every item is labelled and cited.** Record, Client said, AI suggestion or Gap, with chips that open the source record (title, recorded time, fields). Items whose figures, dates or TCK- references are not in their cited records (or any supplied record), or that give advice, an approval decision or claim something was done, are withheld and counted ("1 point could not be verified…").
 - **Context and switching (RM2-RM4, RM7, RM12).** The active client, ticket and meeting are shown above the chat. Follow-ups stay with that client. Choosing another client (or naming one) starts a clean context; only turns about the same client are sent to the model.
+- **Three agents, split by data (build plan 3a).** *Client* reads profiles, notes, reviews, book facts and what a client shared under consent (transaction insights, chat topics, large movements, the handover note); *Requests* reads tickets, follow-ups and request types and writes drafts, documentation and follow-up actions; *Calendar* reads appointments, her availability and clients' meeting requests. Only Client can read consent-gated data, with the purpose set by the question (`client_view` for an overview, `meeting_prep` for a brief); without consent the answer says what the client has not shared. A question no intent covers is looked up step by step by one agent (at most `AGENT_TOOL_CALLS` reads; names as in her book; a reply that reached the limit says so).
+- **Calendar cards (3a).** "Accept Mei Ling's Monday 4:30 slot", "Propose Thursday 11am instead" or "Decline Ben's request, I'll answer by message" prepare an answer card from the request and her free times; "Block Friday afternoon", "Open Friday afternoon again" or "Set my Monday hours to 10:00 to 18:00" prepare an availability card (a booking in the way stays and is named). No model writes them; she approves each card and it runs through the Schedule page's routes.
 - **Nothing leaves without approval.** Drafts are labelled *AI draft – not sent*; documentation is *not saved* until approved; each task and service request is confirmed separately; a service request needs the identity/authorisation tick and returns its reference only after the ticket exists. Earlier draft revisions are never treated as approved.
 
 ## Saved conversations (0091)

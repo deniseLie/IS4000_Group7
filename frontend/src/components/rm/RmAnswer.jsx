@@ -2,13 +2,15 @@ import {useRef,useState} from 'react';
 import Icon from '../Icon';
 import DraftReview from './DraftReview';
 import DocumentationReview from './DocumentationReview';
+import {AvailabilityReview,DecisionReview} from './CalendarReview';
 import {KIND_LABELS,REPORT_TITLES,allDrafts,reportText,validationNote} from '../../lib/rm';
 import {formatDateTime} from '../../lib/format';
 
 // One RM assistant reply, laid out as a short report: a title, the summary, then sections of points. Recorded facts are
 // plain text; only what is not a recorded fact is marked (Client said, AI suggestion, Gap, Guidance). Each point ends with
 // numbered references to the records it came from; a number opens that record in the Sources list at the end of the
-// report (in place, no side panel). Drafts and documentation are review cards: nothing is sent or saved until approved.
+// report (in place, no side panel). Drafts, documentation and the Calendar's decision and availability cards are review
+// cards: nothing is sent, saved or changed until approved.
 export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChange,onDocumentationChange,onAsk,latest,client,compact=false}) {
   // The RM can edit the report herself (rewrite or remove points, change the summary) instead of asking the assistant.
   // Edited points are marked "Edited by you"; their source numbers still show what the original point was based on.
@@ -90,6 +92,8 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
     {allDrafts(reply).map((draft,i)=><DraftReview key={`${draft.customer_id}-${i}`} draft={draft} token={token} onChange={onDraftChange} onAsk={onAsk} latest={latest}/>)}
     {reply.documentation&&<DocumentationReview documentation={reply.documentation} token={token} onChange={onDocumentationChange} latest={latest} onSource={s=>show(s.id)} sources={reply.sources}
       onRecap={onAsk?(client=>onAsk(`Draft a recap message to ${client||'the client'} of our conversation`)):null}/>}
+    {reply.decision&&<DecisionReview card={reply.decision} token={token} latest={latest}/>}
+    {reply.availability&&<AvailabilityReview card={reply.availability} token={token} latest={latest}/>}
     {validationNote(reply.validation)&&<p className="rm-validation" data-testid="rm-validation"><Icon name="shield"/>{validationNote(reply.validation)}</p>}
     {reply.notice&&<p className="rm-validation"><Icon name="info"/>{reply.notice}</p>}
     {sources.length>0&&<section className="rm-sources" data-testid="rm-sources">

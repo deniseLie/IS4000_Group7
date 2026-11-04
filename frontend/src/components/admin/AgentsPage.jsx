@@ -1,7 +1,7 @@
 import {Fragment,useState} from 'react';
 import Icon from '../Icon';
 import {formatDate} from '../../lib/format';
-import {SOURCES,loadAgents,mix,number,percent,seconds} from '../../lib/admin';
+import {SIDES,SOURCES,loadAgents,mix,number,percent,seconds} from '../../lib/admin';
 import {WindowPicker} from './OverviewPage';
 import {Failed,Loading,Page,useLoad} from './shared';
 
@@ -17,6 +17,11 @@ function Mix({counts,tones={}}) {
 export function SourcePicker({value,onChange}) {
   return <label>Source <select value={value} onChange={event=>onChange(event.target.value)} data-testid="admin-source">
     {SOURCES.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>;
+}
+
+export function SidePicker({value,onChange}) {
+  return <label>Asked from <select value={value} onChange={event=>onChange(event.target.value)} data-testid="admin-side">
+    {SIDES.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>;
 }
 
 function Kv({rows}) {
@@ -84,12 +89,14 @@ function Tools({tools,knowledge}) {
 export default function AgentsPage({onNavigate}) {
   const [range,setRange]=useState('7d');
   const [source,setSource]=useState('all');
-  const [state,refresh]=useLoad((auth,signal)=>loadAgents(range,source,auth,signal),`${range}|${source}`);
+  const [side,setSide]=useState('all');
+  const [state,refresh]=useLoad((auth,signal)=>loadAgents(range,source,side,auth,signal),`${range}|${source}|${side}`);
   const data=state.data;
   const runs=data?data.agents.reduce((sum,agent)=>sum+agent.runs,0):0;
   const bad=data?data.agents.reduce((sum,agent)=>sum+(agent.outcomes.withheld||0)+(agent.outcomes.timeout||0)+(agent.outcomes.error||0),0):0;
   return <Page id="agents" title="Agents" intro="One scorecard per agent (outcomes, paths, tools, time, prompt and evaluation pass rate), then the planner, dependencies, offers, tools and knowledge search."
     actions={<div className="admin-controls"><WindowPicker value={range} onChange={setRange}/><SourcePicker value={source} onChange={setSource}/>
+      <SidePicker value={side} onChange={setSide}/>
       <button className="bank-chat-logout" onClick={refresh} disabled={state.busy}><Icon name="refresh"/>Refresh</button></div>}>
     <Failed error={state.error}/>
     {state.busy&&!data&&<><Loading label="Loading agents"/><p className="admin-muted">Reading LangSmith. With evaluations, the first load after a restart can take up to a minute; later loads are cached.</p></>}
@@ -105,13 +112,16 @@ export default function AgentsPage({onNavigate}) {
       <section className="admin-card" data-testid="admin-scorecards">
         <div className="admin-card-head"><h2>Agent scorecards</h2><span className="admin-muted">Withheld, timed out and failed runs are degraded; handing to a person or asking which one is intended</span></div>
         {!data.agents.length?<p className="admin-empty">No agent runs in this window.</p>:<div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Agent</th><th className="num">Runs</th><th className="num">Requests</th><th>Outcomes</th><th>Path</th><th className="num">Tools / loop</th>
+          <thead><tr><th>Agent</th><th className="num">Runs</th><th className="num">Requests</th><th>Outcomes</th><th>Path</th><th className="num">Tools / loop</th><th>Loop stops</th>
+            <th className="num" title="Tool calls refused (outside the agent's tools, its limits or the RM's book) / consent-gated reads the client has not shared">Refused / gaps</th>
             <th className="num">Evidence</th><th className="num">p50 / p95</th><th>Prompt</th><th className="num">Eval pass</th></tr></thead>
           <tbody>{data.agents.map(agent=><tr key={agent.agent} data-testid={`admin-agent-${agent.agent}`}>
             <td><strong>{agent.agent}</strong>{agent.side==='rm'&&<span className="admin-muted"> RM</span>}</td><td className="num">{agent.runs}</td>
             <td className="num">{percent(agent.share)}</td><td><Mix counts={agent.outcomes} tones={OUTCOME_TONE}/></td>
             <td><Mix counts={agent.paths}/></td>
             <td className="num" title={agent.refused?`${agent.refused} tool calls refused`:''}>{number(agent.tool_calls_per_loop)}{agent.refused?` (${agent.refused} refused)`:''}</td>
+            <td><Mix counts={agent.stops} tones={{answered:'pass',cap:'withheld',malformed:'fail',timeout:'fail',error:'fail'}}/></td>
+            <td className="num">{agent.tool_refusals??'—'} / {agent.consent_gaps??'—'}</td>
             <td className="num" title={`${agent.exports} exports passed`}>{number(agent.evidence_per_answer)}</td>
             <td className="num">{seconds(agent.p50_s)} / {seconds(agent.p95_s)}</td>
             <td>{agent.prompt?<button className="link-button" onClick={()=>onNavigate('prompts')}>{agent.prompt} {agent.live_prompt||''}</button>:'—'}</td>

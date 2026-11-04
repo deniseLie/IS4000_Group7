@@ -70,7 +70,7 @@ def test_nothing_is_sent_while_tracing_is_off():
 
 def test_trace_keeps_only_budget_audit_and_request_facts():
     trace=start_trace()
-    try:assert vars(trace)=={'attrs':{},'llm_calls':[],'agents':[],'tokens':0}
+    try:assert vars(trace)=={'attrs':{},'llm_calls':[],'agents':[],'tokens':0,'tools':[]}
     finally:current_trace.set(None)
 
 
@@ -93,3 +93,19 @@ def test_agent_runs_and_model_calls_become_the_request_summary():
     assert facts['agents']==['guide','security','security'] and facts['agent_status']=={'guide':'ok','security':'withheld'}
     assert {k:facts[k] for k in ('model_calls','model_failures','llm_ms','llm_tokens','model','prompt_ids')}=={'model_calls':2,'model_failures':1,
         'llm_ms':150,'llm_tokens':15,'model':'m1','prompt_ids':['guide/v1+def','planner/v7+abc']}
+
+
+def test_the_request_summary_says_who_asked_and_what_the_tools_refused():
+    """Build plan 3a: side and role for the admin filters; tool refusals, loop stops and consent gaps as counts."""
+    trace=start_trace()
+    try:
+        trace.attrs['authenticated']=True
+        with langsmith.tracing_context(enabled=False):
+            with span('tool_call','tool',tool='customer_accounts',agent='accounts') as t:t.update(allowed=True,rows=2)
+            with span('tool_call','tool',tool='rm_tickets',agent='accounts') as t:t.update(allowed=False,reason='agent_tool_forbidden')
+            with span('agent','agent',agent='accounts',intent='open') as a:a.update(path='loop',status='ok',stop='cap',tool_calls=4,refused=2)
+        facts=request_facts(trace)
+    finally:current_trace.set(None)
+    assert {k:facts[k] for k in ('side','role','tool_calls','loop_stops','refusals','step_refusals','refused_tools','consent_gaps')}=={'side':'client',
+        'role':'customer','tool_calls':2,'loop_stops':{'cap':1},'refusals':1,'step_refusals':2,'refused_tools':['rm_tickets:agent_tool_forbidden'],'consent_gaps':0}
+    assert trace.tools[1]=={'tool':'rm_tickets','agent':'accounts','allowed':False,'reason':'agent_tool_forbidden'}  # never arguments or rows

@@ -336,8 +336,9 @@ The agents above are split by topic. The target set is split by **the data an ag
 | **Security** | `fraud`, plus login/OTP/phishing from `retail` | Same risk class (P0/P1); login help no longer has full financial access |
 | **Compliance & Documents** | `compliance` + `document` | Document only read the compliance workspace; merging loses no protection |
 | **Relationship & Service** | `relationship`, plus request/ticket status from `retail` | Everything about a person at the bank |
-| **RM Client Insight** | part of the RM assistant (`services/rm/assistant.py`, [workflow 2](workflows/workflow-2-relationship-manager.md)) | Sensitive per-client reads |
-| **RM Service Desk** | part of the RM assistant | Ticket work in the RM's book |
+| **RM Client** (`rm_client`; was RM Client Insight) | part of the RM assistant ([workflow 2](workflows/workflow-2-relationship-manager.md)) | Sensitive per-client reads, including what a client shared under consent; read-only |
+| **RM Requests** (`rm_requests`; was RM Service Desk) | part of the RM assistant | Tickets, follow-ups and drafts in the RM's book |
+| **RM Calendar** (`rm_calendar`, build plan 3a) | the schedule part of RM Service Desk | Appointments, availability and clients' meeting requests |
 
 **Client agents.** Row scope is the signed-in client only (caller JWT + RLS + explicit customer id checked in code); Guide sees no customer rows.
 
@@ -353,10 +354,19 @@ The agents above are split by topic. The target set is split by **the data an ag
 
 | Agent | Fields it may see | Tools | Offers (RM approval required) |
 |---|---|---|---|
-| **RM Client Insight** | 360 profile, products, review status, shared notes (previous RMs' private notes withheld), cash events ≥10,000 over 180 days, handover sources only after a recorded reassignment, shared summary only under `rm_brief` consent | `rm_book`, `rm_match_clients`, `rm_client_profile`, `rm_meeting_notes`, `rm_shared_summary`, `rm_cash_events`, `rm_handover_sources`, `rm_book_facts`, `rm_followups` | Meeting brief, transition message draft; otherwise read-only |
-| **RM Service Desk** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data | `rm_tickets`, `rm_ticket`, `rm_appointments`, `rm_availability`, `request_categories`, `knowledge_article` (the approved article a ticket's request type names, read by id) | Draft reply (sent only on Approve), tickets from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
+| **RM Client** | 360 profile, products, review status, shared notes (previous RMs' private notes withheld), book facts; under the client's consent only: transaction insights, talking points, cash events ≥10,000 over 180 days, the shared summary, handover sources after a recorded reassignment | `rm_client_profile`, `rm_meeting_notes`, `rm_review_status`, `rm_book_facts`; consent-gated fixed reads `rm_transaction_insights`, `rm_talking_points`, `rm_cash_events`, `rm_shared_summary`, `rm_handover_sources` | None: read-only (overview, meeting history, briefs, reviews, book questions) |
+| **RM Requests** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data. Never consent-gated data | `rm_tickets`, `rm_ticket`, `rm_followups`, `request_categories`, `knowledge_article` (the approved article a ticket's request type names, read by id); borrowed fixed reads of the profile, notes, availability and appointments for drafts | Draft reply (sent only on Approve), tickets and tasks from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
+| **RM Calendar** | Her appointments, availability and working hours, clients' meeting requests (purposes are the client's words). Never client financial data | `rm_appointments`, `rm_availability`, `rm_meeting_requests` | Accept a requested time, propose another, decline with a reason; block time, open it again, change weekly hours (cards built by code, approved one by one) |
 
-Neither RM agent decides approvals or gives investment advice, and neither changes specialist-managed fraud tickets.
+No RM agent decides approvals or gives investment advice, and none changes specialist-managed fraud tickets.
+
+**Since build plan 3a** each RM data tool has one owner (`registry.RM_OWNER`); Requests holds the profile, notes, availability and appointments only as fixed reads (`BORROWED`). Consent-gated reads (`CONSENT_GATED`) are fixed reads of RM Client only, with `purpose` set by the intent, so no draft carries transaction content. Every client and RM turn traces ids, codes and counts only:
+- **planner:** side, plan source, the plan, and dropped links with a reason code;
+- **agent:** path, loop stop and limit, reads, refusals, cards, export names;
+- **each loop step:** tools, safe arguments, refusals, reads left;
+- **each tool call:** allowed or the refusal reason, rows, and for a gated read whether it was shared, under which category, grant and purpose.
+
+The request summary (`observability.request_facts`) adds side, role, tool calls, loop stops, refusals, refused tools and consent gaps. The admin dashboard filters Agents and Failures by side (`client` or `rm`), lists loops that reached their read limit as failures, and counts tool refusals and consent gaps as checks working.
 
 **Rules for every agent**
 1. **One declared spec per agent** (`AgentSpec` in `agents/registry.py`): row scope (`public`, `own_customer`, `rm_book`), tool names with the field view each returns, per-call limits (date window, row count), external hosts and offer types. Policy (`authorization.decide`) and the tool layer both read it, so permission and tool names cannot drift apart.
@@ -1028,7 +1038,25 @@ On the next turn the planner's rules recognise the confirmation and go straight 
 
 ### 14.11 RM side
 
-The same graph serves the RM, with the agent catalogue chosen by role: a verified `rm` login gets RM Client Insight and RM Service Desk; a client gets the five client agents. This replaces the separate `services/rm/assistant.py` pipeline and lets RM fan-out use the same waves. It is the last build slice, because the RM pipeline works and is tested today.
+The same graph serves the RM, with the agent catalogue chosen by role: a verified `rm` login gets the RM agents; a client gets the client agents. This replaces the separate `services/rm/assistant.py` pipeline and lets RM fan-out use the same waves.
+
+Since build plan 3a the RM side has three agents split by the data they read (`registry.RM_SPECS`):
+- **Client** (`rm_client`) reads profiles, meeting notes, reviews and book facts, plus what a client shared under consent: transaction insights, talking points, large cash movements and the handover note. It proposes nothing.
+- **Requests** (`rm_requests`) reads tickets, follow-ups, request types and approved guidance. It prepares message drafts, interaction records and follow-up tasks or service requests.
+- **Calendar** (`rm_calendar`) reads her appointments, availability and clients' meeting requests. It prepares answer cards (accept a client's time, propose a free time, decline with a reason) and availability cards (block, open again, weekly hours) from the records, without a model.
+
+The planner (`rm_planner/v5`) maps each intent to its agent. A question no intent covers becomes an `open` task on the agent whose records answer it. That agent runs the shared bounded loop (`runner.loop`, at most `AGENT_TOOL_CALLS` reads):
+- clients are named as in her book and resolved by code;
+- free-text records are shown to the step model only as id and title;
+- a loop that stops at the limit says so in the reply.
+
+Four links are declared:
+- reviews due → one Requests draft per client (`clients_due`, at most 5);
+- a brief → follow-ups from its latest note (`latest_note`);
+- a handover brief → the shared note under consent (`consent_active`);
+- reviews due → an `open` Requests task on those clients' tickets (`reviews_due`).
+
+Calendar cards are approved one by one through the 2a routes (`/rm/meeting-requests/{id}/decide`, `/rm/availability/blocks`, `/rm/availability/hours`). The assistant writes nothing.
 
 ### 14.12 Evaluation
 
@@ -1086,6 +1114,8 @@ Agreed additions to the seam ([build plan](planning/rm-copilot-build-plan.md), p
 
 
 **Client side (2a).** The client chat drafts a request (`agents/meeting_answers.py`) and her confirmation records it through `action_offer`; the Meetings tab proposes and confirms `meeting.request`, `meeting.withdraw` and `meeting.counter_reply` directly. `AnswerEvent.care` (from `guardrail.CARE`) switches the UI's suggestions to a person.
+
+**Copilot side (3a).** The RM Client agent calls the consent-gated readers with a purpose set by the intent (`client_view` for an overview, `meeting_prep` for a brief), never by a model. Without consent the evidence records a gap, and the answer states what the client has not shared. The Calendar agent's decision and availability cards use the 0106 routes and `rm.slot_problem`, so a time SQL refuses is shown as not acceptable. Recording a decision enqueues the meeting events as in 2a.
 
 ### 15.2 Consent v2 (agreed 5 Nov 2026, build plan phase 6, `0109`–`0113`; not built yet)
 

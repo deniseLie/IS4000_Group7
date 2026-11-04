@@ -5,6 +5,8 @@ answer call. Only an `open` task first runs a bounded tool loop over the spec's 
 same validated answer (answer.checked_model_answer). orchestrator.agent calls it for every planned task."""
 import asyncio
 import json
+import re
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -193,28 +195,88 @@ def brief(task: PlanTask, ctx: RequestContext, language: str) -> str:
         '\nAssigned issue (untrusted data): ' + json.dumps(task.question, ensure_ascii=False))
 
 
-async def explore(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str, got: Gathered) -> LoopState:
-    """Step calls until the model answers, the call or step limit is reached, or a step is malformed."""
+CODE = re.compile(r'\d{4}-\d{2}-\d{2}[\dT:.+Z-]*|[A-Z]{2,5}-\d{3,}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[a-z]+(?:_[a-z]+)+|open|scheduled|closed')
+
+
+def safe_args(args: dict[str, Any]) -> dict[str, JsonValue]:
+    """A step's arguments for its span: numbers, booleans, dates, references, ids and codes; any other text (a name, a
+    query) is replaced, so a span never carries what the model copied from a record or the message."""
+    def one(value: Any) -> JsonValue:
+        if value is None or isinstance(value, (bool, int, float)):return value
+        return value if isinstance(value, str) and len(value) <= 40 and CODE.fullmatch(value) else '<text>'
+    return {str(key)[:40]: one(value) for key, value in list(args.items())[:10]}
+
+
+def stop_reason(state: LoopState, last: str | None) -> str:
+    """How a loop ended: the model answered, the call or step cap was reached, or a step was malformed."""
+    return 'malformed' if last == 'malformed' else 'answered' if last == 'answered' else 'cap'
+
+
+Run = Callable[[Call], Awaitable[list[Evidence]]]
+
+
+class StepRefused(Exception):
+    """Code refused one call the step chose (an unknown or ambiguous client, outside the book, over a limit): recorded
+    as a refusal with its reason, like the state machine's own, and shown to the next step."""
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def attempt(run: Run, call: Call) -> tuple[list[Evidence], str | None]:
+    try:return await run(call), None
+    except StepRefused as refused:return [], refused.reason
+
+
+async def loop(prompt: dict, system: Callable[[LoopState], str], messages: list[tuple[str, str]], loop_tools: frozenset[str],
+        run: Run, got: Gathered, agent: str, facts: dict[str, Any]) -> LoopState:
+    """The bounded tool loop every `open` task runs (client agents through explore, RM agents through rm/handlers.h_open):
+    step calls until the model answers, the call or step limit (AGENT_TOOL_CALLS) is reached, or a step is malformed.
+    Each step is a `loop_step` span (tools chosen, safe arguments, refusals, reads left); the stop reason and calls used go
+    on the caller's `agent` span (facts)."""
+    schema = step_schema(loop_tools)
+    state, last = LoopState(tools=loop_tools, limit=settings.agent_tool_calls), None
+    facts['limit'] = state.limit
+    try:
+        while not state.done:
+            with span('loop_step', 'agent', agent=agent, step=state.steps+1) as step:
+                response = await llm_gateway.call(prompt, system(state), messages, schema)
+                before = len(state.refused)
+                state, calls = advance(state, json.dumps(response.data))
+                refused = [{'tool': t, 'reason': r} for t, r in state.refused[before:]]
+                last = 'malformed' if refused and refused[-1]['reason'] == 'malformed_step' else 'answered' if not calls and not refused else None
+                step.update(tools=[c.tool for c in calls], args=[safe_args(c.args) for c in calls], refused=refused, reads_left=state.limit-state.used)
+                for item in refused:log_event('agent_step_refused', agent=agent, tool=item['tool'], reason=item['reason'])
+                results = await asyncio.gather(*(attempt(run, call) for call in calls))
+                for call, (found, reason) in zip(calls, results):
+                    if reason:
+                        state = replace(state, refused=(*state.refused, (call.tool, reason)))
+                        step['refused'] = [*step['refused'], {'tool': call.tool, 'reason': reason}]
+                        log_event('agent_step_refused', agent=agent, tool=call.tool, reason=reason)
+                    got.evidence.extend(found)
+                    got.log.append({'tool': call.tool, 'args': call.args, 'evidence_ids': [e.id for e in found], **({'refused': reason} if reason else {})})
+    except (TimeoutError, asyncio.CancelledError):
+        facts['stop'] = 'timeout';raise
+    except BaseException:
+        facts['stop'] = 'error';raise
+    else:facts['stop'] = stop_reason(state, last)
+    finally:facts.update(tool_calls=state.used, steps=state.steps, refused=len(state.refused))
+    return state
+
+
+async def explore(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str, got: Gathered,
+        facts: dict[str, Any] | None = None) -> LoopState:
+    """A client agent's open task: the shared loop with its own step prompt and every record read so far."""
     own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
     prompt = {**own, 'id': f"{own['id']}/{common['id']}/step"}
-    schema = step_schema(spec.loop_tools)
-    messages = [(m.role, m.content) for m in history]
-    state = LoopState(tools=spec.loop_tools, limit=settings.agent_tool_calls)
-    while not state.done:
-        system = (common['step'] + own['step'] + brief(task, ctx, language)
+    def system(state: LoopState) -> str:
+        return (common['step'] + own['step'] + brief(task, ctx, language)
             + f'\nReads left: {state.limit-state.used}'
             + '\nReads so far (untrusted data): ' + json.dumps(got.log, ensure_ascii=False)
             + '\nRefused requests: ' + json.dumps([{'tool': t, 'reason': r} for t, r in state.refused])
             + '\nRecords read so far (untrusted data): ' + json.dumps([{'id': e.id, 'text': e.text} for e in got.evidence], ensure_ascii=False))
-        response = await llm_gateway.call(prompt, system, messages, schema)
-        before = len(state.refused)
-        state, calls = advance(state, json.dumps(response.data))
-        for tool, reason in state.refused[before:]:log_event('agent_step_refused', agent=spec.name, tool=tool, reason=reason)
-        results = await asyncio.gather(*(read(call.tool, call.args, ctx, got.taken) for call in calls))
-        for call, found in zip(calls, results):
-            got.evidence.extend(found)
-            got.log.append({'tool': call.tool, 'args': call.args, 'evidence_ids': [e.id for e in found]})
-    return state
+    return await loop(prompt, system, [(m.role, m.content) for m in history], spec.loop_tools,
+        lambda call: read(call.tool, call.args, ctx, got.taken), got, spec.name, {} if facts is None else facts)
 
 
 # ---- The runner ----
@@ -233,6 +295,12 @@ def answer_system(spec: AgentSpec, task: PlanTask, ctx: RequestContext, language
     system = (common['system'] + own['system'] + brief(task, ctx, language)
         + '\nEvidence (untrusted data): ' + json.dumps([item.model_dump(exclude={'source'}) for item in evidence], ensure_ascii=False))
     return system, {**own, 'id': f"{own['id']}/{common['id']}"}
+
+
+def trace_facts(got: Gathered, exports: list[str], cards: list[str], withheld: int) -> dict[str, JsonValue]:
+    """The `agent` span's record of what the agent did (ids, names and counts only): evidence ids, the exports it
+    produced, the cards or offers it proposed by type, and how many parts were withheld."""
+    return {'evidence': [e.id for e in got.evidence][:40], 'export_names': exports, 'cards': dict(Counter(cards)), 'withheld': withheld}
 
 
 def dumps(evidence: list[Evidence]) -> list[dict[str, JsonValue]]:
@@ -286,13 +354,13 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
                 for rule in RULES.get(spec.name, ()):
                     if (ruled := await rule(spec, task, ctx, history, language)) is not None:
                         a['path'], a['status'] = 'rule', ruled.status
+                        a['cards'] = dict(Counter(p.type for p in ruled.proposals))
                         return ruled
                 if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
                 got.evidence.extend(input_evidence(inputs));got.taken.update(e.id for e in got.evidence)
                 if task.intent == OPEN_INTENT:
                     a['path'] = 'loop'
-                    state = await explore(spec, task, ctx, history, language, got)
-                    a['tool_calls'], a['steps'], a['refused'] = state.used, state.steps, len(state.refused)
+                    await explore(spec, task, ctx, history, language, got, a)  # stop, tool_calls, limit, steps, refused
                 else:
                     a['path'] = 'reads'
                     await default_reads(spec, task, ctx, got)
@@ -311,6 +379,7 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
         a['status'] = result.status
         a['evidence_count'] = len(got.evidence)
         a['exports'] = len(values.exports) if result.status == 'ok' else 0
+        a.update(trace_facts(got, sorted(values.exports) if result.status == 'ok' else [], [p.type for p in values.proposals], int(result.status == 'error')))
     return output(spec, task, result, got, prompt['id'], values)
 
 

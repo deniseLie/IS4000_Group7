@@ -1780,6 +1780,7 @@ ul.compliance-items>.cw-item .cw-item-foot{border-top:0!important;padding-top:6p
 .rmw-review{display:grid;gap:10px;padding:16px;border:1px solid var(--line-2);border-radius:12px;background:#fff}
 .rmw-review.draft{border-left:3px solid #5B3A8C}
 .rmw-review.documentation{border-left:3px solid #2B4C7E}
+.rmw-review.decision,.rmw-review.availability{border-left:3px solid #1F6F5C}
 .rmw-review-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .rmw-review-head strong{display:inline-flex;align-items:center;gap:8px;font-size:14px}
 .rmw-review-head svg{width:16px;height:16px}

@@ -234,6 +234,7 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
     db=request.state.db
     async def events():
         trace=start_trace()
+        trace.attrs.update(side='rm',role='rm')  # the root run's request facts (admin Agents and Failures filters)
         batch=audit.start_batch(db,session_id=caller.ctx.session_id)
         batch.add('chat','chat.rm_message_received',details={'history_len':len(req.history),'intent_hint':req.intent,
             'has_client':req.context.client_id is not None})
