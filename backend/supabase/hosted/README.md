@@ -30,8 +30,8 @@
 | `24_apply_0094_hosted.sql` | Restores the customer grant on `rm.is_my_advisor` that 0089 removed (Michelle's Overview "Record access does not match the signed-in customer", /customer/advisor 403) | Once, now |
 | `25_apply_0095_hosted.sql` | RM insights: meeting notes linked to appointments, large money movements, book facts, and one undocumented past meeting with Michelle for Today → Meetings to document | Once, after 24 |
 | `26_apply_0096_hosted.sql` | Card controls (CR19): the client freezes and unfreezes her own card, replaces a lost, stolen or damaged card, disputes a recognised charge, and card limit rules (steps of 1,000, 90-day temporary, declaration, once per 30 days) | Once, after 25 |
-| `27_apply_0100_hosted.sql` | v5 offers (build plan phase 4): offer groups on the action ledger (`action_offer` with a 30-minute TTL, `customer_open_offers`, ordered group confirm and cancel); expires decisions still paused on v4 workflows. Nothing on /chat uses it until the v5 switch-over | Once, after 26, together with the v5 backend |
-| `28_apply_0101_hosted.sql` | v5 agent dependencies (build plan phase 7): the `travel_notice` request category with its trip-date check, and chained offers keep their `after_receipt` mark so a later step receives the earlier receipt | Once, after 27, together with the phase 7 backend |
+| `28_apply_0100_hosted.sql` | v5 offers (build plan phase 4): offer groups on the action ledger (`action_offer` with a 30-minute TTL, `customer_open_offers`, ordered group confirm and cancel); expires decisions still paused on v4 workflows. Nothing on /chat uses it until the v5 switch-over | Once, after 26, together with the v5 backend |
+| `29_apply_0101_hosted.sql` | v5 agent dependencies (build plan phase 7): the `travel_notice` request category with its trip-date check, and chained offers keep their `after_receipt` mark so a later step receives the earlier receipt | Once, after 27, together with the phase 7 backend |
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 
