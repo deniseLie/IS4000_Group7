@@ -1,5 +1,8 @@
 """Admin dashboard (AI engineering view): LangSmith evaluation experiments and recent /chat and /rm/assistant traces.
 Every route needs a verified JWT whose administrator-owned app_metadata.demobank_role is 'admin' (services/quality.py)."""
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
+from typing import Any
 from uuid import UUID
 from fastapi import APIRouter,Depends,Query
 from starlette.concurrency import run_in_threadpool
@@ -9,7 +12,10 @@ from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.contracts import RequestContext
 from app.schemas.quality import Case,Experiment,Span,Trace
-from app.services import quality
+from app.services import insights,prompts,quality
+
+WINDOW=Query('7d',pattern='^(24h|7d|30d|90d)$')
+SOURCE=Query('live',pattern='^(live|eval|all)$')
 
 router=APIRouter(prefix='/admin')
 
@@ -47,3 +53,41 @@ async def traces(limit: int=Query(30,ge=1,le=100),ctx: RequestContext=Depends(ad
 @router.get('/traces/{run_id}',response_model=list[Span])
 async def trace(run_id: UUID,ctx: RequestContext=Depends(admin)) -> list[Span]:
     return await read(quality.trace,str(run_id))
+
+
+# ---- Dashboard pages: LangSmith reads (services/quality.py) and pure arithmetic (services/insights.py) ----
+
+def capped(rows: list,steps: list) -> bool:
+    return len(rows)>=quality.MAX_REQUESTS or len(steps)>=quality.MAX_STEPS
+
+
+def together(*loads):
+    """Independent LangSmith reads at the same time (each is cached on its own)."""
+    with ThreadPoolExecutor(len(loads)) as pool:return [f.result() for f in [pool.submit(*load) for load in loads]]
+
+
+def overview_of(days: int) -> dict[str,Any]:
+    rows,steps,exps=together((quality.requests,'live',2*days),(quality.steps,'live',2*days),(quality.experiment_runs,))
+    month=[e for e in exps if e['started_at']>=quality.now()-timedelta(days=30)]
+    untested=insights.untested_prompts(prompts.in_use(),[],month)
+    return {**insights.overview(rows,steps,exps,quality.now(),days,untested),'capped':capped(rows,steps)}
+
+
+def failures_of(days: int,source: str) -> dict[str,Any]:
+    rows,steps,exps=together((quality.requests,source,2*days),(quality.steps,source,2*days),(quality.experiment_runs,))
+    return {**insights.failures(rows,steps,exps,quality.now(),days,source),'capped':capped(rows,steps)}
+
+
+@router.get('/overview')
+async def overview(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(overview_of,quality.WINDOWS[window])
+
+
+@router.get('/failures')
+async def failures(window: str=WINDOW,source: str=Query('all',pattern='^(live|eval|all)$'),ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(failures_of,quality.WINDOWS[window],source)
+
+
+@router.get('/failures/{run_id}')
+async def failure(run_id: UUID,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(lambda:insights.card(quality.trace_runs(str(run_id))))

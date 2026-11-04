@@ -1,11 +1,15 @@
 import {useEffect,useState} from 'react';
 import Sidebar,{TabBar} from './components/Sidebar';
 import EvaluationsPage from './components/admin/EvaluationsPage';
+import FailuresPage from './components/admin/FailuresPage';
+import OverviewPage from './components/admin/OverviewPage';
 import TracesPage from './components/admin/TracesPage';
 import {supabase} from './lib/supabase';
 
 const API_URL=import.meta.env.VITE_API_URL||'/api';
 const PAGES=[
+  {view:'overview',icon:'chart',label:'Overview',short:'Overview',Page:OverviewPage},
+  {view:'failures',icon:'alert',label:'Failures',short:'Failures',Page:FailuresPage},
   {view:'evaluations',icon:'check',label:'Evaluations',short:'Evals',Page:EvaluationsPage},
   {view:'traces',icon:'history',label:'Traces',short:'Traces',Page:TracesPage},
 ];
@@ -16,8 +20,9 @@ function pageFromHash() {const page=location.hash.replace(/^#admin-?/,'');return
 // LangSmith. Read-only: nothing here changes a customer, an RM record or a prompt.
 export default function AdminWorkspace({session}) {
   const [view,setView]=useState(pageFromHash);
+  const [filter,setFilter]=useState(null);  // what an Overview link opens on the next page (a failure group, a dataset)
   useEffect(()=>{const onHash=()=>setView(pageFromHash());window.addEventListener('hashchange',onHash);return ()=>window.removeEventListener('hashchange',onHash);},[]);
-  function navigate(next) {setView(next);history.replaceState(null,'',`#admin-${next}`);}
+  function navigate(next,given=null) {if(!VIEWS.includes(next))return;setFilter(given);setView(next);history.replaceState(null,'',`#admin-${next}`);}
   async function signOut() {
     try{const {data}=await supabase.auth.getSession();if(data.session)await fetch(`${API_URL}/auth/session-end`,{method:'POST',headers:{Authorization:`Bearer ${data.session.access_token}`}});}catch{}
     history.replaceState(null,'',location.pathname+location.search);
@@ -36,7 +41,7 @@ export default function AdminWorkspace({session}) {
       <Sidebar session={session} name={session.user.email} subtitle="Administrator · signed in" menu={menu} current={view} pages={pages} onSignOut={signOut}/>
       <TabBar current={view} pages={pages}/>
       <main className="app-page page-enter" key={view}>
-        <Current onNavigate={navigate}/>
+        <Current onNavigate={navigate} views={VIEWS} filter={filter}/>
         <footer className="bank-chat-footer"><span>IS4000 · Coursework demo · Synthetic data · Read-only view of LangSmith</span></footer>
       </main>
     </div>
