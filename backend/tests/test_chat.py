@@ -93,22 +93,12 @@ def test_invalid_output_rejected_directly(raw):
 def test_conversation_contract_does_not_relax_banking_checks(parsed,valid):
     assert (answers.check_answer(json.dumps(parsed),[{'id':'cards','text':'Guidance'}])[2] is None)==valid
 
-def test_new_topic_has_priority_and_no_match_does_not_replay_old_topic():
-    history=[Message(role='user',content='loan eligibility mortgage repayment income borrow loan')]
-    assert answers.retrieve('How do I download a statement?',history,'English')[0].id=='statements'
-    result=answers.retrieve('you are useless',history,'English')
-    assert {a.id for a in result}=={a.id for a in answers.ARTICLES if answers.is_current(a)}
-
 def test_sixteenth_question_preserves_latest_history():
     messages=[]
     for _ in range(15):messages.extend([Message(role='user',content='loan question'),Message(role='assistant',content='loan answer')])
     messages.append(Message(role='user',content='What about loan eligibility?'))
     cleaned=answers.clean_history(messages)
     assert len(cleaned)==29 and cleaned[-1].content==messages[-1].content
-
-def test_non_english_retrieval_exposes_current_sources():
-    assert 'statements' in {a.id for a in answers.retrieve('如何查看对账单？',[],'Chinese')}
-
 
 def test_unconfigured_provider_returns_error_never_a_sample_answer(monkeypatch):
     monkeypatch.delenv('LLM_MODEL',raising=False)

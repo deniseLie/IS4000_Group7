@@ -6,6 +6,7 @@ Usage: python -m evaluation.langsmith_sync [--dataset demobank-focused] [--dry-r
 import argparse
 import json
 import os
+import re
 from fnmatch import fnmatch
 from hashlib import sha256
 from pathlib import Path
@@ -14,10 +15,17 @@ from uuid import NAMESPACE_URL,uuid5
 import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
 from app.schemas.contracts import AgentName
-from app.services.knowledge import INDEX
 from app.services.tools import TOOLS
 
 HERE=Path(__file__).parent
+def article_ids() -> frozenset[str]:
+    """Article ids inserted by the knowledge migrations (kb.articles rows); test_knowledge_database checks them against the database."""
+    found=set()
+    for migration in sorted((HERE.parent/'supabase'/'migrations').glob('*.sql')):
+        for statement in re.findall(r'insert into kb\.articles\b.*?;\s*$',migration.read_text(encoding='utf-8'),re.S|re.M|re.I):
+            found|=set(re.findall(r"\('([a-z0-9-]+)',\d+,'(?:[^']|'')*',array\[",statement))
+    return frozenset(found)
+ARTICLE_IDS=article_ids()
 DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.json','demobank-safety':'safety_cases.json',
           'demobank-qa1-client':'qa1_client_cases.json','demobank-qa1-rm':'qa1_rm_cases.json'}
 DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection, corrections and unsupported facts.',
@@ -62,7 +70,7 @@ def to_example(dataset,case):
     # Only secrets cases may carry (synthetic) private-looking details; anything else is a mistake in the file.
     if case.get('expected_route')!='secrets' and langsmith_client.scrub(inputs)!=inputs:
         raise ValueError(f'{name}: private-looking detail outside a secrets case')
-    if unknown:=[i for i in case.get('cites_any',[]) if i not in INDEX]:raise ValueError(f'{name}: unknown article {unknown[0]}')
+    if unknown:=[i for i in case.get('cites_any',[]) if i not in ARTICLE_IDS]:raise ValueError(f'{name}: unknown article {unknown[0]}')
     return {'id':example_id(dataset,case['id']),'inputs':inputs,'outputs':{k:case[k] for k in EXPECTED if k in case},
             'metadata':{'case_id':case['id'],'dataset':dataset}|{k:case[k] for k in OWNED[2:] if k in case}}
 

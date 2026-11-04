@@ -191,7 +191,3 @@ class KbChunk(Contract):  # kb.search() result
     score: float
 
 
-class Fact(Contract):  # kb.get_fact() result
-    value: float | str
-    unit: str
-    source_id: str

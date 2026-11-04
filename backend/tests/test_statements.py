@@ -1,7 +1,6 @@
 """Statements (CR15): Michelle's three months of history and the statements article v2 (0077); real temporary PostgreSQL."""
 from decimal import Decimal
 import pytest
-from app.services import knowledge
 
 pytestmark=pytest.mark.skipif(__import__('os').getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native PostgreSQL with TEST_DATABASE_LOCAL=1')
 
@@ -21,9 +20,9 @@ def test_card_payments_clear_the_previous_month_and_lead_to_todays_balance(datab
     assert charges('2026-09')==Decimal('1250.40')  # her card balance before the 27 Oct charges in 0075
 
 
-def test_only_the_latest_statements_version_is_searchable_and_it_matches_the_app(database) -> None:
-    # 0098 split v3 into sections; the memory copy is the sections joined in order.
+def test_only_the_latest_statements_version_is_searchable(database) -> None:
+    # 0098 split v3 into sections.
     assert database.execute("select version,status from kb.articles where article_id='statements' order by 1").fetchall()==[(1,'retired'),(2,'retired'),(3,'published')]
     body,=database.execute("""select string_agg(body,' ' order by array_position(array['monthly','older-copies','missing'],anchor))
         from kb.sections where article_id='statements' and version=3""").fetchone()
-    assert body==knowledge.INDEX['statements'].content and 'Overview' in body and 'Statement or document copy' in body
+    assert 'Overview' in body and 'Statement or document copy' in body

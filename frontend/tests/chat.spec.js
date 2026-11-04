@@ -52,11 +52,11 @@ test('reset does not reopen a source whose request was still loading',async({pag
  await ask(page,'I lost my card');
  let release;const gate=new Promise(resolve=>{release=resolve;});
  let entered;const intercepted=new Promise(resolve=>{entered=resolve;});
- await page.route('**/api/knowledge/lost-card',async route=>{entered();await gate;await route.continue();});
+ await page.route('**/api/knowledge/sections/lost-card/4/main',async route=>{entered();await gate;await route.continue();});
  await page.getByText('Sources',{exact:true}).click();
  await page.getByRole('button',{name:'Lost or stolen card guidance'}).click();await intercepted;
  await page.getByRole('button',{name:'New chat',exact:true}).click();
- const received=page.waitForResponse(r=>r.url().endsWith('/knowledge/lost-card'));release();
+ const received=page.waitForResponse(r=>r.url().endsWith('/knowledge/sections/lost-card/4/main'));release();
  await (await received).finished();
  await ask(page,'What is my balance?');
  await expect(page.getByRole('region',{name:'Source details'})).toHaveCount(0);

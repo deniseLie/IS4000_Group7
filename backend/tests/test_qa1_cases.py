@@ -10,7 +10,7 @@ from app.schemas.contracts import AgentName
 from app.services import answers
 from app.services.guardrail import assess_request
 from app.services.orchestrator import build_graph
-from evaluation import langsmith_sync as sync
+from evaluation import langsmith_sync as sync,targets
 
 BACKEND=Path(__file__).parents[1]
 DOC=(BACKEND.parent/'docs/evaluation/test-cases.md').read_text(encoding='utf-8')
@@ -69,7 +69,7 @@ def test_fixed_route_cases_run_without_a_model(case):
     assert assess_request(req).fixed_response.code==case['expected_route']
     result=asyncio.run(answers.make_answer(req,allow_model=False))
     assert result['response_origin']==case['expected_origin'] and result['needs_human']==case['expect_needs_human']
-    assert set(case['cites_any'])&{s['id'] for s in result['sources']}
+    assert set(case['cites_any'])&{targets.source_id(s['id']) for s in result['sources']}
     assert not any(re.search(p,result['answer']) for p in case.get('reply_lacks',[]))
 
 def test_qa1_examples_carry_persona_and_trajectory():

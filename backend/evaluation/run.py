@@ -1,6 +1,14 @@
-"""Offline regression report by default. --live explicitly opts into model calls."""
+"""Offline regression report by default. --live explicitly opts into model calls.
+
+Offline checks read approved knowledge from a database, as the app does: a temporary local one by default (pgserver and
+every migration, dbtest extra; see evaluation/retrieval.py) or --database-url. Evidence comes from keyword search
+(public.kb_search), the app's fallback, so no embedding or model call is made. Case `source_ids` name articles; each is
+cited as the retrieved section of that article. A case's `evidence` instead reads those articles whole by id: a validator
+check of a non-English answer, which keyword search alone does not match (hybrid does; see evaluation/retrieval.py).
+"""
 import argparse
 import asyncio
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from hashlib import sha256
 import html
@@ -10,7 +18,7 @@ from pathlib import Path
 import time
 from app.schemas.chat import ChatRequest
 from app.services import answers, prompts
-from app.services.knowledge import ARTICLES, search
+from app.services.typos import for_search
 
 HERE = Path(__file__).parent
 LIMITS = [
@@ -31,7 +39,22 @@ def model_details(live):
     return {'transport':transport,'model':os.getenv('CODEX_MODEL','gpt-5.6-luna') if transport=='codex' else os.getenv('LLM_MODEL'),
             'provider':'codex-cli' if transport=='codex' else os.getenv('LLM_PROVIDER','openai')}
 
-async def evaluate(live=False, suite='standard'):
+def keyword_evidence(db, question):
+    """The sections services/kb.search returns without embeddings, as answer evidence."""
+    rows = db.execute("select cite,article_id,body,publisher,scope from public.kb_search(%s,'{}'::text[],4)",(for_search(question),)).fetchall()
+    return [{'id':cite,'article_id':article,'text':body,'publisher':publisher,'scope':scope} for cite,article,body,publisher,scope in rows]
+
+def article_evidence(db, article_ids):
+    rows = [row for article in article_ids for row in db.execute('select cite,article_id,body,publisher,scope from public.kb_get_article(%s)',(article,)).fetchall()]
+    return [{'id':cite,'article_id':article,'text':body,'publisher':publisher,'scope':scope} for cite,article,body,publisher,scope in rows]
+
+def published_knowledge(db):
+    return db.execute("""select a.article_id,a.version,s.anchor,s.heading,s.body,s.keywords from kb.articles a
+        join kb.sections s using(article_id,version) where a.status='published' order by 1,2,3""").fetchall()
+
+async def evaluate(live=False, suite='standard', db=None):
+    """`db`: an open psycopg connection with the knowledge migrations applied; required offline, unused live."""
+    if not live and db is None:raise ValueError('Offline checks need a knowledge database')
     dataset = dataset_path(live,suite)
     cases = json.loads(dataset.read_text())
     results = []
@@ -48,20 +71,20 @@ async def evaluate(live=False, suite='standard'):
                     response = await answers.make_answer(request,allow_model=False)
                     rejected = False
                 else:
-                    articles = answers.retrieve(case['question'], request.messages, request.language)
                     # Same evidence metadata as the real answer pipeline. Without
                     # publisher, the external-policy attribution check is skipped.
-                    evidence = [{'id':a.id,'text':a.content,'publisher':a.publisher,'scope':a.notice} for a in articles]
-                    raw = json.dumps({'answer':case['answer'],'source_ids':case['source_ids']})
+                    evidence = article_evidence(db, case['evidence']) if case.get('evidence') else keyword_evidence(db, case['question'])
+                    cited = [next((e['id'] for e in evidence if e['article_id']==i), i) for i in case['source_ids']]
+                    raw = json.dumps({'answer':case['answer'],'source_ids':cited})
                     answer,ids,reason = answers.check_answer(raw,evidence)
                     rejected = reason is not None
-                    response = {'answer':case['answer'],'source_ids':case['source_ids'],
+                    response = {'answer':case['answer'],'source_ids':cited,
                                 'validation_reason':reason,'sample_only':True}
                 checks = {'expected_response': (rejected if case['expect']=='rejected' else not rejected)}
                 if case.get('contains'):
                     checks['required_guidance'] = case['contains'] in response['answer']
                 if case.get('required_source'):
-                    checks['source_retrieved'] = case['required_source'] in [a.id for a in search(case['question'])]
+                    checks['source_retrieved'] = case['required_source'] in [e['article_id'] for e in evidence]
                 if case['expect']=='accepted':
                     checks['sample_validated'] = response['answer'] == case['answer']
                 row.update(status='pass' if all(checks.values()) else 'fail', checks=checks, **response)
@@ -70,10 +93,10 @@ async def evaluate(live=False, suite='standard'):
             row.update(status='error', error_type=type(exc).__name__)
         row['seconds'] = round(time.monotonic() - started, 3)
         results.append(row)
-    knowledge = json.dumps([vars(a) for a in ARTICLES], sort_keys=True)
+    knowledge = json.dumps(published_knowledge(db) if db is not None else [], default=str)
     services = Path(answers.__file__).parent
     implementation = b''.join((services / name).read_bytes() for name in
-        ('answers.py','knowledge.py','source_checks.py','llm.py','llm_gateway.py','codex_cli.py','privacy.py','safety.py','prompts.py') if (services / name).exists())
+        ('answers.py','kb.py','source_checks.py','llm.py','llm_gateway.py','codex_cli.py','privacy.py','safety.py','prompts.py') if (services / name).exists())
     return {
         'mode':'live_manual_review' if live else 'offline_validator_checks',
         'suite':suite,'model_config':model_details(live),
@@ -106,6 +129,7 @@ async def main():
     parser.add_argument('--live', action='store_true', help='Use configured model; responses require human review')
     parser.add_argument('--suite', choices=('standard','focused'), default='standard', help='focused: small source-check set, excludes deferred complex scenarios; requires --live')
     parser.add_argument('--output', default='evaluation-results.json')
+    parser.add_argument('--database-url', help='Offline: read knowledge from this database instead of a temporary local one')
     parser.add_argument('--compare', type=Path, help='Previous report using the same dataset and mode')
     args = parser.parse_args()
     previous = json.loads(args.compare.read_text()) if args.compare else None
@@ -115,7 +139,12 @@ async def main():
     mode = 'live_manual_review' if args.live else 'offline_validator_checks'
     if previous and (previous['dataset_sha256'] != sha256(dataset.read_bytes()).hexdigest() or previous['mode'] != mode):
         parser.error('Comparison requires the same dataset and mode')
-    report = await evaluate(args.live,args.suite)
+    if args.live:report = await evaluate(args.live,args.suite)
+    else:
+        import psycopg
+        from evaluation.retrieval import local_database
+        with (nullcontext(args.database_url) if args.database_url else local_database()) as uri, psycopg.connect(uri) as db:
+            report = await evaluate(False,args.suite,db)
     if previous:
         old = {r['id']:r['status'] for r in previous['results']}
         report['comparison'] = {'before':previous['summary'], 'after':report['summary'],

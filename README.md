@@ -69,7 +69,7 @@ You need Python 3.12 and Node.js 22. You don't need Docker.
 - `CHECKPOINT_SIGNING_KEY` (any long random string);
 - `DOCUMENT_PRECHECK_SIGNING_KEY`, from `select secret from compliance.precheck_keys where key_id='v1';` in the SQL editor.
 
-Keep `PIPELINE=v2`, `CONVERSATION_STORE=database`, and `CLIENT_INTENT_ROUTING=adaptive`. For the approved database KB, use `KNOWLEDGE_STORE=database` once migrations are ready. Never use a service-role key.
+Keep `PIPELINE=v2`, `CONVERSATION_STORE=database`, and `CLIENT_INTENT_ROUTING=adaptive`. Knowledge is always read from the database, so apply the knowledge migrations (through batch 28) first. Never use a service-role key.
 
 **Client intelligence updates:** [docs/client-ai-improvements.md](docs/client-ai-improvements.md) describes AI-first intent routing, context-aware knowledge retrieval, answer repair, bounded multi-turn card-limit handling and verification. These are client-only changes; the RM assistant is described in the Workflow 2 doc.
 
@@ -103,12 +103,12 @@ Then open http://127.0.0.1:5173 and sign in as Michelle, or as Sophie for the re
 2. In Supabase, open **Connect** and copy the **Session pooler** connection string. Replace the user `postgres` with `demobank_reminders` (keep the `.<project-ref>` after it) and put in the password. Save it in `backend/.env` as `WORKER_DATABASE_URL=…`.
 3. Set `RUN_WORKER_IN_API=true` in `backend/.env` and restart the backend. (Or leave it `false` and run `../.venv/bin/python -m app.worker` from `backend/` in a third terminal.)
 
-**6. Hybrid knowledge search (optional).** With `KNOWLEDGE_STORE=database`, set `KNOWLEDGE_SEARCH=hybrid` to rank knowledge sections by keywords *and* meaning (migration 0099). It needs its own embedding key, never the model key: `EMBEDDING_API_KEY`, plus `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` and `EMBEDDING_MIN_SIMILARITY=0.4` (see `.env.example`). Store the section vectors once, and again after every knowledge migration, using the owner connection string:
+**6. Hybrid knowledge search.** Knowledge search ranks sections by keywords *and* meaning (migration 0099) whenever an embedding key is set; with no key, or if the embedding provider fails, it falls back to keyword search and records `mode: keyword_only` in the audit event. There is no switch. It needs its own embedding key, never the model key: `EMBEDDING_API_KEY`, plus `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` and `EMBEDDING_MIN_SIMILARITY=0.4` (see `.env.example`). Store the section vectors once, and again after every knowledge migration, using the owner connection string:
 ```bash
 cd backend
 ../.venv/bin/python -m scripts.embed_knowledge --database-url "postgresql://..."           # add --check to only report
 ```
-Set `KNOWLEDGE_SEARCH=keyword` and restart to switch back. Each search logs a `knowledge_search` line (and a LangSmith `kb.search` run) with the mode and how long the embedding and database steps took, so the two can be compared. `KNOWLEDGE_RESPELL=false` turns off the chat-spelling table for search only.
+Leave `EMBEDDING_API_KEY` empty and restart for keyword-only search. Each search logs a `knowledge_search` line (and a LangSmith `kb.search` run) with the mode and how long the embedding and database steps took, so the two can be compared. `KNOWLEDGE_RESPELL=false` turns off the chat-spelling table for search only.
 
 Reminders are sent from 7 days before a due date, only for documents she still has to send, and disappear from her Inbox once she has sent everything (or the file the bank asked for). Michelle's review is due 30 Nov, so to see one today, ask for a correction due in 3 days (see *Demo data*); it reaches her Inbox within a minute.
 

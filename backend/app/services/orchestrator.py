@@ -40,9 +40,8 @@ from app.services.actions.store import ActionIntegrityError
 from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks,client_guidance
 from app.services.agents.answer import WITHHELD, respond, response_prompt_id
 from app.services.agents.registry import AGENT_FOR
-from app.services.answers import NOTICE, clean_history, retrieve
+from app.services.answers import NOTICE, PINNED, clean_history
 from app.services.retrieval_context import retrieval_query
-from app.services.knowledge import INDEX,source
 from app.services.guardrail import FRAUD
 from app.services.authorization import require_permission
 
@@ -283,13 +282,6 @@ def prioritise(state: Turn) -> PriorityUpdate:
     return {'plan':TaskPlan(tasks=tasks)}
 
 
-def task_evidence(task: Task, history: list[Message], language: str) -> list[Evidence]:
-    question = task.entities['question']
-    if not isinstance(question, str):raise ValueError('Planned task question must be text')
-    articles = retrieve(question, history, language)
-    return [Evidence(id=a.id, text=a.content, publisher=a.publisher, scope=a.notice, source=Source.model_validate(source(a))) for a in articles]
-
-
 async def database_evidence(task: Task,ctx: RequestContext,history: list[Message] | None=None) -> list[Evidence]:
     """Retrieve only the latest planned question; never replace a no-match with unrelated articles.
 
@@ -318,9 +310,6 @@ def focused_history(state: Turn,task: Task) -> list[Message]:
 async def linked_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
     """Approved security guidance for a sign-in task linked to a reported charge, fetched by id rather than by keyword."""
     if task.entities.get('linked')!='card_fraud':return []
-    if settings.knowledge_store!='database':
-        article=INDEX['app-login-recovery']
-        return [Evidence(id=article.id,text=article.content,publisher=article.publisher,scope=article.notice,source=Source.model_validate(source(article)))]
     with data_api.connect(ctx) as db:item=await kb.get_section(SectionKey(article_id='app-login-recovery',version=2,anchor='unexpected-code'),ctx,db)
     if item is None or not item.current:return []
     return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source())]
@@ -344,9 +333,7 @@ async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispa
     status_lookup=(state['request'].mode=='personal' and task.domain=='retail' and
         client_intents.request_status(str(task.entities.get('question',''))))
     if status_lookup:evidence=[]
-    elif settings.knowledge_store=='database':
-        evidence=await database_evidence(task,ctx,state['history'])
-    else:evidence=task_evidence(task,state['history'],state['request'].language)
+    else:evidence=await database_evidence(task,ctx,state['history'])
     if state['request'].mode=='personal':
         known={item.id for item in evidence}
         evidence=[*evidence,*(item for item in await linked_evidence(task,ctx) if item.id not in known)]
@@ -502,7 +489,7 @@ async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> Settl
             else dispute_text(outcome.command.state,receipt,outcome.command.target))
         sections.append(AnswerSection(task_id=review.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',answer=text,
             sources=[Source(id='action-receipt-'+review.task_id,title='Recorded synthetic action decisions',url=None,version='v1',publisher='DemoBank action ledger'),
-                Source.model_validate(source(INDEX['unrecognised-charge']))],
+                Source.model_validate(PINNED['unrecognised-charge'])],
             needs_human=True,response_origin='safety',prompt_version=None))
     for task_id,decided in outcomes.items():
         block,dispute=decided.get('card.temporary_block'),decided.get('card.dispute')
@@ -534,7 +521,7 @@ async def ask_to_confirm(state: Turn,ctx: RequestContext) -> list[AnswerSection]
         text=await fraud_reports.ask_to_confirm(task,proposal,flagged,ctx)
         if text is None:continue
         sections.append(AnswerSection(task_id=task.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',answer=text,
-            sources=[fraud_reports.records_source(ctx),Source.model_validate(source(INDEX['unrecognised-charge']))],
+            sources=[fraud_reports.records_source(ctx),Source.model_validate(PINNED['unrecognised-charge'])],
             needs_human=True,response_origin='safety',prompt_version=None))
     return sections
 
@@ -572,7 +559,7 @@ async def report_to_fraud_team(state: Turn,ctx: RequestContext,owned: OwnedWorkf
         sections.append(AnswerSection(task_id=task.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',
             answer=FRAUD_TEAM.format(reference=f' (reference {reference})' if reference else '',last4=card.last4),
             sources=[Source(id='action-receipt-'+handoff_id,title='Recorded report to the fraud team',url=None,version='v1',publisher='DemoBank action ledger'),
-                Source.model_validate(source(INDEX['unrecognised-charge']))],
+                Source.model_validate(PINNED['unrecognised-charge'])],
             needs_human=True,response_origin='safety',prompt_version=None))
     return sections
 

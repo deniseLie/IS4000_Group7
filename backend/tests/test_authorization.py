@@ -29,9 +29,8 @@ def test_unknown_tools_and_untrusted_identity_are_denied():
 
 def test_guests_only_get_registered_public_tools():
     ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
-    for tool in ['kb.search','kb.get_fact']:
-        assert decide(ctx.principal,tool,None,ctx).allow
-    for tool in ['customer.get_accounts','docs.precheck','handoff.create','consent.check','actions.propose']:
+    assert decide(ctx.principal,'kb.search',None,ctx).allow
+    for tool in ['kb.get_fact','customer.get_accounts','docs.precheck','handoff.create','consent.check','actions.propose']:  # 0100 removed facts
         assert not decide(ctx.principal,tool,None,ctx).allow
     assert not decide(ctx.principal,'kb.delete_all',None,ctx).allow
     assert not decide(ctx.principal,'kb.search',{'customer_id':1001},ctx).allow
@@ -40,9 +39,8 @@ def test_guests_only_get_registered_public_tools():
 def test_unlinked_customer_can_read_public_knowledge_but_not_personal_tools():
     original=customer(None)
     ctx=original.model_copy(update={'principal':original.principal.model_copy(update={'customer_id':None})})
-    for tool in ['kb.search','kb.get_fact']:
-        assert decide(ctx.principal,tool,None,ctx).allow
-        assert not decide(ctx.principal,tool,{'customer_id':1001},ctx).allow
+    assert decide(ctx.principal,'kb.search',None,ctx).allow
+    assert not decide(ctx.principal,'kb.search',{'customer_id':1001},ctx).allow
     for tool in ['customer.get_profile','customer.get_accounts','consent.check','actions.propose']:
         assert not decide(ctx.principal,tool,None,ctx).allow
 

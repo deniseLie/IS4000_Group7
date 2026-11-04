@@ -68,7 +68,7 @@ def test_chat_writes_one_batch_before_the_answer(store,monkeypatch):
     assert events(r)==['status','answer','done']
     [batch]=store['batches']
     assert [e['action'] for e in batch]==['chat.message_received','chat.fixed_response']
-    assert batch[1]['details']['route']=='lost_card' and batch[1]['details']['source_ids']==['lost-card']
+    assert batch[1]['details']['route']=='lost_card' and batch[1]['details']['source_ids']==['lost-card@v4#main']
     assert UUID(batch[0]['request_id'])==UUID(r.headers['x-request-id'])
     assert 'lost my card' not in json.dumps(batch)
 

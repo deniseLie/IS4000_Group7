@@ -17,6 +17,8 @@ MONTHS={name:i+1 for i,names in enumerate(['jan january','feb february','mar mar
     'aug august','sep sept september','oct october','nov november','dec december']) for name in names.split()}
 CUE=re.compile(r"\b(?:due|by|before|deadline)\b",re.I)
 MONEY=re.compile(r'\b(?:fees?|fall[- ]below|balance|minimum balance|enough money)\b',re.I)
+# The synthetic Everyday Savings term stated in the savings-fees article; kept here because only this check computes with it.
+FALL_BELOW=(Decimal(1000),'SGD')
 TRANSFER=re.compile(r'\b(?:transfers?|pending|payments?|rent|landlord|payee|arrive|go through|make it)\b',re.I)
 WEEKDAY=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 

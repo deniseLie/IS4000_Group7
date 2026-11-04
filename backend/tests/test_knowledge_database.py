@@ -95,38 +95,27 @@ def test_search_excludes_draft_expired_and_not_yet_checked_articles(database: 'C
 def test_app_roles_cannot_modify_knowledge(database: 'Connection[SqlRow]', role: str) -> None:
     from psycopg.errors import InsufficientPrivilege
     database.execute(f'set local role {role}')
-    for table in ['kb.articles','kb.sections','kb.facts']:
+    for table in ['kb.articles','kb.sections','kb.section_embeddings']:
         with pytest.raises(InsufficientPrivilege):
             with database.transaction():database.execute(f'delete from {table}')
 
 
-def test_facts_require_exact_published_source_and_never_invent_missing_rates(database: 'Connection[SqlRow]') -> None:
-    database.execute("insert into kb.facts(fact_id,value,unit,article_id,version,anchor) values ('fixture.amount','0','SGD','accounts',1,'main')")
-    set_customer(database,1001)
-    assert database.execute("select * from public.kb_get_fact('fixture.amount')").fetchall()==[(0,'SGD','kb:accounts@v1#main')]
-    assert database.execute("select * from public.kb_get_fact('fee.card_replacement')").fetchall()==[]
-    database.execute('reset role')
-    database.execute("update kb.articles set status='retired' where article_id='accounts'")
-    database.execute('set local role anon')
-    assert database.execute("select * from public.kb_get_fact('fixture.amount')").fetchall()==[]
-    assert database.execute("select article_id from kb.sections where article_id='accounts'").fetchall()==[('accounts',)]
+def test_dataset_article_ids_match_the_database(database: 'Connection[SqlRow]') -> None:
+    from evaluation.langsmith_sync import ARTICLE_IDS
+    assert ARTICLE_IDS=={row[0] for row in database.execute('select article_id from kb.articles').fetchall()}
 
 
-def test_facts_cannot_reference_unapproved_or_expired_evidence(database: 'Connection[SqlRow]') -> None:
-    for article_id,status,checked,due in [('draft','draft',-1,10),('expired','published',-10,-1)]:
+def test_facts_table_is_gone_and_articles_are_read_whole(database: 'Connection[SqlRow]') -> None:
+    # 0100: figures live in the section text only; kb_get_article returns one published, in-review article in anchor order.
+    assert database.execute("select to_regclass('kb.facts'),to_regprocedure('public.kb_get_fact(text)')").fetchone()==(None,None)
+    for article_id,status,checked,due in [('draft','draft',-1,10),('expired','published',-10,-1),('current','published',-1,10)]:
         add_article(database,article_id,status,checked,due)
-        database.execute("insert into kb.facts(fact_id,value,unit,article_id,version,anchor) values (%s,'1','SGD',%s,1,'main')",(article_id,article_id))
     database.execute('set local role anon')
-    assert database.execute("select * from kb.facts where fact_id='draft'").fetchall()==[]
-    assert database.execute("select * from public.kb_get_fact('draft')").fetchall()==[]
-    assert database.execute("select * from public.kb_get_fact('expired')").fetchall()==[]
-
-
-def test_fact_requires_a_real_section_source(database: 'Connection[SqlRow]') -> None:
-    from psycopg.errors import ForeignKeyViolation
-    with pytest.raises(ForeignKeyViolation):
-        with database.transaction():
-            database.execute("insert into kb.facts(fact_id,value,unit,article_id,version,anchor) values ('fixture.missing','1','SGD','accounts',1,'missing')")
+    for article_id in ('draft','expired','no-such-article'):
+        assert database.execute('select * from public.kb_get_article(%s)',(article_id,)).fetchall()==[]
+    assert database.execute("select cite,score from public.kb_get_article('current')").fetchall()==[('kb:current@v1#main',0.0)]
+    rows=database.execute("select article_id,version,anchor from public.kb_get_article('statements')").fetchall()
+    assert rows and {row[:2] for row in rows}=={('statements',3)} and [row[2] for row in rows]==sorted(row[2] for row in rows)
 
 
 @pytest.mark.parametrize('url',['http://www.moneysense.gov.sg/page','https://www.moneysense.gov.sg.evil.invalid/page',
@@ -136,14 +125,6 @@ def test_external_source_host_constraints(database: 'Connection[SqlRow]', url: s
     add_article(database,'external','published',-1,10)
     with pytest.raises(CheckViolation):
         with database.transaction():database.execute("update kb.articles set reference_url=%s where article_id='external'",(url,))
-
-
-@pytest.mark.parametrize('value',['true','null','{}','[]','""','"   "'])
-def test_fact_values_are_typed_and_nonempty(database: 'Connection[SqlRow]', value: str) -> None:
-    from psycopg.errors import CheckViolation
-    with pytest.raises(CheckViolation):
-        with database.transaction():
-            database.execute("insert into kb.facts(fact_id,value,unit,article_id,version,anchor) values ('fixture.invalid',%s::jsonb,'SGD','accounts',1,'main')",(value,))
 
 
 @pytest.mark.parametrize('query,expected',[('wats the monthly fee for a savings acc?','savings-fees'),
@@ -171,7 +152,6 @@ def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connect
     assert database.execute("select article_id,version from kb.articles where article_id in ('lost-card','support') and status='published' order by 1").fetchall()==[('lost-card',4),('support',5)]  # 0096, 0098
     assert {row[2] for row in search(database,'lost stolen card block',['fraud'],4) if row[1]=='lost-card'}=={4}
     assert database.execute("select article_id from public.kb_get_section('support',1,'main')").fetchall()==[('support',)]
-    assert database.execute("select * from public.kb_get_fact('savings.fall_below_fee')").fetchall()==[(2,'SGD','kb:savings-fees@v1#main')]
 
 
 def test_unexpected_code_guidance_publishes_login_recovery_v2(database: 'Connection[SqlRow]') -> None:
@@ -180,7 +160,9 @@ def test_unexpected_code_guidance_publishes_login_recovery_v2(database: 'Connect
     rows=search(database,'also i got a weird OTP last night and now my app is locked',[],4)
     assert rows and rows[0][1]=='app-login-recovery' and rows[0][2]==2
     body=database.execute("select body from public.kb_get_section('app-login-recovery',2,'unexpected-code')").fetchone()[0]
-    assert 'the lock is protecting you' in body and 'including callers, bank staff and this chat' in body and 'cannot see sign-in attempts' in body
+    for guidance in ['did not request','the lock is protecting you','only inside the official DemoBank app','Never use a link in an SMS',
+        'including callers, bank staff and this chat','cannot see sign-in attempts, devices or where a sign-in came from']:
+        assert guidance in body  # the section orchestrator.linked_evidence fetches by id
     assert database.execute("select article_id from public.kb_get_section('app-login-recovery',1,'steps')").fetchall()==[('app-login-recovery',)]
 
 

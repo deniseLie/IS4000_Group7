@@ -5,7 +5,7 @@ Run: PYTHONPATH=backend python backend/scripts/check_client_intelligence.py
 from types import SimpleNamespace
 from app.schemas.chat import Message
 from app.services.agents.card_answers import respond
-from app.services import knowledge,limit_context
+from app.services import limit_context
 from app.services.retrieval_context import retrieval_query
 
 CARDS=[SimpleNamespace(name='Signature Card',last4='7310',status='active',currency='SGD',card_id='c1',network='visa'),
@@ -46,17 +46,7 @@ def run():
     verify('Signature Card' in a[-1].text and 'day and month' in a[-1].text,'Year cannot override card selection')
     h,a=conversation('I want to increase my card limit to SGD 12000','temporary','Travel Card', 'Show my account balance','2028')
     verify(a[-1] is None or 'day and month' not in a[-1].text,'Unrelated topic closes intake')
-    cases=[('wats the monthly fee for a savings acc?','savings-fees'),
-           ('i got locked out of the app on my phone','app-login-recovery'),
-           ('can i get a car loan','car-loans'),
-           ('theres a $2400 charge i dont recognise','unrecognised-charge'),
-           ('How do I get my statement?','statements')]
-    for query,expected in cases:
-        verify(bool(knowledge.search(query)) and knowledge.search(query)[0].id==expected,
-               'Approved source search: '+expected)
-    verify(bool(knowledge.search('credit card minimum payment interest')) and
-        'sg-card-payments' in [article.id for article in knowledge.search('credit card minimum payment interest')],
-        'Approved educational credit-card source retrieved')
+    # Approved-source search runs in the database: tests/test_knowledge_checks.py and python -m evaluation.retrieval.
     hist=[Message(role='user',content='How do I get a monthly statement?'),
           Message(role='assistant',content='Where do I find statements?'),
           Message(role='user',content='And for September?')]

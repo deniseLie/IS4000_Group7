@@ -8,7 +8,7 @@ from postgrest import SyncPostgrestClient
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 from app.schemas.contracts import Principal,RequestContext,Task
-from app.schemas.knowledge import KnowledgeDetails,KnowledgeFact,KnowledgeQuery
+from app.schemas.knowledge import KnowledgeDetails,KnowledgeQuery
 from app.services import kb
 from app.services.orchestrator import database_evidence
 from tests.data_api_support import NativeAPI,mint_token
@@ -20,10 +20,9 @@ def guest() -> RequestContext:
     return RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
 
 
-def test_v1_database_failure_never_substitutes_memory_but_safety_still_works(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+def test_v1_database_failure_fails_the_answer_but_safety_still_works(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
     import psycopg
     from app.core.config import settings
-    monkeypatch.setattr(settings,'knowledge_store','database')
     monkeypatch.delenv('LLM_MODEL',raising=False)
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute('drop function public.kb_search(text,text[],integer)')
@@ -35,7 +34,7 @@ def test_v1_database_failure_never_substitutes_memory_but_safety_still_works(loc
         assert db.execute("select count(*) from audit.events where action='chat.reply_sent' and outcome='failed'").fetchone()==(1,)
 
 
-def test_real_search_scope_no_match_and_missing_fact(local_data_api: NativeAPI) -> None:
+def test_real_search_scope_and_no_match(local_data_api: NativeAPI) -> None:
     with SyncPostgrestClient(local_data_api.url) as db:
         results=asyncio.run(kb.search(KnowledgeQuery(query='fixed deposit early withdrawal',scope='retail',k=4),guest(),db))
         assert results and any(item.article_id=='sg-accounts' for item in results)
@@ -43,7 +42,7 @@ def test_real_search_scope_no_match_and_missing_fact(local_data_api: NativeAPI) 
         assert asyncio.run(kb.search(KnowledgeQuery(query='zxqvfrubble',scope='public',k=4),guest(),db))==[]
         assert asyncio.run(kb.search(KnowledgeQuery(query='the and or',scope='public',k=4),guest(),db))==[]
         assert asyncio.run(kb.search(KnowledgeQuery(query='fixed deposit',scope='compliance',k=4),guest(),db))==[]
-        assert asyncio.run(kb.get_fact('fee.card_replacement',guest(),db)) is None
+        assert asyncio.run(kb.get_article('no-such-article',guest(),db))==[]
 
 
 def test_source_round_trip_guest_customer_and_audit(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
@@ -94,16 +93,14 @@ def test_out_of_review_sources_are_not_searched(local_data_api: NativeAPI,native
     assert response.status_code==200 and response.json()['current'] is False
 
 
-def test_real_fact_value_and_no_write_access(local_data_api: NativeAPI) -> None:
-    import psycopg
-    with psycopg.connect(local_data_api.database_uri) as db:
-        db.execute("""insert into kb.facts(fact_id,value,unit,article_id,version,anchor)
-            values ('test.synthetic_amount','12.5'::jsonb,'SGD','accounts',1,'main')""")
+def test_real_article_read_and_no_write_access(local_data_api: NativeAPI) -> None:
+    # 0100: one approved article read whole by id (RM ticket guidance); the facts table is gone.
     with SyncPostgrestClient(local_data_api.url) as db:
-        fact=asyncio.run(kb.get_fact('test.synthetic_amount',guest(),db))
-        assert isinstance(fact,KnowledgeFact) and fact.value==12.5 and fact.source_id=='kb:accounts@v1#main'
-        with pytest.raises(APIError):db.schema('kb').table('facts').delete().eq('fact_id','test.synthetic_amount').execute()
-        assert asyncio.run(kb.get_fact('test.synthetic_amount',guest(),db))==fact
+        sections=asyncio.run(kb.get_article('statements',guest(),db))
+        assert [item.anchor for item in sections]==sorted(item.anchor for item in sections) and {item.version for item in sections}=={3}
+        assert all(item.article_id=='statements' and item.current and item.cite==item.source().id for item in sections)
+        with pytest.raises(APIError):db.schema('kb').table('sections').delete().eq('article_id','statements').execute()
+        assert asyncio.run(kb.get_article('statements',guest(),db))==sections
 
 
 def test_registry_failure_is_not_a_no_match(local_data_api: NativeAPI,native_api_client: TestClient) -> None:

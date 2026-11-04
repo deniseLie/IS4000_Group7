@@ -4,7 +4,7 @@ from uuid import uuid4
 from app.schemas.contracts import Decision,Principal,RequestContext
 from app.services import actions, customer_data, kb, policy
 SIGNATURES={  # the agreed names and parameters; change only together with the callers
-    kb.search:['query','ctx','db'], kb.get_fact:['fact_id','ctx','db'],
+    kb.search:['query','ctx','db'], kb.get_article:['article_id','ctx','db'],
     customer_data.get_profile:['ctx'], customer_data.get_accounts:['ctx'], customer_data.get_transactions:['ctx','from_','to','filters'],
     customer_data.get_credit_cards:['ctx'], customer_data.get_loans:['ctx'],
     customer_data.get_requests:['ctx'], customer_data.get_free_slots:['query','ctx'],

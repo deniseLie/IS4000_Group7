@@ -72,7 +72,6 @@ def test_saved_v2_checkpoint_ui(local_data_api: NativeAPI,native_api_client: Tes
     import psycopg
     monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setattr(settings,'pipeline','v2')
-    monkeypatch.setattr(settings,'knowledge_store','memory')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     monkeypatch.delenv('LLM_MODEL',raising=False)
     case=NativeBrowserSession(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,1001,'aal1',uuid4()),user_id=persona_id(1001))

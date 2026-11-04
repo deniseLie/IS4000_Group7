@@ -38,7 +38,7 @@ with expected(name) as (values
     ('conversation.turns'),
     ('events.outbox'),
     ('kb.articles'),
-    ('kb.facts'),
+    ('kb.section_embeddings'),
     ('kb.sections'),
     ('notify.inbox'),
     ('notify.preferences'),

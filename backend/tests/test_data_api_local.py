@@ -41,7 +41,7 @@ def test_anonymous_sdk_can_search_only_public_knowledge(local_data_api: NativeAP
         hits=TypeAdapter(list[SearchHit]).validate_python(data)
         assert hits and any(hit.article_id=='sg-accounts' for hit in hits)
         assert all(hit.cite.startswith('kb:') and hit.publisher and hit.scope for hit in hits)
-        assert db.rpc('kb_get_fact',{'p_fact_id':'fee.card_replacement'}).execute().data==[]
+        assert db.rpc('kb_get_article',{'p_article_id':'no-such-article'}).execute().data==[]
         with pytest.raises(APIError):db.schema('banking').table('bank_accounts').select('*').execute()
 
 

@@ -1,4 +1,4 @@
-"""Store embedding vectors for published knowledge sections (migration 0099, KNOWLEDGE_SEARCH=hybrid).
+"""Store embedding vectors for published knowledge sections (migration 0099; search uses them whenever EMBEDDING_API_KEY is set).
 
 Run as the database owner (app roles only read kb.section_embeddings) after every knowledge migration. Uses the
 embedding settings (EMBEDDING_API_KEY, EMBEDDING_BASE_URL, EMBEDDING_MODEL), never LLM_API_KEY. A section is embedded

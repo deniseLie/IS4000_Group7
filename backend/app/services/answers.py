@@ -1,15 +1,14 @@
 import json
 import re
+from uuid import uuid4
 from collections.abc import Awaitable,Callable
 from app.core.observability import span, add_span, current_trace
 from app.schemas.chat import ChatRequest,Message
 from app.schemas.agents import Evidence
-from app.schemas.contracts import RequestContext
-from app.schemas.events import AnswerEvent,Source
+from app.schemas.contracts import Principal,RequestContext
+from app.schemas.events import Source
 from app.schemas.knowledge import KnowledgeQuery
 from app.core import data_api
-from app.services.knowledge import search, source, INDEX, ARTICLES, is_current
-from app.services.retrieval_context import retrieval_query
 from app.services.privacy import redact
 from app.services.guardrail import assess_request
 from app.services.source_checks import check_sources, numbers
@@ -20,6 +19,27 @@ EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
 
 NOTICE='General information only, not advice or a contract. Demo records are synthetic. Only the bank can confirm fees or approve a loan.'
 URL=re.compile(r'https?://',re.I)
+# Fixed safety replies never wait for the model or the database. Their wording follows the approved lost-card v4 and
+# support v5 articles (migrations 0096, 0098), and they cite the pinned section they follow. Published versions stay
+# citable after a revision; tests/test_knowledge_checks.py checks that each pin is the current section and the text matches.
+def pinned(article_id: str,version: int,anchor: str,title: str) -> dict:
+    return Source(id=f'kb:{article_id}@v{version}#{anchor}',title=title,url=f'/knowledge/sections/{article_id}/{version}/{anchor}',
+        version=f'v{version}',publisher='DemoBank coursework project').model_dump()
+PINNED={'security':pinned('security',2,'never-share','Protecting private information'),
+    'lost-card':pinned('lost-card',4,'main','Lost or stolen card guidance'),
+    'support':pinned('support',5,'main','Getting human support'),
+    'accounts':pinned('accounts',1,'main','Demo account information'),
+    'unrecognised-charge':pinned('unrecognised-charge',3,'urgent-steps','Unrecognised card charge')}
+LOST_CARD=('If your card is lost or stolen, freeze it straight away: on Overview, under Cards, choose Manage and then Freeze card. '
+    'Then raise a replacement request (Manage, then Report lost, stolen or damaged); a lost or stolen card is frozen as soon as you submit, '
+    'and card operations cancel it and send a new card with a new number to your registered address. If you also see charges you do not '
+    'recognise, report them in the chat: they go to the fraud team as urgent. You can unfreeze a card yourself only if you froze it and '
+    'nothing is open with the fraud team or card operations. Never share your PIN, password, OTP, CVV or full card number.')
+HUMAN_SUPPORT=('When you are signed in, Talk to a person shows a short summary; approving it passes your question to your relationship '
+    'manager with a reference to follow in My requests. Charges you do not recognise and lost or stolen cards go to the fraud team as urgent '
+    'instead. As a guest you can review, edit and copy a summary for your own use; copying does not send anything. For a real issue, contact '
+    'your bank using its official app or website. The assistant cannot make payments, block or cancel cards, close accounts, dispute, refund '
+    'or reverse charges, or change banking records.')
 ACTION_CLAIM=re.compile(r'\b(?:I have|I\x27ve|we have|successfully)\s+(?:blocked|transferred|approved|submitted|refunded|reversed|cancell?ed|disputed|investigated|expedited|sped up|passed|forwarded|escalated|opened|created|sent)',re.I)
 
 def clean_history(messages):
@@ -32,25 +52,6 @@ def decide(info,route):
     info['route']=route
     add_span('route','agent',route=route,risk_flags=info['risk_flags'],priority=info['priority'])
 
-
-def retrieve(question,history,language):
-    with span('retrieve','tool') as a:
-        articles=search(question)
-        # Only expand a follow-up when the direct query retrieved no evidence.
-        # A new topic must never replay earlier evidence.
-        if not articles:
-            expanded=retrieval_query(question,history)
-            if expanded!=question:articles=search(expanded)
-        # A greeting or insult must not be forced into an earlier banking topic.
-        # The library is small: give the model current guidance for ambiguous
-        # follow-ups and let it respond to the latest message in context.
-        a['history_fallback']=False
-        a['all_articles']=not articles or language!='English'
-        if a['all_articles']:
-            articles=[x for x in ARTICLES if is_current(x)]
-        a['count']=len(articles)
-        a['article_ids']=[x.id for x in articles]
-    return articles
 
 def check_answer(raw,evidence):
     """Return (answer, source_ids, reason). reason is None when every check passes."""
@@ -79,24 +80,17 @@ def validate(raw,evidence):
         if reason:a['reason']=reason
     return answer,ids,reason
 
-async def make_answer(req, context=None, *, allow_model=True):
-    return await produce_answer(req,context,allow_model,memory_evidence)
-
-
-async def memory_evidence(question: str,history: list[Message],language: str) -> list[Evidence]:
-    return [Evidence(id=a.id,text=a.content,publisher=a.publisher,scope=a.notice,source=Source.model_validate(source(a)))
-        for a in retrieve(question,history,language)]
-
-
-async def make_database_answer(req: ChatRequest,context: str | None,ctx: RequestContext) -> AnswerEvent:
-    """Keep the v1 personal/safety flow while retrieving ordinary guidance from persisted knowledge."""
+async def make_answer(req: ChatRequest,context: str | None=None,ctx: RequestContext | None=None,*,allow_model=True) -> dict:
+    """The v1 personal/safety flow with ordinary guidance from persisted knowledge; no match stays an empty result.
+    Fixed safety routes return before any database read, so they need no `ctx` (a guest context is used otherwise)."""
+    ctx=ctx or RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
     async def load(question: str,history: list[Message],language: str) -> list[Evidence]:
         with span('retrieve','tool') as attrs:
             with data_api.connect(ctx) as db:
                 sections=await kb.search(KnowledgeQuery(query=question,scope='public',k=4),ctx,db)
             attrs.update(store='database',count=len(sections),article_ids=[item.cite for item in sections])
         return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
-    return AnswerEvent.model_validate(await produce_answer(req,context,True,load))
+    return await produce_answer(req,context,allow_model,load)
 
 
 async def produce_answer(req,context,allow_model,evidence_loader: EvidenceLoader):
@@ -117,14 +111,14 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
     lost_card='lost_card' in risk.risk_flags
     if warning:
         decide(info,'secrets')
-        result.update(answer='Private details were removed. Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. If a real secret was shared, use your bank’s official security or recovery service.',sources=[source(INDEX['security'])],needs_human=True)
+        result.update(answer='Private details were removed. Never share passwords, PINs, OTPs, CVVs or full card numbers in chat. If a real secret was shared, use your bank’s official security or recovery service.',sources=[PINNED['security']],needs_human=True)
         if lost_card:
-            result['answer']+=' '+INDEX['lost-card'].content
-            result['sources'].append(source(INDEX['lost-card']))
+            result['answer']+=' '+LOST_CARD
+            result['sources'].append(PINNED['lost-card'])
         return result
     if lost_card:
         decide(info,'lost_card')
-        result.update(answer=INDEX['lost-card'].content,sources=[source(INDEX['lost-card'])],needs_human=True)
+        result.update(answer=LOST_CARD,sources=[PINNED['lost-card']],needs_human=True)
         return result
     if risk.fixed_response and risk.fixed_response.code=='other_customer_data':
         decide(info,'other_customer_data')
@@ -136,12 +130,13 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
         return result
     if risk.fixed_response and risk.fixed_response.code=='human_support':
         decide(info,'human_support')
-        result.update(answer=INDEX['support'].content,sources=[source(INDEX['support'])],needs_human=True)
+        result.update(answer=HUMAN_SUPPORT,sources=[PINNED['support']],needs_human=True)
         return result
     if risk.fixed_response and risk.fixed_response.code=='guest_balance':
         decide(info,'guest_balance')
-        result.update(answer='Sign in and select Personal demo records to ask about your synthetic balances, transactions or payment details. General banking help is available without login.',sources=[source(INDEX['accounts'])])
+        result.update(answer='Sign in and select Personal demo records to ask about your synthetic balances, transactions or payment details. General banking help is available without login.',sources=[PINNED['accounts']])
         return result
+    if not allow_model:raise RuntimeError('Model calls are disabled for this check')  # before any database read
     retrieved=await evidence_loader(question,history,req.language)
     info['article_ids']=[item.id for item in retrieved]
     evidence=[item.model_dump(exclude={'source'}) for item in retrieved]
@@ -152,7 +147,6 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
     decide(info,'llm')
     result['source_check']='rejected'
     result['prompt_version']=prompts.current()['id']
-    if not allow_model:raise RuntimeError('Model calls are disabled for this check')
     raw=await llm.answer(history,evidence,req.language)
     answer,ids,reason=validate(raw,evidence)
     if reason=='source_check':

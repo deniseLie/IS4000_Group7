@@ -22,7 +22,6 @@ pytestmark=pytest.mark.skipif(os.getenv('TEST_BROWSER_LOCAL')!='1' or os.getenv(
 def test_workflow_one(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch,tmp_path: Path,decision: str) -> None:
     import psycopg
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
-    monkeypatch.setattr(settings,'knowledge_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-workflow-one-browser-key-with-at-least-32-characters')
     case=NativeBrowserSession(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,1001,'aal1',uuid4()),user_id=persona_id(1001))
     run_browser(native_api_client,case,f'workflow one {decision}',tmp_path,timeout=900)

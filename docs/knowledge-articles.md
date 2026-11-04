@@ -1,11 +1,10 @@
 # Knowledge articles
 
-The approved articles the assistant can retrieve, as of 3 Nov 2026 (migrations up to `0099`).
+The approved articles the assistant can retrieve, as of 4 Nov 2026 (migrations up to `0100`).
 
-**Two stores, same 31 articles:**
-- **Memory** (`backend/app/services/knowledge.py`, `KNOWLEDGE_STORE=memory`) keeps each article as one text: its sections joined in order.
-- **Database** (`kb.articles`, `kb.sections`, `kb.facts`, `KNOWLEDGE_STORE=database`) keeps the sections separately (anchors below), plus retired versions.
-- **Section vectors** (`kb.section_embeddings`, migration `0099`) are used only by hybrid search (`KNOWLEDGE_SEARCH=hybrid`). Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
+**One store.** Since 4 Nov 2026 (`0100`) articles live only in the database; the in-memory copy (`knowledge.py`) and the `KNOWLEDGE_STORE` switch are gone.
+- **Articles and sections** (`kb.articles`, `kb.sections`) keep each section separately (anchors below), plus retired versions, which stay citable.
+- **Section vectors** (`kb.section_embeddings`, migration `0099`) are used by hybrid search, which runs whenever `EMBEDDING_API_KEY` is set; without a key, or if the provider fails, search is keyword only. Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
 
 All content is synthetic demo guidance or a summary of an allowed public source. The 2 Nov articles were informed by [research on how a private bank explains these topics](research/ubs-practices.md). They are written as DemoBank guidance and do not name or quote that bank.
 
@@ -65,18 +64,20 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 | `rm-working` | Working with your relationship manager | DemoBank | v1 · role, contact | What the RM does and who decides; Talk to a person, Meetings and Records contact details; urgent card issues skip the RM |
 | `rm-change` | Changes to your relationship manager | DemoBank | v1 · team-restructure, continuity, no-advisor, unrecorded | Why the RM changed and what stays the same |
 
-## Facts (exact figures checked by the validator)
+## Figures in the articles
 
-| Fact id | Value | Article · anchor | Store |
-|---|---|---|---|
-| `savings.monthly_fee` | 0 SGD | `savings-fees` · main | Database |
-| `savings.fall_below_fee` | 2 SGD | `savings-fees` · main | Database |
-| `savings.fall_below_threshold` | 1000 SGD | `savings-fees` · main | Database and memory |
-| `review.proof_of_address_max_age` | 3 months | `review-documents` · proof-of-address | Database and memory |
-| `review.statement_months` | 3 months | `review-documents` · bank-statements | Database and memory |
-| `documents.max_upload_size` | 10 MB | `document-uploads` · formats | Database and memory |
-| `statements.months_available` | 3 months | `statements` · monthly | Database and memory |
-| `transfers.overseas_business_days` | "1-3" business days | `overseas-transfers` · fees-timing | Database and memory |
+The validator checks every figure in an answer against the cited section text. These figures were also stored in `kb.facts` until `0100` dropped the table: nothing read it except the retail fall-below check, which now keeps its synthetic SGD 1,000 term as `retail_checks.FALL_BELOW`. The ids below are kept as labels only.
+
+| Figure | Value | Article · anchor |
+|---|---|---|
+| `savings.monthly_fee` | 0 SGD | `savings-fees` · main |
+| `savings.fall_below_fee` | 2 SGD | `savings-fees` · main |
+| `savings.fall_below_threshold` | 1000 SGD | `savings-fees` · main |
+| `review.proof_of_address_max_age` | 3 months | `review-documents` · proof-of-address |
+| `review.statement_months` | 3 months | `review-documents` · bank-statements |
+| `documents.max_upload_size` | 10 MB | `document-uploads` · formats |
+| `statements.months_available` | 3 months | `statements` · monthly |
+| `transfers.overseas_business_days` | "1-3" business days | `overseas-transfers` · fees-timing |
 
 **Where the 0098 figures come from.** Each one restates a rule the app already enforces or text that was already approved:
 - the proof-of-address and statement rules come from `document_templates.py`;
@@ -104,7 +105,6 @@ Kept so old citations still open; search never returns them:
   - The compliance and document agents still take the client's own items, due dates and findings from case records and the document templates. The articles explain what those mean.
 - **`rm-change` stays at v1 in the database.**
   - Migration `0062` pins its sections for the relationship introduction, so the client-facing RM explanation went into the new `rm-working` instead.
-  - Since 2 Nov the memory copy of `rm-change` holds the same four section texts as the database, so the two copies no longer differ.
 - **Most articles now have several sections.**
   - Older articles are 45–130 words in one section.
   - The 2 Nov articles use one idea per section, about 60–150 words each.
@@ -112,7 +112,8 @@ Kept so old citations still open; search never returns them:
   - Four articles summarise external sources: three MoneySense, one ABS.
   - They were checked on 12 Oct 2026, review is due 12 Jan 2027, and after that date they drop out of search.
   - The allow-list of external publishers is unchanged.
-- **The memory fallback is larger.** With no keyword match, or for a non-English question, memory mode sends every current article to the model. That is now 28 articles instead of 21.
+- **No match means no evidence.** There is no fallback library: a question with no keyword or similarity match gets no articles, and the answer pipeline treats that as an empty result. Non-English questions rely on hybrid search (keyword search alone rarely finds them).
+- **Fixed safety replies keep their own text.** Lost card, human support, secrets and guest balance answer without the model or the database and cite pinned sections (`answers.PINNED`: lost-card v4, support v5, security v2, accounts v1, unrecognised-charge v3). Revising one of those articles means updating the text and pin in `answers.py`; `test_knowledge_checks.py` fails until then.
 - **Gaps:**
   - home and personal loans, and borrowing against investments;
   - transfer and ATM limits;

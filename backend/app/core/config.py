@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Literal
-from pydantic import Field,SecretStr,model_validator
+from pydantic import Field,SecretStr
 
 load_dotenv(Path(__file__).resolve().parents[2] / '.env')
 load_dotenv(Path(__file__).resolve().parents[3] / '.env')
@@ -14,11 +14,9 @@ class Settings(BaseSettings):
 
     max_tokens: int = 4096
     pipeline: Literal['v1', 'v2'] = 'v1'
-    knowledge_store: Literal['memory','database'] = 'memory'
-    # Knowledge search (services/kb.py, migration 0099). hybrid: database store only, keyword ranks fused with embedding
-    # similarity; the embedding client has its own key and endpoint, never LLM_API_KEY. Restart after switching.
-    knowledge_search: Literal['keyword','hybrid'] = 'keyword'
-    knowledge_respell: bool = True  # typos.respell before search in both stores; off measures search without the spelling table
+    # Knowledge search (services/kb.py, migration 0099): keyword ranks fused with embedding similarity. The embedding client
+    # has its own key and endpoint, never LLM_API_KEY; without EMBEDDING_API_KEY, or when the provider fails, search is keyword only.
+    knowledge_respell: bool = True  # typos.respell before search; off measures search without the spelling table
     embedding_api_key: SecretStr | None = Field(default=None,repr=False)
     embedding_base_url: str = 'https://openrouter.ai/api/v1'
     embedding_model: str = Field(default='openai/text-embedding-3-small',pattern=r'^[a-z0-9][a-z0-9._/:-]{0,99}$')
@@ -56,14 +54,6 @@ class Settings(BaseSettings):
     rate_refill_per_s: float = 1.0
     guest_rate_capacity: int = 20  # burst per client address
     guest_rate_refill_per_s: float = 0.5
-
-    @model_validator(mode='after')
-    def hybrid_needs_embeddings(self):
-        if self.knowledge_search=='hybrid' and self.knowledge_store!='database':
-            raise ValueError('KNOWLEDGE_SEARCH=hybrid needs KNOWLEDGE_STORE=database')
-        if self.knowledge_search=='hybrid' and not (self.embedding_api_key and self.embedding_api_key.get_secret_value()):
-            raise ValueError('KNOWLEDGE_SEARCH=hybrid needs EMBEDDING_API_KEY')
-        return self
 
 
 settings = Settings()

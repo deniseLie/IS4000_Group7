@@ -202,7 +202,6 @@ def test_saved_v2_api_checkpoints_without_runtime_credentials(local_data_api: Na
     import psycopg
     monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setattr(settings,'pipeline','v2')
-    monkeypatch.setattr(settings,'knowledge_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     monkeypatch.delenv('LLM_MODEL',raising=False)
     sid=uuid4()

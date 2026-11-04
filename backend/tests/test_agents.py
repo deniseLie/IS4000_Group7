@@ -14,14 +14,13 @@ from app.schemas.contracts import AgentResult,Principal,RequestContext, Task, Ta
 from app.schemas.events import Source
 from app.services.agents.answer import respond, validate_draft
 from app.services.guardrail import assess_request
-from app.services.knowledge import INDEX, source
+from tests.knowledge_fixtures import cite
+from tests import knowledge_fixtures
 from app.services.orchestrator import compose,dispatch_task, prioritise, route_issues,simple_issue,task_priority
 
 
 def evidence():
-    article=INDEX['sg-accounts']
-    return [Evidence(id=article.id,text=article.content,publisher=article.publisher,scope=article.notice,
-        source=Source.model_validate(source(article)))]
+    return knowledge_fixtures.evidence('sg-accounts')
 
 
 def task():
@@ -34,16 +33,16 @@ def draft(answer,ids,kind,status,question):
 
 def test_agent_rejects_foreign_sources_and_unsupported_figures():
     for raw in [draft('Contact support.',['security'],'banking','ok',''),
-        draft('The fee is SGD 199.',['sg-accounts'],'banking','ok',''),
-        draft('I have refunded your payment.',['sg-accounts'],'banking','ok',''),
+        draft('The fee is SGD 199.',[cite('sg-accounts')],'banking','ok',''),
+        draft('I have refunded your payment.',[cite('sg-accounts')],'banking','ok',''),
         'not json']:
         result=validate_draft(task(),raw,evidence())
         assert result.status=='error' and result.citations==[] and result.receipts==[]
 
 
 def test_agent_accepts_supported_guidance_and_valid_clarification():
-    result=validate_draft(task(),draft('Early withdrawal may reduce or remove interest.',['sg-accounts'],'banking','ok',''),evidence())
-    assert result.status=='ok' and result.citations[0].source_id=='sg-accounts'
+    result=validate_draft(task(),draft('Early withdrawal may reduce or remove interest.',[cite('sg-accounts')],'banking','ok',''),evidence())
+    assert result.status=='ok' and result.citations[0].source_id==cite('sg-accounts')
     question='Which account do you mean?'
     result=validate_draft(task(),draft(question,[],'conversation','needs_clarification',question),evidence())
     assert result.status=='needs_clarification' and result.question==question
@@ -98,14 +97,14 @@ def test_security_deadline_order_and_guardrail_override_preserve_every_issue():
 def test_one_withheld_section_does_not_discard_other_sections():
     req=ChatRequest(messages=[{'role':'user','content':'Explain early withdrawal and check my document'}])
     tasks=[task(),Task(task_id='t2',domain='document',intent='check_document')]
-    valid=validate_draft(task(),draft('Early withdrawal may reduce interest.',['sg-accounts'],'banking','ok',''),evidence())
+    valid=validate_draft(task(),draft('Early withdrawal may reduce interest.',[cite('sg-accounts')],'banking','ok',''),evidence())
     invalid=AgentResult(task_id='t2',agent='document',status='error',text='This part could not be verified.')
     state={'request':req,'history':req.messages,'history_count':len(req.messages),'plan':TaskPlan(tasks=tasks),'results':[valid,invalid],'evidence':[evidence(),[]]}
     from app.schemas.workflows import ResponseMeta
     from app.services.agents.answer import response_prompt_id
     state={**state,'metadata':[ResponseMeta(origin='ai',prompt_id=response_prompt_id('retail')),ResponseMeta(origin='validation',prompt_id=response_prompt_id('document'))],'decision_sections':[]}
     answer=compose(state)['answer']
-    assert answer.sections[0].response_origin=='ai' and answer.sections[0].sources[0].id=='sg-accounts'
+    assert answer.sections[0].response_origin=='ai' and answer.sections[0].sources[0].id==cite('sg-accounts')
     assert answer.sections[1].response_origin=='validation' and answer.needs_human
     assert answer.prompt_version is None and answer.sections[0].prompt_version.startswith('v1+')
 
@@ -124,6 +123,9 @@ def test_provider_configuration_failure_withholds_a_social_section(monkeypatch):
     req=ChatRequest(messages=[{'role':'user','content':'Hello'}])
     planned=Task(task_id='t1',domain='smalltalk',intent='answer_question',entities={'question':'Hello'})
     ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
+    from app.services import orchestrator
+    async def no_evidence(*args,**kwargs):return []  # knowledge is in the database; this checks the provider failure only
+    monkeypatch.setattr(orchestrator,'database_evidence',no_evidence)
     result=asyncio.run(dispatch_task(planned,{'history':req.messages,'request':req},ctx))['result']
     assert result.status=='error' and result.agent=='retail'
     from app.schemas.workflows import ResponseMeta
@@ -135,7 +137,8 @@ def test_provider_configuration_failure_withholds_a_social_section(monkeypatch):
 @pytest.mark.skipif(os.getenv('TEST_AGENTS_LIVE')!='1',reason='Opt in to real provider calls with TEST_AGENTS_LIVE=1')
 def test_real_domain_agents():
     # Keep one event loop for the real provider's pooled asynchronous HTTP clients.
-    from app.services.orchestrator import task_evidence
+    from app.services.orchestrator import database_evidence
+    ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))  # public knowledge from the configured database
     async def run():
         for domain,question in [
             ('retail','What happens if I withdraw my fixed deposit early?'),
@@ -146,7 +149,7 @@ def test_real_domain_agents():
         ]:
             planned=Task(task_id='live1',domain=domain,intent='answer_question',entities={'question':question})
             req=ChatRequest(messages=[{'role':'user','content':question}])
-            result=await respond(planned,question,req.messages,task_evidence(planned,req.messages,'English'),'English')
+            result=await respond(planned,question,req.messages,await database_evidence(planned,ctx,req.messages),'English')
             assert result.status!='error',domain
             assert result.pending_action is None and result.receipts==[]
     asyncio.run(run())

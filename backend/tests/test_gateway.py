@@ -126,6 +126,9 @@ def test_unlinked_login_reaches_public_agent_but_cannot_use_personal_mode(monkey
     monkeypatch.setattr(settings,'pipeline','v2')
     monkeypatch.delenv('LLM_MODEL',raising=False)
     headers=bearer(sub=str(uuid4()))
+    from app.services import orchestrator
+    async def no_evidence(*args,**kwargs):return []  # knowledge is in the database; the gateway is under test here
+    monkeypatch.setattr(orchestrator,'database_evidence',no_evidence)
     response=client.post('/chat',json=chat('Hello',mode='public'),headers=headers)
     # No fake model: missing configuration withholds the agent section after knowledge access is authorised.
     assert response.status_code==200 and 'event: answer' in response.text and 'event: error' not in response.text
@@ -137,19 +140,19 @@ def test_rate_limit_returns_429_with_retry_after(monkeypatch):
     now=[0.0]
     monkeypatch.setattr(gateway,'customer_bucket',TokenBucket(2,0.5,clock=lambda:now[0]))
     h=bearer()
-    assert [client.get('/knowledge/accounts',headers=h).status_code for _ in range(3)]==[200,200,429]
-    r=client.get('/knowledge/accounts',headers=h)
+    assert [client.get('/capabilities',headers=h).status_code for _ in range(3)]==[200,200,429]
+    r=client.get('/capabilities',headers=h)
     assert code(r)=='rate_limited' and r.headers['retry-after']=='2'
     now[0]+=2
-    assert client.get('/knowledge/accounts',headers=h).status_code==200
+    assert client.get('/capabilities',headers=h).status_code==200
 
 def test_rate_limit_is_per_user_and_guests_are_separate(monkeypatch):
     monkeypatch.setattr(gateway,'customer_bucket',TokenBucket(1,0.001))
     monkeypatch.setattr(gateway,'guest_bucket',TokenBucket(1,0.001))
-    assert client.get('/knowledge/accounts',headers=bearer()).status_code==200
-    assert client.get('/knowledge/accounts',headers=bearer()).status_code==429
-    assert client.get('/knowledge/accounts').status_code==200
-    assert client.get('/knowledge/accounts').status_code==429
+    assert client.get('/capabilities',headers=bearer()).status_code==200
+    assert client.get('/capabilities',headers=bearer()).status_code==429
+    assert client.get('/capabilities').status_code==200
+    assert client.get('/capabilities').status_code==429
 
 def test_payload_limit_with_and_without_content_length():
     big=json.dumps({'messages':[{'role':'user','content':'x'*3999}]*20}).encode()
@@ -161,16 +164,16 @@ def test_payload_limit_with_and_without_content_length():
 def test_session_started_recorded_once_per_session(env,monkeypatch):
     monkeypatch.setattr(audit,'enabled',lambda:True)
     rid=str(uuid4())
-    for _ in range(3):client.get('/knowledge/accounts',headers={**bearer(),'X-Request-Id':rid})
+    for _ in range(3):client.get('/capabilities',headers={**bearer(),'X-Request-Id':rid})
     assert env.db.rpcs==[('audit_session_started',{'p_request_id':rid})]
-    client.get('/knowledge/accounts',headers=bearer(session_id=str(uuid4())))
+    client.get('/capabilities',headers=bearer(session_id=str(uuid4())))
     assert len(env.db.rpcs)==2
 
 def test_failed_session_audit_fails_the_request(env,monkeypatch):
     monkeypatch.setattr(audit,'enabled',lambda:True)
     def broken(*a):raise RuntimeError('down')
     monkeypatch.setattr(env.db,'rpc',broken)
-    r=client.get('/knowledge/accounts',headers=bearer())
+    r=client.get('/capabilities',headers=bearer())
     assert r.status_code==503 and code(r)=='audit_unavailable' and not gateway._sessions
 
 def test_session_end_records_event_with_request_and_session_ids(monkeypatch):
@@ -187,7 +190,7 @@ def test_session_end_needs_a_customer():
     assert r.status_code==401 and code(r)=='auth_required'
 
 def test_non_uuid_request_id_is_replaced():
-    r=client.get('/knowledge/accounts',headers={'X-Request-Id':'abc'})
+    r=client.get('/capabilities',headers={'X-Request-Id':'abc'})
     assert r.headers['x-request-id']!='abc' and UUID(r.headers['x-request-id'])
 
 def test_health_and_preflight_skip_the_gateway(env):

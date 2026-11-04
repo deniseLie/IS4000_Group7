@@ -22,7 +22,7 @@ from app.services.agents.answer import validate_draft
 from app.services.agents.fraud import decision_for,evidence_for
 from app.services.agents.fraud_records import eligible_proposals
 from app.services.guardrail import assess_request
-from app.services.knowledge import INDEX,source
+from tests import knowledge_fixtures
 from app.services.orchestrator import compose,decision_text,preview_answer,prioritise,route_issues,task_priority,task_prompt_id
 from app.services.source_checks import check_sources,unit_matches
 from tests.test_fraud import records
@@ -114,13 +114,13 @@ def test_flagged_charge_offers_the_single_eligible_block_without_a_model_proposa
 @pytest.mark.parametrize('claim',["I've reversed the charge.",'We have cancelled the transfer.','I have successfully disputed it.',
     'I have investigated the payment.','We have expedited your transfer.','I have canceled the payment.'])
 def test_unsupported_action_claims_are_withheld(claim: str) -> None:
-    article=INDEX['transactions']
-    evidence=[Evidence(id=article.id,text=article.content,publisher=article.publisher,scope=article.notice,source=Source.model_validate(source(article)))]
+    evidence=knowledge_fixtures.evidence('transactions')
+    cited=evidence[0].id
     task=Task(task_id='t2',domain='retail',intent='answer_question',entities={'question':'pending transfer'})
-    raw=json.dumps({'answer':claim,'source_ids':[article.id],'answer_kind':'banking','status':'ok','clarification_question':''})
+    raw=json.dumps({'answer':claim,'source_ids':[cited],'answer_kind':'banking','status':'ok','clarification_question':''})
     assert validate_draft(task,raw,evidence).status=='error'
     allowed=json.dumps({'answer':'Pending means processing is not complete; the bank can investigate an unfamiliar transaction.',
-        'source_ids':[article.id],'answer_kind':'banking','status':'ok','clarification_question':''})
+        'source_ids':[cited],'answer_kind':'banking','status':'ok','clarification_question':''})
     assert validate_draft(task,allowed,evidence).status=='ok'
 
 
@@ -349,15 +349,25 @@ def test_retail_sees_only_its_own_issue_when_one_message_has_several() -> None:
     assert focused_history({**state,'plan':TaskPlan(tasks=tasks[1:])},tasks[1])==request.messages
 
 
-def test_linked_otp_and_lock_get_the_unexpected_code_guidance_by_id() -> None:
+def test_linked_otp_and_lock_get_the_unexpected_code_guidance_by_id(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.orchestrator import linked_evidence
     task=Task(task_id='t2',domain='retail',intent='answer_question',priority='P1',entities={'question':'weird OTP, app locked','linked':'card_fraud'})
     ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),customer_id=1001))
+    # The section text is checked in the database (test_knowledge_database.py); here only the fetch by id.
+    from contextlib import nullcontext
+    from app.services import kb,orchestrator
+    from app.schemas.knowledge import StoredSection
+    asked=[]
+    async def get_section(key,ctx,db):
+        asked.append(key)
+        return StoredSection.model_validate({'cite':'kb:app-login-recovery@v2#unexpected-code','article_id':'app-login-recovery','version':2,
+            'anchor':'unexpected-code','title':'Mobile app login recovery','heading':'A code you did not request','body':'Guidance.','score':0,
+            'publisher':'DemoBank coursework project','scope':'Fictional demo guidance; not a live bank policy.','reference_url':None,
+            'checked_on':None,'review_due':None,'published':True})
+    monkeypatch.setattr(orchestrator.data_api,'connect',lambda ctx:nullcontext(None))
+    monkeypatch.setattr(kb,'get_section',get_section)
     evidence=asyncio.run(linked_evidence(task,ctx))
-    assert [item.id for item in evidence]==['app-login-recovery']
-    for guidance in ['did not request','the lock is protecting you','only inside the official DemoBank app','Never use a link in an SMS',
-        'including callers, bank staff and this chat','cannot see sign-in attempts, devices or where a sign-in came from']:
-        assert guidance in evidence[0].text
+    assert [item.id for item in evidence]==['kb:app-login-recovery@v2#unexpected-code'] and [key.anchor for key in asked]==['unexpected-code']
     assert asyncio.run(linked_evidence(task.model_copy(update={'entities':{'question':'locked out'}}),ctx))==[]
     system=prompts.load('retail','v7')['system']
     assert 'likely linked to the card charges' in system and 'Never say that DemoBank or its systems detected' in system
@@ -400,12 +410,11 @@ def test_two_cards_need_a_which_card_question_without_figures() -> None:
 
 
 def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
-    from app.services.knowledge import search
+    # Retrieval of car-loans is in the retrieval cases (car-loan-eligible) and test_knowledge_database.py.
     from app.services.orchestrator import simple_issue
     issue=simple_issue('can i get a car loan','English')
     assert issue is not None and issue.domain=='retail'
-    assert search('can i get a car loan')[0].id=='car-loans'
-    assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail','v7')['system']
+    assert 'never say or imply that this customer is eligible' in prompts.load('retail','v7')['system']
 
 
 @pytest.mark.parametrize('raw',['not json',json.dumps({'answer':'Contact your bank.','source_ids':['customer-records']}),

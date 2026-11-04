@@ -4,7 +4,7 @@ from app.schemas.contracts import AgentName, Domain
 AGENT_FOR: dict[Domain, AgentName] = {'retail':'retail','smalltalk':'retail','fraud':'fraud',
     'compliance':'compliance','document':'document','relationship':'relationship'}
 TOOLS: dict[AgentName, tuple[str, ...]] = {
-    'retail': ('kb.search','kb.get_fact','customer.get_profile','customer.get_accounts',
+    'retail': ('kb.search','customer.get_profile','customer.get_accounts',
         'customer.get_transactions','customer.get_credit_cards','customer.get_loans','tickets.list','handoff.create'),
     'fraud': ('customer.get_transactions','customer.get_credit_cards','actions.propose','handoff.create'),
     'compliance': ('compliance.get_case','compliance.workspace','compliance.update_checklist_item','kb.search','handoff.create'),

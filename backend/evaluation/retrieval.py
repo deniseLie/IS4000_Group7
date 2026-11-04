@@ -1,12 +1,13 @@
 """Offline retrieval evaluation: does knowledge search return the right approved article?
 
-Memory store (default): python -m evaluation.retrieval
-Database store:         python -m evaluation.retrieval --database-url postgresql://...   (calls public.kb_search, k=4)
-Compare set-ups:        python -m evaluation.retrieval --local --search keyword,hybrid --respell on,off --embedding-cache .cache/embeddings.json
+Local database (default): python -m evaluation.retrieval   (temporary pgserver database with every migration, dbtest extra)
+Another database:         python -m evaluation.retrieval --database-url postgresql://...   (calls public.kb_search, k=4)
+Compare set-ups:          python -m evaluation.retrieval --search keyword,hybrid --respell on,off --embedding-cache .cache/embeddings.json
 
+The app always tries hybrid search and falls back to keyword search (services/kb.search), so both are measured here.
 Keyword runs make no model calls. Hybrid runs (migration 0099) embed each question with the real embedding provider
-(EMBEDDING_API_KEY, EMBEDDING_MODEL; never LLM_API_KEY) and call public.kb_hybrid_search. --local starts a temporary
-pgserver database (dbtest extra) with every migration and embeds its sections first. --embedding-cache keeps question
+(EMBEDDING_API_KEY, EMBEDDING_MODEL; never LLM_API_KEY) and call public.kb_hybrid_search; the local database embeds
+its sections first. --embedding-cache keeps question
 vectors between quality runs; leave it out when timing, so each question is a real embedding request. Times are
 measured from this process to the database (psycopg), not through the Data API; the app logs its own timings
 (`knowledge_search` log events and LangSmith kb.search runs).
@@ -27,7 +28,6 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 from app.core.config import settings
-from app.services import knowledge
 from app.services.typos import for_search
 
 HERE=Path(__file__).parent
@@ -37,10 +37,6 @@ Search=Callable[[str],list[str]]
 
 def cases(path: Path=HERE/'retrieval_cases.json') -> list[dict]:
     return json.loads(path.read_text(encoding='utf-8'))
-
-
-def memory_search(question: str) -> list[str]:
-    return [article.id for article in knowledge.search(question)][:K]
 
 
 @contextmanager
@@ -166,10 +162,8 @@ def headline(report: dict) -> str:
 
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    where=parser.add_mutually_exclusive_group()
-    where.add_argument('--database-url',help='Evaluate this database (owner connection) instead of the in-memory library')
-    where.add_argument('--local',action='store_true',help='Evaluate a temporary local database with every migration (dbtest extra)')
-    parser.add_argument('--search',default='keyword',help='Comma list: keyword,hybrid (hybrid needs a database)')
+    parser.add_argument('--database-url',help='Evaluate this database (owner connection) instead of a temporary local one')
+    parser.add_argument('--search',default='keyword',help='Comma list: keyword,hybrid')
     parser.add_argument('--respell',default='on',help='Comma list: on,off (the chat-spelling table before search)')
     parser.add_argument('--min-similarity',default=str(settings.embedding_min_similarity),help='Comma list for hybrid runs, e.g. 0.3,0.4,0.5')
     parser.add_argument('--embedding-cache',type=Path,help='JSON file of question vectors kept between runs (leave out when timing)')
@@ -181,7 +175,6 @@ def main() -> int:
     respells=[value=='on' for value in args.respell.split(',')]
     minimums=[float(value) for value in args.min_similarity.split(',')]
     if not set(searches)<={'keyword','hybrid'} or not set(args.respell.split(','))<={'on','off'}:parser.error('unknown --search or --respell value')
-    if 'hybrid' in searches and not (args.database_url or args.local):parser.error('hybrid search needs --database-url or --local')
     selected=[c for c in cases() if args.split=='all' or c['split']==args.split]
     reports=[]
 
@@ -191,25 +184,22 @@ def main() -> int:
             'embedding_model':vectors.model if vectors else None,'embedding_latency':percentiles(vectors.times) if vectors else None})
         if vectors:vectors.times.clear()
 
-    if not (args.database_url or args.local):
-        for respell in respells:run('memory','keyword',respell,None,memory_search)
-    else:
-        import psycopg
-        with (local_database() if args.local else nullcontext(args.database_url)) as uri, psycopg.connect(uri,autocommit=True) as db:
-            from app.services.embeddings import Runner
-            runner=Runner() if 'hybrid' in searches else None
-            vectors=Vectors(settings.embedding_model,runner,args.embedding_cache) if runner else None
-            try:
-                if args.local and runner:
-                    from scripts.embed_knowledge import pending, store
-                    print(f'embedded {store(db,settings.embedding_model,pending(db,settings.embedding_model),runner)} sections with {settings.embedding_model}')
-                for respell in respells:
-                    if 'keyword' in searches:run('database','keyword',respell,None,database_search(db))
-                    if vectors:
-                        for minimum in minimums:run('database','hybrid',respell,minimum,database_search(db,vectors,minimum),vectors)
-            finally:
-                if vectors:vectors.save()
-                if runner:runner.close()
+    import psycopg
+    with (nullcontext(args.database_url) if args.database_url else local_database()) as uri, psycopg.connect(uri,autocommit=True) as db:
+        from app.services.embeddings import Runner
+        runner=Runner() if 'hybrid' in searches else None
+        vectors=Vectors(settings.embedding_model,runner,args.embedding_cache) if runner else None
+        try:
+            if not args.database_url and runner:
+                from scripts.embed_knowledge import pending, store
+                print(f'embedded {store(db,settings.embedding_model,pending(db,settings.embedding_model),runner)} sections with {settings.embedding_model}')
+            for respell in respells:
+                if 'keyword' in searches:run('database','keyword',respell,None,database_search(db))
+                if vectors:
+                    for minimum in minimums:run('database','hybrid',respell,minimum,database_search(db,vectors,minimum),vectors)
+        finally:
+            if vectors:vectors.save()
+            if runner:runner.close()
     if args.output:args.output.write_text(json.dumps(reports,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     for report in reports:
         print(headline(report))

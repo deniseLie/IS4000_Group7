@@ -3,7 +3,7 @@ import httpx
 import langsmith
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from starlette.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
 from app.api import chat_store
@@ -20,11 +20,10 @@ from app.schemas.contracts import RequestContext
 from app.schemas.conversations import StoredFailure
 from app.schemas.events import AnswerEvent,WorkflowPausedEvent
 from app.schemas.workflows import OwnedWorkflow
-from app.services.answers import make_answer,make_database_answer
+from app.services.answers import make_answer
 from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
-from app.services.knowledge import INDEX, source
 from app.services.orchestrator import answer_personal,answer_public
 from app.services import fraud_reports,rm_handover
 from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
@@ -50,12 +49,6 @@ def audit_reply(batch,trace,result=None,error=None):
         'privacy_warning':result['privacy_warning'],'history_trimmed':result['history_trimmed'],'prompt_version':result['prompt_version'],
         # Audit's released citation format is article@vN#anchor (without the knowledge namespace).
         'reject_reason':trace.attrs.get('reject_reason'),'source_ids':[x['id'].removeprefix('kb:') for x in result['sources']]})
-
-@router.get('/knowledge/{article_id}')
-def knowledge(article_id:str):
-    article=INDEX.get(article_id)
-    if not article:raise HTTPException(404,'Source not found')
-    return {**source(article),'content':article.content,'notice':article.notice}
 
 @router.get('/capabilities')
 def capabilities() -> dict[str,str]:
@@ -132,8 +125,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     else:result=(await answer_public(req,risk,ctx,None)).model_dump(mode='json')
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
-                elif settings.knowledge_store=='database':result=(await make_database_answer(req,current_context,ctx)).model_dump(mode='json')
-                else:result=await make_answer(req,current_context)
+                else:result=await make_answer(req,current_context,ctx)
                 if risk.fixed_response is not None and risk.fixed_response.code=='human_support' and p.kind=='customer' and prepared is not None:
                     # "Talk to a person" in a signed-in saved chat goes straight to the client's RM (migrations 0073, 0082); no model call.
                     # An open RM ticket on the same topic is reused; a failure is explained instead of a generic error (CR9).

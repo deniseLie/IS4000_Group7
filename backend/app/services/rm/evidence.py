@@ -10,7 +10,10 @@ import re
 from dataclasses import dataclass,field
 from datetime import date,datetime,timedelta,timezone
 from typing import Any
-from app.services.knowledge import INDEX
+from app.core import data_api
+from app.schemas.contracts import RequestContext
+from app.schemas.knowledge import KnowledgeSection
+from app.services import kb
 
 
 @dataclass
@@ -113,7 +116,14 @@ def shared_evidence(result: dict|None,customer_id: int) -> Evidence:
         'meaning':'The client has not shared a handover note with you under active consent; nothing from such a note may be used.'},as_of,customer_id)
 
 
-def ticket_detail_bundle(result: dict) -> Bundle:
+async def category_guidance(result: dict,ctx: RequestContext) -> list[KnowledgeSection]:
+    """The approved article a ticket's request type points to (category_info.kb_article), read from the database."""
+    article_id=(result['data'].get('category_info') or {}).get('kb_article')
+    if not article_id:return []
+    with data_api.connect(ctx) as db:return await kb.get_article(article_id,ctx,db)
+
+
+def ticket_detail_bundle(result: dict,guidance: list[KnowledgeSection] | None=None) -> Bundle:
     """RM8: one ticket, what the client was told, its context and the category rules (who decides, which fields)."""
     data,as_of=result['data'],str(result.get('as_of'))
     bundle=Bundle()
@@ -128,8 +138,10 @@ def ticket_detail_bundle(result: dict) -> Bundle:
             'request_to_rm':data.get('rm_request')},as_of,cid))
     info=data.get('category_info') or {}
     bundle.add(Evidence('category-'+data['category'],f"Request type rules: {info.get('label')}",'guidance',info,as_of,cid))
-    article=INDEX.get(info.get('kb_article') or '')
-    if article:bundle.add(Evidence('kb-'+article.id,f'Approved guidance: {article.title}','guidance',{'content':article.content,'version':article.version},article.version,cid))
+    if guidance:
+        first,version=guidance[0],f'v{guidance[0].version}'
+        bundle.add(Evidence('kb-'+first.article_id,f'Approved guidance: {first.title}','guidance',
+            {'content':' '.join(item.body for item in guidance),'version':version},version,cid))
     return bundle
 
 

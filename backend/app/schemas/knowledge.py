@@ -7,7 +7,6 @@ from app.schemas.events import Source
 
 ArticleId=Annotated[str,StringConstraints(strict=True,pattern=r'^[a-z0-9][a-z0-9-]{0,59}$')]
 Anchor=Annotated[str,StringConstraints(strict=True,pattern=r'^[a-z0-9][a-z0-9-]{0,39}$')]
-FactId=Annotated[str,StringConstraints(strict=True,pattern=r'^[a-z][a-z0-9_.]{0,79}$')]
 CitationId=Annotated[str,StringConstraints(strict=True,pattern=r'^kb:[a-z0-9][a-z0-9-]{0,59}@v[1-9][0-9]*#[a-z0-9][a-z0-9-]{0,39}$')]
 Scope=Literal['public','retail','fraud','compliance','document','relationship']
 Text=Annotated[str,StringConstraints(strict=True,min_length=1,pattern=r'\S')]
@@ -72,13 +71,6 @@ class StoredSection(KnowledgeSection):
     @property
     def current(self) -> bool:
         return self.published and super().current
-
-
-class KnowledgeFact(BaseModel):
-    model_config=ConfigDict(extra='ignore',strict=True)
-    value: Annotated[float,Field(allow_inf_nan=False)] | Text
-    unit: Annotated[Text,Field(max_length=32)]
-    source_id: CitationId
 
 
 class KnowledgeDetails(Source):

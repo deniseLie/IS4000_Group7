@@ -31,7 +31,7 @@ All seven v3.1 principles are implemented; the notes say how.
 | ② Orchestrator | **Conversation Orchestrator** | LangGraph graph, eight nodes, includes the composer | `services/orchestrator.py` |
 | shared case state | **Conversation Store** | Saved conversations + signed workflow checkpoints | `services/conversations.py`, `checkpoints.py`, `workflow_store.py` |
 | ③ five agents | **Domain Agents** | Five agents: Complex Banking Needs (`retail`), Fraud & Security, Compliance Review, Document Check, Relationship | `services/agents/` |
-| ④ Knowledge search | **Knowledge Service** | In-memory library (default) or Postgres `kb` tables | `services/knowledge.py`, `kb.py` |
+| ④ Knowledge search | **Knowledge Service** | Postgres `kb` tables: hybrid search with keyword fallback | `services/kb.py`, `embeddings.py` |
 | ④ Customer 360 tools | **Customer Data Service** | Read functions over audited SQL RPCs | `services/customer_data.py`, `agents/*_records.py` |
 | ④ Action ledger | **Action Service** | `run_action()` + SQL executors | `services/actions/` |
 | ④ Consent service | **Authorisation & Consent Service** | `decide()` + `has_consent()` | `services/authorization.py`, `consent.py`, `policy.py` |
@@ -127,7 +127,7 @@ Communication inside `api` is plain function calls. Network hops: browser ↔ AP
 | Setting | Values | Effect |
 |---|---|---|
 | `PIPELINE` | `v1` \| `v2` | `v1` is the original single-path `make_answer` flow; `v2` is the orchestrator and agents described here. Personal v2 chat requires saved conversations |
-| `KNOWLEDGE_STORE` | `memory` \| `database` | In-memory keyword library, or audited Postgres `kb` sections; works with either pipeline |
+| `EMBEDDING_API_KEY` | key \| empty | Hybrid knowledge search when set; keyword search when empty or the provider fails. Knowledge always comes from audited Postgres `kb` sections (no switch since `0100`) |
 | `CONVERSATION_STORE` | `off` \| `database` | Saved conversations, server-side history and durable workflow checkpoints |
 | `CHAT_TRANSPORT` | `api` \| `codex` | OpenRouter via LangChain, or the local Codex CLI (manual alternative) |
 | `RUN_WORKER_IN_API` | `false` \| `true` | Run the notification worker inside the API process |
@@ -325,12 +325,11 @@ Stories without an agent are handled by platform components: CR1 login (Identity
 
 | Part | Built as |
 |---|---|
-| In-memory library (default, `KNOWLEDGE_STORE=memory`) | `services/knowledge.py`: small curated library, keyword search, no embeddings |
 | Articles / sections | `kb.articles`, `kb.sections` (versioned, cited as `article_id@vN#anchor`), migration `0008`; approved seed `0009`; Workflow 1 content `0055` |
 | Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`); since `0097` a section matches only when a question word is in its heading or keywords. Retrieval quality: `backend/evaluation/retrieval.py` ([results](evaluation/README.md#knowledge-retrieval-offline-no-model)) |
-| Hybrid search (optional, `KNOWLEDGE_SEARCH=hybrid`) | Migration `0099`: pgvector, `kb.section_embeddings` (one vector per section and model, written by the owner with `scripts/embed_knowledge.py`), `kb_hybrid_search` fuses the keyword ranking with embedding similarity (reciprocal rank fusion); a section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY` (0.4). The question is embedded by `services/embeddings.py` with its own key (`EMBEDDING_API_KEY`, never `LLM_API_KEY`). If the embedding call fails, keyword search runs and the audit event records `mode: keyword_only`. Database store only ([results](evaluation/README.md#3-nov-2026-hybrid-search-migration-0099)) |
+| Hybrid search (default; keyword fallback) | Migration `0099`: pgvector, `kb.section_embeddings` (one vector per section and model, written by the owner with `scripts/embed_knowledge.py`), `kb_hybrid_search` fuses the keyword ranking with embedding similarity (reciprocal rank fusion); a section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY` (0.4). The question is embedded by `services/embeddings.py` with its own key (`EMBEDDING_API_KEY`, never `LLM_API_KEY`). Without a key, or if the embedding call fails, keyword search runs and the audit event records `mode: keyword_only` ([results](evaluation/README.md#3-nov-2026-hybrid-search-migration-0099)) |
 | Exact source lookup | Migration `0011`; `GET /knowledge/sections/{article}/{version}/{anchor}` |
-| Fact table | `kb.facts`, used for figure checks |
+| One article by id | `kb_get_article` (`0100`): its published, in-review sections in anchor order, for RM ticket guidance. `kb.facts` was dropped in `0100`; figures are checked against section text |
 | Read-only access | RLS on `kb` tables; content changes only through migrations |
 
 - **Inputs / outputs:** `search(KnowledgeQuery) → [KbChunk]`; `get_fact`; `GET /knowledge/{id}`.
@@ -447,7 +446,7 @@ In the build a "tool" is a permission name checked by `require_permission`, not 
 
 | Tool | Backend function / route | Agents (allow-list) |
 |---|---|---|
-| `kb.search`, `kb.get_fact` | `kb.search`, `knowledge.py` | Complex Banking Needs, Compliance Review, Relationship; public for everyone |
+| `kb.search` | `kb.search`, `kb.get_article`, `kb.get_section` | Complex Banking Needs, Compliance Review, Relationship; public for everyone |
 | `customer.get_profile` | `customer_data` | Complex Banking Needs, Relationship |
 | `customer.get_accounts`, `customer.get_loans` | `customer_data` | Complex Banking Needs |
 | `customer.get_transactions`, `customer.get_credit_cards` | `customer_data`, `fraud_records` | Complex Banking Needs, Fraud & Security |
@@ -731,7 +730,7 @@ Free hosting of the frontend and API (Vercel/Netlify, Render/Hugging Face) remai
 | # | Area | v3.1 proposal | As built | Why / effect |
 |---|---|---|---|---|
 | 1 | **Default pipeline** | The orchestrator design *is* the system | Opt-in with `PIPELINE=v2`; `v1` (single `make_answer` path) is still the default. Personal v2 needs `CONVERSATION_STORE=database` | v1 kept as a stable baseline while v2 was built |
-| 2 | **Knowledge and conversation storage** | Postgres `kb` and `conversation` tables | Built, but switched on per setting (`KNOWLEDGE_STORE=memory` and `CONVERSATION_STORE=off` by default) | Same reason |
+| 2 | **Knowledge and conversation storage** | Postgres `kb` and `conversation` tables | Knowledge is database-only since `0100`; saved conversations are switched on per setting (`CONVERSATION_STORE=off` by default) | Same reason |
 | 3 | **Orchestrator graph** | 4 nodes: plan → prioritise → dispatch → compose | 8 nodes: adds propose_actions, review_actions, settle_actions, escalate_validation | Action recording, pause, outcome wording and validation handoffs are separate checkpointed steps |
 | 4 | **Parallel dispatch** | LangGraph `Send` | `asyncio.TaskGroup` inside one node, per-task timeout | Simpler; same "slowest, not sum" latency |
 | 5 | **Planner output** | `{domain, intent, entities}` with entity extraction | `{domain, question}` per issue; `intent: answer_question` | Agents read records themselves; extracted entities were not needed |
@@ -829,12 +828,12 @@ How the approved banking articles are stored, searched and cited, and which arti
 
 ### Design
 
-Status: **proposal**. Detailed design of the Knowledge Service in §5.7. The content to load is listed under *Requirements* below. Today's code still uses the in-memory keyword library in `backend/app/services/knowledge.py`; this document describes what replaces it.
+Status: **built**, with changes (4 Nov 2026). Detailed design of the Knowledge Service in §5.7. The articles are in the database and the in-memory library (`knowledge.py`) was removed (`0100`). This appendix keeps the original proposal: `kb.facts` and `get_fact` below were built and later dropped, because figures are checked against the section text.
 
 #### 1. Summary
 
 - **Retrieval-augmented generation (RAG):** agents retrieve approved sections, and the LLM answers only from them, with citations.
-- **Keyword retrieval:** Postgres full-text search over article sections. Optional hybrid search (`0099`, `KNOWLEDGE_SEARCH=hybrid`) adds embedding similarity in the same database, fused with the keyword ranking.
+- **Keyword retrieval:** Postgres full-text search over article sections. Hybrid search (`0099`, on whenever an embedding key is set; keyword fallback) adds embedding similarity in the same database, fused with the keyword ranking.
 - **No new infrastructure:** everything lives in the hosted Supabase Postgres that the app already uses.
 - **Three tables, one search function.** All content is public guidance; the app can only read it.
 - **No content workflow:** whatever is in the tables is live. Content changes arrive only through migrations.
@@ -1075,4 +1074,4 @@ Each article is split into **sections** (one idea each, about 50–300 words, a 
 
 Not Supabase Storage: that holds customer uploads only.
 
-Today the articles are still hard-coded in `backend/app/services/knowledge.py`; moving them to the database is a separate code change.
+The articles were moved to the database (`0008`–`0099`); the hard-coded copy was removed in `0100`.

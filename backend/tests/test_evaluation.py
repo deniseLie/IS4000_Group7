@@ -3,8 +3,8 @@ import json
 import pytest
 from evaluation.run import evaluate, dataset_path, model_details, write_report
 
-def test_offline_evaluation_uses_publisher_metadata():
-    report=asyncio.run(evaluate())
+def test_offline_evaluation_uses_publisher_metadata(database):  # knowledge from the database (TEST_DATABASE_LOCAL=1)
+    report=asyncio.run(evaluate(db=database))
     rows={r['id']:r for r in report['results']}
     assert rows['external-policy-attribution']['validation_reason']=='source_check'
     assert rows['external-policy-attribution']['status']=='pass'

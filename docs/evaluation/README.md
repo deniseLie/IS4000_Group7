@@ -6,14 +6,14 @@ The QA1 case set (Michelle C01–C22, Sophie R01–R20, with setup, expected out
 
 ## Knowledge retrieval (offline, no model)
 
-Does knowledge search hand the model the right approved article? `backend/evaluation/retrieval.py` scores both stores against `retrieval_cases.json`: 135 synthetic, hand-labelled general questions (covered, informal/misspelled, no approved article, off-topic) plus 2 non-English ones reported separately (88 on 31 Oct, extended on 2 Nov). Each case lists the acceptable article ids, or none when no approved article covers it. Keywords are tuned on `split=tune`; `split=holdout` (cases written before the change they test) shows whether a change generalises.
+Does knowledge search hand the model the right approved article? `backend/evaluation/retrieval.py` scores database search (keyword and hybrid) against `retrieval_cases.json`: 135 synthetic, hand-labelled general questions (covered, informal/misspelled, no approved article, off-topic) plus 2 non-English ones reported separately (88 on 31 Oct, extended on 2 Nov). Each case lists the acceptable article ids, or none when no approved article covers it. Keywords are tuned on `split=tune`; `split=holdout` (cases written before the change they test) shows whether a change generalises.
 
 ```bash
-cd backend && ../.venv/bin/python -m evaluation.retrieval --misses                          # memory store
-cd backend && ../.venv/bin/python -m evaluation.retrieval --database-url postgresql://... --misses   # database store (public.kb_search)
+cd backend && ../.venv/bin/python -m evaluation.retrieval --misses                          # temporary local database (dbtest extra)
+cd backend && ../.venv/bin/python -m evaluation.retrieval --database-url postgresql://... --misses   # another database (public.kb_search)
 ```
 
-Metrics (k = 4, the sections passed to the model): **hit@1** right article first, **hit@4** right article passed at all, **MRR** 1/rank averaged, **no-match** share of uncovered questions that return nothing. `tests/test_retrieval_eval.py` holds floors for both stores (database part with `TEST_DATABASE_LOCAL=1`) and requires off-topic questions to return nothing.
+Metrics (k = 4, the sections passed to the model): **hit@1** right article first, **hit@4** right article passed at all, **MRR** 1/rank averaged, **no-match** share of uncovered questions that return nothing. `tests/test_retrieval_eval.py` holds the floors (with `TEST_DATABASE_LOCAL=1`; the memory store and its floors were removed on 4 Nov 2026, `0100`) and requires off-topic questions to return nothing.
 
 Results on 31 Oct 2026, before → after (overall English cases; held-out split in brackets):
 
@@ -123,7 +123,8 @@ These times are from this machine to OpenRouter and to the local database. The a
 - **The cost is time.** Each hybrid search waits about 0.9 s for the embedding request; the vector search itself adds about 10 ms. In v2 the tasks of one turn search in parallel, so this is paid about once per turn, before the model call. A faster embedding endpoint (`EMBEDDING_BASE_URL`) would cut most of it.
 
 **Decision:**
-- `KNOWLEDGE_SEARCH` stays `keyword` in code, because hybrid needs an embedding key. Turn it on in `.env` when the extra ~0.9 s per turn is acceptable.
+- 3 Nov: `KNOWLEDGE_SEARCH` stayed `keyword` in code, because hybrid needs an embedding key.
+- 4 Nov (`0100`): the switch was removed. Search is hybrid whenever `EMBEDDING_API_KEY` is set and falls back to keyword search without a key or when the provider fails (audited as `mode: keyword_only`). Leave the key empty to avoid the ~0.9 s per turn. The memory store was removed at the same time, so its rows above are history.
 - `EMBEDDING_MIN_SIMILARITY` defaults to 0.4.
 - The opt-in floors (`TEST_DATABASE_LOCAL=1 TEST_EMBEDDINGS_LIVE=1`) are:
   - earlier cases: hit@1 0.93, hit@4 0.97, no-match 0.45;
@@ -153,7 +154,7 @@ Status: steps 1–4 built and step 5's judge built (annotation queue not yet), a
 
 | Piece | Today | Gap |
 |---|---|---|
-| Runner | `backend/evaluation/run.py`: offline validator checks by default; `--live` calls `answers.make_answer` (v1 only) | Live rows are only marked `needs_human_review`; nothing is scored. v2 (`orchestrator.answer_public`) is never evaluated |
+| Runner | `backend/evaluation/run.py`: offline validator checks by default (evidence from keyword search in a temporary local database, or `--database-url`; since 4 Nov 2026); `--live` calls `answers.make_answer` (v1 only) | Live rows are only marked `needs_human_review`; nothing is scored. v2 (`orchestrator.answer_public`) is never evaluated |
 | Datasets | `cases.json` (11 live), `focused_cases.json` (6 live), `offline_cases.json` (validator samples) | Local JSON, a `check` rubric string per case, no versions beyond `dataset_sha256` |
 | Comparison | `--compare` diffs two report JSONs; `before.*`/`after.*` HTML files | Manual, one pair at a time |
 | Tracing | Own Supabase `ops.traces`/`ops.spans` plus the JSON `llm_call` log | No view of prompts, model output or graph steps per run (by design: ids/counts only) |

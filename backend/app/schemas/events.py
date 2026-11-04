@@ -12,7 +12,7 @@ class StatusEvent(BaseModel):  # v2 pipeline; v1 still sends a plain status stri
     stage: Literal['checking', 'planning', 'retrieving', 'validating']
 
 
-class Source(BaseModel):  # same fields as services/knowledge.source()
+class Source(BaseModel):  # schemas/knowledge.KnowledgeSection.source() and answers.pinned()
     id: str
     title: str
     url: str | None
