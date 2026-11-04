@@ -28,9 +28,10 @@ def draft_schema(evidence: list[Evidence]) -> dict[str, JsonValue]:
         'required':['answer','source_ids','answer_kind','status','clarification_question']}
 
 
-def validate_draft(task: Task, raw: str, evidence: list[Evidence]) -> AgentResult:
-    """Use exactly this agent's evidence for figures and citations; invalid content is withheld."""
-    name = AGENT_FOR[task.domain]
+def validate_draft(task: Task, raw: str, evidence: list[Evidence], agent: str | None = None) -> AgentResult:
+    """Use exactly this agent's evidence for figures and citations; invalid content is withheld.
+    `agent` names a v5 agent (services/agents/runner.py); v4 agents are named from the task's domain."""
+    name = agent or AGENT_FOR[task.domain]
     try:
         draft = AgentDraft.model_validate_json(raw)
     except ValidationError as error:
@@ -71,7 +72,7 @@ def repair_instructions(reason: str, raw: str, evidence: list[Evidence]) -> str:
 
 
 async def checked_model_answer(task: Task, system: str, history: list[Message],
-    evidence: list[Evidence], prompt: dict) -> AgentResult:
+    evidence: list[Evidence], prompt: dict, agent: str | None = None) -> AgentResult:
     """Validate AI answers and try one evidence-aware repair for safe failures.
 
     Validation remains mandatory on BOTH outputs. Nothing from a rejected model
@@ -82,7 +83,8 @@ async def checked_model_answer(task: Task, system: str, history: list[Message],
     schema=draft_schema(evidence)
     response=await llm_gateway.call(prompt,system,messages,schema)
     raw=json.dumps(response.data,ensure_ascii=False)
-    outcome=validate_draft(task,raw,evidence)
+    name=agent or AGENT_FOR[task.domain]
+    outcome=validate_draft(task,raw,evidence,name)
     if outcome.status!='error':return outcome
     answer=response.data.get('answer','')
     if not isinstance(answer,str) or redact(answer)[1] or URL.search(answer) or ACTION_CLAIM.search(answer):
@@ -92,14 +94,14 @@ async def checked_model_answer(task: Task, system: str, history: list[Message],
     reason=source_reason or 'draft_contract'
     if reason not in {'source_check','bad_json','bad_answer','draft_contract'}:
         return outcome
-    log_event('agent_revision',agent=AGENT_FOR[task.domain],reason=reason)
+    log_event('agent_revision',agent=name,reason=reason)
     try:
         revised=await llm_gateway.call(prompt,system+repair_instructions(reason,raw,evidence),messages,schema)
     except Exception as error:
         # No unvalidated fallback. The original source/format failure is preserved.
-        log_event('agent_revision_failed',agent=AGENT_FOR[task.domain],error_type=type(error).__name__)
+        log_event('agent_revision_failed',agent=name,error_type=type(error).__name__)
         return outcome
-    return validate_draft(task,json.dumps(revised.data,ensure_ascii=False),evidence)
+    return validate_draft(task,json.dumps(revised.data,ensure_ascii=False),evidence,name)
 
 
 async def respond(task: Task, question: str, history: list[Message], evidence: list[Evidence], language: str) -> AgentResult:

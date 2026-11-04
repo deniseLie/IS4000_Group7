@@ -48,8 +48,9 @@ def test_no_match_returns_no_unrelated_articles(database: 'Connection[SqlRow]', 
 
 def test_query_syntax_is_data_and_does_not_execute_sql(database: 'Connection[SqlRow]') -> None:
     database.execute('set local role anon')
+    before=database.execute('select count(*) from kb.articles').fetchone()
     search(database,"' OR 1=1; drop table kb.articles; --",[],5)
-    assert database.execute('select count(*) from kb.articles').fetchone()==(47,)  # 0098 seven new articles, support v5, security v2, statements v3, overseas-transfers v2; 0096 lost-card v4, card-limit-change v2, card-controls; 0086-0087 home-loans, personal-loans, loans v2; 0085 overseas-transfers; 0071 card-limit-change; 0077 statements v2; 0081 lost-card v3, unrecognised-charge v3, support v4
+    assert database.execute('select count(*) from kb.articles').fetchone()==before
 
 
 def test_publication_switch_preserves_old_citations_and_searches_only_new_version(database: 'Connection[SqlRow]') -> None:
@@ -106,7 +107,7 @@ def test_dataset_article_ids_match_the_database(database: 'Connection[SqlRow]') 
 
 
 def test_facts_table_is_gone_and_articles_are_read_whole(database: 'Connection[SqlRow]') -> None:
-    # 0100: figures live in the section text only; kb_get_article returns one published, in-review article in anchor order.
+    # 0102: figures live in the section text only; kb_get_article returns one published, in-review article in anchor order.
     assert database.execute("select to_regclass('kb.facts'),to_regprocedure('public.kb_get_fact(text)')").fetchone()==(None,None)
     for article_id,status,checked,due in [('draft','draft',-1,10),('expired','published',-10,-1),('current','published',-1,10)]:
         add_article(database,article_id,status,checked,due)

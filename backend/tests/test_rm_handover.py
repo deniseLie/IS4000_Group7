@@ -1,8 +1,8 @@
 """RM handover rules (migration 0073): what goes to the relationship manager instead of the model."""
 import pytest
-from app.schemas.agents import PlannedIssue
+from app.schemas.contracts import PlanTask,RiskAssessment
 from app.services import rm_handover
-from app.services.orchestrator import prioritise,simple_issue
+from app.services.orchestrator import overridden,simple_task
 
 
 @pytest.mark.parametrize('question',['Should I invest in the new bond fund?','Can you recommend a good fund for my retirement?',
@@ -13,7 +13,8 @@ from app.services.orchestrator import prioritise,simple_issue
     'I need to make a large international transfer for a property purchase'])
 def test_questions_for_a_person_go_to_the_rm(question: str) -> None:
     assert rm_handover.needs_person(question)
-    assert simple_issue(question,'English')==PlannedIssue(domain='relationship',question=question)
+    planned=simple_task(question,'English')
+    assert (planned.agent,planned.question,planned.entities)==('relationship',question,{'handover':'rm'})
 
 
 @pytest.mark.parametrize('question',['What is my account balance?','What documents do I still need for my review?',
@@ -26,12 +27,14 @@ def test_ordinary_questions_stay_with_the_assistant(question: str) -> None:
 
 
 def test_handover_is_marked_on_the_task_but_never_on_fraud() -> None:
-    issues=[PlannedIssue(domain='fraud',question='I did not make this charge, can you waive the fee?'),
-        PlannedIssue(domain='retail',question='Can you waive my late fee?')]
-    from app.schemas.contracts import RiskAssessment
-    risk=RiskAssessment(redacted_message='x')
-    tasks=prioritise({'issues':issues,'risk':risk})['plan'].tasks
-    assert 'handover' not in tasks[0].entities and tasks[1].entities['handover']=='rm'
+    tasks=[PlanTask(id='t1',agent='security',intent='unrecognised_charge',question='I did not make this charge, can you waive the fee?'),
+        PlanTask(id='t2',agent='accounts',intent='card_fees',question='Can you waive my late fee?')]
+    # The RM gets the part she asked a person about, in her own words (rm_handover.requested_questions); the charge stays with Security.
+    risk=RiskAssessment(redacted_message='I did not make this charge. Can you waive my late fee?')
+    routed=overridden(tasks,risk)
+    assert routed[0].agent=='security' and 'handover' not in routed[0].entities
+    assert [(t.agent,t.question,t.entities.get('handover')) for t in routed[1:]]==[('relationship','Can you waive my late fee','rm')]
+    assert 'handover' not in overridden(tasks[1:],RiskAssessment(redacted_message='x'))[0].entities
 
 
 def test_reply_wording_is_plain_and_has_no_internal_codes() -> None:

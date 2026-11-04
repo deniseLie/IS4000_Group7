@@ -2161,3 +2161,10 @@ button.cell.past:disabled{opacity:.35}
   .ov-rows.ov-cards li>.ov-card-row>b{margin-left:52px;text-align:left}
   .ov-rows.ov-cards li>.ov-card-row>.ov-manage{margin-left:auto}
 }
+/* v5 offers: one Confirm and one Cancel per reply, under the answer; placeholders while an agent works */
+.offer-block{margin:8px 0 4px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;display:grid;gap:8px;max-width:100%}
+.offer-block ul{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px;line-height:1.45}
+.offer-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.offer-actions small{font-size:12px;color:var(--muted)}
+.offer-block[data-state="expired"]{background:var(--canvas)}
+.answer-section[data-pending] .skeleton-text{width:min(320px,80%);height:12px}

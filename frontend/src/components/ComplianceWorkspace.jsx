@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
-import {checkIsFresh,findingText,loadTemplates,loadWorkspace,primaryStatus,runPrecheck,submitDocument,templateFor} from '../lib/compliance';
+import {checkIsFresh,findingText,loadTemplates,loadWorkspace,primaryStatus,reviewNextStep,runPrecheck,submitDocument,templateFor} from '../lib/compliance';
 import ChecklistPreparation from './ChecklistPreparation';
 import Icon from './Icon';
 import {formatDate,formatDateTime} from '../lib/format';
@@ -81,11 +81,15 @@ export default function ComplianceWorkspace({onPage=false,onAsk,chatBusy=false,o
    <article className="cw-card cw-overview">
     <div className="cw-card-head"><h3>Review progress <span className={`cw-pill ${closed?'ok':'wait'}`}>{closed?'Closed':'In progress'}</span></h3><span className="cw-asof">Retrieved {formatDateTime(workspace.as_of)}</span></div>
     <div className="cw-summary">
-     <div><h4>{review.title}</h4><p className="cw-meta"><span className="cw-chip">{sentence(review.status)}</span>
+     <div><h4>{review.title}</h4><p className="cw-meta"><span className="cw-chip" data-testid="compliance-next-step">{closed?sentence(review.status):reviewNextStep(review).label}</span>
       {review.due_date&&<span><Icon name="calendar"/>Due <strong>{formatDate(review.due_date)}</strong></span>}<span>· Updated <time dateTime={review.status_updated_at}>{formatDateTime(review.status_updated_at)}</time></span></p></div>
      <div className="cw-progress" aria-label={`${finished} of ${items.length} documents with the bank`}><span>Documents with bank</span><strong>{finished} of {items.length}</strong>
       <div className="cw-bar"><span style={{width:`${items.length?finished/items.length*100:0}%`}}/></div></div>
     </div>
+    <p className="rm-small" data-testid="compliance-bank-case-status">Recorded bank case status: {sentence(review.status)}.
+     {items.length>0&&items.length<200&&pending.length===0&&['documents_requested','documents_partially_received','awaiting_client_documents'].includes(review.status)
+      ?' Your requested documents are already with the bank; the overall case status has not yet been updated.'
+      :' Document submission and bank acceptance are shown separately below.'}</p>
     <details className="cw-notice"><summary>Read official notice text</summary><p>{review.notice_text}</p></details>
     {stale&&<p className="cw-warn" data-testid="compliance-stale">This status is more than {workspace.policy.status_stale_days} days old. Reload or contact support to confirm progress.</p>}
     <div className="cw-split compliance-progress">

@@ -14,8 +14,9 @@ from typing import get_args
 from uuid import NAMESPACE_URL,uuid5
 import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
-from app.schemas.contracts import AgentName
+from app.schemas.contracts import TargetAgent
 from app.services.tools import TOOLS
+from app.services.agents.registry import TOOLS as SERVICE_TOOLS
 
 HERE=Path(__file__).parent
 def article_ids() -> frozenset[str]:
@@ -27,22 +28,34 @@ def article_ids() -> frozenset[str]:
     return frozenset(found)
 ARTICLE_IDS=article_ids()
 DATASETS={'demobank-standard':'cases.json','demobank-focused':'focused_cases.json','demobank-safety':'safety_cases.json',
-          'demobank-qa1-client':'qa1_client_cases.json','demobank-qa1-rm':'qa1_rm_cases.json'}
+          'demobank-qa1-client':'qa1_client_cases.json','demobank-qa1-rm':'qa1_rm_cases.json',
+          'demobank-graph':'graph_cases.json','demobank-planner':'planner_cases.json'}
 DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection, corrections and unsupported facts.',
               'demobank-focused':'Source-checked public questions plus the three Workflow 1 public questions.',
               'demobank-safety':'Fixed safety routes that must answer without a model call.',
-              'demobank-qa1-client':'QA1 test cases C01-C22 (Michelle, client): schema, competency and trajectory checks.',
-              'demobank-qa1-rm':'QA1 test cases R01-R20 (Sophie, relationship manager): the spec until F12/F14 and the RM assistant exist.'}
+              'demobank-qa1-client':'Backlog C01-C24 (Michelle): schema, competency and trajectory; UI-only cases explicitly manual.',
+              'demobank-qa1-rm':'Backlog R01-R20 (Sophie): real RM API evaluations; approval and special setup cases explicitly manual.',
+              'demobank-graph':'v4 vs v5 graph cases C23-C28, R21-R23 and failure variants: dependencies, fan-out, handoffs, confirmation chains.',
+              'demobank-planner':'Planner-only cases: message to expected agents, entities and dependencies; no agents run.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
 EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
-          'reply_has','reply_lacks','ticket','schema','trajectory','must_not','handoff')
-OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state')
+          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','plan')
+OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','backlog','owner','manual_reason','legacy_id','pattern','variant_of')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
-NODES=('plan','prioritise','dispatch','propose_actions','review_actions','settle_actions','escalate_validation','compose')
-AGENTS=(*get_args(AgentName),'answer')
+NODES=('planner','agent','gather','act','compose')
+# rm_assistant: the RM answer prompt that evaluation/rm_target.py counts for the QA1 RM cases (they run on /rm/assistant).
+AGENTS=(*get_args(TargetAgent),'rm_assistant')
+# Graph cases keep the v4 expectation they were written against (architecture §14.12), checked against the v4 names.
+V4_NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
+V4_AGENTS=('retail','fraud','compliance','document','relationship','answer','rm_assistant')  # rm_assistant: services/rm/assistant.py until phase 9
 PLANNED_AGENTS=('rm_assistant',)
 PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
+# v5 (architecture §14, §5.6.1): graph cases also name the tools still to build; the RM agents are built (phase 9).
+V5_NODES=NODES
+V5_AGENTS=get_args(TargetAgent)  # the built v5 agents (phase 9 added the two RM agents)
+V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')
+FAULTS=('external_down','upstream_withheld','receipt_failed','consent_revoked')
 
 def load(dataset):
     path=HERE/DATASETS[dataset]
@@ -51,21 +64,39 @@ def load(dataset):
 def example_id(dataset,case_id):
     return str(uuid5(NAMESPACE_URL,f'demobank-eval/{dataset}/{case_id}'))
 
-def check_trajectory(name,case):
+def check_trajectory(name,case,nodes=NODES,agents=AGENTS):
     """Every node, agent and tool a QA1 case names must exist, so a renamed piece fails the sync instead of the run."""
     t=case['trajectory'];spec=case['state']=='spec'
-    agents=AGENTS+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
-    problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in NODES]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
+    agents=agents+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
+    problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in nodes]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
     problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
     problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
+    services={tool for names in SERVICE_TOOLS.values() for tool in names}
+    problems+=[f'service read {x}' for x in t.get('service_reads',[]) if x not in services]
     if problems:raise ValueError(f'{name}: unknown or inconsistent {problems[0]}')
+
+def check_v5(name,case):
+    """The v5 expectation of a graph case names only target nodes, agents and tools (built or planned)."""
+    t=case['trajectory_v5'];tools=(*TOOLS,*PLANNED_TOOLS,*V5_TOOLS)
+    agents=[*t.get('agents',{}),*t.get('skipped',{}),*(e[k] for e in t.get('exports',[]) for k in ('from','to')),*t.get('rerouted',{}).values()]
+    problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in V5_NODES]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
+    problems+=[f'agent {a}' for a in agents if a not in V5_AGENTS]
+    problems+=[f'tool {x}' for x in t.get('tools',[])+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
+    if case.get('fault') not in (None,*FAULTS):problems.append(f"fault {case['fault']}")
+    if problems:raise ValueError(f'{name}: unknown v5 {problems[0]}')
 
 def to_example(dataset,case):
     """inputs are what a target sends to the pipeline; outputs are reference expectations only."""
     name=f'{dataset}/{case["id"]}'
     if 'turns' in case:  # QA1: a persona's whole conversation (typed messages, taps, forms, uploads)
         inputs={'turns':case['turns'],'persona':case['persona'],'mode':'public' if case['persona']=='guest' else 'personal'}
-        check_trajectory(name,case)
+        inputs.update({k:case[k] for k in ('context','intent','ticket_selection') if k in case})
+        if 'trajectory_v5' in case:check_trajectory(name,case,V4_NODES,V4_AGENTS);check_v5(name,case)
+        else:check_trajectory(name,case)
+        if case.get('fault'):inputs['fault']=case['fault']
+    elif 'say' in case:  # planner-only: one message (and history) in, the expected plan out
+        inputs={'say':case['say'],'history':case.get('history',[]),'persona':case['persona'],'open_offers':case.get('open_offers',0)}
+        if bad:=[t['agent'] for t in case['plan']['tasks'] if t['agent'] not in V5_AGENTS]:raise ValueError(f'{name}: unknown v5 agent {bad[0]}')
     else:inputs={'question':case['question'],'history':case.get('history',[]),'language':case.get('language','English'),'mode':'public'}
     # Only secrets cases may carry (synthetic) private-looking details; anything else is a mistake in the file.
     if case.get('expected_route')!='secrets' and langsmith_client.scrub(inputs)!=inputs:

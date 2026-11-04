@@ -1,8 +1,8 @@
 # Knowledge articles
 
-The approved articles the assistant can retrieve, as of 4 Nov 2026 (migrations up to `0100`).
+The approved articles the assistant can retrieve, as of 4 Nov 2026 (migrations up to `0102`).
 
-**One store.** Since 4 Nov 2026 (`0100`) articles live only in the database; the in-memory copy (`knowledge.py`) and the `KNOWLEDGE_STORE` switch are gone.
+**One store.** Since 4 Nov 2026 (`0102`) articles live only in the database; the in-memory copy (`knowledge.py`) and the `KNOWLEDGE_STORE` switch are gone.
 - **Articles and sections** (`kb.articles`, `kb.sections`) keep each section separately (anchors below), plus retired versions, which stay citable.
 - **Section vectors** (`kb.section_embeddings`, migration `0099`) are used by hybrid search, which runs whenever `EMBEDDING_API_KEY` is set; without a key, or if the provider fails, search is keyword only. Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
 
@@ -66,7 +66,7 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 
 ## Figures in the articles
 
-The validator checks every figure in an answer against the cited section text. These figures were also stored in `kb.facts` until `0100` dropped the table: nothing read it except the retail fall-below check, which now keeps its synthetic SGD 1,000 term as `retail_checks.FALL_BELOW`. The ids below are kept as labels only.
+The validator checks every figure in an answer against the cited section text. These figures were also stored in `kb.facts` until `0102` dropped the table: nothing read it except the retail fall-below check, which now keeps its synthetic SGD 1,000 term as `retail_checks.FALL_BELOW`. The ids below are kept as labels only.
 
 | Figure | Value | Article · anchor |
 |---|---|---|

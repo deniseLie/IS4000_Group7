@@ -18,7 +18,10 @@ URGENT='If you do not recognise a charge, contact your bank now through the offi
 
 
 def evidence_for(records: SecurityRecords) -> Evidence:
-    return Evidence(id='customer-records',text=records.model_dump_json(),publisher='DemoBank synthetic records',
+    data=records.model_dump(mode='json')
+    data={**data,'transactions':[{**row.model_dump(mode='json'),
+        'charge_amount':abs(row.amount) if row.card_id is not None and row.amount<0 else None} for row in records.transactions]}
+    return Evidence(id='customer-records',text=json.dumps(data),publisher='DemoBank synthetic records',
         scope='Authenticated customer records; captured for this request only.',source=Source(id='customer-records',
         title='Authenticated synthetic card and transaction records',url=None,version=records.captured_at.isoformat(),
         publisher='DemoBank synthetic records'))

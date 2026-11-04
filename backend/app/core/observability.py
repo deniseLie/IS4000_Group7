@@ -3,14 +3,18 @@ import logging
 import sys
 import time
 import uuid
+from typing import TYPE_CHECKING
 from contextlib import contextmanager
 from contextvars import ContextVar
 import langsmith
+if TYPE_CHECKING:
+    from app.schemas.agents import Evidence
 
 request_id=ContextVar('request_id',default='-')
 logger=logging.getLogger('demobank')
 current_trace=ContextVar('current_trace',default=None)
 span_sink=ContextVar('span_sink',default=None)  # evaluation/targets.py collects (name, attrs) of every span here; None in the app
+evidence_sink: ContextVar[list['Evidence'] | None]=ContextVar('evidence_sink',default=None)  # Opt-in evaluation only; never logs record text.
 
 class JsonFormatter(logging.Formatter):
     def format(self,record):
@@ -54,14 +58,23 @@ RUN_TYPES={'tool':'tool','agent':'chain','decision':'chain','llm':'chain','embed
 def span(name,kind,**attrs):
     """One step as a LangSmith run nested under the current run (nothing is sent while tracing is off).
     Yields the attrs dict so callers can add results; they become the run's metadata."""
-    with langsmith.trace(name,RUN_TYPES[kind],metadata={'kind':kind}) as run:
+    codex=kind=='llm' and attrs.get('transport')=='codex'
+    inputs=attrs.pop('model_inputs',None)
+    with langsmith.trace(name,'llm' if codex else RUN_TYPES[kind],inputs=inputs,metadata={'kind':kind}) as run:
         try:
             yield attrs
         except BaseException as e:
             attrs['error_type']=type(e).__name__[:64]
             raise
         finally:
+            outputs=attrs.pop('model_outputs',None)
+            if outputs is not None:run.set(outputs=outputs)
             run.add_metadata(attrs)
+            if codex:
+                run.add_metadata({'ls_provider':'openai','ls_model_name':attrs['model']})
+                if isinstance(attrs.get('input_tokens'),int) and isinstance(attrs.get('output_tokens'),int):
+                    run.set(usage_metadata={'input_tokens':attrs['input_tokens'],'output_tokens':attrs['output_tokens'],
+                        'total_tokens':attrs['input_tokens']+attrs['output_tokens']})
             if (sink:=span_sink.get()) is not None:sink.append((name,dict(attrs)))
 
 def add_span(name,kind,**attrs):

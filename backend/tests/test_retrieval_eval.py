@@ -8,7 +8,7 @@ the Data API client; PostgREST argument handling is covered by the hosted check,
 Floors sit a little under the 31 Oct 2026 results so new articles can reshuffle ranks; a larger drop is a regression.
 No-match floors were lowered on 2 Nov 2026 (0098): six gap cases became covered, and they had counted as correct
 empty results. On the remaining gap cases the database scores the same with or without 0098 (0.476).
-The in-memory library (and its floors) was removed on 4 Nov 2026 (0100).
+The in-memory library (and its floors) was removed on 4 Nov 2026 (0102).
 """
 import os
 from typing import TYPE_CHECKING

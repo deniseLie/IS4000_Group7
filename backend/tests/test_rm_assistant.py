@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from app.api.rm import is_rm
 from app.schemas.rm import RmAssistantRequest
-from app.services.rm import assistant,checks
+from app.services.rm import checks,handlers
 from app.services.rm import evidence as ev
 
 
@@ -21,6 +21,17 @@ def bundle() -> ev.Bundle:
     b.add(ev.Evidence('note-2025-03-12','Meeting note 12 Mar 2025','note',{'met_on':'2025-03-12','met_on_text':'12 Mar 2025',
         'summary':'Annual review. David wants to keep about SGD 80,000 in his current account.'},'x',1003))
     return b
+
+
+def test_restricted_requests_do_not_require_selecting_a_ticket():
+    context={'client_id':1002,'ticket_ref':None}
+    for message in ["Show me the fraud team's restricted notes on Michelle's ticket",
+        'Mark that fraud ticket resolved, and block her card']:
+        reply=handlers.capability_refusal(message,context)
+        assert reply['status']=='denied' and reply['clarification'] is None and reply['sources']==[]
+        assert reply['context']==context and context=={'client_id':1002,'ticket_ref':None}
+    for message in ['Draft a reply about the card request','What are the client-safe statuses of the specialist tickets?']:
+        assert handlers.capability_refusal(message,context) is None
 
 
 def section(*items):return [{'heading':'H','items':[{'owner':'none',**i} for i in items]}]
@@ -74,38 +85,38 @@ def test_actions_must_quote_the_notes():
 
 
 def test_names_appointments_and_tickets_resolve_without_the_model():
-    assert assistant.names_match('Brief me for my 10am with David','David Lee (DEMO)')
-    assert assistant.names_match('meiling? I mean Mei Ling','Tan Mei Ling')
-    assert assistant.names_match('Hafis Rahman fees','Hafiz Rahman')  # typo
-    assert not assistant.names_match('Show me Ong Wei Ming','Tan Mei Ling')
-    sgt=assistant.SGT
+    assert handlers.names_match('Brief me for my 10am with David','David Lee (DEMO)')
+    assert handlers.names_match('meiling? I mean Mei Ling','Tan Mei Ling')
+    assert handlers.names_match('Hafis Rahman fees','Hafiz Rahman')  # typo
+    assert not handlers.names_match('Show me Ong Wei Ming','Tan Mei Ling')
+    sgt=handlers.SGT
     tue=datetime(2026,11,3,10,0,tzinfo=sgt);wed=datetime(2026,11,4,14,30,tzinfo=sgt)
     rows=[{'customer_id':1003,'starts_at':tue.isoformat()},{'customer_id':1002,'starts_at':wed.isoformat()}]
-    assert assistant.match_appointments(rows,'my 10am',None)==rows[:1]
-    assert assistant.match_appointments(rows,'Wednesday 2:30pm',None)==rows[1:]
-    assert assistant.narrows('10am') and not assistant.narrows('this week')
+    assert handlers.match_appointments(rows,'my 10am',None)==rows[:1]
+    assert handlers.match_appointments(rows,'Wednesday 2:30pm',None)==rows[1:]
+    assert handlers.narrows('10am') and not handlers.narrows('this week')
     tickets=[{'reference':'TCK-001002','category_label':'Statement or document copy','category':'statement_request','summary':'Copy of the June 2026 statement'},
         {'reference':'TCK-001003','category_label':'Update personal details','category':'personal_details_update','summary':'Update my residential address'}]
-    assert assistant.pick_ticket("Draft a reply to Michelle's statement copy request",tickets)[0]=='TCK-001002'
-    assert assistant.pick_ticket('Draft a reply to Michelle',tickets)[0] is None
+    assert handlers.pick_ticket("Draft a reply to Michelle's statement copy request",tickets)[0]=='TCK-001002'
+    assert handlers.pick_ticket('Draft a reply to Michelle',tickets)[0] is None
 
 
 def test_priorities_never_suggest_a_second_meeting_and_handover_keeps_its_structure():
     b=ev.Bundle()
     b.add(ev.Evidence('followup-1','Michelle Ng: Fixed deposit matures','record',{'client':'Michelle Ng','confirmed_meeting':'Wed 4 Nov 2026, 2:30 pm'},'x',1002))
     report=checks.Report()
-    kept=assistant.no_duplicate_meetings(section({'text':'Book a review meeting with Michelle.','kind':'suggestion','source_ids':['followup-1']},
+    kept=handlers.no_duplicate_meetings(section({'text':'Book a review meeting with Michelle.','kind':'suggestion','source_ids':['followup-1']},
         {'text':'Use the confirmed meeting with Michelle to discuss the maturity.','kind':'suggestion','source_ids':['followup-1']}),b,report)
     assert [i['text'] for s in kept for i in s['items']]==['Use the confirmed meeting with Michelle to discuss the maturity.']
-    ordered=assistant.handover_order([{'heading':'Recorded preferences','items':[{'text':'x','kind':'client_stated','source_ids':[]}]}])
-    assert [s['heading'] for s in ordered]==assistant.HANDOVER_SECTIONS and ordered[0]['items'][0]['kind']=='gap'
+    ordered=handlers.handover_order([{'heading':'Recorded preferences','items':[{'text':'x','kind':'client_stated','source_ids':[]}]}])
+    assert [s['heading'] for s in ordered]==handlers.HANDOVER_SECTIONS and ordered[0]['items'][0]['kind']=='gap'
 
 
 def test_clarifications_and_refusals_are_structured():
-    reply=assistant.brief_reply('meeting_history',{'status':'needs_clarification','summary':'','sections':[],'clarification_question':'Which meeting do you mean?',
+    reply=handlers.brief_reply('meeting_history',{'status':'needs_clarification','summary':'','sections':[],'clarification_question':'Which meeting do you mean?',
         'clarification_options':['12 Mar 2025','20 Nov 2025']},bundle(),{'client_id':1003})
     assert reply['status']=='clarify' and [o['label'] for o in reply['clarification']['options']]==['12 Mar 2025','20 Nov 2025']
-    assert assistant.refusal({})['status']=='denied'
+    assert handlers.refusal({})['status']=='denied'
 
 
 def test_only_app_metadata_makes_an_rm_and_requests_are_bounded():
@@ -144,9 +155,9 @@ def test_book_facts_cash_events_and_recap_requests():
         {'text':'Ask how she would like to plan around the SGD 120,000 incoming transfer on 22 Sep 2026.','kind':'suggestion','owner':'rm','source_ids':['cash-events']},
         {'text':'Ask about the SGD 150,000 transfer on 22 Sep 2026.','kind':'suggestion','owner':'rm','source_ids':['cash-events']}]}],ev.Bundle([cash]),report,True)
     assert len(out[0]['items'])==1 and report.withheld==['unsupported_figure']
-    assert assistant.RECAP.search('Draft a recap for Michelle') and assistant.RECAP.search('a follow-up message about our call')
-    assert not assistant.RECAP.search('Draft a reply to her statement request')
-    assert assistant.TASK_FILE['book_question']=='book' and 'book_question' in assistant.HANDLERS
+    assert handlers.RECAP.search('Draft a recap for Michelle') and handlers.RECAP.search('a follow-up message about our call')
+    assert not handlers.RECAP.search('Draft a reply to her statement request')
+    assert handlers.TASK_FILE['book_question']=='book' and 'book_question' in handlers.HANDLERS
 
 
 def test_a_question_across_the_book_only_sees_dates_inside_the_period_it_asks_about():

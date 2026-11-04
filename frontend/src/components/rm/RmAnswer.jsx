@@ -2,7 +2,7 @@ import {useRef,useState} from 'react';
 import Icon from '../Icon';
 import DraftReview from './DraftReview';
 import DocumentationReview from './DocumentationReview';
-import {KIND_LABELS,REPORT_TITLES,reportText,validationNote} from '../../lib/rm';
+import {KIND_LABELS,REPORT_TITLES,allDrafts,reportText,validationNote} from '../../lib/rm';
 import {formatDateTime} from '../../lib/format';
 
 // One RM assistant reply, laid out as a short report: a title, the summary, then sections of points. Recorded facts are
@@ -77,7 +77,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
     {editing?<textarea className="rm-report-summary rm-edit-summary" aria-label="Edit summary" rows={3} value={work.summary} onChange={e=>setWork({...work,summary:e.target.value})}/>
       :reply.summary&&<p className={report?'rm-report-summary':'rm-answer-summary'}>{reply.summary}</p>}
     {reply.edited&&!editing&&<p className="rm-validation"><Icon name="info"/>You edited this report. Edited points are yours, not the assistant’s; the numbers show the records the original point used.</p>}
-    {reply.status==='denied'&&<p className="rm-denied" role="alert"><Icon name="lock"/>Access to clients outside your book is refused and recorded in the audit log.</p>}
+    {reply.status==='denied'&&<p className="rm-denied" role="alert" data-testid="rm-access-denied"><Icon name="lock"/>Client-book and specialist access restrictions apply. No action was taken.</p>}
     {(reply.sections||[]).map((section,index)=><section className="rm-answer-section" key={index}>
       {section.heading&&<h3>{section.heading}</h3>}
       {runs(section.items).map((run,r)=>run.kind==='record'
@@ -87,7 +87,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
     </section>)}
     {reply.clarification&&<div className="follow-ups rm-options" data-testid="rm-clarification"><span>{reply.clarification.question}</span>
       {reply.clarification.options.map(option=><button key={option.label} type="button" disabled={!latest} onClick={()=>onOption(option)}>{option.label}</button>)}</div>}
-    {reply.draft&&<DraftReview draft={reply.draft} token={token} onChange={onDraftChange} onAsk={onAsk} latest={latest}/>}
+    {allDrafts(reply).map((draft,i)=><DraftReview key={`${draft.customer_id}-${i}`} draft={draft} token={token} onChange={onDraftChange} onAsk={onAsk} latest={latest}/>)}
     {reply.documentation&&<DocumentationReview documentation={reply.documentation} token={token} onChange={onDocumentationChange} latest={latest} onSource={s=>show(s.id)} sources={reply.sources}
       onRecap={onAsk?(client=>onAsk(`Draft a recap message to ${client||'the client'} of our conversation`)):null}/>}
     {validationNote(reply.validation)&&<p className="rm-validation" data-testid="rm-validation"><Icon name="shield"/>{validationNote(reply.validation)}</p>}

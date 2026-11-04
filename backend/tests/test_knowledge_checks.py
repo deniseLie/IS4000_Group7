@@ -1,7 +1,7 @@
 """Approved guidance content and the answer validators.
 
 Article content and retrieval are read from the database (TEST_DATABASE_LOCAL=1; the in-memory copy was removed on
-4 Nov 2026, migration 0100). Validator checks pass sample strings directly and need no database.
+4 Nov 2026, migration 0102). Validator checks pass sample strings directly and need no database.
 """
 import asyncio
 from decimal import Decimal

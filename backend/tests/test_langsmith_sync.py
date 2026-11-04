@@ -12,7 +12,10 @@ def test_every_dataset_file_builds_valid_examples():
     for name in sync.DATASETS:
         cases,_=sync.load(name)
         built=sync.examples(name,cases)
-        assert len(built)==len(cases) and all(e['outputs']['check'] and e['inputs']['mode'] in ('public','personal') for e in built)
+        assert len(built)==len(cases)
+        for e in built:
+            if 'say' in e['inputs']:assert isinstance(e['outputs']['plan']['tasks'],list)  # planner-only: the plan (maybe no tasks) is the reference
+            else:assert e['outputs']['check'] and e['inputs']['mode'] in ('public','personal')
         assert all(e['inputs']['mode']=='public' for e in built if 'question' in e['inputs'])
         seen|={e['id'] for e in built}
     assert len(seen)==sum(len(sync.load(n)[0]) for n in sync.DATASETS)  # ids never collide across datasets

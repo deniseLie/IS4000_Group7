@@ -45,6 +45,8 @@ def local_postgres(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 def database(local_postgres: str) -> Iterator['Connection[SqlRow]']:
     import psycopg
     with psycopg.connect(local_postgres) as db:
+        # Nested test transactions must be savepoints, never commits to the shared seed template.
+        db.execute('begin')
         try:yield db
         finally:db.rollback()
 

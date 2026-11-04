@@ -9,7 +9,7 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F1 | System architecture design | Done | – |
 | F2 | Data contracts | Done | – |
 | F3 | Operational database and synthetic seed | Done | – |
-| F4 | RM, ticket and meeting-note seed | Done (0088) | Hosted: create Sophie's Auth user and app_metadata (hosted README, file 15). RM access rules are F12. |
+| F4 | RM, ticket and meeting-note seed | Done (0088) | Synthetic Sophie sign-in and current book verified through the hosted-connected local app. RM access rules are F12. |
 | F5 | Audit log | Done | – |
 | F6 | API gateway | Done | – |
 | F7 | Input guardrail | Done | – |
@@ -17,7 +17,7 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F9 | Conversation store | Built, sheet says **No** | Saved chats work (migrations 0013–0014); tick it after a quick check. |
 | F10 | Knowledge service | Done | – |
 | F11 | Authorisation and consent | Done | – |
-| F12 | RM role and book-based access | Done (0089) | Hosted: apply file 16, create Sophie's login and app_metadata. |
+| F12 | RM role and book-based access | Done (0089) | Sophie’s verified RM role and current Michelle/Mei Ling book work in the hosted-connected local app; out-of-book refusals remain enforced. |
 | F13 | Customer data service | Done | – |
 | F14 | RM data functions | Done (0089) | – |
 | F15–F17 | Action service, card/handoff, appointment executors | Done | – |
@@ -29,10 +29,10 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F23 | Ticket service | Done | – |
 | F24 | Request categories | Done | – |
 | F25 | MCP tool layer | Done | MCP is the default transport; every agent record read goes through it. RM tools come with F14. |
-| F26 | LangSmith tracing and evaluation | **Partly** | Tracing and dataset sync done; run and score the experiments. |
+| F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches Quality. Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
-| QA1 | Test case set (42 cases) | **Written** | All 42 in [test-cases.md](../evaluation/test-cases.md) and as eval data (`qa1_client_cases.json`, `qa1_rm_cases.json`, LangSmith `demobank-qa1-*`). Sophie R01–R20 are the Workflow 2 spec (need F12, F14 and the RM assistant). C11–C22 and R11–R20 added 2 Nov 2026 from the backlog Test case sheet. Still to do: assign owners for C01–C10 and R01–R10 (the new cases carry the sheet's owners), sync the datasets, run C01–C22 and fill the run record. |
+| QA1 | Test case set (44 cases) | **Runnable / manual boundaries explicit** | [C01–C24 and R01–R20](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 16 runnable, 8 manual; RM: 13 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
 
 ## Persona 1 (client) – open items
 
@@ -40,6 +40,15 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Reminders:** off until the worker runs. README step 5: create the `demobank_reminders` login, set `WORKER_DATABASE_URL` and `RUN_WORKER_IN_API=true`.
 - **Run the 10 test cases** and record the results (F22 evidence).
 - **Assign owners** in the backlog and in `test-cases.md`.
+
+## Done on 4 Nov (v5 orchestrator, build plan phases 1–9; migrations 0100–0101)
+
+- **Agents and graph:** one `AgentSpec` per agent with default reads per intent and a bounded tool loop only for open questions; planner → agents in parallel → gather → compose, or planner → act → compose for a Confirm/Cancel turn. Confirmations are chat turns; there is no pause.
+- **Offers:** one Confirm/Cancel per offer group on the action ledger (0100); a chained offer runs only after the one before it succeeded (0101).
+- **Agent dependencies (phase 7):** a task can wait for another (`depends_on`, `condition`, `for_each`, at most 5 items); exports are computed by code (trip due dates, account references); one out-of-scope handoff (fee waiver → Relationship). Travel notice tickets (0101). Planner v7.
+- **Evaluation (phase 8):** graph cases C23–C28 with failure variants, planner-only dataset and target, dependency checks.
+- **RM assistant on the same graph (phase 9):** RM Client Insight and RM Service Desk specs; `services/rm/graph.py` replaces `services/rm/assistant.py` (its handlers moved to `services/rm/handlers.py`); planner `rm_planner/v4` (main's v3 plus the task list); R21 one draft per client with a review due (at most 5), R22 follow-ups from the brief's latest note, R23 the client's handover note only under consent. Several drafts show as separate review cards.
+- **Still open:** Compliance and Relationship still answer with their v4 responders and ignore imported values (C24); meeting reschedule and RM note offers (C23, C27); `below_threshold` and `check_failed` exports (C25, C26); `PLANNER_MODEL` and the 60 s turn budget; LangSmith sync and a scored v5 experiment against the phase 0 timings; QA1 R01–R20 still name the v4 `rm_assistant` agent (state spec). Hosted: 0100 and 0101 applied on 4 Nov (`28_apply_0100_hosted.sql`, `29_apply_0101_hosted.sql`).
 
 ## Done on 1 Nov (Persona 2: F12, F14, RM1–RM12, RM16; migrations 0089–0090)
 
@@ -89,7 +98,7 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 - **Suggested next questions in the chat:** up to 3 tappable follow-ups under the latest answer, from fixed topic lists.
 - **Card controls (CR19, 0096, 2 Nov):** Overview → Cards → *Manage*: freeze and unfreeze her own card (not one the bank froze, nor during a fraud case or replacement), replace a lost, stolen or damaged card (frozen at once), change the limit (steps of SGD 1,000, max 50,000, temporary up to 90 days, declaration, once per 30 days), dispute a recognised charge within 60 days (reason list, merchant contact, one per charge). Rule refusals come back as `action_rule` with the bank's wording. Hosted: `26_apply_0096_hosted.sql`.
 - **Card actions are bank-only (CR12, 0081, 30 Oct; partly reversed by 0096):** no block, unblock, cancel or dispute draft for the client; unrecognised charges get urgent steps and an urgent fraud-team ticket with a `TCK-` reference. Fraud prompt v6.
-- **Test cases (QA1):** Michelle C01–C22 and Sophie R01–R20 in `docs/evaluation/test-cases.md`.
+- **Test cases (QA1):** Michelle C01–C24 and Sophie R01–R20 in `docs/evaluation/test-cases.md`.
 - Compliance review stays on its page after an upload; the chat is used only when the client clicks *Explain in chat*. Submitted items show one line, "Sent to the bank on … – waiting for review", with a *Need to send a different file?* link.
 - Inbox moved to the header beside *Talk to a person*.
 - Docker removed; docs reorganised into two workflows (client, relationship manager); backlog IDs made consistent.

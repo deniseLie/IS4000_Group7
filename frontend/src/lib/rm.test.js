@@ -38,6 +38,16 @@ test('withheld points are counted, never shown',()=>{
   assert.match(replyText({summary:'S',draft:{text:'D'}}),/Draft: D/);
 });
 
+test('a reply with one draft per client lists each (R21)',async ()=>{
+  const {allDrafts,reportText}=await import('./rm.js');
+  const reply={intent:'reviews',summary:'S',sections:[],drafts:[{client:'Michelle',text:'Hi Michelle'},{client:'David',text:'Hi David'}]};
+  assert.equal(allDrafts(reply).length,2);
+  assert.deepEqual(allDrafts({draft:{text:'D'}}),[{text:'D'}]);
+  assert.deepEqual(allDrafts({}),[]);
+  assert.match(replyText(reply),/Draft to Michelle: Hi Michelle\nDraft to David: Hi David/);
+  assert.match(reportText(reply),/Draft to David \(not sent\):\nHi David/);
+});
+
 test('follow-ups group by date and owner',()=>{
   const g=followupGroups([{kind:'task',owner:'rm',due_on:'2026-10-30'},{kind:'milestone',owner:'rm',due_on:'2026-11-05'},
     {kind:'milestone',owner:'rm',due_on:'2026-12-20'},{kind:'specialist_ticket',owner:'specialist',due_on:'2026-11-02'},{kind:'commitment',owner:'rm',due_on:null}],'2026-11-01');

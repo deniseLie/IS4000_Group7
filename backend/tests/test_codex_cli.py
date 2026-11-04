@@ -1,8 +1,23 @@
 """Transport contract checks, not a fake AI service or generated answers."""
 import json
+import os
 from pathlib import Path
 import pytest
 from app.services.codex_cli import cli_environment, command, parse_events
+
+@pytest.mark.skipif(os.getenv('TEST_CODEX_LIVE')!='1',reason='Opt in to real concurrent Codex subscription calls')
+def test_parallel_requests_wait_for_the_subscription_connector():
+    import asyncio
+    from app.services.codex_cli import answer_with_model
+    schema={'title':'connector_check','type':'object','additionalProperties':False,'required':['acknowledged'],
+        'properties':{'acknowledged':{'type':'boolean'}}}
+    async def run():
+        return await asyncio.gather(*(answer_with_model('Acknowledge the synthetic connector check with JSON.',schema,
+            [('user',message)],os.getenv('CODEX_MODEL','gpt-5.6-luna')) for message in ['First check','Second check']))
+    results=asyncio.run(run())
+    assert len(results)==2
+    for answer,usage in results:
+        assert answer=={'acknowledged':True} and usage['input_tokens']>0 and usage['output_tokens']>0
 
 def stream(*events):return '\n'.join(json.dumps(e) for e in events)
 
@@ -42,6 +57,12 @@ def test_parser_only_returns_final_json_and_numeric_usage():
         {'type':'turn.completed','usage':{'input_tokens':3,'output_tokens':4,'private':'discard'}},
     ))
     assert result=={'answer':'parser sample'} and usage=={'input_tokens':3,'output_tokens':4}
+
+@pytest.mark.parametrize('tokens',[-1,True,'3'])
+def test_invalid_usage_cannot_be_reported_as_zero(tokens):
+    with pytest.raises(ValueError,match='non-negative integer'):
+        parse_events(stream({'type':'item.completed','item':{'type':'agent_message','text':'{}'}},
+            {'type':'turn.completed','usage':{'input_tokens':tokens,'output_tokens':1}}))
 
 def test_disabled_execution_host_warning_is_not_an_answer():
     with pytest.raises(RuntimeError,match='did not complete'):

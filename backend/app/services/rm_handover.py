@@ -31,6 +31,7 @@ from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError,ActionNotFound
 from app.services.authorization import require_permission
 from app.services.privacy import redact
+from app.services.guardrail import FRAUD
 
 ADVICE=re.compile(
     r"\b(?:should|shall|would you recommend|do you recommend|is it (?:a )?good (?:time|idea) to)\b[^.?!]{0,40}\b(?:invest|buy|sell|switch|refinance|put my money)\b"
@@ -94,6 +95,13 @@ def complex_transfer(question: str) -> bool:
 
 def needs_person(question: str) -> bool:
     return (bool(HANDOVER.search(question)) or complex_transfer(question)) and not MEETING.search(question)
+
+
+def requested_questions(question: str) -> list[str]:
+    """Keep the client's explicit RM question, excluding separately reported fraud from its preview."""
+    if not FRAUD.search(question):return [question] if needs_person(question) else []
+    parts=re.split(r'[.!?;]+|\b(?:and|also|plus)\b',question,flags=re.I)
+    return [part.strip(' ,') for part in parts if needs_person(part) and not FRAUD.search(part)]
 
 
 def topic_for(question: str) -> str:
@@ -176,7 +184,7 @@ CANCEL=re.compile(r"^\s*(?:cancel|no|nope|don['’]?t send|do not send|never ?mi
 def preview(question: str,history: Sequence[Message]=(),existing: str | None=None,context: str='') -> str:
     """What would be sent, in the client's own (redacted) words; the choices to make are fixed phrases."""
     text=compact(question)[:QUESTION_LIMIT]
-    if not text or (len(text)<60 and re.match(r'^\s*(?:can i |i want to |i need to |please )?(?:talk|speak|connect|chat)\b',text,re.I)):
+    if not text:
         text='You asked to speak with your relationship manager.'
     lines=[PREVIEW_MARK,f'• Topic: {topic_for(question)}',f'• Your question: “{text}”']
     # Context minimisation: the current question is sufficient for the default
@@ -187,6 +195,17 @@ def preview(question: str,history: Sequence[Message]=(),existing: str | None=Non
     else:
         lines.append(f'Reply “{SEND_REPLY}” to send it, or “{CANCEL_REPLY}” if you’d rather not. Nothing is sent until you choose.')
     return '\n'.join(lines)
+
+
+def unanswered_preview(history: Sequence[Message]) -> str | None:
+    """Re-show the separate RM preview after the client confirms only the fraud report."""
+    if len(history)<2 or history[-2].role!='assistant':return None
+    text=history[-2].content
+    if PREVIEW_MARK not in text:return None
+    question=QUOTED.search(text)
+    if question is None:return None
+    offered=OFFERED.search(text)
+    return preview(question.group(1),existing=offered.group(1) if offered else None)
 
 
 def pending_choice(history: Sequence[Message]) -> tuple[str,str,str | None] | None:

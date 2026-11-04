@@ -10,11 +10,11 @@ from app.core.config import settings
 
 
 def test_review_letter_question_routes_to_recorded_case_without_inventing_requirements():
-    from app.services.orchestrator import simple_issue,topic_domain
+    from app.services.orchestrator import simple_task,topic_agent
     question='I got a letter asking me to update my information. What do I need to send?'
-    assert simple_issue(question,'English').domain=='compliance'
-    assert topic_domain('Help me update my email address') is None
-    assert topic_domain('A letter about my account balance')=='retail'
+    assert simple_task(question,'English').agent=='compliance'
+    assert topic_agent('Help me update my email address') is None
+    assert topic_agent('A letter about my account balance')=='accounts'
 
 
 def test_pdf_with_an_unreadable_page_is_not_completely_extracted():

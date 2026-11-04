@@ -57,7 +57,7 @@ def test_impossible_travel_seed_reads_back_with_time_and_country(database: 'Conn
 
 
 def test_the_client_cannot_propose_a_dispute_draft(database: 'Connection[SqlRow]') -> None:
-    """Disputes are bank-only since 0081: the charges go to the fraud team in a P0 handoff instead (tests/test_fraud_team_report.py)."""
+    """Disputes are bank-only since 0081: the charges go to the fraud team in a P0 handoff instead (tests/test_offer_turns.py)."""
     for customer in (1001,1002):
         case_id=owned_case(database,customer)
         assert sqlstate(database,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case_id,'card.dispute',json.dumps(TARGET),

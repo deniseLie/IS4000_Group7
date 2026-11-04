@@ -14,6 +14,7 @@ from app.core.observability import log_event
 from app.services.agents import relationship_records,meeting_answers
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.privacy import redact
+from app.services.source_checks import dates,dates_supported
 
 PROMPT='v5'
 
@@ -67,6 +68,11 @@ def transition_evidence(records: RelationshipRecords) -> list[Evidence]:
 
 def validate_result(task: Task,raw: str,evidence: list[Evidence]) -> AgentResult:
     result=validate_draft(task,raw,evidence)
+    cited={citation.source_id for citation in result.citations}
+    recorded={date for item in evidence if item.id in cited for date in dates(item.text)}
+    if not dates_supported(dates(result.text),recorded):
+        log_event('agent_validation',agent='relationship',reason='unsupported_date')
+        return AgentResult(task_id=task.task_id,agent='relationship',status='error',text=WITHHELD)
     if ACTION_CLAIM.search(result.text):
         log_event('agent_validation',agent='relationship',reason='read_only_action_claim')
         return AgentResult(task_id=task.task_id,agent='relationship',status='error',text=WITHHELD)

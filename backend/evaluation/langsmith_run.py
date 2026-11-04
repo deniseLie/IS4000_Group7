@@ -12,10 +12,16 @@ import json
 import os
 import sys
 from datetime import datetime,timezone
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
 STATUSES=('pass','fail','skipped','error')
+
+
+def require_requested_cases(requested: list[str] | None,runnable: set[str]) -> None:
+    missing=set(requested or [])-runnable
+    if missing:raise ValueError('Requested cases are absent or not runnable: '+', '.join(sorted(missing))+'. Sync the current dataset and check manual/spec case states.')
 
 
 def status(row) -> str:
@@ -57,15 +63,18 @@ async def run(args) -> dict:
     from app.core.config import settings
     from app.main import app
     from app.services import prompts
-    from evaluation import evaluators,targets
+    from evaluation import evaluators,targets,rm_target
+    from app.services.llm_gateway import model_name,transport
     from evaluation.langsmith_sync import DATASETS
     if settings.conversation_store!='database':raise SystemExit('Set CONVERSATION_STORE=database: the runner plays saved chats like the browser')
+    if args.judge:evaluators.judge_name()
     settings.pipeline=args.pipeline
     client=langsmith_client.client()
     examples=[e for e in client.list_examples(dataset_name=args.dataset)
         if (e.metadata or {}).get('state') not in ('spec','manual') and (not args.case or (e.metadata or {}).get('case_id') in args.case)]
+    require_requested_cases(args.case,{case_id for e in examples if isinstance(case_id:=(e.metadata or {}).get('case_id'),str)})
     if not examples:raise SystemExit('No runnable examples (spec and manual cases are skipped)')
-    personas={e.inputs.get('persona') for e in examples}-{None,'guest'}
+    personas={e.inputs.get('persona') for e in examples if 'turns' in e.inputs}-{None,'guest'}  # the planner-only dataset signs in nobody
     tokens={}
     if personas:
         if not args.personas:raise SystemExit('Signed-in cases need --personas or TEST_PERSONA_FIXTURE_FILE')
@@ -73,10 +82,14 @@ async def run(args) -> dict:
         tokens={p:targets.sign_in(p,fixture,os.environ['SUPABASE_URL'],os.environ['SUPABASE_ANON_KEY']) for p in sorted(personas)}
     prompt=prompts.current()['id']
     meta={'dataset':args.dataset,'pipeline':args.pipeline,'answer_prompt':prompt,'prompt_versions':settings.prompt_versions,
-        'model':os.getenv('LLM_MODEL'),'transport':os.getenv('CHAT_TRANSPORT','api'),'judge_model':os.getenv('JUDGE_MODEL') if args.judge else None,
+        'model':model_name(),'transport':transport(),'judge_model':os.getenv('JUDGE_MODEL') if args.judge else None,
+        'judge_prompt':evaluators.JUDGE_PROMPT.stem+'+'+sha256(evaluators.JUDGE_PROMPT.read_bytes()).hexdigest()[:8] if args.judge else None,
         'dataset_file':DATASETS[args.dataset]}
     label=f"{args.dataset}-{args.pipeline}-{datetime.now(timezone.utc):%Y%m%d-%H%M}"
     async def target(inputs: dict) -> dict:
+        if 'say' in inputs:return await targets.plan_only(inputs)
+        # QA1 RM cases use the read-only RM target; the graph cases (R21-R23) play the v5 RM graph and report its dependencies.
+        if inputs.get('persona')=='sophie' and args.dataset!='demobank-graph':return await rm_target.play(inputs,app,tokens['sophie'])
         return await targets.play(inputs,app,tokens.get(inputs.get('persona')))
     graders=[evaluators.deterministic,*([evaluators.judge] if args.judge else [])]
     if args.project:
@@ -88,15 +101,18 @@ async def run(args) -> dict:
     rows=[]
     for row in found:
         out=row['run'].outputs or {}
-        rows.append({'id':(row['example'].metadata or {}).get('case_id'),'status':status(row),
+        missing_judge=args.judge and out.get('played') and not any(r.key=='judge_rubric' and r.score is not None for r in row['evaluation_results']['results'])
+        rows.append({'id':(row['example'].metadata or {}).get('case_id'),'status':'error' if missing_judge else status(row),
+            'unplayed_steps':out.get('skipped',[]),
             'question':' / '.join(t.get('say') or json.dumps(t) for t in targets.turns_of(row['example'].inputs)),
             'answer':out.get('answer',''),'turns':[{k:r.get(k) for k in ('say','origin','agents','model_calls','sources')} for r in out.get('replies',[])],'checks':{r.key:{'score':r.score,'comment':r.comment} for r in row['evaluation_results']['results']},
-            'error':(row['run'].error or '')[:300] or None})
+            'error':'Judge returned no numeric grade; inspect the evaluator trace.' if missing_judge else (row['run'].error or '')[:300] or None})
     rows.sort(key=lambda r:r['id'] or '')
     return {'mode':'langsmith_project' if args.project else 'langsmith_experiment','experiment':name,'eval_run':label if args.project else None,'dataset':args.dataset,'pipeline':args.pipeline,
         'created_at':datetime.now(timezone.utc).isoformat(),'summary':{s:sum(r['status']==s for r in rows) for s in STATUSES},
         'limits':['Real model and real database: results vary between runs and models.',
             'Deterministic checks test wording patterns, sources, tickets and trajectory, not full meaning; judge scores are model-graded.',
+            'Pass applies only to evaluated checks; unplayed UI steps are not certified by a passing chat result.',
             'Form, upload and button steps other than chat replies are not played; checks that depend on them are skipped.'],
         'results':rows}
 

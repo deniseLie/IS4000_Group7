@@ -10,7 +10,7 @@ from app.services import llm_gateway,prompts
 from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers,client_guidance
 from app.services.agents.answer import checked_model_answer
 
-PROMPT='v10'
+PROMPT='v11'
 LINKED='\nLinked context (DemoBank rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
 
 
@@ -34,6 +34,10 @@ def evidence_for(records: RetailRecords) -> list[Evidence]:
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Retail task question must be text')
+    existing=await request_status_answers.existing_statement_request(task.task_id,question,ctx)
+    if existing is not None:
+        result,record_evidence=existing
+        return result,[*public_evidence,*record_evidence],prompts.load('retail',PROMPT)['id']
     # Read existing request status from its authoritative ticket service *before*
     # card-limit intake or LLM generation. Errors are handled by orchestrator.
     status=await request_status_answers.respond(task.task_id,question,ctx)
@@ -52,6 +56,13 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         latest=history[-1].content if history and history[-1].role=='user' else question
         direct=transaction_answers.respond(task.task_id,question,latest,records)
     if direct is not None:return direct,evidence,prompts.load('retail',PROMPT)['id']
+    return await model_answer(task,question,history,language,ctx,records,evidence)
+
+
+async def model_answer(task: Task,question: str,history: list[Message],language: str,ctx: RequestContext,records: RetailRecords,
+        evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
+    """The retail prompt with computed checks (pending days, due day, fall-below status); v5 Accounts uses it for those questions."""
+    evidence=list(evidence)
     today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
     if retail_checks.relevant(records,question,today):
         computed=retail_checks.checks(records,question,today,retail_checks.FALL_BELOW)

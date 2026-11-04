@@ -176,13 +176,16 @@ def reviews_bundle(result: dict) -> Bundle:
     return bundle
 
 
-def handover_bundle(result: dict) -> Bundle:
-    """RM16: the client overview plus all permitted notes, the consent-checked handover note and what the client was told."""
+def handover_bundle(result: dict,shared: bool=True) -> Bundle:
+    """RM16: the client overview plus all permitted notes, the consent-checked handover note and what the client was told.
+    shared=False (R23): the client's note is shown in its own section after this one, so it is left out here."""
     data,as_of=result['data'],str(result.get('as_of'))
     bundle=client_bundle({'data':{**data,'interactions':[]},'as_of':as_of})
     cid=data['profile']['customer_id']
     add_notes(bundle,data.get('notes') or [],as_of,cid,data.get('withheld_private_notes') or 0)
-    bundle.add(shared_evidence({'data':data.get('shared') or {},'as_of':as_of},cid))
+    if shared:bundle.add(shared_evidence({'data':data.get('shared') or {},'as_of':as_of},cid))
+    else:bundle.add(Evidence('consent-status','Client handover note','consent',{'meaning':'Checked separately: any handover note the client '
+        'shared under active consent is shown in its own section of this reply. Do not mention or summarise it here.'},as_of,cid))
     bundle.add(Evidence('told','What the client was previously told (bank, chat assistant, relationship managers)','record',data.get('told') or [],as_of,cid))
     bundle.add(Evidence('free-slots','Your free times in the next 14 days (not held or booked)','calendar',data.get('free_slots') or [],as_of,cid))
     return bundle

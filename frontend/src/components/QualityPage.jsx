@@ -48,18 +48,20 @@ function Experiments() {
     {cases.busy&&<p className="loading">Loading cases…</p>}
     {cases.error&&<p className="form-error" role="alert">{cases.error}</p>}
     {cases.data&&<>
-      <p className="quality-summary" data-testid="quality-summary">{counts.pass} pass · {counts.fail} fail · {counts.skipped} skipped · {counts.error} error</p>
+      <p className="quality-summary" data-testid="quality-summary">Rule checks: {counts.pass} pass · {counts.fail} fail · {counts.skipped} skipped · {counts.error} error. Judge scores are separate and require review.</p>
       <div className="quality-table-wrap"><table className="quality-table">
-        <thead><tr><th>Case</th><th>Status</th><th>Failed checks</th><th>Agents</th><th>Model calls</th><th>Time</th></tr></thead>
+        <thead><tr><th>Case</th><th>Rule status</th><th>Failed rule checks</th><th>Judge / 1</th><th>Agents</th><th>Model calls</th><th>Time</th></tr></thead>
         <tbody>{cases.data.map(item=><Fragment key={item.run_id}>
-          <tr className="quality-row" onClick={()=>setOpen(open===item.run_id?null:item.run_id)} aria-expanded={open===item.run_id}>
+          <tr className="quality-row" data-testid={`quality-case-${item.case_id}`} onClick={()=>setOpen(open===item.run_id?null:item.run_id)} aria-expanded={open===item.run_id}>
             <td><button className="link-button">{item.case_id||'—'}</button></td><td><Status value={item.status}/></td>
-            <td>{item.checks.filter(check=>check.score===0).map(check=>check.key).join(', ')||'—'}</td>
+            <td>{item.checks.filter(check=>!check.key.startsWith('judge')&&check.score===0).map(check=>check.key).join(', ')||'—'}</td>
+            <td>{item.checks.find(check=>check.key==='judge_rubric')?.score??'—'}</td>
             <td>{Object.entries(item.agents).map(([agent,count])=>`${agent}×${count}`).join(', ')||'—'}</td>
             <td>{item.model_calls??'—'}</td><td>{seconds(item.latency_s)}</td></tr>
-          {open===item.run_id&&<tr className="quality-detail"><td colSpan={6}>
+          {open===item.run_id&&<tr className="quality-detail"><td colSpan={7}>
             <ul className="quality-checks">{item.checks.map(check=><li key={check.key}><Status value={scoreLabel(check.score)}/> <strong>{check.key}</strong>{check.comment?` — ${check.comment}`:''}</li>)}</ul>
             {item.tools.length>0&&<p><strong>Tools:</strong> {item.tools.join(', ')}</p>}
+            {item.service_reads?.length>0&&<p><strong>Record reads:</strong> {item.service_reads.join(', ')}</p>}
             {item.error&&<p className="form-error">{item.error}</p>}
             {item.answer&&<pre className="quality-answer">{item.answer}</pre>}
           </td></tr>}
@@ -79,7 +81,7 @@ function Traces() {
     {list.data&&<div className="quality-table-wrap"><table className="quality-table">
       <thead><tr><th>When</th><th>Mode</th><th>Status</th><th>Time</th><th>Tokens</th></tr></thead>
       <tbody>{list.data.map(item=><Fragment key={item.run_id}>
-        <tr className="quality-row" onClick={()=>setOpen(open===item.run_id?null:item.run_id)} aria-expanded={open===item.run_id}>
+        <tr className="quality-row" data-testid={`quality-trace-${item.run_id}`} onClick={()=>setOpen(open===item.run_id?null:item.run_id)} aria-expanded={open===item.run_id}>
           <td><button className="link-button">{formatDateTime(item.started_at)}</button></td><td>{item.mode||'—'}</td>
           <td><Status value={item.error?'error':item.status||'—'}/></td><td>{seconds(item.latency_s)}</td><td>{item.tokens??'—'}</td></tr>
         {open===item.run_id&&<tr className="quality-detail"><td colSpan={5}>
@@ -94,14 +96,14 @@ function Traces() {
   </section>;
 }
 
-// Team-only: evaluation experiments and live /chat traces from LangSmith, read through the backend.
+// Team-only: evaluation experiments and live client/RM traces from LangSmith, read through the backend.
 export default function QualityPage() {
   const [tab,setTab]=useState('experiments');
   return <div className="app-page-body" data-testid="quality-page">
     <header className="page-header"><div><span className="eyebrow">Team</span><h1>Quality</h1>
       <p>Evaluation results and recent assistant traces from LangSmith. Synthetic data, redacted before upload. Model-graded scores are an aid to review, not proof.</p></div></header>
     <div className="quality-tabs" role="tablist">
-      {[['experiments','Evaluations'],['traces','Traces']].map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?'sidebar-current':''} onClick={()=>setTab(key)}>{label}</button>)}
+      {[['experiments','Evaluations'],['traces','Traces']].map(([key,label])=><button key={key} data-testid={`quality-tab-${key}`} role="tab" aria-selected={tab===key} className={tab===key?'sidebar-current':''} onClick={()=>setTab(key)}>{label}</button>)}
     </div>
     {tab==='experiments'?<Experiments/>:<Traces/>}
   </div>;

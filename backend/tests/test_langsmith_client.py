@@ -37,3 +37,14 @@ def test_app_installs_client_only_when_tracing_is_on(monkeypatch):
     with langsmith.tracing_context(enabled=True):
         assert langsmith_client.install_if_tracing()=='client'
     assert built==[1]
+
+def test_codex_span_posts_redacted_inputs_before_the_sdk_excludes_patch_inputs(langsmith_runs):
+    from app.core.observability import span
+    with span('llm','llm',transport='codex',model='subscription-model',model_inputs={'question':CARD}) as attrs:
+        attrs.update(input_tokens=12,output_tokens=3,model_outputs={'answer':'Use your card controls.'})
+    created=langsmith_runs.named('llm')[0]
+    assert created['inputs']=={'question':f'my card {GONE}, email {GONE}'}
+    assert created['run_type']=='llm'
+    ended=langsmith_runs.ended('llm')[0]
+    assert ended['outputs']=={'answer':'Use your card controls.'}
+    assert ended['metadata']['usage_metadata']=={'input_tokens':12,'output_tokens':3,'total_tokens':15}

@@ -17,8 +17,7 @@ import InboxPage from './components/InboxPage';
 import QualityPage from './components/QualityPage';
 import {isTeam} from './lib/quality';
 import RecordsPanel from './components/RecordsPanel';
-import CardBlockDialog from './components/CardBlockDialog';
-import DisputeDialog from './components/DisputeDialog';
+import OfferBlock from './components/OfferBlock';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
 import {loadIntroduction,relationshipIntent} from './lib/relationshipWorkflow';
 import {CONFIRM_REPORT,followUps} from './lib/followUps';
@@ -31,7 +30,7 @@ import LockedPage from './components/LockedPage';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffMessage, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
-import {loadWorkflowPreview,parsePausedWorkflow,parsePreview} from './lib/workflows';
+import {OFFER_REPLIES,fill,offerState,parseOffer,placeholders} from './lib/offers';
 import {createActionCase,proposeAction,rejectAction} from './lib/actions';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -82,7 +81,7 @@ export default function Chat({session,onSignIn}) {
   const [bootError,setBootError]=useState('');
   const [conversation,setConversation]=useState(null);
   const [pending,setPending]=useState(null);
-  const [workflow,setWorkflow]=useState(null);
+  const [now,setNow]=useState(()=>Date.now());  // re-renders offer expiry
   const [savedChats,setSavedChats]=useState(false),[historyClosing,setHistoryClosing]=useState(false);
   const historyTimer=useRef(null);
   // The history column narrows to nothing before it unmounts, so the chat widens at the same pace.
@@ -97,7 +96,6 @@ export default function Chat({session,onSignIn}) {
   const [complianceBusy,setComplianceBusy]=useState(false);
   const [complianceReceipt,setComplianceReceipt]=useState(null);
   const [complianceReview,setComplianceReview]=useState(null),[supportScope,setSupportScope]=useState(null);
-  const [blockAction,setBlockAction]=useState(null);
   const [rmIntro,setRmIntro]=useState(null),[profileName,setProfileName]=useState(session?null:'');  // null while the name is loading
   const [handoff,setHandoff]=useState({saving:false,outcome:null,error:''});
   const [rmMessage,setRmMessage]=useState(''),rmEdited=useRef(false);
@@ -134,11 +132,13 @@ export default function Chat({session,onSignIn}) {
     box.style.height='auto';box.style.height=`${Math.min(box.scrollHeight,160)}px`;
   },[input]);
 
-  const lastView=useRef(view);
-  useEffect(()=>{  // leaving Actions after a card decision refreshes the saved reply it belongs to
-    if(lastView.current==='actions'&&view!=='actions'&&workflow&&conversation&&!loading)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
-    lastView.current=view;
-  },[view]);
+  useEffect(()=>{  // an open offer's buttons turn off when it expires; the countdown refreshes each half minute
+    const open=messages.findLast(m=>m.offer);
+    if(!open||Date.parse(open.offer.expires_at)<=Date.now())return;
+    const tick=setInterval(()=>setNow(Date.now()),30000);
+    const expiry=setTimeout(()=>setNow(Date.now()),Date.parse(open.offer.expires_at)-Date.now()+50);
+    return ()=>{clearInterval(tick);clearTimeout(expiry);};
+  },[messages]);
   useEffect(()=>{  // pages are hash-addressed so Back/Forward work; the chat stays mounted underneath
     const sync=()=>setView(pageFromHash(session));
     window.addEventListener('hashchange',sync);return ()=>window.removeEventListener('hashchange',sync);
@@ -154,8 +154,7 @@ export default function Chat({session,onSignIn}) {
           const access=readActive(session?.user.id||null);
           if(access) {
             const history=await loadConversation(access,await sessionHeaders(),controller.signal);
-            const preview=await waitingPreview(history,controller.signal);
-            if(!controller.signal.aborted)restore(history,access,preview);
+            if(!controller.signal.aborted)restore(history,access);
           }
         }
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setBootError(failure.message);}
@@ -202,20 +201,12 @@ export default function Chat({session,onSignIn}) {
     return {Authorization:`Bearer ${data.session.access_token}`};
   }
 
-  // A reply waiting on card decisions is rebuilt from its saved checkpoint; without it, Actions still works.
-  async function waitingPreview(history,signal) {
-    if(history.workflow?.state!=='awaiting_confirmation')return null;
-    try {return (await loadWorkflowPreview(history.workflow.turn_id,await sessionHeaders(),signal)).preview;}
-    catch(failure) {if(failure.name==='AbortError')throw failure;return null;}
-  }
-
-  function restore(history,access,preview=null) {
+  function restore(history,access) {
     writeActive(session?.user.id||null,access);
     setConversation({...history.session,guest_token:access.guest_token});setPending(history.active_turn_id);
-    setWorkflow(history.workflow);
-    setMessages(preview?[...history.messages,{role:'assistant',content:preview.answer,...preview}]:history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');
+    setMessages(history.messages);setMode(history.session.mode);setLanguage(history.session.language);setInput('');setBootError('');setNow(Date.now());
     setSummary(null);setArticle(null);setInlineRequest(null);setFreshDraftReply(null);closeHistory();setRecordsOpen(false);
-    setNotice(preview?'This saved reply is waiting for your card decisions in the urgent section.':history.workflow?'This saved reply is waiting on its recorded action workflow. Open Actions to review or resume it.':history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!preview&&!history.workflow&&!history.history_trimmed);
+    setNotice(history.history_trimmed?'Opened the latest saved messages. Older messages are omitted from this long chat.':'Saved chat reopened.',!history.history_trimmed);
   }
 
   async function reopen(item) {
@@ -224,8 +215,7 @@ export default function Chat({session,onSignIn}) {
     const access={session_id:item.session_id,guest_token:conversation?.session_id===item.session_id?conversation.guest_token:null};
     try {
       const history=await loadConversation(access,await sessionHeaders(),controller.signal);
-      const preview=await waitingPreview(history,controller.signal);
-      if(epoch===version.current)restore(history,access,preview);
+      if(epoch===version.current)restore(history,access);
     } finally {if(epoch===version.current){setLoading(false);request.current=null;}}
   }
 
@@ -248,7 +238,7 @@ export default function Chat({session,onSignIn}) {
     version.current++;request.current?.abort();request.current=null;
     setMessages([]);setInput('');setLoading(false);setMode(session?'personal':'public');setNotice('New chat started.',true);
     setSummary(null);setInlineRequest(null);setFreshDraftReply(null);setApproved(false);setCopied(false);setCopyError('');setArticle(null);
-    setConversation(null);setPending(null);setWorkflow(null);setSavedChats(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);if(store!==null)setBootError('');
+    setConversation(null);setPending(null);setSavedChats(false);setRecordsOpen(false);setComplianceOpen(null);setSupportScope(null);if(store!==null)setBootError('');
     return true;
   }
 
@@ -259,7 +249,7 @@ export default function Chat({session,onSignIn}) {
     } catch {}
   }
 
-  async function send(e,supplied=null,recordContext=null) {
+  async function send(e,supplied=null,recordContext=null,offer=null) {
     e?.preventDefault();
     const question=(supplied??input).trim();if(!question||loading||booting||bootError||pending||(e&&complianceBusy))return;
     const safe=redact(question);
@@ -296,12 +286,14 @@ export default function Chat({session,onSignIn}) {
       }
       if(thread?.guest_token)headers['X-Conversation-Token']=thread.guest_token;
       const stored=store==='database'?{conversation_id:thread.session_id,turn_id:crypto.randomUUID(),revision:thread.revision}:{};
-      const response=await fetch(`${API_URL}/chat`,{method:'POST',headers,body:JSON.stringify({messages:history,mode,language,...stored,...(recordContext&&{record_context:recordContext})}),signal:controller.signal});
+      const response=await fetch(`${API_URL}/chat`,{method:'POST',headers,body:JSON.stringify({messages:history,mode,language,...stored,...(recordContext&&{record_context:recordContext}),...(offer&&{offer})}),signal:controller.signal});
       if(!response.ok) {
         const code=await response.json().then(b=>b?.error?.code,()=>null);
         throw new Error(ERRORS[code]||'The banking service is unavailable. Please retry.');
       }
       if(!response.body)throw new Error('No response received.');
+      let live=[];  // this reply's sections as they stream: a placeholder per planned task, filled in place (never reordered)
+      const streaming=()=>setMessages([...visible,{role:'assistant',content:'',sections:live}]);
       await readEvents(response.body,(type,data)=>{
         if(epoch!==version.current)return;
         if(type==='conversation') {
@@ -309,16 +301,11 @@ export default function Chat({session,onSignIn}) {
           if(metadata.conversation_id!==thread?.session_id||metadata.revision<thread.revision)throw new Error('The saved reply does not match this chat. Reload it before retrying.');
           setConversation({...thread,revision:metadata.revision,active_turn_id:metadata.active_turn_id});setPending(metadata.active_turn_id);
         }
+        if(type==='plan'){live=placeholders(JSON.parse(data));streaming();}
+        if(type==='section'){live=fill(live,JSON.parse(data));streaming();}
         if(type==='answer') {
           const result=JSON.parse(data);
-          setFreshDraftReply(visible.length);setMessages([...visible,{role:'assistant',content:result.answer,...result}]);
-        }
-        if(type==='workflow_paused') {
-          const body=JSON.parse(data);
-          const paused=parsePausedWorkflow(body,thread.session_id);
-          if(paused.turn_id!==stored.turn_id)throw new Error('The proposed actions do not match this reply. Reload the saved chat.');
-          const preview=parsePreview(body.preview,paused);
-          setWorkflow(paused);setMessages([...visible,{role:'assistant',content:preview.answer,...preview}]);setNotice('Your card decisions are waiting in the urgent section.');
+          setFreshDraftReply(visible.length);setNow(Date.now());setMessages([...visible,{role:'assistant',content:result.answer,...result,offer:parseOffer(result.offer)}]);
         }
       });
     } catch(err) {
@@ -345,6 +332,8 @@ export default function Chat({session,onSignIn}) {
     setView(page);
   }
   function draft(question) { setInput(question);requestAnimationFrame(()=>composer.current?.focus()); }
+  // The offer buttons answer the whole group; the typed reply shown is what the button means.
+  function decideOffer(message,decision) {send(null,OFFER_REPLIES[decision],null,{offer_group:message.offer.offer_group,decision});}
   function recallSent(e) {  // Up/Down in an empty box (or one still showing a recalled question) steps through sent questions
     const up=e.key==='ArrowUp';if((!up&&e.key!=='ArrowDown')||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.nativeEvent.isComposing)return;
     const box=e.currentTarget,sent=sentHistory(messages),browsing=recall.current!==null&&input===sent[recall.current];
@@ -549,9 +538,8 @@ export default function Chat({session,onSignIn}) {
           {store==='database'&&conversation&&<button className="icon-tool" data-testid="reload-saved-chat" aria-label="Refresh this chat" title="Refresh this chat" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}><Icon name="refresh"/></button>}
           {session&&store==='database'&&<button className={`recent-chats ${savedChats?'active':''}`} data-testid="open-recent-chats" aria-expanded={savedChats} onClick={()=>{if(savedChats){closeHistory();return;}closeOverlays();setSavedChats(true);}}><Icon name="history"/>Recent chats{chatCount!==null&&<span className="count">{chatCount}</span>}</button>}
         </div>
-        {store==='database'&&conversation&&pending&&!loading&&<div className="pending-bar" role="status"><Icon name="alert"/><span>{workflow?'This reply is waiting for your decision in Actions.':'A reply is still being prepared for this chat.'}</span>
-          <span className="pending-actions">{workflow&&<button className="bank-chat-logout" data-testid="review-pending-workflow" onClick={openActions}>Review actions</button>}
-          <button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
+        {store==='database'&&conversation&&pending&&!loading&&<div className="pending-bar" role="status"><Icon name="alert"/><span>A reply is still being prepared for this chat.</span>
+          <span className="pending-actions"><button className="bank-chat-logout" disabled={loading} onClick={()=>reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);})}>Refresh</button>
           <button className="bank-chat-logout" data-testid="cancel-pending-reply" onClick={cancelPending}>Cancel reply</button></span></div>}
         <section className="bank-chat-window" aria-label="Banking conversation">
           {booting&&<p className="chat-notice loading" role="status">Opening chat…</p>}
@@ -565,7 +553,8 @@ export default function Chat({session,onSignIn}) {
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Could not verify'}</small>}</div>}
-                <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} onAction={session?setBlockAction:null}/>
+                <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
+                <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={decision=>decideOffer(m,decision)}/>
                 {ticketStep(m,i)}{inlineCardFor(m,i)}{complianceStep(m,i)}{nextQuestions(m,i)}
                 {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
               </div>
@@ -591,7 +580,7 @@ export default function Chat({session,onSignIn}) {
         {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
         {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
-        {session&&view==='actions'&&<ActionsPanel key={pageKey} onWorkflowChange={status=>{if(status.session_id===conversation?.session_id)setWorkflow(status);}}/>}
+        {session&&view==='actions'&&<ActionsPanel key={pageKey}/>}
         {session&&view==='quality'&&isTeam(session)&&<QualityPage key={pageKey}/>}
         {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary} rmName={rmIntro?.current?.name} initialTab={ticketPrefill?.tab||'open'}/>}
         {session&&view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
@@ -623,12 +612,6 @@ export default function Chat({session,onSignIn}) {
       {article.checked_on&&<p>Source checked: {article.checked_on}. Review due: {article.review_due}.</p>}
       {article.current===false&&<p role="status">This source needs review and is not used for new answers.</p>}
       <small>Version {article.version}</small></Panel>}
-    {blockAction&&(()=>{
-      const Dialog=blockAction.type==='card.dispute'?DisputeDialog:CardBlockDialog;
-      return <Dialog action={blockAction} onClose={()=>setBlockAction(null)} onDecided={()=>{
-        if(conversation)reopen(conversation).catch(failure=>{if(failure.name!=='AbortError')setNotice(failure.message);});
-      }}/>;
-    })()}
     {recordsOpen&&<RecordsPanel onClose={()=>setRecordsOpen(false)} onReviewActions={openActions}/>}
   </div>;
 }

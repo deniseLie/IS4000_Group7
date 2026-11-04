@@ -149,9 +149,9 @@ def test_auto_handoff_is_real_redacted_and_deduplicated(local_data_api: NativeAP
     assert again.receipt.result.handoff_id==saved.receipt.result.handoff_id
     assert not again.receipt.result.created
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from support.handoffs').fetchone()==(1,)
+        assert db.execute('select count(*) from support.handoffs where case_id=%s',(ctx.case_id,)).fetchone()==(1,)
         assert db.execute('select count(*) from actions.receipts').fetchone()==(2,)
-        assert db.execute("select count(*) from audit.events where action='handoff.created'").fetchone()==(1,)
+        assert db.execute("select count(*) from audit.events where action='handoff.created' and customer_id=%s",(ctx.principal.customer_id,)).fetchone()==(1,)
         assert db.execute("select event_type,count(*) from events.outbox where command_id is not null group by event_type order by event_type").fetchall()==[('handoff.created',1),('handoff.reused',1)]
 
 
@@ -170,7 +170,7 @@ def test_talk_to_a_person_records_a_separate_general_support_handoff(local_data_
     foreign=context(local_data_api,1003)
     assert native_api_client.get(f'/commands/{saved.command.command_id}',headers=headers(foreign)).status_code==404
     with psycopg.connect(local_data_api.database_uri) as db:
-        rows=db.execute('select reason,priority,summary from support.handoffs order by created_at').fetchall()
+        rows=db.execute('select reason,priority,summary from support.handoffs where customer_id=%s order by created_at',(direct.principal.customer_id,)).fetchall()
         assert rows[0][:2]==('card_verification','P0') and rows[1]==('general_support','P0',summary) and len(rows)==2
 
 
@@ -193,7 +193,7 @@ def test_changed_idempotency_parameters_and_direct_credential_writes_are_rejecte
             assert error.value.code=='22023'
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute('select count(*) from actions.commands').fetchone()==(1,)
-        assert db.execute('select count(*) from support.handoffs').fetchone()==(1,)
+        assert db.execute('select count(*) from support.handoffs where case_id=%s',(ctx.case_id,)).fetchone()==(1,)
 
 
 @pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)

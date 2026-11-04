@@ -126,9 +126,6 @@ def test_unlinked_login_reaches_public_agent_but_cannot_use_personal_mode(monkey
     monkeypatch.setattr(settings,'pipeline','v2')
     monkeypatch.delenv('LLM_MODEL',raising=False)
     headers=bearer(sub=str(uuid4()))
-    from app.services import orchestrator
-    async def no_evidence(*args,**kwargs):return []  # knowledge is in the database; the gateway is under test here
-    monkeypatch.setattr(orchestrator,'database_evidence',no_evidence)
     response=client.post('/chat',json=chat('Hello',mode='public'),headers=headers)
     # No fake model: missing configuration withholds the agent section after knowledge access is authorised.
     assert response.status_code==200 and 'event: answer' in response.text and 'event: error' not in response.text

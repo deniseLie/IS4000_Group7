@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     conversation_store: Literal['off','database'] = 'off'
     client_intent_routing: Literal['adaptive','rules'] = 'adaptive'  # LLM-first for ordinary client intents; critical deterministic safeguards remain
     tool_transport: Literal['direct','mcp'] = 'direct'  # mcp: agent tool calls go through app/mcp_server.py
+    external_hosts: str = 'date.nager.at,api.frankfurter.dev'  # services/external.py calls only these hosts
+    external_timeout_s: float = Field(default=5,gt=0,le=30)
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
@@ -45,6 +47,10 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     llm_request_token_budget: int = 24000
     agent_timeout_s: float = Field(default=65,gt=0,le=300)
+    # v5 agent runner (services/agents/runner.py): tool calls per `open` task, and the whole-turn deadline (phase 5).
+    agent_tool_calls: int = Field(default=4,ge=1,le=8)
+    turn_budget_s: float = Field(default=60,gt=0,le=300)
+    planner_model: str | None = None  # v5 planner (phase 5); unset uses LLM_MODEL
 
     # API Gateway Layer (core/gateway.py)
     jwt_audience: str = "authenticated"

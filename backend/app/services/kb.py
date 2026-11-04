@@ -55,7 +55,7 @@ async def search(query: KnowledgeQuery,ctx: RequestContext,db: SyncPostgrestClie
 
 
 async def get_article(article_id: str,ctx: RequestContext,db: SyncPostgrestClient) -> list[KnowledgeSection]:
-    """The published, in-review sections of one article in anchor order (0100); empty when it is retired or unknown."""
+    """The published, in-review sections of one article in anchor order (0102); empty when it is retired or unknown."""
     require_permission(ctx.principal,'kb.search',None,ctx)
     identifier=TypeAdapter(ArticleId).validate_python(article_id)
     response=await execute(lambda:db.rpc('kb_get_article',{'p_article_id':identifier}).execute(),'kb.search')

@@ -18,8 +18,8 @@ def test_emergency_variants_work_without_ai(question):
     request=ChatRequest(messages=[{'role':'user','content':question}])
     result=asyncio.run(make_answer(request,allow_model=False))
     assert result['response_origin']=='safety' and result['needs_human']
-    assert 'immediately' in result['answer'] and 'cannot block' in result['answer']
-    assert 'lost-card' in [s['id'] for s in result['sources']]
+    assert 'Freeze card' in result['answer'] and result['prompt_version'] is None
+    assert 'kb:lost-card@v4#main' in [s['id'] for s in result['sources']]
     assert '1 2 3 4' not in result['answer']
 
 

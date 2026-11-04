@@ -1,803 +1,725 @@
-"""V2 LangGraph: public information, owned retail/compliance reads and authenticated fraud review.
+"""v5 LangGraph (build plan phases 5 and 7; architecture §14): planner → agent (Send ×N) → gather → [agent (wave 2) →
+gather →] compose, and planner → act → compose when the client answers an open offer.
 
-Uses the explicitly configured knowledge store and an optional owned durable checkpoint saver.
-Fraud proposals pause at a durable checkpoint; the remaining personal agents report explicit limitations.
-Independent public/personal tasks run concurrently under AGENT_TIMEOUT_S (reads, retries and
-answer generation together); failed sections have no evidence or proposals. Bounded English
-rules prioritise fraud, security, regulatory deadlines, then ordinary tasks, preserving ties.
+The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
+fraud and login wording, an explicit request for a person, greetings), then one planner/v7 call, then the rule
+overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent. Agents never
+write: what they propose is saved by compose as one offer group, and only a later confirmation (act) runs it. There is
+no checkpointer: a crash fails the turn and the client retries, which is safe because offers are idempotent.
+
+Agents never call each other (§14.6). A planned task may depend on an earlier one: gather runs it in a second wave with
+only the exports it imports, only when its condition export is true ("unknown means no"), once per item of a list
+export (at most 5), and hands an out-of-scope question to one allowed agent once. Offers of a dependent task run after
+its upstream's offers and receive their receipt (after_receipt).
 """
-import asyncio
+import operator
 import re
-from datetime import timedelta
-from zoneinfo import ZoneInfo
-from typing import TypedDict
-from uuid import UUID,uuid5
-import httpx
+from collections.abc import AsyncIterator
+from typing import Annotated, Literal, TypedDict
+from uuid import UUID
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
-from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.runtime import Runtime
-from langgraph.types import interrupt
-from pydantic import TypeAdapter,ValidationError
-from postgrest.exceptions import APIError
+from langgraph.types import Send
+from pydantic import BaseModel, ConfigDict, ValidationError
 from app.core.config import settings
-from app.core import data_api
-from app.core.observability import log_event,span
-from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
+from app.core.observability import evidence_sink, log_event, span
+from app.schemas.actions import ActionOutcome, HandoffResult
+from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest, Message
-from app.schemas.customer_data import CustomerTransaction
-from app.schemas.contracts import ActionCommand,AgentResult, Domain, Priority,RequestContext, RiskAssessment, Task, TaskPlan,Receipt
-from app.schemas.events import ActionRequiredEvent,AnswerEvent, AnswerSection, Source,WorkflowPausedEvent
-from app.schemas.actions import ActionOutcome,HandoffResult
-from app.schemas.disputes import DisputeItem,StoredDisputeTarget
-from app.schemas.fraud import DisputeProposal,FraudProposal
-from app.schemas.workflows import OwnedWorkflow,PendingReview,PipelineContext,ResponseMeta
-from app.schemas.knowledge import KnowledgeQuery,KnowledgeSection,SectionKey
-from app.services import actions,audit,case_summary,customer_data,fraud_reports,kb, llm_gateway, prompts,rm_handover,tools,typos,workflow_store,limit_context,client_intents
+from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, Export, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
+from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, PlanEvent, PlannedSection, Source
+from app.schemas.tickets import TicketResult
+from app.services import audit, fraud_reports, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
 from app.services.llm_gateway import LLMError
-from app.services.actions import store as action_store
-from app.services.actions.store import ActionIntegrityError
-from app.services.agents import card_answers,compliance,meeting_answers,document,fraud,fraud_records,relationship,retail,retail_checks,client_guidance
-from app.services.agents.answer import WITHHELD, respond, response_prompt_id
-from app.services.agents.registry import AGENT_FOR
-from app.services.answers import NOTICE, PINNED, clean_history
-from app.services.retrieval_context import retrieval_query
+from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, request_status_answers, retail_checks, runner, rules  # noqa: F401 (rules registers)
+from app.services.agents.answer import WITHHELD
+from app.services.answers import NOTICE, clean_history
 from app.services.guardrail import FRAUD
-from app.services.authorization import require_permission
 
-DISPUTE='_dispute'
-MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]',re.I)
-SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b',re.I)
-# Signing in is retail app help even when the question asks whether it relates to a reported charge; the fraud task covers the charge.
+MAX_TASKS = 5
+MAX_ITEMS = 5  # fan-out cap per list export
+PLANNER = 'v7'
+MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
+GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
+SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b', re.I)
 LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app"
-    r"|(?:app|account)\s+(?:is\s+|was\s+|got\s+|has\s+been\s+)?locked|otps?|one[- ]time\s+(?:codes?|passwords?))\b",re.I)
-CHARGE = re.compile(r'\bcharges?\b',re.I)
-RELATED = re.compile(r'\b(?:related|connected|linked|because of|caused by)\b',re.I)
-DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)',re.I)
-TOPICS: dict[Domain, re.Pattern[str]] = {
-    'retail':re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?|log\s*in|sign\s*in|password|passcode'
-        # A charge, fee or spending question is a records question; disowned charges are caught as fraud first (topic_domain).
-        r'|charged|charges?|fees?|transactions?|spent|spend|spending|purchases?)\b',re.I),
-    'compliance':re.compile(r'\b(?:compliance|review|checklist|notice)\b|\bletter\b[^.!?]{0,100}\b(?:update|provide|send)\b[^.!?]{0,80}\b(?:info(?:rmation)?|documents?|details)\b',re.I),
-    'document':re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b',re.I),
-    'relationship':re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b|\bRMs?\b|\bmeet (?:her|him|them|my)\b'
-        r'|\b(?:old|previous|former|new)\s+(?:guy|lady|person|rm|banker|manager|advisor|adviser)\b|\bmy (?:open |pending )?requests?\b',re.I),
+    r"|(?:app|account)\s+(?:is\s+|was\s+|got\s+|has\s+been\s+)?locked|otps?|one[- ]time\s+(?:codes?|passwords?))\b", re.I)
+PHISHING = re.compile(r'\b(?:phishing|scams?|suspicious\s+(?:sms|text|message|email|link|call))\b', re.I)
+LOST = re.compile(r'\b(?:lost|stolen|missing)\b[^.?!]{0,30}\bcards?\b|\bcards?\b[^.?!]{0,30}\b(?:lost|stolen|missing)\b', re.I)
+CHARGE = re.compile(r'\bcharges?\b', re.I)
+RELATED = re.compile(r'\b(?:related|connected|linked|because of|caused by)\b', re.I)
+DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time left)\b|\bdue\b(?!\s+(?:to|diligence)\b)', re.I)
+DOCUMENTS = re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b', re.I)
+TOPICS: dict[TargetAgent, re.Pattern[str]] = {
+    'accounts': re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?'
+        # A charge, fee or spending question is a records question; disowned charges are caught as fraud first (topic_agent).
+        r'|charged|charges?|fees?|transactions?|spent|spend|spending|purchases?)\b', re.I),
+    'compliance': re.compile(r'\b(?:compliance|review|checklist|notice|documents?|docx|pdf|files?|upload|pages)\b'
+        r'|\bletter\b[^.!?]{0,100}\b(?:update|provide|send)\b[^.!?]{0,80}\b(?:info(?:rmation)?|documents?|details)\b', re.I),
+    'relationship': re.compile(r'\b(?:relationship manager|advisor|adviser|meeting|appointment|handover)\b|\bRMs?\b|\bmeet (?:her|him|them|my)\b'
+        r'|\b(?:old|previous|former|new)\s+(?:guy|lady|person|rm|banker|manager|advisor|adviser)\b|\bmy (?:open |pending )?requests?\b', re.I),
 }
-# Asking a person at the bank to do something is relationship intake even when it names a retail word such as "statement".
-RM_REQUEST=re.compile(r'\b(?:can|could|would)\s+(?:someone|somebody|my (?:rm|relationship manager|advisor|adviser|banker))\s+(?:please\s+)?'
-    r'(?:send|arrange|prepare|get|call|email|post)\b',re.I)
+# Asking a person at the bank to do something is relationship intake even when it names an account word such as "statement".
+RM_REQUEST = re.compile(r'\b(?:can|could|would)\s+(?:someone|somebody|my (?:rm|relationship manager|advisor|adviser|banker))\s+(?:please\s+)?'
+    r'(?:send|arrange|prepare|get|call|email|post)\b', re.I)
+ACCOUNT_INTENTS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ('transfer_status', re.compile(r'\b(?:transfers?|pending|landlord|payee|arrive|go through)\b', re.I)),
+    ('card_limit', re.compile(r'\b(?:card|credit)\s+limit\b|\blimit\s+(?:increase|change)\b', re.I)),
+    ('loans', re.compile(r'\bloans?\b', re.I)), ('statements', re.compile(r'\bstatements?\b', re.I)),
+    ('transactions', re.compile(r'\b(?:transactions?|spent|spend|spending|purchases?|charged|charges?)\b', re.I)),
+    ('card_fees', re.compile(r'\bfees?\b', re.I)), ('card_figures', re.compile(r'\bcards?\b', re.I)),
+    ('account_balance', re.compile(r'\b(?:accounts?|balances?|savings|deposits?)\b', re.I)))
+REPHRASE = ('Sorry, I couldn’t work out what you need just now. Could you ask again in a different way, or say “talk to a person” '
+    'and I’ll show you what I would send to your relationship manager?')
+CONFIRM_LINE = 'Reply “yes” to confirm or “no” to cancel. Nothing happens until you confirm, and this expires in 30 minutes.'
+EXPIRED = 'That offer has expired or was already answered, so nothing was sent. Ask again if you still want this.'
+FRAUD_TEAM = ('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card if needed and review '
+    'the charges. Don’t wait for them if your card is at risk: freeze it yourself now on Overview under Cards (Manage, then Freeze '
+    'card), or call the fraud line on the back of your card. Only the bank can unfreeze it while the case is open. I can’t freeze '
+    'the card or reverse a charge from here. You can follow it in My requests.')  # 0096: the client's own freeze
+FRAUD_DECLINED = ('Okay, I haven’t sent the charges to the fraud team. If you don’t recognise a charge, call the fraud line on the '
+    'back of your card or use the report function in the official app now.')
+CANCELLED = 'Okay, nothing has been sent.'
+STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try again, or use the official app.'
+DONE = 'Done. You can see the receipt in Activity.'
+TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
+LINKED = ' It is linked to your earlier request {reference}.'
+CHAIN_STOPPED = 'I didn’t do this next step, because the step before it didn’t go through. Nothing was changed for it.'
+# Dependencies (§14.6): fixed wording, never the planner's text.
+UNLINKED = 'I couldn’t link one part of your message to the rest, so I haven’t done it. Could you ask it on its own?'
+UPSTREAM_UNKNOWN = 'I couldn’t check what this part depends on, so I haven’t gone ahead with it. Ask again on its own if you still want it.'
+CONDITION_FALSE: dict[str, str] = {
+    'due_in_window': 'None of your card or loan payments falls due during your trip, so I haven’t gone ahead with that part.',
+    'consent_active': 'The client hasn’t shared a handover note with you under an active consent, so nothing from one is included.'}  # RM (R23)
+CONDITION_FALSE_ANY = 'What you asked this to depend on isn’t the case, so I haven’t gone ahead with that part.'
+MORE_ITEMS = 'I’ve shown the first {shown} of {total}. Ask about the others if you need them.'
+OUT_OF_SCOPE = 'I can’t help with that part here. Say “talk to a person” and I’ll show you what I would send to your relationship manager.'
+# Our own fixed asks a short yes or no answers; with no open offer left, the reply says so instead of guessing.
+OFFER_MARKS = (CONFIRM_LINE, fraud_reports.CONFIRM_REPLY, fraud_reports.LOST_REPLY)
+DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship',
+    'rm_client_insight': 'relationship', 'rm_service_desk': 'relationship'}
 
 
-class Turn(TypedDict):
+class TurnContext(BaseModel):
+    """Runtime identity, never graph state: the caller, and the saved turn offers belong to."""
+    model_config = ConfigDict(extra='forbid')
+    request: RequestContext
+    turn_id: UUID | None = None
+    conversation_id: UUID | None = None  # the saved chat's session; its open offers can be answered
+
+
+class Confirmation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    group: UUID
+    decision: Literal['confirm', 'cancel']
+
+
+class Turn(TypedDict, total=False):
     request: ChatRequest
     history_count: int
     risk: RiskAssessment
     history: list[Message]
-    issues: list[PlannedIssue]
-    plan: TaskPlan
-    results: list[AgentResult]
-    evidence: list[list[Evidence]]
-    metadata: list[ResponseMeta]
-    proposals: list[FraudProposal | None]
-    disputes: list[DisputeProposal | None]
-    pending_reviews: list[PendingReview]
-    decision_sections: list[AnswerSection]
-    workflow_version: str
+    tasks: list[PlanTask]
+    confirm: Confirmation | None
+    lines: list[AnswerSection]  # fixed sections: the rephrase line, or the outcomes of a confirmed offer group
+    outputs: Annotated[list[AgentOutput], operator.add]
+    next: list['AgentInput']  # wave 2, from gather; set (even empty) once gather has run, so it runs wave 2 only once
     answer: AnswerEvent
 
 
-class PlanUpdate(TypedDict):
-    issues: list[PlannedIssue]
+class AgentInput(TypedDict):
+    task: PlanTask
+    history: list[Message]
+    language: str
+    inputs: dict[str, Export]  # the upstream exports this agent imports (wave 2 only)
 
 
-class PriorityUpdate(TypedDict):
-    plan: TaskPlan
+# ---- Planner rules ----
 
-
-class DispatchUpdate(TypedDict):
-    results: list[AgentResult]
-    evidence: list[list[Evidence]]
-    metadata: list[ResponseMeta]
-    proposals: list[FraudProposal | None]
-    disputes: list[DisputeProposal | None]
-
-
-class TaskDispatch(TypedDict):
-    result: AgentResult
-    evidence: list[Evidence]
-    metadata: ResponseMeta
-    proposal: FraudProposal | None
-    dispute: DisputeProposal | None
-
-
-class ReviewUpdate(TypedDict):
-    pending_reviews: list[PendingReview]
-
-
-class SettlementUpdate(TypedDict):
-    decision_sections: list[AnswerSection]
-
-
-class ComposeUpdate(TypedDict):
-    answer: AnswerEvent
-
-
-def topic_domain(question: str) -> Domain | None:
-    """Rules own clear domain assignments, including questions extracted by the planner."""
-    if LOGIN.search(question) and (not FRAUD.search(question) or RELATED.search(question)):return 'retail'
-    if FRAUD.search(question):return 'fraud'
+def entity_agent(question: str) -> TargetAgent | None:
+    """Rules own clear agent assignments, including questions the planner extracted."""
+    if FRAUD.search(question) and not (LOGIN.search(question) and RELATED.search(question)):return 'security'
+    if LOGIN.search(question) or PHISHING.search(question) or LOST.search(question):return 'security'
     if RM_REQUEST.search(question):return 'relationship'
-    domains = [domain for domain,pattern in TOPICS.items() if pattern.search(question)]
-    return domains[0] if len(domains)==1 else None
+    found = [agent for agent, pattern in TOPICS.items() if pattern.search(question)]
+    return found[0] if len(found) == 1 else None
 
 
-def simple_issue(question: str, language: str) -> PlannedIssue | None:
-    """Plan clear single-topic English questions by rules; ambiguity and multiple issues use the planner."""
-    if language == 'English' and re.fullmatch(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', question, re.I):
-        return PlannedIssue(domain='smalltalk', question=question)
+def topic_agent(question: str) -> TargetAgent | None:
+    return entity_agent(question) or entity_agent(typos.normalise(question))
+
+
+def intent_for(agent: TargetAgent, question: str) -> str:
+    """The listed intent a rule-planned question fits; the model never chooses reads for it."""
+    if agent == 'security':
+        if FRAUD.search(question) or FRAUD.search(typos.normalise(question)):return 'unrecognised_charge'
+        if LOST.search(question):return 'lost_card'
+        return 'phishing' if PHISHING.search(question) and not LOGIN.search(question) else 'login_help'
+    if agent == 'accounts':
+        probe = typos.normalise(question)
+        return next((intent for intent, pattern in ACCOUNT_INTENTS if pattern.search(probe)), OPEN_INTENT)
+    if agent == 'compliance':return 'document_findings' if DOCUMENTS.search(question) else 'review_status'
+    if agent == 'relationship':
+        if client_intents.request_status(question):return 'request_status'
+        return 'meeting_times' if re.search(r'\b(?:meet|meeting|appointment|slot|book)\b', question, re.I) else OPEN_INTENT
+    return 'general'
+
+
+def task(agent: TargetAgent, question: str, **entities) -> PlanTask:
+    return PlanTask(id='t1', agent=agent, intent=intent_for(agent, question), question=question, entities=entities)
+
+
+def simple_task(question: str, language: str) -> PlanTask | None:
+    """A clear single-topic English question planned by rules (CLIENT_INTENT_ROUTING=rules and the planner-failure fallback)."""
+    if language == 'English' and GREETING.fullmatch(question):return task('guide', question)
     if language != 'English' or MULTIPLE.search(question):return None
-    # Rules match a typo-tolerant copy ("wats my crad bal"); the client's own words are what is planned and answered.
     probe = typos.normalise(question)
-    if rm_handover.needs_person(probe) and not FRAUD.search(probe):return PlannedIssue(domain='relationship',question=question)
-    domain = topic_domain(question) or topic_domain(probe)
-    if domain is not None:return PlannedIssue(domain=domain,question=question)
+    if rm_handover.needs_person(probe) and not FRAUD.search(probe):return task('relationship', question, handover='rm')
+    agent = topic_agent(question)
+    return task(agent, question) if agent is not None else None
+
+
+def critical_task(question: str, language: str) -> PlanTask | None:
+    """Only urgent, security and greeting questions bypass the planner (no keyword-to-answer mapping for ordinary intents)."""
+    if language != 'English' or MULTIPLE.search(question):return None
+    if GREETING.fullmatch(question):return task('guide', question)
+    probe = typos.normalise(question)
+    if FRAUD.search(question) or FRAUD.search(probe):return task('security', question, message=question)
+    # The typo copy reads "locked" as "blocked", so sign-in words are matched on her own words too.
+    if LOGIN.search(question) or LOGIN.search(probe) or LOST.search(probe):return task('security', question)
+    if RM_REQUEST.search(probe) or rm_handover.needs_person(probe):return task('relationship', question, handover='rm')
     return None
 
 
-def route_issues(issues: list[PlannedIssue]) -> list[PlannedIssue]:
-    """Trust model classification except for clear security and explicit human routing.
-
-    Ordinary product keywords must not override a context-aware LLM decision.
-    Deterministic restrictions still take priority for fraud/login and explicit
-    requests to an RM, independent of the model's confidence.
-    """
-    routed=[]
-    for issue in issues:
-        text=typos.normalise(issue.question)
-        if (FRAUD.search(issue.question) or FRAUD.search(text)) and not (LOGIN.search(text) and RELATED.search(text)):
-            domain='fraud'
-        elif LOGIN.search(text):
-            domain='retail'
-        elif RM_REQUEST.search(text) or rm_handover.needs_person(text):
-            domain='relationship'
-        else:
-            domain=issue.domain
-        routed.append(PlannedIssue(domain=domain,question=issue.question))
-    return routed
-
-
-def critical_route(question: str,language: str) -> PlannedIssue | None:
-    """Only urgent/safety/greeting questions can bypass LLM intent understanding."""
-    if language!='English' or MULTIPLE.search(question):return None
-    if re.fullmatch(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*',question,re.I):
-        return PlannedIssue(domain='smalltalk',question=question)
-    probe=typos.normalise(question)
-    if FRAUD.search(question) or FRAUD.search(probe):return PlannedIssue(domain='fraud',question=question)
-    if LOGIN.search(probe):return PlannedIssue(domain='retail',question=question)
-    if RM_REQUEST.search(probe) or rm_handover.needs_person(probe):
-        return PlannedIssue(domain='relationship',question=question)
+def fixed_task(question: str, req: ChatRequest, history: list[Message] = ()) -> PlanTask | None:
+    """Fresh requests answered by rules; they win over the older questions we are still waiting on."""
+    # A request-status question is a read, even in an active card-limit draft, so it never starts another application.
+    # A short follow-up about the ticket just shown ("the statement one") keeps that ticket (request_status_answers.follow_up).
+    status = request_status_answers.follow_up(question, history)
+    if req.mode == 'personal' and client_intents.request_status(status):return PlanTask(id='t1', agent='relationship', intent='request_status', question=status)
+    if client_guidance.PERSONAL_DETAILS.search(question) or client_guidance.UNCLEAR_HELP.search(question) or client_guidance.NEW_REQUEST.search(question) \
+            or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
+        return PlanTask(id='t1', agent='guide', intent='how_to_request', question=question)
+    # An explicit, non-specific compliance help request is a clarification, not a document inspection.
+    if req.mode == 'personal' and req.language == 'English' and not MULTIPLE.search(question) and compliance.general_help(question):
+        return PlanTask(id='t1', agent='compliance', intent='review_status', question=question)
     return None
 
-async def plan(state: Turn) -> PlanUpdate:
-    req = state['request']
-    question = state['risk'].redacted_message
-    if req.record_context is not None:
-        return {'issues':[PlannedIssue(domain='document' if req.record_context.kind=='document' else 'compliance',question=question)]}
-    # A plain yes to the charge list we just showed (CR12): report exactly those charges, no planner call.
-    if req.mode=='personal' and fraud_reports.pending(state['history']):return {'issues':[PlannedIssue(domain='fraud',question=question)]}
-    # A request-status question is a read, even in an active card-limit draft.
-    # This must precede limit-context continuation and the LLM planner, so a
-    # bank-decision question never starts another limit-change application.
-    if req.mode=='personal' and client_intents.request_status(question):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    if client_guidance.PERSONAL_DETAILS.search(question) or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    if client_guidance.UNCLEAR_HELP.search(question):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    # An explicit, non-specific compliance help request is a clarification,
-    # not a document inspection or an active card-limit continuation. Preserve
-    # multi-intent requests for the planner instead of swallowing other work.
-    if (req.mode=='personal' and req.language=='English' and
-            not MULTIPLE.search(question) and compliance.general_help(question)):
-        return {'issues':[PlannedIssue(domain='compliance',question=question)]}
-    # A new explicit request or a topical question must not inherit card-limit
-    # context from the preceding assistant answer.
-    if re.search(r"\b(?:raise|open|start|create)\s+(?:a\s+)?(?:new\s+)?(?:service\s+)?request\b",question,re.I):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
-    # A reply to our "which card do you mean?" goes back to the card answer, however short ("the travel one").
-    # Her answer to "here's what I'd send to your RM" (CR8): carried out by rules, never re-planned.
-    if req.mode=='personal' and (lost:=fraud_reports.lost_pending(state['history'])):
-        return {'issues':[PlannedIssue(domain='fraud',question=lost[0])]}
-    if req.mode=='personal' and (choice:=rm_handover.pending_choice(state['history'])):
-        return {'issues':[PlannedIssue(domain='relationship',question=choice[0])]}
-    if req.mode=='personal' and not MULTIPLE.search(question) and (card_answers.awaiting_card(state['history']) or limit_context.active(state['history'])):
-        return {'issues':[PlannedIssue(domain='retail',question=question)]}
+
+def follow_up(question: str, history: list[Message]) -> PlanTask | None:
+    """Her answer to a question in our previous reply goes back to that flow, never to the planner."""
+    if choice := rm_handover.pending_choice(history):
+        quoted, chosen, reference = choice
+        return PlanTask(id='t1', agent='relationship', intent=OPEN_INTENT, question=quoted, priority='P2',
+            entities={'handover': 'rm', 'handover_choice': chosen, 'handover_reference': reference or '', 'follow_up': True})
+    # A reply to "which card do you mean?" goes back to the card answer, however short ("the travel one").
+    if not MULTIPLE.search(question) and (card_answers.awaiting_card(history) or limit_context.active(history)):
+        return PlanTask(id='t1', agent='accounts', intent='card_figures', question=question, entities={'follow_up': True})
     # Picking or confirming a meeting time we just offered goes back to the meeting flow (CR17).
-    if req.mode=='personal' and meeting_answers.awaiting(state['history']):return {'issues':[PlannedIssue(domain='relationship',question=question)]}
-    # Model-first for everyday client intents, including multi-intent requests and
-    # follow-ups; avoid a brittle keyword-to-answer mapping. Preserve the old
-    # rule-based mode for offline comparison and constrained deployments.
-    single=simple_issue(question,req.language)
-    critical=critical_route(question,req.language)
-    if critical is not None:return {'issues':[critical]}
-    if settings.client_intent_routing=='rules' and single is not None:return {'issues':[single]}
-    pv = prompts.current('planner')
-    schema = {'title':'issue_plan','type':'object','additionalProperties':False,'properties':{
-        'issues':{'type':'array','items':{'type':'object','additionalProperties':False,'properties':{
-            'domain':{'type':'string','enum':['retail','fraud','compliance','document','relationship','smalltalk']},
-            'question':{'type':'string'}},'required':['domain','question']}}},'required':['issues']}
-    try:
-        result = await llm_gateway.call(pv, pv['system'], [(m.role,m.content) for m in state['history']], schema)
-        draft = PlannerDraft.model_validate(result.data)
-    except (LLMError,ValidationError) as error:
-        # A clear, single-domain utterance may safely fall back to classification
-        # rules if the planner is unavailable. Never fabricate an answer.
-        if single is None:raise
-        log_event('intent_fallback',reason=type(error).__name__,domain=single.domain)
-        return {'issues':[single]}
-    issues = route_issues(draft.issues) if req.language=='English' else draft.issues
-    issues = client_intents.reconcile(question,issues) if req.language=='English' else issues
-    return {'issues':issues}
-
-
-def task_priority(issue: PlannedIssue) -> Priority:
-    """Bounded English rules classify security and regulatory deadlines; ties retain message order."""
-    if issue.domain=='fraud':return 'P0'
-    if SECURITY.search(issue.question):return 'P1'
-    if issue.domain in {'compliance','document'} and DEADLINE.search(issue.question):return 'P2'
-    return 'P3'
-
-
-def prioritise(state: Turn) -> PriorityUpdate:
-    risk=state['risk']
-    issues=state['issues']
-    request=state.get('request')
-    lost=fraud_reports.lost_pending(state.get('history') or []) if request is not None and request.mode=='personal' else None
-    if lost and [issue.domain for issue in issues]==['fraud']:
-        return {'plan':TaskPlan(tasks=[Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',
-            entities={'question':lost[0],'lost_card':'report' if lost[1] else 'declined'})])}
-    chosen=rm_handover.pending_choice(state.get('history') or []) if request is not None and request.mode=='personal' else None
-    if chosen and [issue.domain for issue in issues]==['relationship']:
-        question,choice,reference=chosen
-        return {'plan':TaskPlan(tasks=[Task(task_id='t1',domain='relationship',intent='answer_question',priority='P2',
-            entities={'question':question,'handover':'rm','handover_choice':choice,'handover_reference':reference or ''})])}
-    confirmations=fraud_reports.pending(state.get('history') or []) if request is not None and request.mode=='personal' else []
-    if confirmations and [issue.domain for issue in issues]==['fraud']:
-        # One urgent report per confirmed card; the charges come from our own previous list, never from the model.
-        return {'plan':TaskPlan(tasks=[Task(task_id=f't{i+1}',domain='fraud',intent='answer_question',priority='P0',
-            entities={'question':issues[0].question,'fraud_confirmed':item.encoded()}) for i,item in enumerate(confirmations)])}
-    if {'fraud_suspected','lost_card'}.intersection(risk.risk_flags) and not any(issue.domain=='fraud' for issue in issues):
-        # The planner's own charge question becomes the fraud task, so the charge is not answered twice.
-        charge=next((i for i,issue in enumerate(issues) if CHARGE.search(issue.question) and not LOGIN.search(issue.question)),None)
-        issues=([*issues[:charge],PlannedIssue(domain='fraud',question=issues[charge].question),*issues[charge+1:]] if charge is not None
-            else [PlannedIssue(domain='fraud',question=risk.redacted_message),*issues])
-    fraud_reported=any(issue.domain=='fraud' for issue in issues)
-    # A sign-in problem raised with a suspected charge is answered as a security step; the link is a rule, not a finding.
-    tasks = [Task(task_id=f't{i+1}', domain=issue.domain, intent='answer_question',
-        priority=task_priority(issue), entities={'question':issue.question,
-            **({'linked':'card_fraud'} if fraud_reported and issue.domain=='retail' and LOGIN.search(issue.question) else {}),
-            # Advice, fee/rate negotiation, complaints and asks for the RM go to the RM; the model never answers them.
-            **({'handover':'rm'} if issue.domain!='fraud' and rm_handover.needs_person(issue.question) and rm_handover.needs_person(risk.redacted_message) else {})})
-        for i,issue in enumerate(issues)]
-    return {'plan':TaskPlan(tasks=tasks)}
-
-
-async def database_evidence(task: Task,ctx: RequestContext,history: list[Message] | None=None) -> list[Evidence]:
-    """Retrieve only the latest planned question; never replace a no-match with unrelated articles.
-
-    Goes through the tool layer, so with TOOL_TRANSPORT=mcp this is an MCP tools/call (F21)."""
-    query=KnowledgeQuery(query=task.entities['question'],scope='public',k=4)
-    # The supervisor retrieves shared evidence; this is not an agent-initiated tool call.
-    found=await tools.call('knowledge_search',{'query':query.query,'k':query.k},ctx)
-    sections=TypeAdapter(list[KnowledgeSection]).validate_python(found['items'])
-    if not sections and history:
-        expanded=retrieval_query(query.query,history)
-        if expanded!=query.query:
-            fallback=await tools.call('knowledge_search',{'query':expanded,'k':query.k},ctx)
-            sections=TypeAdapter(list[KnowledgeSection]).validate_python(fallback['items'])
-    return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
-
-
-def focused_history(state: Turn,task: Task) -> list[Message]:
-    """With several issues in one message, the retail agent sees its own planned issue in place of that message,
-    so it does not answer (and misquote figures from) issues that other sections answer."""
-    history=state['history']
-    question=task.entities.get('question')
-    if task.domain!='retail' or len(state['plan'].tasks)<2 or not history or history[-1].role!='user' or not isinstance(question,str):return history
-    return [*history[:-1],history[-1].model_copy(update={'content':question})]
-
-
-async def linked_evidence(task: Task,ctx: RequestContext) -> list[Evidence]:
-    """Approved security guidance for a sign-in task linked to a reported charge, fetched by id rather than by keyword."""
-    if task.entities.get('linked')!='card_fraud':return []
-    with data_api.connect(ctx) as db:item=await kb.get_section(SectionKey(article_id='app-login-recovery',version=2,anchor='unexpected-code'),ctx,db)
-    if item is None or not item.current:return []
-    return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source())]
-
-
-def task_prompt_id(task: Task,request: ChatRequest) -> str | None:
-    agent=AGENT_FOR[task.domain]
-    if request.mode=='public' or task.domain=='smalltalk':return response_prompt_id(agent)
-    if task.domain=='fraud':return prompts.load(agent,fraud.PROMPT)['id']
-    if task.domain=='retail':return prompts.load(agent,retail.PROMPT)['id']
-    if task.domain=='document':return prompts.load('document','v5')['id']
-    if task.domain=='relationship':return prompts.load(agent,relationship.PROMPT)['id']
-    if task.domain=='compliance':return prompts.load(agent,'v5')['id']
+    if meeting_answers.awaiting(history):
+        return PlanTask(id='t1', agent='relationship', intent='meeting_times', question=question, entities={'follow_up': True})
     return None
 
 
-async def generate_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
-    """One independent task owns its evidence; only the later proposal node can write actions."""
-    # Bank-request status is sourced only from customer-owned ticket records,
-    # and must not depend on the product knowledge database being available.
-    status_lookup=(state['request'].mode=='personal' and task.domain=='retail' and
-        client_intents.request_status(str(task.entities.get('question',''))))
-    if status_lookup:evidence=[]
-    else:evidence=await database_evidence(task,ctx,state['history'])
-    if state['request'].mode=='personal':
-        known={item.id for item in evidence}
-        evidence=[*evidence,*(item for item in await linked_evidence(task,ctx) if item.id not in known)]
-    proposal: FraudProposal | None=None
-    dispute: DisputeProposal | None=None
-    agent=AGENT_FOR[task.domain]
-    prompt_id=task_prompt_id(task,state['request'])
-    if state['request'].mode=='public' or task.domain=='smalltalk':
-        question=task.entities['question']
-        if not isinstance(question,str):raise ValueError('Planned task question must be text')
-        result=await respond(task,question,state['history'],evidence,state['request'].language)
-    elif task.domain=='fraud':
-        decision,evidence=await fraud.respond(task,state['history'],state['request'].language,
-            ctx.model_copy(update={'agent':'fraud'}),evidence)
-        result=decision.result;proposal=decision.proposal;dispute=decision.dispute;prompt_id=decision.prompt_id
-    elif task.domain in {'retail','compliance','relationship','document'}:
-        responder={'retail':retail.respond,'compliance':compliance.respond,'relationship':relationship.respond,'document':document.respond}[task.domain]
-        from app.services.compliance_selection import selection
-        token=selection.set(state['request'].record_context)
-        try:
-            result,evidence,prompt_id=await responder(task,focused_history(state,task),state['request'].language,
-                ctx.model_copy(update={'agent':agent}),evidence)
-        finally:selection.reset(token)
-    else:
-        result=AgentResult(task_id=task.task_id,agent=agent,status='error',
-            text='This personal service is not connected yet. Please use your bank’s official support channel.')
-    return {'result':result,'evidence':evidence,'proposal':proposal,'dispute':dispute,
-        'metadata':ResponseMeta(origin='validation' if result.status=='error' else 'ai',prompt_id=prompt_id)}
+def rule_plan(req: ChatRequest, risk: RiskAssessment, history: list[Message]) -> list[PlanTask] | None:
+    question = risk.redacted_message
+    if req.mode == 'personal' and req.record_context is not None:
+        selection = req.record_context
+        return [PlanTask(id='t1', agent='compliance', intent='document_findings' if selection.kind == 'document' else 'bank_question',
+            question=question, entities={'record_context': selection.model_dump(mode='json')})]
+    if (fixed := fixed_task(question, req, history)) is not None:return [fixed]
+    if req.mode == 'personal' and (answer := follow_up(question, history)) is not None:return [answer]
+    if (critical := critical_task(question, req.language)) is not None:return [critical]
+    return None
 
 
-def can_hand_over(ctx: RequestContext) -> bool:
-    return ctx.principal.kind=='customer' and ctx.case_id is not None
+# ---- The planner call, overrides and plan check ----
+
+def catalogue() -> str:
+    lines = ['Agents (name: what it answers; intents):']
+    for spec in registry.CLIENT_SPECS.values():
+        intents = [*spec.intents, *([OPEN_INTENT] if spec.loop_tools else [])]
+        exports = f' Exports: {", ".join(f"{n} ({t})" for n, t in spec.exports.items())}.' if spec.exports else ''
+        lines.append(f'- {spec.name}: {spec.answers} Intents: {", ".join(intents)}.{exports}')
+    return '\n'.join(lines)
 
 
-async def dispatch_task(task: Task,state: Turn,ctx: RequestContext) -> TaskDispatch:
-    """Bound the whole task and withhold expected provider/data failures without releasing its evidence."""
-    agent=AGENT_FOR[task.domain]
-    if task.entities.get('lost_card'):
-        # Her answer to our lost-card offer (CR12): no model call; the report is idempotent per turn.
-        if task.entities['lost_card']=='report':
-            report=await fraud_reports.report_lost_card(str(task.entities.get('question','')),ctx,
-                rm_handover.task_key('lost_card',ctx.case_id))
-            text=report.reply()
-        else:text=fraud_reports.LOST_DECLINED
-        return {'result':AgentResult(task_id=task.task_id,agent='fraud',status='needs_human',answer_kind='conversation',text=text),
-            'evidence':[],'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
-    if task.entities.get('fraud_confirmed'):
-        result,proposal,dispute=await fraud_reports.confirmed(task,ctx)
-        return {'result':result,'evidence':[],'proposal':proposal,'dispute':dispute,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
-    if task.entities.get('handover')=='rm':
-        # No model call: a fixed, polite line; escalate_validation records the handover and adds the reference.
-        text=rm_handover.SORRY if can_hand_over(ctx) else rm_handover.GUEST
-        if task.entities.get('handover_choice'):text='Okay.' if task.entities['handover_choice']=='cancel' else 'Thank you.'
-        return {'result':AgentResult(task_id=task.task_id,agent=agent,status='needs_human',answer_kind='conversation',text=text),
-            'evidence':[],'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
-    try:
-        with span('task','agent',task_id=task.task_id,agent=agent,priority=task.priority):
-            return await asyncio.wait_for(generate_task(task,state,ctx),timeout=settings.agent_timeout_s)
-    except (llm_gateway.LLMError,TimeoutError,ValidationError,APIError,httpx.TransportError,PermissionError,
-        customer_data.CustomerDataIntegrityError,kb.KnowledgeResponseError) as error:
-        code=data_api.database_code(error) if isinstance(error,APIError) else None
-        fields={'task_id':task.task_id,'agent':agent,'error_type':type(error).__name__,'db_code':code}
-        log_event('agent_failed',**fields)
-        audit.add('agent','agent.failed','failed',details=fields)
-        # A status lookup is a read, not a model-generated banking answer.
-        # Explain unavailability without guessing approval or creating an RM ticket.
-        if (state['request'].mode=='personal' and task.domain=='retail' and
-                client_intents.request_status(str(task.entities.get('question','')))):
-            text=("I couldn't retrieve your request status right now. Please check My Requests "
-                  "or try again later. I can't confirm an approval without a bank-recorded decision.")
-            return {'result':AgentResult(task_id=task.task_id,agent=agent,status='ok',
-                answer_kind='conversation',text=text),'evidence':[],
-                'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='safety',prompt_id=None)}
-        text=fraud.URGENT+' '+WITHHELD if task.domain=='fraud' else WITHHELD
-        return {'result':AgentResult(task_id=task.task_id,agent=agent,status='error',text=text),'evidence':[],
-            'proposal':None,'dispute':None,'metadata':ResponseMeta(origin='validation',prompt_id=task_prompt_id(task,state['request']))}
+def plan_schema() -> dict:
+    return {'title': 'task_plan', 'type': 'object', 'additionalProperties': False, 'properties': {
+        'tasks': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False, 'properties': {
+            'agent': {'type': 'string', 'enum': sorted(registry.CLIENT_SPECS)}, 'intent': {'type': 'string'}, 'question': {'type': 'string'},
+            'entities': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
+                'properties': {'name': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['name', 'value']}},
+            'depends_on': {'type': 'integer', 'minimum': 0, 'maximum': MAX_TASKS}, 'condition': {'type': 'string'}, 'for_each': {'type': 'string'}},
+            'required': ['agent', 'intent', 'question', 'entities', 'depends_on', 'condition', 'for_each']}}}, 'required': ['tasks']}
 
 
-async def dispatch(state: Turn, runtime: Runtime[PipelineContext]) -> DispatchUpdate:
-    """Run reads/agents concurrently, preserving priority order and cancelling siblings on unexpected errors."""
-    ctx=runtime.context.request
-    require_permission(ctx.principal,'kb.search',None,ctx)
-    async with asyncio.TaskGroup() as group:
-        running=[group.create_task(dispatch_task(task,state,ctx)) for task in state['plan'].by_priority()]
-    rows=[task.result() for task in running]
-    return {'results':[row['result'] for row in rows],'evidence':[row['evidence'] for row in rows],
-        'metadata':[row['metadata'] for row in rows],'proposals':[row['proposal'] for row in rows],'disputes':[row['dispute'] for row in rows]}
+async def model_plan(history: list[Message]) -> list[PlanTask]:
+    pv = prompts.load('planner', PLANNER)
+    result = await llm_gateway.call(pv, pv['system'] + '\n' + catalogue(), [(m.role, m.content) for m in history], plan_schema())
+    rows = result.data.get('tasks') if isinstance(result.data, dict) else None
+    if not isinstance(rows, list) or not rows:raise llm_gateway.LLMBadOutput('The planner returned no tasks')
+    rows = rows[:MAX_TASKS]
+    def upstream(i: int, row: dict) -> str | None:  # depends_on is the 1-based number of another task; 0 is none
+        n = row.get('depends_on')
+        return f't{n}' if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= len(rows) and n != i+1 else None
+    def name(row: dict, key: str) -> str | None:
+        return value.strip()[:40] if isinstance(value := row.get(key), str) and value.strip() else None
+    return [PlanTask.model_validate({'id': f't{i+1}', 'agent': row['agent'], 'intent': row['intent'], 'question': row['question'],
+        'entities': {item['name']: item['value'] for item in row['entities'] if isinstance(item, dict)},
+        **({'depends_on': up, 'condition': name(row, 'condition'), 'for_each': name(row, 'for_each')} if (up := upstream(i, row)) else {})})
+        for i, row in enumerate(rows)]
 
 
-async def propose_actions(state: Turn,runtime: Runtime[PipelineContext]) -> ReviewUpdate:
-    """Card actions are the bank's (0081): the client is no longer offered a block or a dispute draft, so nothing waits for
-    her review. A reported charge goes to the fraud team in settle_actions instead. Turns paused before this change still
-    resume through review_actions and settle their recorded decisions as before."""
-    return {'pending_reviews':[]}
+def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
+    """Rules win over the model for fraud, login and explicit asks for a person; ordinary words never override it."""
+    message = risk.redacted_message
+    handovers = rm_handover.requested_questions(message)
+    routed: list[PlanTask] = []
+    for item in tasks:
+        text = typos.normalise(item.question)
+        if (FRAUD.search(item.question) or FRAUD.search(text)) and not (LOGIN.search(text) and RELATED.search(text)):
+            item = item.model_copy(update={'agent': 'security', 'intent': 'unrecognised_charge'})
+        elif LOGIN.search(item.question) or LOGIN.search(text):item = item.model_copy(update={'agent': 'security', 'intent': 'login_help'})
+        elif RM_REQUEST.search(text) and not handovers:
+            item = item.model_copy(update={'agent': 'relationship', 'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
+        routed.append(item)
+    if handovers:  # one handover per part she asked a person about, in her words; a fraud report stays with Security
+        if len(routed) == 1 and routed[0].agent != 'security':routed = []
+        else:routed = [t for t in routed if t.agent == 'security' or (t.agent != 'relationship' and not rm_handover.needs_person(t.question))]
+        used = {t.id for t in routed}
+        fresh = (f't{n}' for n in range(1, 2 * MAX_TASKS + 2) if f't{n}' not in used)
+        routed += [PlanTask(id=next(fresh), agent='relationship', intent=OPEN_INTENT, question=q, priority='P2', entities={'handover': 'rm'})
+            for q in handovers]
+    if {'fraud_suspected', 'lost_card'} & set(risk.risk_flags) and not any(t.intent == 'unrecognised_charge' for t in routed):
+        # The planner's own charge question becomes the Security task, so the charge is not answered twice.
+        charge = next((i for i, t in enumerate(routed) if CHARGE.search(t.question) and not LOGIN.search(t.question)), None)
+        if charge is not None:routed[charge] = routed[charge].model_copy(update={'agent': 'security', 'intent': 'unrecognised_charge'})
+        else:routed.insert(0, PlanTask(id='t0', agent='security', intent='unrecognised_charge', question=message))
+    # The fraud team's summary names the other issues raised in the same message (case_summary).
+    transfer = next((t.question for t in routed if t.agent == 'accounts' and retail_checks.TRANSFER.search(t.question)), None)
+    lockout = any(t.agent == 'security' and t.intent == 'login_help' for t in routed)
+    return [t.model_copy(update={'entities': {**t.entities, 'message': message, 'lockout': lockout, **({'transfer': transfer} if transfer else {})}})
+        if t.intent == 'unrecognised_charge' else t for t in routed][:MAX_TASKS]
 
 
-async def offer_card_actions(state: Turn,runtime: Runtime[PipelineContext]) -> ReviewUpdate:
-    """Retired by 0081: the client-confirmed block and dispute offers. Not wired into the graph. Kept because turns saved
-    before 0081 can still be waiting on these decisions, and tests use it to exercise the paused-turn machinery
-    (tests/legacy_card_actions.py)."""
-    owned=runtime.context.workflow
-    reviews: list[PendingReview]=[]
-    cards: set[str]=set()
-    disputes=state.get('disputes') or [None]*len(state['proposals'])
-    for task,proposal,dispute in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
-        if proposal is None or proposal.card_id in cards:continue
-        if owned is None:raise ValueError('Personal proposals require an owned durable turn')
-        ctx=runtime.context.request.model_copy(update={'agent':'fraud'})
-        offers=[(task.task_id,'card.temporary_block',{'card_id':proposal.card_id})]
-        # The dispute draft is its own decision in the same paused turn, under its own workflow task id.
-        if dispute is not None and dispute.card_id==proposal.card_id:offers.append((task.task_id+DISPUTE,'card.dispute',dispute.model_dump(mode='json')))
-        for task_id,kind,target in offers:
-            command=ActionCommand(command_id=uuid5(owned.turn.case_id,task_id+':'+kind),type=kind,target=target,
-                idempotency_key=f'{owned.turn.case_id}:{task_id}:{kind}')
-            result=await actions.propose_for_workflow(command,task_id,owned,ctx)
-            reviews.append(PendingReview(task_id=task_id,command_id=result.command.command_id))
-        cards.add(proposal.card_id)
-    return {'pending_reviews':reviews}
+def priority(item: PlanTask) -> Priority:
+    """Bounded English rules: fraud first, then security, then regulatory deadlines; ties keep message order."""
+    if item.agent == 'security' and item.intent in {'unrecognised_charge', 'lost_card'}:return 'P0'
+    if item.agent == 'security' or SECURITY.search(item.question):return 'P1'
+    if item.agent == 'compliance' and DEADLINE.search(item.question):return 'P2'
+    return 'P2' if item.entities.get('handover') == 'rm' else 'P3'
 
 
-def base_task(task_id: str) -> str:
-    return task_id.removesuffix('_decision').removesuffix(DISPUTE)
+def entity_value(name: str, value):
+    if name == 'days':
+        days = int(value) if isinstance(value, str) and value.isdigit() else value if isinstance(value, int) else None
+        return days if days is not None and 1 <= days <= 90 else None
+    return value
 
 
-async def review_actions(state: Turn,runtime: Runtime[PipelineContext]) -> dict[str,str]:
-    if not state['pending_reviews']:return {}
-    ctx=runtime.context.request
-    with data_api.connect(ctx) as db:
-        outcomes=[await action_store.load(item.command_id,ctx,db) for item in state['pending_reviews']]
-    pending=[str(item.command.command_id) for item in outcomes if item.command.state=='proposed']
-    if pending:
-        # A resume value only wakes the graph. Canonical ledger outcomes always decide what happened.
-        interrupt({'command_ids':pending})
-        with data_api.connect(ctx) as db:
-            outcomes=[await action_store.load(item.command_id,ctx,db) for item in state['pending_reviews']]
-        if any(item.command.state=='proposed' for item in outcomes):raise ValueError('Workflow decisions are still pending')
-    return {}
+def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
+    """The plan check against SPECS: guests get only Guide; an unknown intent becomes `open`, or the agent's first intent."""
+    plan: list[PlanTask] = []
+    ids: dict[str, str] = {}
+    for item in tasks[:MAX_TASKS]:
+        if req.mode != 'personal':item = item.model_copy(update={'agent': 'guide', 'intent': item.intent if item.agent == 'guide' else 'general',
+            'entities': {}})
+        spec = registry.SPECS[item.agent]
+        intent = item.intent if item.intent in spec.intents or (item.intent == OPEN_INTENT and spec.loop_tools) else \
+            OPEN_INTENT if spec.loop_tools else next(iter(spec.intents))
+        entities = {k: v for k, v in ((k, entity_value(k, v)) for k, v in item.entities.items()) if v is not None}
+        ids[item.id] = f't{len(plan)+1}'
+        plan.append(item.model_copy(update={'id': ids[item.id], 'intent': intent, 'entities': entities}))
+    plan = [t.model_copy(update={'depends_on': ids.get(t.depends_on, '?')}) if t.depends_on else t for t in plan]  # '?': not in the plan
+    return [t.model_copy(update={'priority': t.priority if t.priority != 'P3' else priority(t)}) for t in plan]
 
 
-async def settle_actions(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
-    """Fixed decision text per recorded outcome, then one staff handoff per reported charge with the deterministic case summary."""
-    sections: list[AnswerSection]=[]
-    ctx=runtime.context.request
-    owned=runtime.context.workflow
-    outcomes: dict[str,dict[str,ActionOutcome]]={}
-    for review in state['pending_reviews']:
-        with data_api.connect(ctx) as db:outcome=await action_store.load(review.command_id,ctx,db)
-        if outcome.command.state in ('proposed','confirmed'):raise ValueError('Cannot compose a reply before a recorded decision')
-        if owned is None:raise ValueError('Action settlement requires an owned turn')
-        outcomes.setdefault(base_task(review.task_id),{})[outcome.command.type]=outcome
-        receipt=outcome.receipt.outcome if outcome.receipt is not None else None
-        text=(decision_text(outcome.command.state,receipt,outcome.command.target.last4) if outcome.command.type=='card.temporary_block'
-            else dispute_text(outcome.command.state,receipt,outcome.command.target))
-        sections.append(AnswerSection(task_id=review.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',answer=text,
-            sources=[Source(id='action-receipt-'+review.task_id,title='Recorded synthetic action decisions',url=None,version='v1',publisher='DemoBank action ledger'),
-                Source.model_validate(PINNED['unrecognised-charge'])],
-            needs_human=True,response_origin='safety',prompt_version=None))
-    for task_id,decided in outcomes.items():
-        block,dispute=decided.get('card.temporary_block'),decided.get('card.dispute')
-        succeeded={kind for kind,item in decided.items() if item.receipt is not None and item.receipt.outcome=='succeeded'}
-        if not succeeded or block is None or owned is None:continue
-        # Staff verify a blocked card and review a confirmed dispute; both come from this one summary under one handoff.
-        reason='card_dispute' if 'card.dispute' in succeeded else 'card_verification'
-        handoff_id=task_id+'_handoff'
-        command=ActionCommand(command_id=uuid5(owned.turn.case_id,handoff_id+':handoff.create'),type='handoff.create',
-            target={'reason':reason,'priority':'P0','summary':await staff_summary(state,task_id,block,dispute,ctx)},
-            idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
-        handoff=await actions.propose_for_workflow(command,handoff_id,owned,ctx.model_copy(update={'agent':'fraud'}))
-        if handoff.receipt is None or handoff.receipt.outcome!='succeeded':raise ValueError('The synthetic support handoff did not produce a successful receipt')
-    if owned is not None and not state['pending_reviews']:
-        sections+=await ask_to_confirm(state,ctx)
-        sections+=await report_to_fraud_team(state,ctx,owned)
-    return {'decision_sections':sections}
-
-
-async def ask_to_confirm(state: Turn,ctx: RequestContext) -> list[AnswerSection]:
-    """CR12: before anything is sent, list the reported card's charges from records and ask the client to confirm them.
-    Nothing is recorded on this turn; her "Yes, report it" on the next turn sends exactly these charges."""
-    sections: list[AnswerSection]=[]
-    asked: set[str]=set()
-    disputes=state.get('disputes') or [None]*len(state['proposals'])
-    for task,proposal,flagged in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
-        if proposal is None or task.entities.get('fraud_confirmed') or proposal.card_id in asked:continue
-        asked.add(proposal.card_id)
-        text=await fraud_reports.ask_to_confirm(task,proposal,flagged,ctx)
-        if text is None:continue
-        sections.append(AnswerSection(task_id=task.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',answer=text,
-            sources=[fraud_reports.records_source(ctx),Source.model_validate(PINNED['unrecognised-charge'])],
-            needs_human=True,response_origin='safety',prompt_version=None))
-    return sections
-
-
-FRAUD_TEAM=('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card ending {last4} if needed '
-    'and review the charges. Don’t wait for them if your card is at risk: freeze it yourself now on Overview under Cards (Manage, '
-    'then Freeze card), or call the fraud line on the back of your card. Only the bank can unfreeze it while the case is open. '
-    'I can’t freeze the card or reverse a charge from here. You can follow it in My requests.')  # 0096: the client's own freeze
-
-
-async def report_to_fraud_team(state: Turn,ctx: RequestContext,owned: OwnedWorkflow) -> list[AnswerSection]:
-    """One urgent fraud-team handoff per confirmed card, with the staff case summary built from records; the reply quotes its ticket."""
-    sections: list[AnswerSection]=[]
-    reported: set[str]=set()
-    disputes=state.get('disputes') or [None]*len(state['proposals'])
-    for task,proposal,flagged in zip(state['plan'].by_priority(),state['proposals'],disputes,strict=True):
-        # Only charges the client confirmed on this turn are sent (ask_to_confirm lists them first).
-        if proposal is None or not task.entities.get('fraud_confirmed') or proposal.card_id in reported:continue
-        reported.add(proposal.card_id)
-        records=await fraud_records.load(ctx.model_copy(update={'agent':'fraud'}))
-        card=next(item for item in records.cards if item.card_id==proposal.card_id)
-        ids=set(flagged.transaction_ids if flagged is not None and flagged.card_id==proposal.card_id else [proposal.transaction_id])
-        items=[DisputeItem(transaction_id=row.txn_id,date=row.date,merchant=row.description,amount=row.amount,currency=row.currency)
-            for row in records.transactions if row.txn_id in ids and row.amount<0]
-        summary=await staff_summary_for(state,task.task_id,card.last4,proposal.transaction_id,items,ctx)
-        handoff_id=task.task_id+'_fraud_team'
-        command=ActionCommand(command_id=uuid5(owned.turn.case_id,handoff_id+':handoff.create'),type='handoff.create',
-            target={'reason':'card_verification','priority':'P0','summary':summary},
-            idempotency_key=f'{owned.turn.case_id}:{handoff_id}:handoff.create')
-        current=ctx.model_copy(update={'agent':None})
-        outcome=await actions.propose_for_workflow(command,handoff_id,owned,current)
-        if outcome.receipt is None or outcome.receipt.outcome!='succeeded' or not isinstance(outcome.receipt.result,HandoffResult):
-            raise ActionIntegrityError('The fraud team handoff did not return a successful receipt')
-        reference=await rm_handover.ticket_reference(outcome.receipt.result.handoff_id,current)
-        sections.append(AnswerSection(task_id=task.task_id+'_decision',domain='fraud',priority='P0',answer_kind='banking',
-            answer=FRAUD_TEAM.format(reference=f' (reference {reference})' if reference else '',last4=card.last4),
-            sources=[Source(id='action-receipt-'+handoff_id,title='Recorded report to the fraud team',url=None,version='v1',publisher='DemoBank action ledger'),
-                Source.model_validate(PINNED['unrecognised-charge'])],
-            needs_human=True,response_origin='safety',prompt_version=None))
-    return sections
-
-
-async def staff_summary_for(state: Turn,task_id: str,last4: str,reported_id: str,items: list[DisputeItem],ctx: RequestContext) -> str:
-    """The fraud team's case summary (0081): the reported and flagged charges, other issues raised and her own words; no client decisions."""
-    transfers,due,lockout=await other_issues(state,ctx)
-    words=state['risk'].redacted_message
-    history=state.get('history') or []
-    # After "Yes, report it" the staff need her original report, which came just before our charge list.
-    if len(history)>=3 and history[-3].role=='user' and fraud_reports.pending(history):words=history[-3].content
-    return case_summary.build(last4=last4,reported_id=reported_id,items=items,block=None,dispute=None,possession=None,
-        transfers=transfers,due=due,lockout=lockout,customer_words=words)
-
-
-async def other_issues(state: Turn,ctx: RequestContext) -> tuple[list[CustomerTransaction],object,bool]:
-    tasks=state['plan'].by_priority()
-    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
-    transfer=[task for task in tasks if task.domain=='retail' and retail_checks.TRANSFER.search(str(task.entities.get('question','')))
-        and 'linked' not in task.entities]
-    pending=[]
-    if transfer:
-        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
-        pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
-    due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
-    return pending,due,any(task.entities.get('linked')=='card_fraud' for task in tasks)
-
-
-async def staff_summary(state: Turn,task_id: str,block: ActionOutcome,dispute: ActionOutcome | None,ctx: RequestContext) -> str:
-    """Case summary from records and recorded decisions; the other issues come from the plan and a fresh pending-transfer read."""
-    tasks=state['plan'].by_priority()
-    index=[task.task_id for task in tasks].index(task_id)
-    proposal=state['proposals'][index]
-    target=dispute.command.target if dispute is not None else None
-    items=target.items if isinstance(target,StoredDisputeTarget) else []
-    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
-    transfer=[task for task in tasks if task.domain=='retail' and retail_checks.TRANSFER.search(str(task.entities.get('question','')))
-        and 'linked' not in task.entities]
-    pending=[]
-    if transfer:
-        read=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,{'status':'pending'})
-        pending=[row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount<0]
-    due=retail_checks.due_date(str(transfer[0].entities['question']),today) if transfer else None
-    return case_summary.build(last4=block.command.target.last4,reported_id=proposal.transaction_id if proposal else '',items=items,
-        block=block.command.state,dispute=dispute.command.state if dispute is not None else None,
-        possession=dispute.command.confirmation_input.card_in_possession if dispute is not None and dispute.command.confirmation_input else None,
-        transfers=pending,due=due,lockout=any(task.entities.get('linked')=='card_fraud' for task in tasks),customer_words=state['risk'].redacted_message)
-
-
-def decision_text(state: str,receipt: str | None,last4: str) -> str:
-    """Fixed wording for a recorded block outcome; "blocked" is said only with a succeeded receipt."""
-    if receipt=='succeeded':return ('Your card ending '+last4+' is temporarily blocked. This did not reverse any transaction. '
-        'Next steps: bank staff will verify your identity and decide on permanent cancellation; after cancellation the bank issues a '
-        'replacement card with a new number to your registered address. A support handoff for identity verification and permanent '
-        'cancellation is recorded with urgent priority. This demo has no staffed queue. Open Actions to inspect the recorded receipts.')
-    if state=='rejected':return ('You chose not to block the card ending '+last4+'; it stays active. Urgent steps: contact your bank now '
-        'through the official fraud line on the back of your card or its official app, check your other recent transactions, and never '
-        'share your PIN, password, one-time code or full card number. You can still use Talk to a person.')
-    if state=='expired':return 'The temporary-block proposal expired without changing your card.'
-    return 'The temporary block failed because the card changed. Your card was not changed.'
-
-
-def dispute_text(state: str,receipt: str | None,target: object) -> str:
-    """Fixed wording for a recorded dispute draft; "recorded" is said only with a succeeded receipt."""
-    count=len(target.items) if isinstance(target,StoredDisputeTarget) else 0
-    last4=target.last4 if isinstance(target,StoredDisputeTarget) else ''
-    if receipt=='succeeded':return (f'Your dispute draft for {count} charges on the card ending {last4} is recorded for bank staff review. '
-        'Staff decide any refund or cancellation; nothing has been refunded. Your case summary goes to staff with the support handoff, '
-        'so you do not need to repeat the story. Open Actions to inspect the receipt.')
-    if state=='rejected':return 'You chose not to send the dispute draft. You can still report the charges through the official fraud line or app.'
-    if state=='expired':return 'The dispute draft expired without being sent.'
-    return 'The dispute draft was not recorded because a listed charge changed. Nothing was sent.'
-
-
-def selected_documents(state: Turn) -> list[UUID]:
-    """The document the client selected in the chat (CR9: relevant attachments go with the RM ticket)."""
-    selection=state['request'].record_context
-    return [selection.document_id] if selection is not None and selection.document_id is not None else []
-
-
-async def escalate_validation(state: Turn,runtime: Runtime[PipelineContext]) -> SettlementUpdate:
-    """Hand questions that need a person, and withheld sections, to the client's relationship manager.
-
-    Each handover task gets one receipt-backed general_support handoff whose summary is the client's redacted
-    question; SQL opens an rm_handover ticket and the reply quotes its reference. Withheld sections share one
-    handoff with a fixed summary (no rejected model text or records). Guests and unsaved chats get guidance only.
-    The action ledger deduplicates retries and commits audit/outbox with the handoff.
-    """
-    ctx=runtime.context.request
-    owned=runtime.context.workflow
-    tasks=state['plan'].by_priority()
-    sections=list(state['decision_sections'])
-    if not can_hand_over(ctx):return {'decision_sections':sections}
-    receipt_source=lambda task_id:Source(id='action-receipt-'+task_id,title='Recorded handover to your relationship manager',url=None,version='v1',publisher='DemoBank action ledger')
-    for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True):
-        # Rule-matched questions, and answers where the agent itself said a person is needed (not fraud: it has its own handoffs).
-        # A model's needs_human status is guidance, NOT permission to open or
-        # propose an RM ticket. Only an explicitly recognised RM request can.
-        asked=task.entities.get('handover')=='rm'
-        if not asked:continue
-        task_id=rm_handover.task_key(task.task_id+'_rm',owned.turn.turn_id if owned is not None else ctx.case_id)
-        question=str(task.entities.get('question',''))
-        if task.entities.get('handover_choice'):
-            # Her choice on our preview: the summary uses the chat as it was when she saw the preview.
-            text=await rm_handover.choose(question,str(task.entities['handover_choice']),task.entities.get('handover_reference') or None,
-                ctx,owned,task_id,history=state['history'][:-2],document_ids=selected_documents(state))
-            sources=[receipt_source(task_id)] if text not in (rm_handover.FAILED,) and task.entities['handover_choice']!='cancel' else []
-        elif rm_handover.confirm_first():
-            text,sources=await rm_handover.offer(question,state['history'],ctx),[]
+def linked(tasks: list[PlanTask], req: ChatRequest) -> tuple[list[PlanTask], list[AnswerSection]]:
+    """The dependency check (§14.6 rules 3 and 5): the upstream is another planned task that depends on nothing (so no
+    cycles and at most 2 waves), both agents are on the same side (client or RM), and the condition is a bool export
+    and for_each a list export of the upstream's spec. Guests get no dependent tasks. A task that fails is dropped with
+    a fixed line; nothing runs on a link the specs do not declare."""
+    if getattr(req, 'mode', 'personal') != 'personal':  # the RM request (rm/graph.py) has no mode: an RM is always signed in
+        return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None}) for t in tasks], []
+    by_id = {t.id: t for t in tasks}
+    kept, lines = [], []
+    for item in tasks:
+        up = by_id.get(item.depends_on) if item.depends_on else None
+        exports = registry.SPECS[up.agent].exports if up else {}
+        ok = item.depends_on is None or (up is not None and up.id != item.id and up.depends_on is None
+            and (registry.SPECS[up.agent].role == 'rm') == (registry.SPECS[item.agent].role == 'rm')
+            and (item.condition is None or exports.get(item.condition) == 'bool')
+            and (item.for_each is None or exports.get(item.for_each, '').startswith('list[')))
+        if ok:kept.append(item)
         else:
-            handover=await rm_handover.route(question,task.priority,ctx,owned,task_id,history=state['history'],document_ids=selected_documents(state))
-            text,sources=handover.reply(),[] if handover.failed else [receipt_source(task_id)]
-        sections.append(AnswerSection(task_id=task.task_id+'_decision',domain=task.domain,priority=task.priority,answer_kind='conversation',
-            answer=text,sources=sources,needs_human=True,response_origin='safety',prompt_version=None))
-    failed=[task for task,result,meta in zip(tasks,state['results'],state['metadata'],strict=True)
-        if result.status=='error' and meta.origin=='validation']
-    if not failed:return {'decision_sections':sections}
-    task=failed[0]
-    if not rm_handover.validation_handoff():
-        # Fraud keeps its urgent steps and charge list; the RM suggestion would send her the wrong way (CR12).
-        if task.domain=='fraud':return {'decision_sections':sections}
-        # CR9: a general answer never creates a ticket by itself. She can rephrase or ask for a person (with a preview).
-        return {'decision_sections':sections}  # Error section already contains the safe fallback. Do not show it twice.
-    task_id='validation_handoff'
-    command=ActionCommand(command_id=uuid5(ctx.case_id,task_id+':handoff.create'),type='handoff.create',
-        target={'reason':'general_support','priority':task.priority,
-            'summary':'An assistant section was withheld because it could not be verified. Review the saved customer case; no rejected answer is included.'},
-        idempotency_key=f'{ctx.case_id}:{task_id}:handoff.create')
-    current=ctx.model_copy(update={'agent':None})
-    if owned is not None:
-        outcome=await actions.propose_for_workflow(command,task_id,owned,current)
-        receipt=actions.receipt_for(outcome)
-    else:receipt=await actions.run_action(command,current,False)
-    if not isinstance(receipt,Receipt) or receipt.outcome!='succeeded':
-        raise ActionIntegrityError('Validation handoff did not return a successful receipt for the owned customer case')
-    section=AnswerSection(task_id=task_id,domain=task.domain,priority=task.priority,answer_kind='conversation',
-        answer="I couldn't double-check part of this answer, so I've passed it to your relationship manager to follow up. You can follow it in My requests.",
-        sources=[receipt_source(task_id)],needs_human=True,response_origin='safety',prompt_version=None)
-    return {'decision_sections':[*sections,section]}
+            log_event('plan_unlinked', task=item.id, agent=item.agent)
+            lines.append(fixed_section(item.id, UNLINKED, DOMAIN[item.agent], item.priority))
+    return kept, lines
 
 
-def answer_for(state: Turn,pending: dict[str,list[ActionRequiredEvent]]) -> AnswerEvent:
-    """Sections in priority order; recorded decisions are written into their own task's section, block first."""
-    tasks = state['plan'].by_priority()
-    decisions: dict[str,list[AnswerSection]]={}
-    for item in state.get('decision_sections',[]):decisions.setdefault(base_task(item.task_id),[]).append(item)
-    sections: list[AnswerSection] = []
-    for task,result,evidence,meta in zip(tasks,state['results'],state['evidence'],state['metadata'],strict=True):
-        sources = {item.id:item.source for item in evidence}
-        cited = [sources[c.source_id] for c in result.citations]
-        recorded = decisions.pop(task.task_id,[])
-        for decision in recorded:cited += [item for item in decision.sources if item.id not in {s.id for s in cited}]
-        sections.append(AnswerSection(task_id=task.task_id, domain=task.domain, priority=task.priority,
-            answer_kind=result.answer_kind, answer=result.text, sources=cited,
-            needs_human=result.status in ('error','needs_human') or bool(recorded), response_origin=meta.origin,
-            prompt_version=meta.prompt_id, pending_actions=pending.get(task.task_id,[]),
-            decision=' '.join(item.answer for item in recorded) or None))
-    sections.extend(item for items in decisions.values() for item in items)
-    unique = {s.id:s for section in sections for s in section.sources}
-    answer = AnswerEvent(answer='\n\n'.join(section.answer+('\n\n'+section.decision if section.decision else '') for section in sections), sources=list(unique.values()),
-        privacy_warning=False, history_trimmed=len(state['history'])<state['history_count'],
-        disclaimer=NOTICE if any(section.answer_kind=='banking' or section.decision for section in sections) else '',
-        needs_human=any(section.needs_human for section in sections),
-        source_check='rejected' if any(section.response_origin=='validation' for section in sections) else 'basic_checks_passed',
-        prompt_version=None,
-        response_origin='ai' if any(section.response_origin=='ai' for section in sections) else 'validation' if any(section.response_origin=='validation' for section in sections) else 'safety', sections=sections)
-    return answer
+async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired'] | None:
+    """A whole short English yes or no answers the one open offer group in this chat."""
+    if req.mode != 'personal' or tctx.conversation_id is None:return None
+    if req.offer is not None:return Confirmation(group=req.offer.offer_group, decision=req.offer.decision)
+    kind = offers.reply_kind(question)
+    if kind == 'other':return None
+    found = await offers.open_group(tctx.request.model_copy(update={'agent': None}), tctx.conversation_id)
+    if found is not None:return Confirmation(group=found[0], decision='confirm' if kind == 'yes' else 'cancel')
+    asked = history[-2].content if len(history) >= 2 and history[-2].role == 'assistant' else ''
+    return 'expired' if any(mark in asked for mark in OFFER_MARKS) else None
 
 
-def compose(state: Turn) -> ComposeUpdate:
-    return {'answer':answer_for(state,{})}
+def fixed_section(task_id: str, text: str, domain: Domain = 'retail', priority: Priority = 'P3', sources: list[Source] | None = None,
+        needs_human: bool = False) -> AnswerSection:
+    return AnswerSection(task_id=task_id, domain=domain, priority=priority, answer_kind='conversation', answer=text,
+        sources=sources or [], needs_human=needs_human, response_origin='safety', prompt_version=None)
 
 
-def preview_answer(state: Turn,pending: dict[str,list[ActionRequiredEvent]]) -> AnswerEvent:
-    """Every section while decisions are pending; the block and dispute offers sit on their own task's section."""
-    return answer_for({**state,'decision_sections':[]},pending)
+async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
+    req, risk, history = state['request'], state['risk'], state['history']
+    question = risk.redacted_message
+    with span('planner', 'agent') as attrs:
+        reply = await confirmation(req, question, history, runtime.context)
+        if isinstance(reply, Confirmation):
+            attrs['route'] = 'act'
+            return {'confirm': reply, 'tasks': [], 'lines': []}
+        if reply == 'expired':
+            attrs['route'] = 'expired'
+            return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', EXPIRED)]}
+        tasks = rule_plan(req, risk, history)
+        attrs['route'] = 'rules' if tasks is not None else 'model'
+        if tasks is None:
+            single = simple_task(question, req.language)
+            if settings.client_intent_routing == 'rules' and single is not None:tasks = [single]
+            else:
+                try:tasks = await model_plan(history)
+                except (LLMError, ValidationError, KeyError, TypeError) as error:
+                    # A clear single-topic question may fall back to the rules; never fabricate an answer.
+                    log_event('intent_fallback', reason=type(error).__name__, agent=single.agent if single else None)
+                    if single is None:return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', REPHRASE)]}
+                    tasks = [single]
+            tasks = overridden(tasks, risk) if req.language == 'English' else tasks
+        tasks, lines = linked(checked(tasks, req), req)
+        attrs['tasks'], attrs['dependent'] = len(tasks), sum(1 for t in tasks if t.depends_on)
+    return {'confirm': None, 'tasks': tasks, 'lines': lines}
 
 
-def paused_preview(state: Turn,outcomes: list[ActionOutcome],pending_ids: list[UUID]) -> tuple[list[ActionRequiredEvent],AnswerEvent]:
-    pending: dict[str,list[ActionRequiredEvent]]={}
-    for review,item in zip(state['pending_reviews'],outcomes,strict=True):
-        if item.command.command_id not in pending_ids:continue
-        target=item.command.target
-        summary=(f'Review a dispute draft of {len(target.items)} charges on synthetic card ending {target.last4}'
-            if isinstance(target,StoredDisputeTarget) else 'Review a temporary block for synthetic card ending '+target.last4)
-        pending.setdefault(base_task(review.task_id),[]).append(ActionRequiredEvent(command_id=item.command.command_id,
-            type=item.command.type,summary=summary,expires_at=item.command.expires_at))
-    return [event for events in pending.values() for event in events],preview_answer(state,pending)
+def agent_history(history: list[Message], item: PlanTask, several: bool) -> list[Message]:
+    """The client's last 3 redacted messages, with the task's own question in place of the latest when one message held
+    several issues. Assistant text is never included, except our own question for a reply to it (follow_up)."""
+    if item.entities.get('follow_up'):return history
+    earlier = [m for m in history[:-1] if m.role == 'user'][-2:]
+    latest = Message(role='user', content=item.question) if several or not history else history[-1]
+    return [*earlier, latest]
 
 
-def build_graph(checkpointer: BaseCheckpointSaver[int] | None) -> CompiledStateGraph[Turn, PipelineContext, Turn, Turn]:
-    graph = StateGraph(Turn,context_schema=PipelineContext)
-    graph.add_node('plan',plan)
-    graph.add_node('prioritise',prioritise)
-    graph.add_node('dispatch',dispatch)
-    graph.add_node('propose_actions',propose_actions)
-    graph.add_node('review_actions',review_actions)
-    graph.add_node('settle_actions',settle_actions)
-    graph.add_node('escalate_validation',escalate_validation)
-    graph.add_node('compose',compose)
-    graph.add_edge(START,'plan')
-    graph.add_edge('plan','prioritise')
-    graph.add_edge('prioritise','dispatch')
-    graph.add_edge('dispatch','propose_actions')
-    graph.add_edge('propose_actions','review_actions')
-    graph.add_edge('review_actions','settle_actions')
-    graph.add_edge('settle_actions','escalate_validation')
-    graph.add_edge('escalate_validation','compose')
-    graph.add_edge('compose',END)
-    return graph.compile(checkpointer=checkpointer)
+def language_of(state: Turn) -> str:
+    return getattr(state['request'], 'language', 'English')  # the RM request has no language field (English only)
 
 
-async def answer_public(req: ChatRequest, risk: RiskAssessment, ctx: RequestContext, checkpointer: BaseCheckpointSaver[int] | None) -> AnswerEvent:
-    if req.mode != 'public':raise ValueError('Initial v2 pipeline supports public mode only')
+def after_planner(state: Turn) -> list[Send] | str:
+    if state.get('confirm') is not None:return 'act'
+    tasks = state.get('tasks') or []
+    first = [item for item in tasks if item.depends_on is None]
+    if not first:return 'compose'
+    return [Send('agent', AgentInput(task=item, history=agent_history(state['history'], item, len(tasks) > 1), language=language_of(state),
+        inputs={})) for item in first]
+
+
+async def agent(item: AgentInput, runtime: Runtime[TurnContext]) -> dict:
+    current = item['task']
+    try:output = await runner.run_agent(registry.SPECS[current.agent], current, item.get('inputs') or {}, runtime.context.request,
+        item['history'], item['language'])
+    except runner.PlanRefused as error:
+        log_event('plan_refused', agent=current.agent, intent=current.intent, reason=str(error)[:120])
+        output = AgentOutput(task_id=current.id, agent=current.agent, status='error', origin='validation',
+            result=AgentResult(task_id=current.id, agent=current.agent, status='error', text=WITHHELD))
+    if (collected := evidence_sink.get()) is not None:collected.extend(Evidence.model_validate(d) for d in output.evidence)
+    return {'outputs': [output]}
+
+
+def skipped(item: PlanTask, text: str, reason: str, facts: dict) -> AgentOutput:
+    """A dependent task that does not run: a fixed line in its place, never the planner's or a model's text."""
+    log_event('dependency_skipped', task=item.id, agent=item.agent, reason=reason)
+    facts['skipped'][item.agent] = reason
+    return AgentOutput(task_id=item.id, agent=item.agent, status='ok', origin='safety',
+        result=AgentResult(task_id=item.id, agent=item.agent, status='ok', answer_kind='conversation', text=text))
+
+
+def items_of(export: Export, name: str, agent: TargetAgent) -> list:
+    """A list export in its declared order (the spec's sort field; dates by value)."""
+    values = export.value if isinstance(export.value, list) else []
+    key = registry.SPECS[agent].sort_by.get(name)
+    return sorted(values, key=lambda v: str(v.get(key, '')) if key and isinstance(v, dict) else str(v))
+
+
+def passed(up: AgentOutput, to: PlanTask, inputs: dict[str, Export], facts: dict) -> None:
+    """Audit names and counts, never values (§14.6 rule 6; the plan's export.passed, named in its category)."""
+    for name, export in inputs.items():
+        count = len(export.value) if isinstance(export.value, list) else 1
+        if (fact := f'{up.agent}>{to.agent}:{name}') not in facts['exports']:facts['exports'].append(fact)
+        audit.add('agent', 'agent.export_passed', details={'from': up.agent, 'to': to.agent, 'name': name, 'count': count})
+
+
+def gather(state: Turn) -> dict:
+    """After wave 1 (next_wave, §14.6): the dependent tasks with their imports, conditions and fan-out, and one handoff per
+    out-of-scope task to an agent in its spec's hands_to (question only, no planner call). After wave 2: nothing.
+    It changes the state only when there is a wave 2 (or a skip), so the evaluation counts it as acting only then."""
+    if state.get('next') is not None:return {'next': []}
+    with span('gather', 'decision') as facts:
+        facts.update(exports=[], skipped={}, rerouted={})
+        update = next_wave(state, facts)
+        facts['sends'] = len(update['next'])
+    return update
+
+
+def next_wave(state: Turn, facts: dict) -> dict:
+    outputs = {o.task_id: o for o in state.get('outputs') or []}
+    language, history = language_of(state), state['history']
+    tasks, sends, extra, lines = [], [], [], list(state.get('lines') or [])
+    for item in state.get('tasks') or []:
+        up = outputs.get(item.depends_on) if item.depends_on else None
+        if item.depends_on is None:
+            done = outputs.get(item.id)
+            hand = done.suggested if done is not None and done.status == 'out_of_scope' and not item.rerouted else None
+            if hand is not None and hand in registry.SPECS[item.agent].hands_to:
+                spec = registry.SPECS[hand]
+                item = item.model_copy(update={'agent': hand, 'intent': OPEN_INTENT if spec.loop_tools else next(iter(spec.intents)),
+                    'entities': {}, 'rerouted': True})
+                log_event('task_rerouted', task=item.id, agent=hand)
+                facts['rerouted'] = {'from': done.agent, 'to': hand}
+                sends.append(AgentInput(task=item, history=[Message(role='user', content=item.question)], language=language, inputs={}))
+            tasks.append(item)
+            continue
+        if up is None or up.status != 'ok' or any(name and name not in up.exports for name in (item.condition, item.for_each)):
+            extra.append(skipped(item, UPSTREAM_UNKNOWN, 'upstream_unavailable', facts));tasks.append(item);continue
+        if item.condition and up.exports[item.condition].value is not True:
+            extra.append(skipped(item, CONDITION_FALSE.get(item.condition, CONDITION_FALSE_ANY), 'condition_false', facts));tasks.append(item);continue
+        inputs = {k: up.exports[k] for k in registry.SPECS[item.agent].imports & up.exports.keys()}
+        own = agent_history(history, item, True)
+        if not item.for_each:
+            passed(up, item, inputs, facts)
+            sends.append(AgentInput(task=item, history=own, language=language, inputs=inputs));tasks.append(item);continue
+        values = items_of(up.exports[item.for_each], item.for_each, up.agent)
+        if not values:
+            extra.append(skipped(item, CONDITION_FALSE_ANY, 'no_items', facts));tasks.append(item);continue
+        for i, value in enumerate(values[:MAX_ITEMS]):
+            one = item.model_copy(update={'id': item.id if i == 0 else f'{item.id}-{i+1}', 'entities': {**item.entities, 'item': value}})
+            mine = {**inputs, **({item.for_each: Export(value=value, source_ids=up.exports[item.for_each].source_ids)} if item.for_each in inputs else {})}
+            passed(up, one, mine, facts)
+            sends.append(AgentInput(task=one, history=own, language=language, inputs=mine));tasks.append(one)
+        if len(values) > MAX_ITEMS:
+            lines.append(fixed_section(f'{item.id}-more', MORE_ITEMS.format(shown=MAX_ITEMS, total=len(values)), DOMAIN[item.agent], item.priority))
+    return {'next': sends, 'tasks': tasks, 'outputs': extra, 'lines': lines}
+
+
+def after_gather(state: Turn) -> list[Send] | str:
+    return [Send('agent', item) for item in state.get('next') or []] or 'compose'
+
+
+# ---- Confirmation turns ----
+
+def receipt_source(command_id: UUID) -> Source:
+    return Source(id=f'action-receipt-{command_id}', title='Recorded action receipt', url=None, version='v1', publisher='DemoBank action ledger')
+
+
+async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str | None = None) -> str:
+    """Fixed wording per recorded outcome; "sent" is said only with a succeeded receipt. `earlier` is the reference of the
+    step this one was chained to (it received that step's receipt)."""
+    command, receipt = outcome.command, outcome.receipt
+    reason = getattr(command.target, 'reason', None)
+    if command.state == 'rejected':
+        return FRAUD_DECLINED if reason == 'card_verification' else fraud_reports.LOST_DECLINED if reason == 'card_lost' else CANCELLED
+    if command.state == 'expired':return EXPIRED
+    if receipt is None or receipt.outcome != 'succeeded':
+        return CHAIN_STOPPED if getattr(receipt, 'result', None) is not None and getattr(receipt.result, 'error_code', None) == 'earlier_offer_failed' else STEP_FAILED
+    link = LINKED.format(reference=earlier) if earlier else ''
+    if isinstance(receipt.result, HandoffResult):
+        reference = await rm_handover.ticket_reference(receipt.result.handoff_id, ctx)
+        where = f' (reference {reference})' if reference else ''
+        if reason == 'card_verification':return FRAUD_TEAM.format(reference=where)
+        if reason == 'card_lost':return fraud_reports.LOST_SENT.format(reference=where)
+        return rm_handover.handed_over(reference) + link
+    if isinstance(receipt.result, TicketResult):
+        label = getattr(command.target, 'category_label', 'support').lower()
+        return TICKET_RAISED.format(label=label, reference=receipt.result.reference) + link
+    return DONE + link
+
+
+async def reference_of(outcome: ActionOutcome, ctx: RequestContext) -> str | None:
+    result = getattr(outcome.receipt, 'result', None)
+    if isinstance(result, TicketResult):return result.reference
+    if isinstance(result, HandoffResult):return await rm_handover.ticket_reference(result.handoff_id, ctx)
+    return None
+
+
+async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
+    """Run or cancel the open group in order; SQL checks ownership, TTL and order, and a double confirm records once."""
+    reply = state['confirm']
+    ctx = runtime.context.request.model_copy(update={'agent': None})
+    with span('act', 'tool', decision=reply.decision) as attrs:
+        chained = await offers.chained(reply.group, ctx, runtime.context.conversation_id) if reply.decision == 'confirm' else set()
+        outcomes = await (offers.confirm if reply.decision == 'confirm' else offers.cancel)(reply.group, ctx)
+        attrs['offers'], attrs['chained'] = len(outcomes), len(chained)
+    lines, earlier = [], None
+    for i, outcome in enumerate(outcomes):
+        reason = getattr(outcome.command.target, 'reason', None)
+        urgent = reason in {'card_verification', 'card_lost'}
+        succeeded = outcome.receipt is not None and outcome.receipt.outcome == 'succeeded'
+        link = earlier if outcome.command.command_id in chained else None
+        earlier = await reference_of(outcome, ctx) if succeeded else None
+        lines.append(fixed_section(f'offer{i+1}', await outcome_text(outcome, ctx, link), domain='fraud' if urgent else 'relationship',
+            priority='P0' if urgent else 'P3', needs_human=urgent or isinstance(getattr(outcome.receipt, 'result', None), HandoffResult),
+            sources=[receipt_source(outcome.command.command_id)] if succeeded else []))
+    if not lines:lines.append(fixed_section('t1', EXPIRED))
+    elif reply.decision == 'confirm' and (pending_rm := rm_handover.unanswered_preview(state['history'])):
+        lines.append(fixed_section('pending_rm', pending_rm, domain='relationship', priority='P2', needs_human=True))
+    return {'lines': lines}
+
+
+# ---- Compose ----
+
+def ordered(state: Turn) -> list[tuple[PlanTask, AgentOutput]]:
+    found = {item.task_id: item for item in state.get('outputs') or []}
+    tasks = sorted(state.get('tasks') or [], key=lambda t: t.priority)  # stable: ties keep message order
+    return [(t, found[t.id]) for t in tasks if t.id in found]
+
+
+def section_for(item: PlanTask, output: AgentOutput, decision: str | None = None) -> AnswerSection:
+    if output.status == 'out_of_scope' and output.result is None:  # not handed on (no allowed agent, or already handed once)
+        return fixed_section(item.id, OUT_OF_SCOPE, DOMAIN[item.agent], item.priority, needs_human=True)
+    result = output.result or AgentResult(task_id=item.id, agent=item.agent, status='error', text=WITHHELD)
+    sources = {e.id: e.source for e in (Evidence.model_validate(d) for d in output.evidence)}
+    cited = list({s.id: s for s in (sources[c.source_id] for c in result.citations if c.source_id in sources)}.values())
+    domain: Domain = 'smalltalk' if item.agent == 'guide' and result.answer_kind == 'conversation' else DOMAIN[item.agent]
+    return AnswerSection(task_id=item.id, domain=domain, priority=item.priority, answer_kind=result.answer_kind, answer=result.text,
+        sources=cited, needs_human=output.status in ('error', 'needs_human') or bool(decision), response_origin=output.origin,
+        prompt_version=output.prompt_id, decision=decision)
+
+
+def offer_order(rows: list[tuple[PlanTask, AgentOutput]]) -> list[OfferProposal]:
+    """Offers in section order, each dependent task's straight after its upstream's. A single dependent task's first offer
+    is chained: it runs after the upstream's last offer and receives its receipt (C27: the RM note after the fraud report)."""
+    usable = [(t, o) for t, o in rows if o.status != 'error']
+    found: list[OfferProposal] = []
+    for item, output in usable:
+        if item.depends_on is not None:continue
+        found += output.proposals
+        for other, after in usable:
+            if other.depends_on != item.id:continue
+            found += [p.model_copy(update={'chained': True}) if i == 0 and output.proposals and not other.for_each else p
+                for i, p in enumerate(after.proposals)]
+    return found
+
+
+def validation_offer(rows: list[tuple[PlanTask, AgentOutput]], ctx: RequestContext) -> list[OfferProposal]:
+    """VALIDATION_HANDOFF=1 only (CR9): one withheld section may be offered to the RM; the summary carries no rejected text."""
+    failed = next((t for t, o in rows if o.status == 'error' and o.origin == 'validation' and t.agent != 'security'), None)
+    if failed is None or not rm_handover.validation_handoff() or ctx.principal.kind != 'customer' or ctx.case_id is None:return []
+    return [OfferProposal(task_id='validation', agent='relationship', type='handoff.create', target={'reason': 'general_support',
+        'priority': failed.priority, 'summary': 'An assistant section was withheld because it could not be verified. Review the saved '
+        'customer case; no rejected answer is included.'}, summary='Pass the part I couldn’t check to your relationship manager')]
+
+
+async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
+    """Sections in plan priority order, then the offers saved as one group; fixed lines (act outcomes, rephrase) last."""
+    ctx = runtime.context.request
+    rows = ordered(state)
+    proposals = offer_order(rows) + validation_offer(rows, ctx)
+    saved = await offers.save(proposals, ctx, runtime.context.turn_id) if proposals else []
+    by_task: dict[str, list[tuple[OfferProposal, object]]] = {}
+    for proposal, offer in zip(proposals, saved, strict=True):by_task.setdefault(proposal.task_id, []).append((proposal, offer))
+    line = CONFIRM_LINE + (' Your answer covers every offer in this reply.' if len(saved) > 1 else '')
+    sections = []
+    for item, output in rows:
+        mine = by_task.pop(item.id, [])
+        decision = output.decision or ('Would you like me to: ' + '; '.join(p.summary for p, _ in mine) + '? ' + line if mine else None)
+        sections.append(section_for(item, output, decision))
+    for proposal, _ in (pair for pairs in by_task.values() for pair in pairs):
+        sections.append(fixed_section(proposal.task_id, f'Would you like me to: {proposal.summary}? {line}', domain='relationship', needs_human=True))
+    sections += state.get('lines') or []
+    return {'answer': answer_for(sections, state, offer_event(saved, ctx))}
+
+
+def offer_event(saved: list, ctx: RequestContext) -> OfferGroupEvent | None:
+    if not saved:return None
+    return OfferGroupEvent(offer_group=offers.group_for(ctx.case_id), expires_at=min(o.expires_at for o in saved),
+        offers=[ActionRequiredEvent(command_id=o.offer_id, type=o.type, summary=o.summary, expires_at=o.expires_at) for o in saved])
+
+
+def answer_for(sections: list[AnswerSection], state: Turn, offer: OfferGroupEvent | None = None) -> AnswerEvent:
+    unique = {s.id: s for section in sections for s in section.sources}
+    return AnswerEvent(answer='\n\n'.join(s.answer + ('\n\n' + s.decision if s.decision else '') for s in sections), sources=list(unique.values()),
+        privacy_warning=False, history_trimmed=len(state['history']) < state['history_count'],
+        disclaimer=NOTICE if any(s.answer_kind == 'banking' or s.decision for s in sections) else '',
+        needs_human=any(s.needs_human for s in sections),
+        source_check='rejected' if any(s.response_origin == 'validation' for s in sections) else 'basic_checks_passed', prompt_version=None,
+        response_origin='ai' if any(s.response_origin == 'ai' for s in sections) else 'validation' if any(s.response_origin == 'validation' for s in sections) else 'safety',
+        sections=sections, offer=offer)
+
+
+def build_graph():
+    graph = StateGraph(Turn, context_schema=TurnContext)
+    graph.add_node('planner', planner)
+    graph.add_node('agent', agent)
+    graph.add_node('gather', gather)
+    graph.add_node('act', act)
+    graph.add_node('compose', compose)
+    graph.add_edge(START, 'planner')
+    graph.add_conditional_edges('planner', after_planner, ['agent', 'act', 'compose'])
+    graph.add_edge('agent', 'gather')
+    graph.add_conditional_edges('gather', after_gather, ['agent', 'compose'])
+    graph.add_edge('act', 'compose')
+    graph.add_edge('compose', END)
+    return graph.compile()
+
+
+GRAPH = build_graph()
+
+
+def start(req: ChatRequest, risk: RiskAssessment) -> Turn:
     if risk.fixed_response is not None:raise ValueError('Fixed safety responses must use the no-model pipeline')
-    history=clean_history(req.messages)
-    safe_request=req.model_copy(update={'messages':history})
-    if checkpointer is not None and ctx.case_id is None:raise ValueError('Durable workflows require an owned conversation case')
-    config={'configurable':{'thread_id':str(ctx.case_id)}} if checkpointer is not None else None
-    with span('route','agent',route='llm',pipeline='v2'):
-        result = await build_graph(checkpointer).ainvoke({'request':safe_request,'risk':risk,'history':history,
-            'history_count':len(req.messages),'workflow_version':'v2-actions-v1'},config,context=PipelineContext(request=ctx,workflow=None),durability='sync' if checkpointer is not None else None)
-    return result['answer']
+    history = clean_history(req.messages)
+    return {'request': req.model_copy(update={'messages': history}), 'risk': risk, 'history': history, 'history_count': len(req.messages), 'outputs': []}
 
 
-async def answer_personal(req: ChatRequest,risk: RiskAssessment,ctx: RequestContext,owned: OwnedWorkflow,checkpointer: BaseCheckpointSaver[int]) -> AnswerEvent | WorkflowPausedEvent:
-    if req.mode!='personal' or risk.fixed_response is not None:raise ValueError('Personal workflow requires a guarded personal request')
-    history=clean_history(req.messages)
-    config={'configurable':{'thread_id':str(ctx.case_id)}}
-    graph=build_graph(checkpointer)
-    result=await graph.ainvoke({'request':req.model_copy(update={'messages':history}),'risk':risk,'history':history,
-        'history_count':len(req.messages),'workflow_version':'v2-actions-v1'},config,context=PipelineContext(request=ctx,workflow=owned),durability='sync')
-    if not result.get('__interrupt__'):return result['answer']
-    snapshot=await graph.aget_state(config)
-    if snapshot.next!=('review_actions',):raise ValueError('Personal workflow paused outside its review node')
-    checkpoint_id=snapshot.config['configurable']['checkpoint_id']
-    with data_api.connect(ctx) as db:
-        status=await workflow_store.waiting(owned.turn.turn_id,owned.turn.run_id,checkpoint_id,ctx,db)
-        outcomes=[await action_store.load(item.command_id,ctx,db) for item in result['pending_reviews']]
-    pending,preview=paused_preview(result,outcomes,status.pending_commands)
-    return WorkflowPausedEvent(workflow=status,actions=pending,preview=preview)
+async def stream(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> AsyncIterator[tuple[str, BaseModel]]:
+    """('plan', PlanEvent) once tasks are planned, ('section', AnswerSection) as each agent finishes (no offers yet),
+    then ('answer', AnswerEvent)."""
+    tasks: dict[str, PlanTask] = {}
+    with span('route', 'agent', route='llm', pipeline='v5'):
+        async for chunk in GRAPH.astream(start(req, risk), context=tctx, stream_mode='updates'):
+            for node, update in chunk.items():
+                if node == 'planner':
+                    tasks = {t.id: t for t in (update or {}).get('tasks') or []}
+                    if tasks:yield 'plan', PlanEvent(tasks=[PlannedSection(task_id=t.id, domain=DOMAIN[t.agent], priority=t.priority)
+                        for t in sorted(tasks.values(), key=lambda t: t.priority)])
+                elif node in ('agent', 'gather'):
+                    tasks.update({t.id: t for t in (update or {}).get('tasks') or []})
+                    for output in (update or {}).get('outputs') or []:
+                        if output.task_id in tasks and output.status != 'out_of_scope':
+                            yield 'section', section_for(tasks[output.task_id], output, output.decision)
+                elif node == 'compose':yield 'answer', update['answer']
+
+
+async def answer(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> AnswerEvent:
+    async for kind, item in stream(req, risk, tctx):
+        if kind == 'answer':return item
+    raise ValueError('The turn ended without an answer')
+
+
+async def lost_card_offer(question: str, ctx: RequestContext, turn_id: UUID) -> tuple[str, OfferGroupEvent | None]:
+    """CR12 with offers: the fixed lost-card reply offers an urgent card_lost report; an open report is quoted instead."""
+    try:
+        if (existing := await fraud_reports.open_lost_card_ticket(ctx)) is not None:
+            return fraud_reports.LOST_REUSED.format(reference=f' (reference {existing})'), None
+        from app.services.agents import fraud_records
+        records = await fraud_records.load(ctx.model_copy(update={'agent': 'fraud'}))
+        saved = await offers.save([OfferProposal(task_id='lost_card', agent='security', type='handoff.create', summary='Report your card as lost or stolen to our fraud team as urgent',
+            target={'reason': 'card_lost', 'priority': 'P0', 'summary': fraud_reports.lost_summary(question, records)})], ctx, turn_id)
+    except fraud_reports.HANDOFF_ERRORS as error:
+        log_event('lost_card_offer_failed', error_type=type(error).__name__)
+        return fraud_reports.LOST_FAILED, None
+    return fraud_reports.LOST_OFFER, offer_event(saved, ctx)
+

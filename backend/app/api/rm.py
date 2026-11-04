@@ -29,7 +29,7 @@ from app.schemas.rm import (Block,ClientMessage,ConversationSave,Dismissal,Inter
 from app.services import audit,customer_data
 from app.services.llm_gateway import LLMError
 from app.services.privacy import redact
-from app.services.rm import assistant,records
+from app.services.rm import graph,records
 from app.services.rm.records import RmDenied,RmForbidden,RmSession,rm_scope
 
 SGT=timezone(timedelta(hours=8))
@@ -227,7 +227,7 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
         async def say(text: str):await queue.put(('status',text))
         async def work():
             with rm_scope(caller.session):
-                try:await queue.put(('answer',await assistant.respond(req,caller.ctx,say)))
+                try:await queue.put(('answer',await graph.respond(req,caller.ctx,say)))
                 except Exception as error:await queue.put(('error',error))
         task=asyncio.create_task(work())
         failure_=None

@@ -43,15 +43,17 @@ def test_relationship_snapshots_are_dynamic_owned_bounded_and_checkpoint_safe(lo
     body=json.dumps([item.model_dump() for item in evidence])
     assert not any(key in body for key in ['request_id','rm_id','advisor_id','appointment_id','customer_id','transition_reason_code','team_restructure','demobank.example'])
     if cid==1003:
-        assert records.assignment.data.current.name=='Sophie Lim (DEMO)'
-        assert records.assignment.data.previous.name=='Rachel Goh (DEMO)'
+        assert records.assignment.data.current.name=='Priya Nair (DEMO)'
+        assert records.assignment.data.previous.name=='Sophie Lim (DEMO)'
         assert records.requests.data[0].status=='seen' and records.slots.data
-        assert json.loads(evidence[1].text)['records'][0]['advisor_name']=='Rachel Goh (DEMO)'
+        assert json.loads(evidence[1].text)['records'][0]['advisor_name'] is None  # Rachel predates both supplied assignments.
         with psycopg.connect(local_data_api.database_uri) as db:db.execute("update rm.requests set status='answered' where customer_id=1003")
         assert asyncio.run(relationship_records.load(ctx)).requests.data[0].status=='answered'
     else:  # 0063: Alex and Michelle have one long-standing advisor and no change, so no transition wording
         assert records.assignment.data.current.name==('Priya Nair (DEMO)' if cid==1001 else 'Sophie Lim (DEMO)') and records.assignment.data.previous is None
-        assert records.requests.data==[] and records.appointments.data==[] and records.slots.data
+        assert records.requests.data==[] and records.slots.data
+        assert all(row.advisor_id==records.assignment.data.current.rm_id for row in records.appointments.data)
+        if cid==1001:assert records.appointments.data==[]
         assert evidence[-1].id=='relationship-transition' if records.introduction.data.notice else len(evidence)==4
     with pytest.raises(PolicyDenied):asyncio.run(relationship_records.load(ctx.model_copy(update={'agent':'retail'})))
     with psycopg.connect(local_data_api.database_uri) as db:
@@ -90,11 +92,11 @@ def test_relationship_validator_rejects_wrong_sources_dates_and_action_claims(lo
     for invalid in [{**draft,'answer':'Your request has a recorded deadline of 2035-12-25.'},
         {**draft,'source_ids':['relationship-appointments']},{**draft,'source_ids':['unowned-source']},
         {**draft,'answer':'I have booked your appointment.'},{**draft,'answer':'We will send your request.'}]:
-        assert relationship.validate_result(task,json.dumps(invalid),evidence).status=='error'
+        assert relationship.validate_result(task,json.dumps(invalid),evidence).status=='error',invalid
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
-def test_missing_relationship_provider_withholds_answer_and_records_support_handoff(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_relationship_provider_withholds_answer_without_creating_a_handoff(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
     import psycopg
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-relationship-key-with-at-least-32-characters')
@@ -106,9 +108,9 @@ def test_missing_relationship_provider_withholds_answer_and_records_support_hand
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
     assert 'v5+82c591e9' in response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
-        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
-        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
+        assert db.execute('select type,state from actions.commands where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
+        assert db.execute('select count(*) from actions.receipts where customer_id=%s',(ctx.principal.customer_id,)).fetchone()==(0,)
+        assert db.execute('select reason from support.handoffs where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
         assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool'='rm.get_assignment'").fetchone()==(1,)
 
 

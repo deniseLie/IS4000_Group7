@@ -30,7 +30,7 @@ def test_unknown_tools_and_untrusted_identity_are_denied():
 def test_guests_only_get_registered_public_tools():
     ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
     assert decide(ctx.principal,'kb.search',None,ctx).allow
-    for tool in ['kb.get_fact','customer.get_accounts','docs.precheck','handoff.create','consent.check','actions.propose']:  # 0100 removed facts
+    for tool in ['kb.get_fact','customer.get_accounts','documents.precheck','handoff.create','consent.check','actions.propose']:  # 0102 removed facts
         assert not decide(ctx.principal,tool,None,ctx).allow
     assert not decide(ctx.principal,'kb.delete_all',None,ctx).allow
     assert not decide(ctx.principal,'kb.search',{'customer_id':1001},ctx).allow
@@ -55,7 +55,7 @@ def test_resource_scope_is_validated_and_cannot_override_identity(scope):
     ('retail','customer.get_accounts','compliance.get_case'),
     ('fraud','customer.get_credit_cards','customer.get_loans'),
     ('compliance','compliance.update_checklist_item','customer.get_credit_cards'),
-    ('document','docs.precheck','customer.get_profile'),
+    ('document','documents.precheck','customer.get_profile'),
     ('relationship','rm.share_summary','customer.get_transactions'),
 ])
 def test_agent_boundaries(agent,allowed,forbidden):

@@ -8,6 +8,16 @@ from app.services.llm import answer_request
 
 SCHEMA=answer_request([{'id':'cards','text':'Guidance'}],'English')[2]
 
+def test_codex_usage_has_native_llm_metadata_without_double_counting_api(langsmith_runs):
+    from app.core.observability import span
+    with span('subscription','llm',transport='codex',model='test-model') as metadata:
+        metadata.update(input_tokens=3,output_tokens=2)
+    with span('provider-wrapper','llm',transport='api',model='test-model') as metadata:
+        metadata.update(input_tokens=3,output_tokens=2)
+    codex=langsmith_runs.ended('subscription')[0];api=langsmith_runs.ended('provider-wrapper')[0]
+    assert codex['run_type']=='llm' and codex['metadata']['usage_metadata']=={'input_tokens':3,'output_tokens':2,'total_tokens':5}
+    assert api['run_type']=='chain' and 'usage_metadata' not in api['metadata']
+
 def test_strict_schema_accepts_only_the_declared_shape():
     gw.check({'answer':'Hi','source_ids':['cards'],'answer_kind':'banking'},SCHEMA)
     for bad in ({'answer':'Hi','source_ids':['cards']},

@@ -3,6 +3,8 @@ import asyncio
 import json
 import os
 import re
+from datetime import timedelta
+from zoneinfo import ZoneInfo
 from collections.abc import Iterator
 from uuid import uuid4
 import pytest
@@ -33,7 +35,10 @@ def test_retail_records_are_real_masked_and_customer_scoped(local_data_api: Nati
     ctx=context(local_data_api,cid).model_copy(update={'agent':'retail'})
     records=asyncio.run(retail_records.load(ctx))
     assert len(records.accounts)==1 and records.accounts[0].balance==expected and records.accounts[0].number.startswith('****')
-    assert len(records.transactions)=={1001:6,1002:21,1003:4}[cid]  # 0063 everyday activity; 0070 Alex's overseas charges; 0075 Michelle's card charges and pending transfer; 0077 her August–September history (July is outside the 90-day window)
+    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
+    with psycopg.connect(local_data_api.database_uri) as db:
+        expected_ids={f'txn_{row[0]}' for row in db.execute('select transaction_id from banking.transactions where customer_id=%s and txn_date between %s and %s order by txn_date desc,transaction_id desc limit 200',(cid,today-timedelta(days=90),today)).fetchall()}
+    assert {row.txn_id for row in records.transactions}==expected_ids
     evidence=retail.evidence_for(records)
     assert len(evidence)==5 and all(item.source.url is None for item in evidence)
     with psycopg.connect(local_data_api.database_uri) as db:
@@ -62,20 +67,20 @@ def test_dataset_citations_reject_foreign_figures_and_currency(local_data_api: N
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
-def test_missing_provider_withholds_answer_and_records_support_handoff(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_provider_withholds_answer_without_creating_a_handoff(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
     import psycopg
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-retail-checkpoint-key-with-at-least-32-characters')
     monkeypatch.delenv('LLM_MODEL',raising=False)
     ctx=context(local_data_api,1001);sid=uuid4()
     assert native_api_client.post('/conversations',headers=headers(ctx),json={'session_id':str(sid),'mode':'personal','language':'English'}).status_code==200
-    response=native_api_client.post('/chat',headers=headers(ctx),json={'mode':'personal','messages':[{'role':'user','content':'What is my account balance?'}],
+    response=native_api_client.post('/chat',headers=headers(ctx),json={'mode':'personal','messages':[{'role':'user','content':'Explain the interest on my savings account.'}],
         'conversation_id':str(sid),'turn_id':str(uuid4()),'revision':0})
     assert 'event: answer' in response.text and '"response_origin": "validation"' in response.text,response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select type,state from actions.commands').fetchall()==[('handoff.create','succeeded')]
-        assert db.execute('select count(*) from actions.receipts').fetchone()==(1,)
-        assert db.execute('select reason from support.handoffs').fetchall()==[('general_support',)]
+        assert db.execute('select type,state from actions.commands where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
+        assert db.execute('select count(*) from actions.receipts where customer_id=%s',(ctx.principal.customer_id,)).fetchone()==(0,)
+        assert db.execute('select reason from support.handoffs where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
         assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool' in "
             "('customer.get_profile','customer.get_accounts','customer.get_credit_cards','customer.get_loans','customer.get_transactions')").fetchone()==(5,)
 

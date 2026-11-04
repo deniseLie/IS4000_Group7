@@ -29,8 +29,8 @@ def test_normal_text_is_not_redacted(text):assert redact(text)==(text,False)
 def test_lost_card_works_without_model(monkeypatch):
     monkeypatch.delenv('LLM_MODEL',raising=False)
     r=result(client.post('/chat',json=payload('I lost my card, please block it')))
-    assert 'immediately' in r['answer'] and 'cannot block' in r['answer']
-    assert r['sources'][0]['id']=='lost-card'
+    assert 'Freeze card' in r['answer'] and r['response_origin']=='safety'
+    assert r['sources'][0]['id']=='kb:lost-card@v4#main'
 
 @pytest.mark.parametrize('question',['What is my balance?','whats my balance'])
 def test_public_balance_needs_sign_in(question,monkeypatch):
@@ -67,7 +67,7 @@ def test_unknown_source_is_not_exposed():assert client.get('/knowledge/customer-
 
 def test_lost_card_with_secret_still_gets_urgent_guidance():
     r=result(client.post('/chat',json=payload('I lost my card and my PIN is 1234')))
-    assert r['privacy_warning'] and 'immediately' in r['answer'] and '1234' not in r['answer']
+    assert r['privacy_warning'] and 'Freeze card' in r['answer'] and '1234' not in r['answer']
 
 
 
