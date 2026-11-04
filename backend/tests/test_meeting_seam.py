@@ -35,6 +35,7 @@ def active(db: 'Connection[SqlRow]',customer: int,category: str,advisor: str=SOP
 
 
 def meeting(db: 'Connection[SqlRow]') -> str:
+    db.execute("update meetings.events set status='done'")  # 0106 queues the demo meeting's event; start from an empty queue
     row=db.execute('select appointment_id from rm.appointments where customer_id=1002 and advisor_id=%s order by starts_at limit 1',(SOPHIE,)).fetchone()
     assert row,'0090 seeds Michelle\'s meetings with Sophie'
     return str(row[0])
@@ -49,24 +50,25 @@ def claim(db: 'Connection[SqlRow]') -> tuple:
 
 
 def test_consent_active_needs_an_active_grant_for_that_category_to_that_rm(database: 'Connection[SqlRow]') -> None:
-    assert not any(active(database,1002,c) for c in CATEGORIES)
-    grant(database,1002,SOPHIE,['transaction_insights'])
-    assert active(database,1002,'transaction_insights') and not active(database,1002,'chat_topics')
-    grant(database,1002,PRIYA,['chat_topics'])  # Priya is not Michelle's RM: a grant to her opens nothing
-    assert not active(database,1002,'chat_topics',PRIYA) and not active(database,1002,'chat_topics')
-    database.execute("update consent.grants set revoked_at=now() where customer_id=1002 and recipient=%s and 'transaction_insights'=any(categories)",(SOPHIE,))
-    assert not active(database,1002,'transaction_insights')
-    grant(database,1002,SOPHIE,['chat_topics'],expires='-1 minute')
-    assert not active(database,1002,'chat_topics')
+    # Mei Ling (1007): Sophie's client with no category grant (0106 seeds one for Michelle).
+    assert not any(active(database,1007,c) for c in CATEGORIES)
+    grant(database,1007,SOPHIE,['transaction_insights'])
+    assert active(database,1007,'transaction_insights') and not active(database,1007,'chat_topics')
+    grant(database,1007,PRIYA,['chat_topics'])  # Priya is not Mei Ling's RM: a grant to her opens nothing
+    assert not active(database,1007,'chat_topics',PRIYA) and not active(database,1007,'chat_topics')
+    database.execute("update consent.grants set revoked_at=now() where customer_id=1007 and recipient=%s and 'transaction_insights'=any(categories)",(SOPHIE,))
+    assert not active(database,1007,'transaction_insights')
+    grant(database,1007,SOPHIE,['chat_topics'],expires='-1 minute')
+    assert not active(database,1007,'chat_topics')
     database.execute('savepoint s')
-    with pytest.raises(Exception,match='unknown consent category'):active(database,1002,'transactions')
+    with pytest.raises(Exception,match='unknown consent category'):active(database,1007,'transactions')
     database.execute('rollback to savepoint s')
 
 
 def test_rm_sees_consent_per_category_only_for_her_book(database: 'Connection[SqlRow]') -> None:
-    grant(database,1002,SOPHIE,['chat_topics','meeting_recording'])
+    grant(database,1007,SOPHIE,['chat_topics','meeting_recording'])
     as_rm(database)
-    status=database.execute('select rm_consent_status(1002)').fetchone()[0]
+    status=database.execute('select rm_consent_status(1007)').fetchone()[0]
     assert status['denied'] is False and status['data']=={'transaction_insights':False,'chat_topics':True,'meeting_recording':True}
     refused=database.execute('select rm_consent_status(1006)').fetchone()[0]
     assert refused['denied'] is True and refused['data'] is None

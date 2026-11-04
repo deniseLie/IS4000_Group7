@@ -1067,6 +1067,22 @@ The next target centres the product on the relationship manager: a client's meet
 | Identity | — | Steps that read client records run with the RM's JWT (`prepare`, `decide`, `status`). The runner has no user JWT and reads no client records |
 | Ownership | — | Meeting side: `services/meetings/**`, `api/meetings.py`, its prompts and UI, migrations 0120–0139. Client, consent and copilot side: the rest, migrations 0106–0119 |
 
+### 15.1 What the client and copilot side provides (0106, build plan phase 1)
+
+Agreed additions to the seam ([build plan](planning/rm-copilot-build-plan.md), phase 1a), built in `0106_meeting_requests.sql`:
+
+| Part | Where | Rule |
+|---|---|---|
+| Meeting requests | `rm.meeting_requests`; client actions `meeting.request`, `meeting.withdraw`, `meeting.counter_reply` | The client asks with a purpose (her words, redacted, 1–200 characters), 1–5 topic codes (`rm.meeting_topics()`: `home_loan`, `investments`, `fixed_deposit`, `insurance`, `term_sheet`, `compliance_review`, `account_review`, `card_review`, `other`), a format and 1–3 preferred times. Status `requested` → `scheduled`, `countered`, `declined` or `withdrawn`; `respond_by` is one business day later and a late request reads as `overdue` (it stays open). At most 3 open requests per client |
+| RM decisions | `public.rm_meeting_request_decide(decision_id, request_id, outcome, starts_at, reason)` | `accept` one of the preferred times (creates the confirmed meeting with purpose and topics), `counter` with another time (a held meeting the client accepts or declines within two business days; an unanswered proposal can be decided again) or `decline` with `answered_by_message`, `redirected` or `not_needed`. Book check, working hours, blocks, overlap and the weekly limit (`rm.slot_problem`). Idempotent on `decision_id`; the client gets an Inbox notice |
+| Reschedule | `public.rm_meeting_reschedule(change_id, appointment_id, starts_at, reason)` | An upcoming confirmed meeting moves to another free time; reason `client_asked`, `rm_unavailable` or `other` |
+| Events we queue | `meetings.enqueue` from our SQL, same transaction as the change | `meeting.scheduled` when a meeting becomes confirmed (RM accept, client accepts a proposed time, or a direct booking), `meeting.rescheduled`, `meeting.cancelled` (the client cancels a confirmed meeting). `dedupe_key` is `decision:<id>`, `command:<id>` or `change:<id>`. Payload: `starts_at`, `ends_at` (UTC), `format`, `topics`, `request_id`, `by` (`client` or `rm`), and `reason` on a reschedule; never the purpose. `brief.requested` and `transcript.ready` are the meeting side's |
+| Purpose and topics | `rm.appointments.purpose` (0089), `rm.appointments.topics` (0106) | `MeetingRef` is filled from the row. Direct bookings have no purpose and no topics |
+| Readers the brief calls | `rm_client_profile`, `rm_review_status`, `rm_tickets`, `rm_meeting_notes` (exist); `rm_transaction_insights(customer, days)`, `rm_talking_points(customer, purpose)` (0106) | All with the RM's JWT. The two gated ones return `{"shared": false, "category": ..., "data": null}` when `rm.consent_active` is false, audited as `policy.rm_consent_gap`; when shared, the data with `grant_id`, audited as `data.read` with category and grant id. `purpose` is `meeting_prep` (the brief) or `client_view`. Talking points carry list values, dates and ids only and stay empty until build plan phase 4. `rm_cash_events` has the same `transaction_insights` gate. Tools of the same names in `services/tools.py`; `rm/evidence.py` turns a gap into consent evidence |
+| Writes after minutes | `rm_create_tasks`, `rm_create_service_request`, `rm_send_client_update` (0089) | The meeting side uses these existing approved RM writes for action items and the recap; no new write paths |
+| Recording consent | `meeting_recording` category | Only the seeded grant until consent v2 adds the client's per-meeting answer |
+| Demo data | 0106 seed | Michelle (1002) shares all three categories with Sophie; her request "Home loan options" (topics `home_loan`, `term_sheet`, `compliance_review`) is a confirmed video meeting on the next free Thursday at 15:00, with its `meeting.scheduled` event queued. Mei Ling (1007) has an open fixed deposit request and no category grant, so her gated reads show the gap |
+
 ## Appendix: knowledge base
 
 How the approved banking articles are stored, searched and cited, and which articles each story needs.

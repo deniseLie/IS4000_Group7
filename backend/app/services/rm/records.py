@@ -78,6 +78,11 @@ async def availability(ctx):return await rpc('rm_availability',{},ctx,'rm.availa
 async def tasks(ctx,customer_id: int|None=None):return await rpc('rm_tasks',{'p_customer_id':customer_id},ctx,'rm.tasks')
 async def followups(ctx):return await rpc('rm_followups',{},ctx,'rm.followups')
 async def cash_events(ctx,customer_id: int):return await rpc('rm_cash_events',{'p_customer_id':customer_id},ctx,'rm.cash_events')
+async def transaction_insights(ctx,customer_id: int,days: int=90):
+    return await rpc('rm_transaction_insights',{'p_customer_id':customer_id,'p_days':days},ctx,'rm.transaction_insights')
+async def talking_points(ctx,customer_id: int,purpose: str):
+    return await rpc('rm_talking_points',{'p_customer_id':customer_id,'p_purpose':purpose},ctx,'rm.talking_points')
+async def meeting_requests(ctx,status: str='open'):return await rpc('rm_meeting_requests',{'p_status':status},ctx,'rm.meeting_requests')
 async def book_facts(ctx):return await rpc('rm_book_facts',{},ctx,'rm.book_facts')
 async def handover_sources(ctx,customer_id: int):return await rpc('rm_handover_sources',{'p_customer_id':customer_id},ctx,'rm.handover_brief')
 async def check_service_request(ctx,customer_id: int,category: str,summary: str,details: dict,urgency: str):

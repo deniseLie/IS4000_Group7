@@ -217,6 +217,23 @@ async def rm_cash_events(customer_id: int) -> dict[str,Any]:
     return await rm_records.cash_events(_ctx(),customer_id)
 
 
+async def rm_transaction_insights(customer_id: int,days: int=90) -> dict[str,Any]:
+    """One book client's money in and out by month, card and overseas spending, large and recurring movements (30-180 days),
+    only under the client's transaction_insights consent; otherwise shared is false and there is no data."""
+    return await rm_records.transaction_insights(_ctx(),customer_id,days)
+
+
+async def rm_talking_points(customer_id: int,purpose: str='client_view') -> dict[str,Any]:
+    """Topics from one book client's chats (list values and dates only), only under the client's chat_topics consent.
+    purpose: meeting_prep (a meeting brief) or client_view."""
+    return await rm_records.talking_points(_ctx(),customer_id,purpose)
+
+
+async def rm_meeting_requests(status: str='open') -> dict[str,Any]:
+    """Meeting requests from clients in the RM's book: open (default), scheduled or closed, with each preferred time's status."""
+    return await rm_records.meeting_requests(_ctx(),status)
+
+
 async def rm_book_facts() -> dict[str,Any]:
     """One line of facts per client in the RM's book: last interaction, next meeting, open requests, maturities, tasks."""
     return await rm_records.book_facts(_ctx())
@@ -232,7 +249,8 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
-    'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts}
+    'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts,'rm_transaction_insights':rm_transaction_insights,
+    'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests}
 
 
 def project(value: Any,fields: frozenset[str]) -> Any:

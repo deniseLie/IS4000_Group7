@@ -34,7 +34,8 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
     'my_consents':('consent.records',),
     # RM reads: SQL checks the verified rm login and the book (rm.current_advisor, rm.in_book; 0089) and audits each read.
     **{name:() for name in ('rm_book','rm_match_clients','rm_client_profile','rm_meeting_notes','rm_shared_summary','rm_tickets',
-        'rm_ticket','rm_review_status','rm_appointments','rm_availability','rm_followups','rm_handover_sources','rm_cash_events','rm_book_facts')},
+        'rm_ticket','rm_review_status','rm_appointments','rm_availability','rm_followups','rm_handover_sources','rm_cash_events','rm_book_facts',
+        'rm_transaction_insights','rm_talking_points','rm_meeting_requests')},  # the gated ones also check rm.consent_active (0106)
 })
 
 EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
@@ -136,7 +137,10 @@ RM_INSIGHT=AgentSpec(name='rm_client_insight',role='rm',scope='rm_book',prompt='
     answers="One client in the RM's book (360 overview, meeting history, meeting briefs, handover briefs, the client's "
         'shared handover note under consent) and questions across the book (reviews due, follow-ups, book facts).',
     tools={'rm_client_profile':TEXT,'rm_meeting_notes':TEXT,'rm_shared_summary':TEXT,'rm_handover_sources':TEXT,
-        'rm_cash_events':WHOLE,'rm_book_facts':WHOLE,'rm_followups':WHOLE,'rm_review_status':WHOLE,'rm_appointments':WHOLE},
+        'rm_cash_events':WHOLE,'rm_book_facts':WHOLE,'rm_followups':WHOLE,'rm_review_status':WHOLE,'rm_appointments':WHOLE,
+        # 0106: consent-gated reads for the meeting brief and the overview, and clients' meeting requests (their purposes
+        # are the client's words). Build plan phase 3 moves rm_meeting_requests to the Calendar agent.
+        'rm_transaction_insights':WHOLE,'rm_talking_points':WHOLE,'rm_meeting_requests':TEXT},
     intents={'client_overview':(PROFILE,Read(tool='rm_cash_events')),'meeting_history':(PROFILE,NOTES),
         'meeting_brief':(PROFILE,NOTES,Read(tool='rm_shared_summary'),Read(tool='rm_cash_events')),
         'handover_brief':(Read(tool='rm_handover_sources'),),'shared_note':(Read(tool='rm_shared_summary'),),

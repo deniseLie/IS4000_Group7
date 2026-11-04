@@ -191,11 +191,48 @@ def handover_bundle(result: dict,shared: bool=True) -> Bundle:
     return bundle
 
 
+CATEGORY_LABEL={'transaction_insights':'transaction insights','chat_topics':'topics from their chats','meeting_recording':'meeting recordings'}
+
+
+def not_shared(result: dict,source_id: str,title: str,customer_id: int) -> Evidence|None:
+    """A consent-gated read (0106) the client has not shared: a gap the model must state, never an empty record.
+    None when the read was shared."""
+    if result.get('shared') is not False:return None
+    label=CATEGORY_LABEL.get(result.get('category'),'this information')
+    return Evidence(source_id,title,'consent',{'shared':False,'category':result.get('category'),
+        'meaning':f'The client has not shared {label} with you. Say so as a gap; nothing about it may be used or guessed.'},
+        str(result.get('as_of')),customer_id)
+
+
 def cash_evidence(result: dict,customer_id: int) -> Evidence:
-    """Large money movements (10,000 or more in the last 180 days) as recorded, for conversation starters. No interpretation."""
+    """Large money movements (10,000 or more in the last 180 days) as recorded, for conversation starters. No interpretation.
+    Gated by the client's transaction_insights consent since 0106."""
+    gap=not_shared(result,'cash-events','Large money movements in the last 180 days',customer_id)
+    if gap:return gap
     rows=result['data'] or []
     return Evidence('cash-events','Large money movements in the last 180 days','record',
         rows if rows else {'large_movements':0,'meaning':'No movement of 10,000 or more is recorded in the last 180 days.'},str(result.get('as_of')),customer_id)
+
+
+def insights_evidence(result: dict,customer_id: int) -> Evidence:
+    """Transaction insights (0106): totals by month, card and overseas spending, large and recurring movements, computed in
+    SQL under the client's transaction_insights consent. A gap when she has not shared them."""
+    title='Transaction insights'
+    gap=not_shared(result,'transaction-insights',title,customer_id)
+    if gap:return gap
+    data=result['data']
+    return Evidence('transaction-insights',f"{title} for the last {data['days']} days",'record',data,str(result.get('as_of')),customer_id)
+
+
+def talking_points_evidence(result: dict,customer_id: int) -> Evidence:
+    """Talking points from the client's chats (list values and dates only; filled by build plan phase 4). A gap when she has
+    not shared chat topics."""
+    title='Topics from the client\'s chats'
+    gap=not_shared(result,'talking-points',title,customer_id)
+    if gap:return gap
+    points=result['data'] or []
+    return Evidence('talking-points',title,'record',points if points else {'points':0,'meaning':'No topics from the client\'s chats are recorded.'},
+        str(result.get('as_of')),customer_id)
 
 
 PERIOD=re.compile(r'\b(?:next|coming|within(?: the next)?|in the next)\s+(\d{1,3})\s+(day|week|month)s?\b',re.I)
