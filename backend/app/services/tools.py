@@ -217,15 +217,17 @@ async def rm_cash_events(customer_id: int) -> dict[str,Any]:
     return await rm_records.cash_events(_ctx(),customer_id)
 
 
-async def rm_transaction_insights(customer_id: int,days: int=90) -> dict[str,Any]:
+async def rm_transaction_insights(customer_id: int,purpose: str,days: int=90) -> dict[str,Any]:
     """One book client's money in and out by month, card and overseas spending, large and recurring movements (30-180 days),
-    only under the client's transaction_insights consent; otherwise shared is false and there is no data."""
-    return await rm_records.transaction_insights(_ctx(),customer_id,days)
+    only under the client's transaction_insights consent; otherwise shared is false and there is no data.
+    purpose: meeting_prep (a meeting brief) or client_view, set by code from the intent, never by a model (audited)."""
+    return await rm_records.transaction_insights(_ctx(),customer_id,purpose,days)
 
 
-async def rm_talking_points(customer_id: int,purpose: str='client_view') -> dict[str,Any]:
-    """Topics from one book client's chats (list values and dates only), only under the client's chat_topics consent.
-    purpose: meeting_prep (a meeting brief) or client_view."""
+async def rm_talking_points(customer_id: int,purpose: str) -> dict[str,Any]:
+    """Topics from one book client's chats (list values and dates only). Inferred topics only under the client's chat_topics
+    consent; data is always a list, and without that consent it holds only topics she shared herself.
+    purpose: meeting_prep (a meeting brief) or client_view, set by code from the intent, never by a model (audited)."""
     return await rm_records.talking_points(_ctx(),customer_id,purpose)
 
 

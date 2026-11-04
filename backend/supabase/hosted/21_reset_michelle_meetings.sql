@@ -2,6 +2,9 @@
 -- cancelled or expired, including test bookings) and her booking notices, then books the one seeded meeting again:
 -- next Wednesday 14:30 (Singapore time), video, with Sophie, purpose "Periodic review documents and fixed deposit maturity",
 -- and (after 0095) the undocumented phone check-in on the previous week's Friday at 15:00 used by Today → Meetings to document.
+-- After 0107 it ends with rm.reset_meeting_demo for Michelle: her meeting requests go too, and the 0106 "Home loan options"
+-- meeting is booked again on a later free Thursday with its meeting.scheduled event (deleting her appointments alone would
+-- leave that request scheduled with no meeting). Needs 0107 (batch 33).
 -- Keeps her records, requests, chats and the audit log (the deletions are themselves audited). Safe to run more than once.
 begin;
 
@@ -26,6 +29,8 @@ cross join lateral (select (clock_timestamp() at time zone 'Asia/Singapore')::da
 cross join lateral (select ((t.today-(extract(isodow from t.today)::int+2))+time '15:00') at time zone 'Asia/Singapore' at) s
 where r.customer_id=1002 and r.ended_on is null;
 
-select to_char(starts_at at time zone 'Asia/Singapore','Dy DD Mon YYYY, HH12:MI am') as michelle_meeting,format,status
-from rm.appointments where customer_id=1002;
+select rm.reset_meeting_demo(array[1002]::bigint[]) as meeting_demo;
+
+select to_char(starts_at at time zone 'Asia/Singapore','Dy DD Mon YYYY, HH12:MI am') as michelle_meeting,format,status,purpose
+from rm.appointments where customer_id=1002 order by starts_at;
 commit;

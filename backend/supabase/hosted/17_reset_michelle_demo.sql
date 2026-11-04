@@ -24,6 +24,7 @@ update consent.requests set command_id=null where command_id in (select command_
 update consent.grants set command_id=null where command_id in (select command_id from orphan_commands);
 update consent.grants set revocation_command_id=null where revocation_command_id in (select command_id from orphan_commands);
 update support.tickets set command_id=null where command_id in (select command_id from orphan_commands);
+update rm.meeting_requests set command_id=null where command_id in (select command_id from orphan_commands);  -- since 0106
 delete from support.handoff_notes where command_id in (select command_id from orphan_commands);
 delete from actions.staff_commands where command_id in (select command_id from orphan_commands);
 delete from events.outbox where command_id in (select command_id from orphan_commands);

@@ -11,8 +11,9 @@ from dataclasses import dataclass,field
 from datetime import date,datetime,timedelta,timezone
 from collections.abc import Awaitable,Callable
 from typing import Any
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter,ValidationError
 from app.schemas.knowledge import KnowledgeSection
+from app.schemas.meetings import TalkingPoint
 
 
 @dataclass
@@ -224,15 +225,28 @@ def insights_evidence(result: dict,customer_id: int) -> Evidence:
     return Evidence('transaction-insights',f"{title} for the last {data['days']} days",'record',data,str(result.get('as_of')),customer_id)
 
 
+def _words(d: date) -> str:return f'{d.day} {d:%b %Y}'  # 12 Nov 2026, as rm.day writes dates
+
+
 def talking_points_evidence(result: dict,customer_id: int) -> Evidence:
-    """Talking points from the client's chats (list values and dates only; filled by build plan phase 4). A gap when she has
-    not shared chat topics."""
+    """Topics from the client's chats (0107 contract; build plan phase 4 fills them), each rendered by code
+    (TalkingPoint.line) with its brief label; a row that fails the contract is dropped and counted, never shown. Without
+    her chat_topics grant the inferred topics are a gap, and the topics she shared herself still come with it."""
     title='Topics from the client\'s chats'
+    rows,dropped=[],0
+    for row in result.get('data') or []:
+        try:p=TalkingPoint.model_validate(row)
+        except ValidationError:dropped+=1;continue
+        if result.get('shared') is False and p.origin!='confirmed':dropped+=1;continue  # inferred topics need her chat_topics grant
+        rows.append({'topic':p.topic,'line':p.line(),'label':p.brief_label(),'first_seen':_words(p.first_seen),'last_seen':_words(p.last_seen)})
+    withheld={'withheld':dropped} if dropped else {}
     gap=not_shared(result,'talking-points',title,customer_id)
-    if gap:return gap
-    points=result['data'] or []
-    return Evidence('talking-points',title,'record',points if points else {'points':0,'meaning':'No topics from the client\'s chats are recorded.'},
-        str(result.get('as_of')),customer_id)
+    if gap:
+        gap.data.update(shared_by_client=rows,**withheld,meaning='The client has not shared topics from their chats with you: say so as a gap '
+            'and do not guess them. Only the topics under shared_by_client, which she shared with you herself, may be used.')
+        return gap
+    return Evidence('talking-points',title,'record',{'points':rows,**withheld} if rows else
+        {'points':0,**withheld,'meaning':'No topics from the client\'s chats are recorded.'},str(result.get('as_of')),customer_id)
 
 
 PERIOD=re.compile(r'\b(?:next|coming|within(?: the next)?|in the next)\s+(\d{1,3})\s+(day|week|month)s?\b',re.I)

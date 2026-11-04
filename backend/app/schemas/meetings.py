@@ -31,6 +31,50 @@ class MeetingRef(Contract):
     topics: list[str] = Field(default_factory=list, max_length=10)
 
 
+# Talking points (0106/0107 rm_talking_points; build plan phase 4 fills them). Only list values, dates and ids cross to the
+# RM side: no field holds client text, and Contract forbids extra fields, so the client's words cannot travel in one.
+TalkingTopic = Literal['home_loan', 'investments', 'fixed_deposit', 'insurance']  # the product codes of rm.meeting_topics() (0106)
+TalkingStage = Literal['curious', 'exploring', 'planning', 'ready', 'concern']
+Timeframe = Literal['now', 'within_3m', 'within_12m', 'later', 'unknown']
+ConcernTag = Literal['rates', 'fees', 'eligibility', 'timing']
+TalkingOrigin = Literal['inferred', 'confirmed']  # inferred from chat, or shared by the client herself
+TOPIC_NAME = {'home_loan': 'Home loan', 'investments': 'Investments', 'fixed_deposit': 'Fixed deposit', 'insurance': 'Insurance'}
+TIMEFRAME_TEXT = {'now': 'now', 'within_3m': 'within 3 months', 'within_12m': 'within 12 months', 'later': 'later'}
+ORIGIN_TEXT = {'inferred': 'inferred from chat', 'confirmed': 'shared by the client'}
+
+
+class TalkingPoint(Contract):
+    point_id: UUID
+    topic: TalkingTopic
+    stage: TalkingStage
+    timeframe: Timeframe = 'unknown'
+    concerns: list[ConcernTag] = Field(default_factory=list, max_length=4)
+    origin: TalkingOrigin
+    first_seen: date
+    last_seen: date
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if len(set(self.concerns)) != len(self.concerns):
+            raise ValueError('each concern once')
+        if self.last_seen < self.first_seen:
+            raise ValueError('last_seen is before first_seen')
+        return self
+
+    def line(self) -> str:
+        """The one rendering every reader uses (RM copilot, meeting brief, the client's Data sharing page):
+        'Home loan · planning · within 12 months · inferred from chat'."""
+        parts = [TOPIC_NAME[self.topic], self.stage]
+        if self.timeframe != 'unknown':
+            parts.append(TIMEFRAME_TEXT[self.timeframe])
+        if self.concerns:
+            parts.append('asks about ' + ', '.join(self.concerns))
+        return ' · '.join([*parts, ORIGIN_TEXT[self.origin]])
+
+    def brief_label(self) -> BriefLabel:
+        return 'ai_suggestion' if self.origin == 'inferred' else 'client_said'
+
+
 class MeetingEvent(Contract):
     """A row of the private meetings.events queue. event_id and created_at are set by meetings.enqueue."""
     event_id: int | None = None

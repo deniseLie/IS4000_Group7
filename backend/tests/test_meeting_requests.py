@@ -1,5 +1,5 @@
-"""Meeting requests, RM decisions, meeting events and consent-gated brief reads (migration 0106, RM copilot build plan
-phase 1) over real temporary PostgreSQL. Synthetic data only.
+"""Meeting requests, RM decisions, meeting events and consent-gated brief reads (migrations 0106 and 0107, RM copilot build
+plan phase 1) and the demo reset over real temporary PostgreSQL. Synthetic data only.
 
 Run from backend/: TEST_DATABASE_LOCAL=1 ../.venv/bin/python -m pytest tests/test_meeting_requests.py -q
 """
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native temporary PostgreSQL with TEST_DATABASE_LOCAL=1')
 MEI_LING_REQUEST='00000000-0000-4000-8000-100700000071'
 MICHELLE_REQUEST='00000000-0000-4000-8000-100200000071'
+MICHELLE_GRANT='00000000-0000-4000-8000-100200000041'
 
 
 def free_times(db: 'Connection[SqlRow]',customer: int=1002,n: int=3,exclude: str|None=None,skip: int=0) -> list[datetime]:
@@ -195,27 +196,64 @@ def test_a_client_reads_only_her_own_requests(database: 'Connection[SqlRow]') ->
     assert sqlstate(database,'select public.customer_read_meeting_requests(1007)',())=='42501'
 
 
-def test_gated_readers_return_data_only_under_consent_and_audit_the_grant(database: 'Connection[SqlRow]') -> None:
+def test_gated_readers_return_data_only_under_consent_and_audit_the_grant_and_purpose(database: 'Connection[SqlRow]') -> None:
     as_rm(database)
-    shared=database.execute('select public.rm_transaction_insights(1002)').fetchone()[0]
-    assert shared['shared'] is True and shared['grant_id']=='00000000-0000-4000-8000-100200000041'
+    shared=database.execute("select public.rm_transaction_insights(1002,'meeting_prep')").fetchone()[0]
+    assert shared['shared'] is True and shared['grant_id']==MICHELLE_GRANT
     assert set(shared['data'])>={'monthly','card_spending','overseas','large_movements','recurring'} and 'description' not in json.dumps(shared['data'])
-    gap=database.execute('select public.rm_transaction_insights(1007)').fetchone()[0]
+    gap=database.execute("select public.rm_transaction_insights(1007,'client_view')").fetchone()[0]
     assert gap['shared'] is False and gap['data'] is None and gap['denied'] is False
+    # 0107: talking points are always a list, so topics a client shared herself can come back without chat_topics (phase 4)
     points=database.execute("select public.rm_talking_points(1002,'meeting_prep')").fetchone()[0]
     assert points['shared'] is True and points['data']==[]
-    assert database.execute("select public.rm_talking_points(1007,'client_view')").fetchone()[0]['shared'] is False
+    topics=database.execute("select public.rm_talking_points(1007,'client_view')").fetchone()[0]
+    assert topics['shared'] is False and topics['data']==[]
     cash=database.execute('select public.rm_cash_events(1007)').fetchone()[0]
     assert cash['shared'] is False and cash['data'] is None
     assert isinstance(database.execute('select public.rm_cash_events(1002)').fetchone()[0]['data'],list)
-    assert database.execute('select public.rm_transaction_insights(1001)').fetchone()[0]['denied'] is True
-    assert sqlstate(database,"select public.rm_talking_points(1002,'marketing')",())=='22023'
-    assert sqlstate(database,'select public.rm_transaction_insights(1002,7)',())=='22023'
+    assert database.execute("select public.rm_transaction_insights(1001,'client_view')").fetchone()[0]['denied'] is True
+    for query in ["select public.rm_talking_points(1002,'marketing')","select public.rm_transaction_insights(1002,'marketing')",
+            "select public.rm_transaction_insights(1002,null)","select public.rm_transaction_insights(1002,'client_view',7)"]:
+        assert sqlstate(database,query,())=='22023'
+    assert sqlstate(database,'select public.rm_transaction_insights(1002)',())=='42883'  # the 0106 signature without purpose is gone
     database.execute('reset role')
-    read=database.execute("select details from audit.events where action='data.read' and resource_id=%s",(shared['call_id'],)).fetchone()[0]
-    assert read=={'tool':'rm.transaction_insights','result_count':1,'category':'transaction_insights','grant_id':shared['grant_id'],'purpose':'client_view'}
-    denied=database.execute("select outcome,details from audit.events where action='policy.rm_consent_gap' and resource_id=%s",(gap['call_id'],)).fetchone()
-    assert denied==('denied',{'tool':'rm.transaction_insights','category':'transaction_insights','purpose':'client_view','reason':'no_active_consent'})
+    def details(action: str,call: str) -> tuple:
+        return database.execute('select outcome,details from audit.events where action=%s and resource_id=%s',(action,call)).fetchone()
+    assert details('data.read',shared['call_id'])==('success',{'tool':'rm.transaction_insights','result_count':1,'category':'transaction_insights',
+        'grant_id':shared['grant_id'],'purpose':'meeting_prep'})
+    assert details('policy.rm_consent_gap',gap['call_id'])==('denied',{'tool':'rm.transaction_insights','category':'transaction_insights',
+        'purpose':'client_view','reason':'no_active_consent'})
+    assert details('policy.rm_consent_gap',topics['call_id'])[1]['purpose']=='client_view'
+    assert details('data.read',points['call_id'])[1]=={'tool':'rm.talking_points','result_count':0,'category':'chat_topics','grant_id':MICHELLE_GRANT,
+        'purpose':'meeting_prep'}
+
+
+def test_the_demo_reset_seeds_the_meetings_again_from_today(database: 'Connection[SqlRow]') -> None:
+    # Sophie accepts Mei Ling's request and Michelle withdraws her grant; the reset undoes both and keeps other meetings.
+    database.execute('reset role')
+    [at]=database.execute('select preferred_times[1] from rm.meeting_requests where request_id=%s',(MEI_LING_REQUEST,)).fetchone()
+    accepted=decide(database,MEI_LING_REQUEST,'accept',at)['request']['appointment_id']
+    database.execute('reset role')
+    database.execute('update consent.grants set revoked_at=now() where grant_id=%s',(MICHELLE_GRANT,))
+    seeded=database.execute('select appointment_id from rm.meeting_requests where request_id=%s',(MICHELLE_REQUEST,)).fetchone()[0]
+    others=database.execute('select count(*) from rm.appointments where customer_id=1002 and appointment_id<>%s',(seeded,)).fetchone()[0]
+    first=database.execute('select rm.reset_meeting_demo()').fetchone()[0]
+    again=database.execute('select rm.reset_meeting_demo()').fetchone()[0]
+    assert (first['removed_requests'],first['removed_meetings'],again['removed_requests'],again['removed_meetings'])==(2,2,2,1)
+    rows=database.execute('select customer_id,status,appointment_id::text from rm.meeting_requests order by customer_id').fetchall()
+    assert [row[:2] for row in rows]==[(1002,'scheduled'),(1007,'requested')]
+    meeting=rows[0][2]
+    assert database.execute("select status,starts_at>now(),extract(isodow from starts_at at time zone 'Asia/Singapore') from rm.appointments where appointment_id=%s",
+        (meeting,)).fetchone()==('confirmed',True,4)
+    assert [(e[0],e[1]) for e in events(database,meeting)]==[('meeting.scheduled','decision:00000000-0000-4000-8000-100200000072')]
+    assert events(database,accepted)==[] and database.execute('select count(*) from rm.appointments where appointment_id=%s',(accepted,)).fetchone()==(0,)
+    assert database.execute('select count(*) from rm.appointments where customer_id=1002 and appointment_id<>%s',(meeting,)).fetchone()==(others,)
+    assert database.execute("select count(*) from notify.inbox where customer_id=1007 and template_key like 'meeting.%%'").fetchone()==(0,)
+    assert database.execute('select bool_and(t>now()) from rm.meeting_requests r,unnest(r.preferred_times) t where customer_id=1007').fetchone()==(True,)
+    assert database.execute('select revoked_at is null and expires_at>now() from consent.grants where grant_id=%s',(MICHELLE_GRANT,)).fetchone()==(True,)
+    assert sqlstate(database,'select rm.reset_meeting_demo(array[1001]::bigint[])',())=='22023'
+    set_customer(database,1002)
+    assert sqlstate(database,'select rm.reset_meeting_demo()',())=='42501'  # owner only
 
 
 def test_slot_problems_name_the_reason(database: 'Connection[SqlRow]') -> None:
