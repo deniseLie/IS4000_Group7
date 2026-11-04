@@ -16,7 +16,7 @@ const EFFECT={
 
 // Styles live here so the card controls are one file; colours match index.css (--ink, --muted, --line, --red, --tint).
 const S={
-  wrap:{margin:'12px 0 4px 48px',display:'grid',gap:10},
+  wrap:{display:'grid',gap:10},
   panel:{border:'1px solid #e4e4de',borderRadius:12,background:'#fff',overflow:'hidden'},
   freeze:{display:'flex',alignItems:'center',gap:12,padding:'12px 14px'},
   freezeIcon:on=>({width:34,height:34,borderRadius:'50%',display:'grid',placeItems:'center',flex:'none',background:on?'#e8f0fb':'#f7f7f4',color:on?'#1d4f8f':'#262624'}),
@@ -72,10 +72,10 @@ export default function CardControls({card,onChanged,onRaise}) {
     ['card-replace','refresh','Replace card','Lost, stolen or damaged: a lost or stolen card is frozen at once',()=>raise('card_replacement',`Replace my ${card.name} ending ${card.last4}.`)],
     ['card-dispute','alert','Dispute a charge','A charge you recognise but think is wrong, within 60 days',()=>raise('card_dispute',`Dispute a charge on my ${card.name} ending ${card.last4}.`)],
   ];
-  return <div style={S.wrap} data-testid="card-controls" data-card={card.last4}>
+  return <div className="card-controls" style={S.wrap} data-testid="card-controls" data-card={card.last4}>
     {pending?<div style={S.confirm} role="group" aria-label={EFFECT[pending.type][0]}>
         <strong style={S.title}>{EFFECT[pending.type][0]}</strong><p style={{...S.sub,fontSize:13,margin:0,color:'#262624'}}>{EFFECT[pending.type][1]}</p>
-        <div style={S.buttons}><button className="bank-chat-logout" disabled={busy} onClick={()=>decide(false)}>Cancel</button>
+        <div style={S.buttons}><button className="bank-chat-logout" data-testid="card-cancel" disabled={busy} onClick={()=>decide(false)}>Cancel</button>
           <button className="primary-button" data-testid="card-confirm" disabled={busy} onClick={()=>decide(true)}><Icon name="check"/>{EFFECT[pending.type][2]}</button></div></div>
     :<div style={S.panel}>
       <div style={S.freeze}>

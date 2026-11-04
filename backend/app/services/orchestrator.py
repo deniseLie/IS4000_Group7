@@ -95,6 +95,7 @@ CONDITION_FALSE_ANY = 'What you asked this to depend on isn’t the case, so I h
 MORE_ITEMS = 'I’ve shown the first {shown} of {total}. Ask about the others if you need them.'
 OUT_OF_SCOPE = 'I can’t help with that part here. Say “talk to a person” and I’ll show you what I would send to your relationship manager.'
 # Our own fixed asks a short yes or no answers; with no open offer left, the reply says so instead of guessing.
+ASK_WHICH = 'You have more than one open offer. Use the Confirm or Cancel button on the offer you mean; nothing has been sent.'
 OFFER_MARKS = (CONFIRM_LINE, fraud_reports.CONFIRM_REPLY, fraud_reports.LOST_REPLY)
 DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship',
     'rm_client_insight': 'relationship', 'rm_service_desk': 'relationship'}
@@ -358,16 +359,23 @@ def linked(tasks: list[PlanTask], req: ChatRequest) -> tuple[list[PlanTask], lis
     return kept, lines
 
 
-async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired'] | None:
+async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired', 'ambiguous'] | None:
     """A whole short English yes or no answers the one open offer group in this chat."""
     if req.mode != 'personal' or tctx.conversation_id is None:return None
     if req.offer is not None:return Confirmation(group=req.offer.offer_group, decision=req.offer.decision)
     kind = offers.reply_kind(question)
     if kind == 'other':return None
-    found = await offers.open_group(tctx.request.model_copy(update={'agent': None}), tctx.conversation_id)
-    if found is not None:return Confirmation(group=found[0], decision='confirm' if kind == 'yes' else 'cancel')
-    asked = history[-2].content if len(history) >= 2 and history[-2].role == 'assistant' else ''
-    return 'expired' if any(mark in asked for mark in OFFER_MARKS) else None
+    groups = await offers.open_groups(tctx.request.model_copy(update={'agent': None}), tctx.conversation_id)
+    if len(groups) > 1:return 'ambiguous'
+    if groups:return Confirmation(group=next(iter(groups)), decision='confirm' if kind == 'yes' else 'cancel')
+    previous = history[:-1]
+    if not previous or previous[-1].role != 'assistant':return None
+    if previous[-1].content == EXPIRED or any(mark in previous[-1].content for mark in OFFER_MARKS):return 'expired'
+    # Only an immediate repeated confirmation refers back to an already answered offer.
+    if len(previous) >= 3 and previous[-2].role == 'user' and offers.reply_kind(previous[-2].content) != 'other':
+        asked = previous[-3]
+        if asked.role == 'assistant' and any(mark in asked.content for mark in OFFER_MARKS):return 'expired'
+    return None
 
 
 def fixed_section(task_id: str, text: str, domain: Domain = 'retail', priority: Priority = 'P3', sources: list[Source] | None = None,
@@ -384,6 +392,9 @@ async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
         if isinstance(reply, Confirmation):
             attrs['route'] = 'act'
             return {'confirm': reply, 'tasks': [], 'lines': []}
+        if reply == 'ambiguous':
+            attrs['route'] = 'ask_which'
+            return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', ASK_WHICH)]}
         if reply == 'expired':
             attrs['route'] = 'expired'
             return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', EXPIRED)]}
@@ -634,7 +645,8 @@ async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     sections = []
     for item, output in rows:
         mine = by_task.pop(item.id, [])
-        decision = output.decision or ('Would you like me to: ' + '; '.join(p.summary for p, _ in mine) + '? ' + line if mine else None)
+        decision = output.decision
+        if mine:decision = (decision or 'Would you like me to: ' + '; '.join(p.summary for p, _ in mine) + '?') + ' ' + line
         sections.append(section_for(item, output, decision))
     for proposal, _ in (pair for pairs in by_task.values() for pair in pairs):
         sections.append(fixed_section(proposal.task_id, f'Would you like me to: {proposal.summary}? {line}', domain='relationship', needs_human=True))

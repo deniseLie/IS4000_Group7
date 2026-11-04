@@ -46,7 +46,7 @@ export default function RmTicketsPage({token,onAsk}) {
         :t.restricted?<p className="rmw-ticket-text rm-none"><Icon name="lock"/>Details are restricted to {t.owner_team}.</p>:<p className="rmw-ticket-text">{t.summary}</p>}
       <p className="rmw-ticket-status"><Icon name="info"/>{t.rm_owned?(t.last_update?.note?`Latest update: ${t.last_update.note}`:'No update sent to the client yet.'):`Client sees: ${t.client_safe_status}`}</p>
       <div className="rm-ticket-actions">
-        {t.rm_owned&&<><button className="primary-button small" onClick={()=>onAsk(`Draft a reply to ${t.client} about ${t.reference}`,{intent:'draft_message',context:{client_id:t.customer_id,ticket_ref:t.reference}})}><Icon name="chat"/>Draft a reply</button>
+        {t.rm_owned&&<><button className="primary-button small" data-testid="rm-ticket-draft" onClick={()=>onAsk(`Draft a reply to ${t.client} about ${t.reference}`,{intent:'draft_message',context:{client_id:t.customer_id,ticket_ref:t.reference}})}><Icon name="chat"/>Draft a reply</button>
           <button className="bank-chat-logout" onClick={()=>onAsk(`Summarise ticket ${t.reference}`,{intent:'ticket_summary',context:{client_id:t.customer_id,ticket_ref:t.reference}})}><Icon name="spark"/>Summarise</button></>}
         <button className="bank-chat-logout" aria-expanded={open===t.reference} onClick={()=>setOpen(open===t.reference?null:t.reference)}>{open===t.reference?'Hide details':t.rm_owned?'Details':'View status history'}<Icon name="chevron"/></button></div>
       {open===t.reference&&<TicketDetail reference={t.reference} token={token}/>}

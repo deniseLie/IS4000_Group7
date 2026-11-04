@@ -69,3 +69,16 @@ def test_a_chained_offer_keeps_its_mark_and_receives_the_earlier_receipt(databas
     outcomes=database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0]
     assert [o['command']['state'] for o in outcomes]==['succeeded','succeeded','succeeded']
     assert outcomes[1]['command']['target']['after_receipt']==outcomes[0]['receipt']['receipt_id']
+
+
+@pytest.mark.parametrize('length,succeeds',[(0,True),(180,True),(181,False),(-1,False)])
+def test_trip_duration_boundaries_preserve_receipts_and_replays(database: 'Connection[SqlRow]',length: int,succeeds: bool) -> None:
+    _,case_id=owned_case(database)
+    group=uuid4()
+    offer(database,case_id,'ticket.create',notice(trip(10,10+length)),group,1)
+    [outcome]=database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0]
+    assert outcome['receipt']['outcome']==('succeeded' if succeeds else 'failed')
+    assert database.execute('select count(*) from support.tickets where case_id=%s',(case_id,)).fetchone()==(int(succeeds),)
+    assert database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0]==[outcome]
+    database.execute('reset role')
+    assert database.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)

@@ -31,6 +31,7 @@ ASK='Can I report these charges to our fraud team as urgent?'
 def security(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     monkeypatch.setattr(settings,'conversation_store','database')
+    monkeypatch.setattr(settings,'pipeline','v2')
     ran: list[str]=[]
     async def run(spec,task,inputs,ctx,history=None,language='English'):
         ran.append(spec.name)
@@ -91,3 +92,34 @@ def test_a_no_cancels_the_offer_and_records_nothing(local_data_api: NativeAPI,na
     assert declined['answer']==orchestrator.FRAUD_DECLINED and counts(local_data_api)==(0,0)
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select state from actions.commands where customer_id=1002 and type='handoff.create'").fetchall()==[('rejected',)]
+
+
+def test_typed_yes_with_several_open_groups_asks_which_without_executing(local_data_api: NativeAPI,native_api_client: TestClient,security: list[str]) -> None:
+    auth=headers(context(local_data_api,1002))
+    session,revision=conversation(native_api_client,auth)
+    _,revision=chat(native_api_client,auth,session,revision,QUERY)
+    _,revision=chat(native_api_client,auth,session,revision,QUERY)
+    answer,_=chat(native_api_client,auth,session,revision,'yes')
+    assert answer['answer']==orchestrator.ASK_WHICH and counts(local_data_api)==(0,0)
+    assert security==['security','security']
+
+
+def test_a_completed_offer_does_not_capture_yes_after_a_new_question(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
+    """Actual saved chat and action ledger, with explicit provider unavailability for the unrelated question."""
+    monkeypatch.setattr(settings,'conversation_store','database');monkeypatch.setattr(settings,'pipeline','v2')
+    monkeypatch.delenv('LLM_MODEL',raising=False)
+    auth=headers(context(local_data_api,1001))
+    session,revision=conversation(native_api_client,auth)
+    offered,revision=chat(native_api_client,auth,session,revision,'I lost my card')
+    assert offered['offer'] is not None
+    confirmed,revision=chat(native_api_client,auth,session,revision,'yes')
+    assert confirmed['offer'] is None
+    repeated,revision=chat(native_api_client,auth,session,revision,'yes')
+    assert repeated['answer']==orchestrator.EXPIRED
+    unrelated,revision=chat(native_api_client,auth,session,revision,'Hello!')
+    assert unrelated['response_origin']=='validation'
+    answer,_=chat(native_api_client,auth,session,revision,'yes')
+    assert answer['answer']==orchestrator.REPHRASE
+    with psycopg.connect(local_data_api.database_uri) as db:
+        assert db.execute("select count(*) from support.handoffs where customer_id=1001 and reason='card_lost'").fetchone()==(1,)
+        assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)

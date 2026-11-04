@@ -53,7 +53,7 @@ def test_hold_confirm_cancel_replay_and_current_records(local_data_api: NativeAP
     pending=propose(client,ctx,command)
     assert pending.command.state=='proposed' and pending.receipt is None
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select status from rm.appointments').fetchall()==[('held',)]
+        assert db.execute('select status from rm.appointments where appointment_id=%s',(held.receipt.result.appointment_id,)).fetchall()==[('held',)]
     def confirm(_: int) -> ActionOutcome:
         result=client.post(f'/commands/{command.command_id}/confirm',headers=headers(ctx))
         assert result.status_code==200,result.text
@@ -66,14 +66,15 @@ def test_hold_confirm_cancel_replay_and_current_records(local_data_api: NativeAP
     cancelled=client.post(f'/commands/{cancel.command_id}/confirm',headers=headers(ctx))
     assert cancelled.status_code==200 and cancelled.json()['receipt']['result']['status']=='cancelled',cancelled.text
     current=client.get('/relationship/appointments',headers=headers(ctx))
-    assert current.status_code==200 and current.json()['data'][0]['status']=='cancelled',current.text
-    assert current.json()['data'][0]['case_id']==str(ctx.case_id)
+    assert current.status_code==200,current.text
+    record=next(row for row in current.json()['data'] if row['appointment_id']==str(held.receipt.result.appointment_id))
+    assert record['status']=='cancelled' and record['case_id']==str(ctx.case_id)
     assert hold(client,api,slot).receipt.result.status=='held'
     assert client.post('/relationship/holds',headers=headers(ctx),json=body).json()==response.json()
     with psycopg.connect(api.database_uri) as db:
         assert db.execute('select count(*) from actions.receipts where command_id=%s',(command.command_id,)).fetchone()==(1,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
-        assert db.execute('select count(*) from conversation.messages').fetchone()==(0,)
+        assert db.execute('select count(*) from conversation.messages where customer_id=1003').fetchone()==(0,)
 
 
 def test_overlapping_holds_are_excluded_across_customers_and_constraint_is_real(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
@@ -93,7 +94,7 @@ def test_overlapping_holds_are_excluded_across_customers_and_constraint_is_real(
     failed=next(result for result in results if result.command.state=='failed')
     assert failed.receipt.result.error_code=='target_changed'
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select count(*) from rm.appointments').fetchone()==(1,)
+        assert db.execute('select count(*) from rm.appointments where advisor_id=%s and starts_at=%s',(slot['advisor_id'],slot['starts_at'])).fetchone()==(1,)
         with pytest.raises(ExclusionViolation):
             with db.transaction():
                 db.execute("insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status) values(1002,%s,%s,%s,'phone','confirmed')",
@@ -101,7 +102,8 @@ def test_overlapping_holds_are_excluded_across_customers_and_constraint_is_real(
     for cid in [1001,1003]:
         response=client.get('/relationship/appointments',headers=headers(context(api,cid)))
         assert response.status_code==200
-        assert len(response.json()['data'])==int(any(result.command.customer_id==cid and result.command.state=='succeeded' for result in results))
+        test_cases={str(result.command.case_id) for result in results}
+        assert len([r for r in response.json()['data'] if r['case_id'] in test_cases])==int(any(result.command.customer_id==cid and result.command.state=='succeeded' for result in results))
 
 
 def test_expired_hold_cannot_confirm_and_slot_can_be_held_again(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
@@ -112,14 +114,15 @@ def test_expired_hold_cannot_confirm_and_slot_can_be_held_again(local_data_api: 
         idempotency_key=f'{ctx.case_id}:expired:appointment.confirm')
     propose(client,ctx,command)
     with psycopg.connect(api.database_uri) as db:
-        db.execute("update rm.appointments set hold_expires_at=clock_timestamp()-interval '1 second'")
+        db.execute("update rm.appointments set hold_expires_at=clock_timestamp()-interval '1 second' where appointment_id=%s",(held.receipt.result.appointment_id,))
     listed=client.get('/relationship/appointments',headers=headers(ctx))
-    assert listed.json()['data'][0]['status']=='expired'
+    assert next(r for r in listed.json()['data'] if r['appointment_id']==str(held.receipt.result.appointment_id))['status']=='expired'
     result=client.post(f'/commands/{command.command_id}/confirm',headers=headers(ctx))
     assert result.status_code==200 and result.json()['receipt']['outcome']=='failed',result.text
-    assert hold(client,api,slot).receipt.result.status=='held'
+    fresh=hold(client,api,slot)
+    assert fresh.receipt.result.status=='held'
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select status,count(*) from rm.appointments group by status order by status').fetchall()==[('expired',1),('held',1)]
+        assert db.execute('select status,count(*) from rm.appointments where appointment_id=any(%s) group by status order by status',([held.receipt.result.appointment_id,fresh.receipt.result.appointment_id],)).fetchall()==[('expired',1),('held',1)]
 
 
 @pytest.mark.parametrize('change',['assignment','block','hours'])
@@ -160,7 +163,7 @@ def test_scope_invalid_grid_rejection_and_legacy_records(local_data_api: NativeA
     propose(client,ctx,rejected)
     response=client.post(f'/commands/{rejected.command_id}/reject',headers=headers(ctx))
     assert response.status_code==200 and response.json()['command']['state']=='rejected'
-    assert client.get('/relationship/appointments',headers=headers(ctx)).json()['data'][0]['status']=='held'
+    assert next(r for r in client.get('/relationship/appointments',headers=headers(ctx)).json()['data'] if r['appointment_id']==str(held.receipt.result.appointment_id))['status']=='held'
 
 
 @pytest.mark.parametrize('failure',['audit','outbox'])
@@ -172,12 +175,19 @@ def test_hold_rolls_back_with_its_case_receipt_and_audit(local_data_api: NativeA
             db.execute("create function public.native_booking_audit() returns trigger language plpgsql as $$ begin if new.action='action.executed' then raise exception 'native audit failure'; end if; return new; end $$")
             db.execute('create trigger native_booking_audit before insert on audit.events for each row execute function public.native_booking_audit()')
         else:db.execute("alter table events.outbox add constraint native_booking_outbox check(event_type<>'booking.held')")
+    case_id=uuid4();session_id=uuid4()
+    with psycopg.connect(local_data_api.database_uri) as db:
+        appointments=db.execute('select count(*) from rm.appointments').fetchone()
     response=native_api_client.post('/relationship/holds',headers=headers(context(local_data_api,1003)),json={
-        'command_id':str(uuid4()),'session_id':str(uuid4()),'case_id':str(uuid4()),'target':slot})
+        'command_id':str(uuid4()),'session_id':str(session_id),'case_id':str(case_id),'target':slot})
     assert response.status_code==503,response.text
     with psycopg.connect(local_data_api.database_uri) as db:
-        for table in ['rm.appointments','actions.commands','actions.receipts','conversation.cases','conversation.sessions']:
-            assert db.execute(f'select count(*) from {table}').fetchone()==(0,)
+        assert db.execute('select count(*) from rm.appointments').fetchone()==appointments
+        for table in ['actions.commands','actions.receipts','conversation.cases','conversation.sessions']:
+            column='session_id' if table=='conversation.sessions' else 'case_id'
+            value=session_id if column=='session_id' else case_id
+            query=f'select count(*) from {table} where {column}=%s' if table!='actions.receipts' else 'select count(*) from actions.receipts r join actions.commands c using(command_id) where c.case_id=%s'
+            assert db.execute(query,(value,)).fetchone()==(0,)
 
 
 def test_worker_delivers_verified_booking_receipts_once(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:

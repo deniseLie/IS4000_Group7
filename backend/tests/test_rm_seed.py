@@ -43,7 +43,9 @@ def test_sophie_has_a_linked_login_and_a_book_of_two_clients(database: 'Connecti
 def test_david_is_inherited_from_rachel_with_notes_a_request_and_a_consented_handover(database: 'Connection[SqlRow]') -> None:
     assert database.execute('select advisor_id,ended_on is not null from rm.assignments where customer_id=1003 order by started_on').fetchall()==[(RACHEL,True),(SOPHIE,True),(PRIYA,False)]  # 0093
     notes=database.execute('select advisor_id,format,cardinality(commitments) from rm.meeting_notes where customer_id=1003 order by met_on').fetchall()
-    assert len(notes)==3 and {row[0] for row in notes}=={RACHEL} and all(row[2]>=1 for row in notes)
+    previous=[row for row in notes if row[0]==RACHEL and row[2]>=1]
+    assert len(previous)==3
+    assert len(notes)==4
     assert database.execute("select count(*) from rm.requests where customer_id=1003 and status<>'closed'").fetchone()==(1,)
     shared=database.execute("""select s.advisor_id,g.purpose,g.recipient,g.revoked_at is null and g.expires_at>now() from rm.shared_summaries s
         join consent.grants g on g.grant_id=s.consent_grant_id where s.customer_id=1003""").fetchall()
@@ -74,7 +76,8 @@ def test_clients_see_only_their_own_rows_and_never_meeting_notes(database: 'Conn
     assert database.execute('select count(*) from support.tickets').fetchone()==(own_tickets,)
     assert database.execute('select count(*) from banking.customer_profiles where customer_id<>%s',(customer,)).fetchone()==(0,)
     advisors=[row[0] for row in database.execute('select full_name from rm.advisors order by 1')]
-    assert 'Sophie Lim (DEMO)' in advisors and 'Priya Nair (DEMO)' not in advisors
+    assert 'Sophie Lim (DEMO)' in advisors
+    assert ('Priya Nair (DEMO)' in advisors)==(customer==1003)
     import psycopg
     for table in ('rm.meeting_notes','rm.staff_logins'):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):

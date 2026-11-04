@@ -42,7 +42,7 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
       <div className="page-header-actions"><button className="bank-chat-logout" onClick={refresh} disabled={busy}><Icon name="refresh"/>Refresh</button>
         <button className="primary-button" data-testid="raise-request" onClick={()=>setRaising(true)}><Icon name="plus"/>Raise a request</button></div></header>
     {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions} onSupport={onSupport}/>}
-    <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}
+    <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" data-testid={`ticket-tab-${key}`} aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}
       <button role="tab" data-testid="tab-meetings" aria-selected={tab==='meetings'} onClick={()=>setTab('meetings')}>Meetings</button></nav>
     {/* The Meetings tab has its own loading state; the requests list is not shown there. */}
     {busy&&!tickets&&tab!=='meetings'&&<p className="loading" role="status">Loading your requests…</p>}

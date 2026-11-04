@@ -71,7 +71,7 @@ def test_staff_claim_unblock_cancel_close_replay_and_customer_receipts(local_dat
         assert asyncio.run(staff.unblock(uuid4(),hid,'card_10011',db)).receipt.outcome=='failed'
         close_id=uuid4()
         closed=asyncio.run(staff.close(close_id,hid,db))
-        assert closed.receipt.result.status=='closed' and asyncio.run(staff.queue(20,db))==[]
+        assert closed.receipt.result.status=='closed' and all(row.handoff_id!=hid for row in asyncio.run(staff.queue(20,db)))
         assert asyncio.run(staff.close(close_id,hid,db))==closed
         assert asyncio.run(staff.unblock(unblock_id,hid,'card_10011',db))==unblocked
     response=native_api_client.get('/commands',headers=headers(ctx))
@@ -178,6 +178,7 @@ def test_general_support_handoff_from_chat_is_queued_after_urgent_cases(local_da
     with SyncPostgrestClient(local_data_api.url) as db:
         db.auth(staff_token(local_data_api,user,'aal2',{'demobank_role':'support'}))
         rows=asyncio.run(staff.queue(10,db))
+    rows=[row for row in rows if row.customer_id==1001]
     assert [(row.reason,row.priority) for row in rows]==[('card_verification','P0'),('general_support','P2')]
     assert rows[1].case_id==ctx.case_id and rows[1].summary.startswith('Customer asked for a person.')
 

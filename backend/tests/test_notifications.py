@@ -46,6 +46,14 @@ async def produce_reminders(uri: SecretStr) -> int:
     async with worker.connect(uri) as db:return await worker.enqueue_reminders(db)
 
 
+def fresh_consent_event(api: NativeAPI,customer_id: int) -> int:
+    import psycopg
+    request_id=uuid4()
+    with psycopg.connect(api.database_uri) as db:
+        db.execute("insert into consent.requests(request_id,customer_id,purpose,recipient) values (%s,%s,'rm_brief','assigned_advisor')",(request_id,customer_id))
+        return db.execute("insert into events.outbox(event_type,customer_id,payload) values ('consent.requested',%s,jsonb_build_object('request_id',%s::text)) returning event_id",(customer_id,str(request_id))).fetchone()[0]
+
+
 def block(api: NativeAPI,client: TestClient) -> UUID:
     ctx=owned_case(api,context(api,1001))
     command=card_command(ctx,'notify-block')
@@ -66,14 +74,14 @@ def test_confirmed_card_delivers_once_and_only_customer_can_read(local_data_api:
     response=native_api_client.get('/notifications',headers=headers(ctx))
     assert response.status_code==200,response.text
     items=response.json()['items']
-    assert len(items)==1 and items[0]['template_key']=='card.blocked' and items[0]['template_version']==2
+    assert len(items)==1 and items[0]['template_key']=='card.blocked' and items[0]['template_version']==3
     assert '4821' in items[0]['body'] and 'synthetic' in items[0]['body'] and items[0]['is_service']
     notification=items[0]['notification_id']
     first=native_api_client.post(f'/notifications/{notification}/read',headers=headers(ctx))
     assert first.status_code==200 and first.json()['read_at'] is not None
     assert native_api_client.post(f'/notifications/{notification}/read',headers=headers(ctx)).json()==first.json()
     foreign=context(local_data_api,1003)
-    assert native_api_client.get('/notifications',headers=headers(foreign)).json()['items'][0]['customer_id']==1003
+    assert all(item['customer_id']==1003 and item['notification_id']!=notification for item in native_api_client.get('/notifications',headers=headers(foreign)).json()['items'])
     assert native_api_client.post(f'/notifications/{notification}/read',headers=headers(foreign)).status_code==404
     assert native_api_client.get('/notifications').status_code==401
     with psycopg.connect(local_data_api.database_uri) as db:
@@ -98,12 +106,13 @@ def test_worker_login_has_only_narrow_function_access(local_data_api: NativeAPI,
 @pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
 def test_competing_workers_deliver_one_inbox_record_per_event(local_data_api: NativeAPI,native_api_client: TestClient,worker_uri: SecretStr) -> None:
     import psycopg
-    block(local_data_api,native_api_client)
+    asyncio.run(drain(worker_uri))
+    command_id=block(local_data_api,native_api_client)
     with ThreadPoolExecutor(max_workers=3) as pool:results=list(pool.map(lambda _:asyncio.run(drain(worker_uri)),range(3)))
-    assert sum(len(items) for items in results)==2
+    assert sum(len(items) for items in results)==1
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select count(*) from notify.inbox').fetchone()==(2,)
-        assert db.execute("select count(*) from events.outbox where status='done'").fetchone()==(2,)
+        assert db.execute('select count(*) from notify.inbox where customer_id=1001').fetchone()==(1,)
+        assert db.execute("select count(*) from events.outbox where status='done' and command_id=%s",(command_id,)).fetchone()==(1,)
 
 
 @pytest.mark.usefixtures('legacy_card_actions')  # vehicle: retired client card actions (tests/legacy_card_actions.py)
@@ -111,7 +120,8 @@ def test_service_delivery_ignores_optout_and_quiet_hours(local_data_api: NativeA
     import psycopg
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("update notify.preferences set channels='{}',quiet_start='00:00',quiet_end='23:59:59.999999' where customer_id=1001")
-    block(local_data_api,native_api_client)
+    asyncio.run(drain(worker_uri))
+    command_id=block(local_data_api,native_api_client)
     assert all(item.status=='done' for item in asyncio.run(drain(worker_uri)))
     ctx=context(local_data_api,1001)
     assert len(native_api_client.get('/notifications',headers=headers(ctx)).json()['items'])==1
@@ -159,12 +169,14 @@ def test_failed_template_retries_then_dead_letters_without_losing_action_receipt
 
 def test_worker_audit_failure_rolls_back_inbox_and_event(local_data_api: NativeAPI,worker_uri: SecretStr) -> None:
     import psycopg
+    asyncio.run(drain(worker_uri))
+    event_id=fresh_consent_event(local_data_api,1001)
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("create function public.native_notification_audit_failure() returns trigger language plpgsql as $$ begin if new.action='notification.sent' then raise exception 'native notification audit failure'; end if; return new; end $$")
         db.execute('create trigger native_notification_failure before insert on audit.events for each row execute function public.native_notification_audit_failure()')
     with pytest.raises(psycopg.errors.RaiseException,match='native notification audit failure'):asyncio.run(drain(worker_uri))
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select status,attempts from events.outbox').fetchone()==('pending',0)
+        assert db.execute('select status,attempts from events.outbox where event_id=%s',(event_id,)).fetchone()==('pending',0)
         assert db.execute('select count(*) from notify.inbox').fetchone()==(0,)
         db.execute('drop trigger native_notification_failure on audit.events')
     assert asyncio.run(drain(worker_uri))[0].disposition=='delivered'
@@ -172,6 +184,8 @@ def test_worker_audit_failure_rolls_back_inbox_and_event(local_data_api: NativeA
 
 def test_database_session_crash_rolls_back_uncommitted_delivery(local_data_api: NativeAPI,worker_uri: SecretStr) -> None:
     import psycopg
+    asyncio.run(drain(worker_uri))
+    event_id=fresh_consent_event(local_data_api,1001)
     crashed=psycopg.connect(worker_uri.get_secret_value())
     try:
         pid=crashed.execute('select pg_backend_pid()').fetchone()[0]
@@ -181,7 +195,7 @@ def test_database_session_crash_rolls_back_uncommitted_delivery(local_data_api: 
         with pytest.raises(psycopg.OperationalError):crashed.execute('select 1')
     finally:crashed.close()
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute('select status,attempts from events.outbox').fetchone()==('pending',0)
+        assert db.execute('select status,attempts from events.outbox where event_id=%s',(event_id,)).fetchone()==('pending',0)
         assert db.execute('select count(*) from notify.inbox').fetchone()==(0,)
     assert asyncio.run(drain(worker_uri))[0].disposition=='delivered'
 
@@ -296,12 +310,14 @@ def test_api_worker_failure_is_unhealthy_and_propagates(local_data_api: NativeAP
 
 def test_invalid_preferences_and_deferred_failure_are_explicit(local_data_api: NativeAPI,worker_uri: SecretStr) -> None:
     import psycopg
+    asyncio.run(drain(worker_uri))
+    event_id=fresh_consent_event(local_data_api,1003)
     with psycopg.connect(local_data_api.database_uri,autocommit=True) as db:
         for query in ["update notify.preferences set channels=array['email',null] where customer_id=1001",
             "update notify.preferences set quiet_start='10:00',quiet_end=null where customer_id=1001",
             "update notify.preferences set quiet_start='10:00',quiet_end='10:00' where customer_id=1001"]:
             with pytest.raises(psycopg.errors.CheckViolation):db.execute(query)
         db.execute("update banking.customer_profiles set preferred_language='unsupported' where customer_id=1003")
-        db.execute("update events.outbox set disposition='deferred'")
+        db.execute("update events.outbox set disposition='deferred' where event_id=%s",(event_id,))
     result=asyncio.run(drain(worker_uri))[0]
     assert result.error_code=='P2001' and result.disposition is None and result.status=='pending'

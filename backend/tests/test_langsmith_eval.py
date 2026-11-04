@@ -141,6 +141,8 @@ def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
     assert scores(evaluators.checks(status,examples['P09']['outputs']))=={'route':1,'agents':1}
     confirm=asyncio.run(targets.plan_only(examples['P10']['inputs']))
     assert confirm['plan']['route']=='act' and scores(evaluators.checks(confirm,examples['P10']['outputs']))=={'route':1}
+    ambiguous=asyncio.run(targets.plan_only(examples['P11']['inputs']))
+    assert ambiguous['plan']['route']=='ask_which' and scores(evaluators.checks(ambiguous,examples['P11']['outputs']))=={'route':1}
     # Sophie: the RM planner (rm_planner/v4) without book reads; here the model's rows are a fixed sample.
     from app.services.rm import graph
     async def rows(rt,message):return [{'intent':'reviews','depends_on':0},{'intent':'draft_message','depends_on':1,'for_each':'clients_due'}]

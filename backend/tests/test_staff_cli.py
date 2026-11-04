@@ -34,7 +34,9 @@ def test_real_staff_cli_queue_claim_unblock_cancel_close_and_retry(local_data_ap
             assert token not in result.stdout and token not in result.stderr
             assert result.returncode==0,result.stderr
             return TypeAdapter(JsonValue).validate_json(result.stdout)
-        assert len(command(['queue','--limit','20']))==1
+        initial=command(['queue','--limit','20'])
+        assert sum(row['handoff_id']==str(hid) for row in initial)==1
+        other_ids={row['handoff_id'] for row in initial if row['handoff_id']!=str(hid)}
         claim_id=str(uuid4())
         claimed=command(['claim','--handoff',str(hid),'--command',claim_id])
         assert command(['claim','--handoff',str(hid),'--command',claim_id])==claimed
@@ -45,4 +47,4 @@ def test_real_staff_cli_queue_claim_unblock_cancel_close_and_retry(local_data_ap
         cancelled=ActionOutcome.model_validate(command(['cancel','--handoff',str(hid),'--command',str(uuid4()),'--card','card_10011']))
         assert cancelled.receipt.result.status=='cancelled'
         closed=ActionOutcome.model_validate(command(['close','--handoff',str(hid),'--command',str(uuid4())]))
-        assert closed.receipt.result.status=='closed' and command(['queue','--limit','20'])==[]
+        assert closed.receipt.result.status=='closed' and {r['handoff_id'] for r in command(['queue','--limit','20'])}==other_ids

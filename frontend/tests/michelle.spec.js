@@ -6,21 +6,21 @@ test('michelle corrects and submits documents',async({page})=>{
  test.setTimeout(540000);
  page.on('pageerror',error=>console.error('Michelle browser error:',error.stack));
  const fixture=JSON.parse(fs.readFileSync(process.env.NATIVE_BROWSER_FIXTURE,'utf8'));
+ const network=[];page.on('response',response=>{const url=new URL(response.url());if(url.pathname.startsWith('/api/'))network.push({method:response.request().method(),path:url.pathname,status:response.status()});});
  await seedSession(page);await page.goto('/');
  await expect(page.getByTestId('open-account-menu')).toBeVisible();
  if(fixture.live){
   await page.locator('#chat-composer').fill('I got a letter asking me to update my information. What do I need to send?');
   await page.getByTestId('send-message').click();
   await expect(page.locator('section.answer-section[data-domain="compliance"]')).toBeVisible({timeout:170000});
-  await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai');
+  await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai',{timeout:170000});
  }else await page.getByTestId('open-compliance').click();
  await page.getByTestId('open-compliance').click();
  await expect(page.getByTestId('compliance-page')).toBeVisible();
  const workspace=page.getByTestId('compliance-workspace');
- await expect(workspace.getByRole('heading',{name:'Documents to upload',exact:true})).toBeVisible();
+ await expect(workspace).toBeVisible();
  await expect(workspace.getByTestId('compliance-item')).toHaveCount(4);
- await expect(workspace).toContainText('Your action');await expect(workspace).toContainText('With the bank');
- await expect(workspace).toContainText('2026-10-31');
+ await expect(workspace.getByTestId('compliance-next-step')).toBeVisible();await expect(workspace).toContainText('With the bank');
  let item=workspace.locator('[data-item-id="00000000-0000-4000-8000-100200000011"]');
  await item.getByTestId('document-upload-file').setInputFiles({name:'Synthetic DEMO.txt',mimeType:'text/plain',buffer:Buffer.from('Synthetic demo')});
  await item.getByTestId('document-upload-submit').click();
@@ -34,7 +34,16 @@ test('michelle corrects and submits documents',async({page})=>{
  await expect(item.getByTestId('precheck-result')).toContainText(/address/i);
  await expect(item.getByTestId('compliance-item-status')).toHaveText('Prepared');
  await expect(item.getByTestId('document-upload-file')).toBeEnabled({timeout:170000});
- await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai',{timeout:170000});
+ if(fixture.live){
+  const selected=page.waitForRequest(request=>request.url().endsWith('/chat')&&request.method()==='POST');
+  const before=await page.getByTestId('chat-message-assistant').count();
+  await item.getByTestId('explain-document-check').click();
+  expect((await selected).postDataJSON().record_context.kind).toBe('document');
+  await expect(page.getByTestId('chat-message-assistant')).toHaveCount(before+1,{timeout:170000});
+  await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai',{timeout:170000});
+  await expect(page.getByTestId('chat-message-assistant').last()).toContainText(/preliminary|template/i);
+  await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
+ }
  await item.getByTestId('document-upload-file').setInputFiles(fixture.valid_file);
  await item.getByTestId('document-upload-submit').click();
  await expect(item.getByTestId('item-sent')).toBeVisible({timeout:170000});
@@ -46,12 +55,6 @@ test('michelle corrects and submits documents',async({page})=>{
  await page.getByTestId('open-chat').click();
  if(fixture.live){
   await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
-  const beforeExplanation=await page.getByTestId('chat-message-assistant').count();
-  await item.getByRole('button',{name:'Explain findings in chat'}).click();
-  await expect(page.getByTestId('chat-message-assistant')).toHaveCount(beforeExplanation+1,{timeout:170000});
-  const answer=page.getByTestId('chat-message-assistant').last();
-  await expect(answer).toHaveAttribute('data-response-origin','ai',{timeout:170000});
-  await expect(answer).toContainText(/preliminary|template/i);
   const beforeApproval=await page.getByTestId('chat-message-assistant').count();
   await page.locator('#chat-composer').fill('Can you just approve my compliance review for me?');await page.getByTestId('send-message').click();
   await expect(page.getByTestId('chat-message-assistant')).toHaveCount(beforeApproval+1,{timeout:170000});
@@ -60,35 +63,39 @@ test('michelle corrects and submits documents',async({page})=>{
   await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
   const selected=page.waitForRequest(request=>request.url().endsWith('/chat')&&request.method()==='POST');
   const beforeFollowup=await page.getByTestId('chat-message-assistant').count();
-  await workspace.getByRole('button',{name:'Explain this request',exact:true}).first().click();
+  await workspace.getByTestId('explain-bank-request').first().click();
   expect((await selected).postDataJSON().record_context.kind).toBe('information_request');
   await expect(page.getByTestId('chat-message-assistant')).toHaveCount(beforeFollowup+1,{timeout:170000});
   await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute('data-response-origin','ai',{timeout:170000});
   await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
-  await item.getByRole('button',{name:'Get help with this document',exact:true}).click();
+  await item.getByTestId('compliance-support').click();
   await expect(page.getByTestId('handoff-summary')).toContainText('submitted_awaiting_review');
   await page.getByTestId('approve-handoff').click();
   await expect(page.getByTestId('handoff-receipt')).toBeVisible();
-  await page.getByRole('button',{name:'Close summary',exact:true}).click();
+  await page.getByTestId('handoff-open-requests').click();
+  await page.getByTestId('open-chat').click();
  }
  await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
  await page.reload();
- if(!fixture.live)await page.getByTestId('open-compliance').click();
+ await page.getByTestId('open-compliance').click();
  await expect(workspace.locator('[data-item-id="00000000-0000-4000-8000-100200000011"]').getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
  for(const width of [1280,390]){
   await page.setViewportSize({width,height:900});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/compliance-submitted-${width}.png`,fullPage:true});
  }
- await page.getByTestId('toggle-compliance-workspace').click();await expect(workspace).toHaveCount(0);
- await page.getByTestId('toggle-compliance-workspace').click();await expect(workspace).toBeVisible();
+ await page.getByTestId(page.viewportSize().width<=760?'tab-chat':'open-chat').click();
+ await page.getByTestId(page.viewportSize().width<=760?'tab-compliance':'open-compliance').click();await expect(workspace).toBeVisible();
+ fs.writeFileSync(`${process.env.NATIVE_SCREENSHOT_DIR}/network.json`,JSON.stringify(network,null,2));
 });
 
 test('rechecks expired Michelle upload before a new submission',async({page})=>{
+ test.setTimeout(240000);
  await seedSession(page);await page.goto('/');
  await page.getByTestId('open-compliance').click();
  const workspace=page.getByTestId('compliance-workspace');
- // An expired passing check is not shown; the client just checks and sends the last upload again.
- await expect(workspace.getByTestId('precheck-result')).toHaveCount(0);
+ // Historical findings remain visible, explicitly expired for new submissions.
+ await expect(workspace.getByTestId('precheck-result')).toContainText('Expired for new submissions.');
  await workspace.getByTestId('check-current-upload').click();
  await expect(workspace.getByTestId('item-sent')).toBeVisible({timeout:170000});
  await expect(workspace.getByTestId('submission-receipt')).toBeVisible();

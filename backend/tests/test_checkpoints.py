@@ -216,8 +216,11 @@ def test_saved_v2_api_checkpoints_without_runtime_credentials(local_data_api: Na
     assert '"response_origin": "validation"' in response.text and 'event: done' in response.text
     with psycopg.connect(local_data_api.database_uri) as admin:
         rows=admin.execute('select data from conversation.checkpoints where session_id=%s',(sid,)).fetchall()
-        assert len(rows)>=5
-        encoded=json.dumps(rows)
+        # v5 saves the conversation turn, not LangGraph runtime checkpoints.
+        assert rows==[]
+        messages=admin.execute('select redacted_text,payload from conversation.messages where session_id=%s order by sequence',(sid,)).fetchall()
+        assert len(messages)==2 and messages[0][0]=='Hello!'
+        encoded=json.dumps(messages)
         assert (ctx.principal.jwt is None or ctx.principal.jwt.get_secret_value() not in encoded) and os.environ['CHECKPOINT_SIGNING_KEY'] not in encoded
         assert 'RequestContext' not in encoded and 'Principal' not in encoded and 'jwt' not in encoded
         assert admin.execute("select state from conversation.turns where session_id=%s",(sid,)).fetchone()==('completed',)

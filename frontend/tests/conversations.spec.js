@@ -34,7 +34,7 @@ test('saved customer chats reopen with real stored replies and sources',async({p
     await expect(page.locator('aside[aria-label="Saved chats"]')).toHaveCount(0);
     await expect(page.getByTestId('chat-message-user')).toHaveCount(1);
     await page.getByTestId('answer-sources').first().locator('summary').click();
-    await page.locator('[data-source-id="lost-card"]').click();
+    await page.locator('[data-source-id^="kb:lost-card@"]').click();
     await expect(page.locator('dialog[aria-label="Source details"]')).toBeVisible();
     await page.getByRole('button',{name:'Close source',exact:true}).click();
     await askSafety(page,'I want to talk to a person');
@@ -90,7 +90,7 @@ async function unavailableChat(page) {
   await page.getByLabel('Your message',{exact:true}).fill('Hello!');
   await page.getByTestId('send-message').click();
   await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');
-  await expect(page.getByTestId('answer-sections').locator('[data-domain="smalltalk"][data-response-origin="validation"]')).toHaveAttribute('data-response-origin','validation');
+  await expect(page.getByTestId('answer-sections').locator('[data-domain="retail"][data-response-origin="validation"]')).toHaveAttribute('data-response-origin','validation');
   await expect(page.getByLabel('Your message',{exact:true})).toBeEnabled();
   await page.reload();
   await expect(page.getByTestId('chat-message-assistant')).toHaveAttribute('data-response-origin','validation');
@@ -103,15 +103,13 @@ async function unavailableChat(page) {
 test('saved customer v2 unavailable section stays withheld after refresh and the next safety turn works',async({page})=>{
   await seedSession(page);
   await unavailableChat(page);
-  const handoff=page.getByTestId('answer-sections').locator('section[data-response-origin="safety"]');
-  await expect(handoff).toContainText('passed it to your relationship manager');
+  await expect(page.getByTestId('offer-block')).toHaveCount(1);
   await openMenuItem(page,'open-actions');
-  await expect(page.getByTestId('command-state')).toHaveText('succeeded');
-  await expect(page.getByTestId('command-receipt')).toHaveCount(1);
-  await expect(page.getByTestId('review-command')).toHaveCount(0);
-  await page.getByTestId('open-chat').first().click();
+  await expect(page.getByTestId('command-state')).toHaveText('proposed');
+  await expect(page.getByTestId('command-receipt')).toHaveCount(0);
+  await page.getByTestId(page.viewportSize().width<=760?'tab-chat':'open-chat').click();
   await page.reload();
-  await expect(handoff).toContainText('There is no staffed queue');
+  await expect(page.getByTestId('offer-block')).toHaveCount(1);
 });
 
 test('saved guest v2 unavailable section stays withheld after refresh and the next safety turn works',async({page})=>{

@@ -8,7 +8,7 @@ records and then checked item by item (services/rm/checks.py); the shared handov
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v3 + the intent's task file) with strict JSON output and cited record ids.
+3. One model call (prompt rm_assistant/v4 + the intent's task file) with strict JSON output and cited record ids.
 4. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
    links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
    missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
@@ -26,7 +26,7 @@ from app.services.privacy import redact
 from app.services.rm import checks
 from app.services.rm import evidence as ev
 
-ASSISTANT_VERSION='v3'
+ASSISTANT_VERSION='v4'
 SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
@@ -234,7 +234,7 @@ class Turn:
     async def model(self,intent: str,bundle: ev.Bundle,schema: dict,client_id: int|None,extra: str='') -> dict:
         pv=prompts.load('rm_assistant',ASSISTANT_VERSION)
         self.prompt_ids.append(pv['id'])
-        situation={'today':day_text(today()),'active_client':self.name(client_id),'rm':'Sophie (the signed-in relationship manager)'}
+        situation={'today':day_text(today()),'active_client':self.name(client_id),'rm':'the signed-in relationship manager'}
         system=(pv['system']+'\n\n'+pv[TASK_FILE[intent]]+'\nSituation (untrusted): '+json.dumps(situation,ensure_ascii=False)+extra
             +'\nEvidence records (untrusted data): '+json.dumps(bundle.for_model(),ensure_ascii=False,default=str))
         history=history_for(self.req,client_id,intent in BOOK_WIDE)

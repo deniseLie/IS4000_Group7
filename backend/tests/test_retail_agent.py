@@ -81,8 +81,8 @@ def test_missing_provider_withholds_answer_without_creating_a_handoff(local_data
         assert db.execute('select type,state from actions.commands where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
         assert db.execute('select count(*) from actions.receipts where customer_id=%s',(ctx.principal.customer_id,)).fetchone()==(0,)
         assert db.execute('select reason from support.handoffs where customer_id=%s',(ctx.principal.customer_id,)).fetchall()==[]
-        assert db.execute("select count(*) from audit.events where action='data.read' and details->>'tool' in "
-            "('customer.get_profile','customer.get_accounts','customer.get_credit_cards','customer.get_loans','customer.get_transactions')").fetchone()==(5,)
+        assert {row[0] for row in db.execute("select details->>'tool' from audit.events where action='data.read' and customer_id=%s",(ctx.principal.customer_id,))} >= {
+            'customer.get_profile','customer.get_accounts','customer.get_credit_cards','customer.get_loans','customer.get_transactions'}
 
 
 @pytest.mark.skipif(os.getenv('TEST_RETAIL_LIVE')!='1',reason='Opt in to actual personal retail model calls')

@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 import pytest
 from scripts.prepare_hosted_migrations import Migration,load_migrations,render_bundle
+from tests.data_api_support import NativeAPI
 
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native migration deployment checks')
 MIGRATIONS=Path(__file__).parents[1]/'supabase'/'migrations'
@@ -64,3 +65,22 @@ def test_changed_history_and_failed_sql_roll_back_the_batch(legacy_database: str
         db.execute('rollback')
         assert db.execute("select to_regclass('public.deploy_rollback')").fetchone()==(None,)
         assert db.execute("select count(*) from supabase_migrations.schema_migrations where version='0043'").fetchone()==(0,)
+
+
+@pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Requires the current native schema before deployment')
+def test_candidate_ticket_and_reply_batches_apply_and_replay(local_data_api: NativeAPI) -> None:
+    """Exercise the exact review bundle on an isolated current database, including its history guard."""
+    import psycopg
+    bundle=render_bundle(load_migrations(MIGRATIONS,103,104))
+    with psycopg.connect(local_data_api.database_uri,autocommit=True) as db:
+        db.execute('drop function conversation.require_redacted_reply(jsonb)')
+        db.execute('create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key,name text,statements text[])')
+        db.execute(bundle)
+        before=db.execute('select count(*) from audit.events').fetchone()
+        db.execute(bundle)
+        assert db.execute('select count(*) from audit.events').fetchone()==before
+        assert db.execute('select version from supabase_migrations.schema_migrations order by version').fetchall()==[('0103',),('0104',)]
+        db.execute("select conversation.require_redacted_reply(%s::jsonb)",('{"answer":"No private details here","offer":{"offer_group":"00000000-0000-4000-8000-123456789012"}}',))
+        db.execute("update supabase_migrations.schema_migrations set statements=array['changed'] where version='0104'")
+        with pytest.raises(psycopg.errors.RaiseException,match='recorded with different SQL'):db.execute(bundle)
+        db.execute('rollback')

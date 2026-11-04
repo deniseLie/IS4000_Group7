@@ -16,7 +16,7 @@ test('staff outcomes remain recorded in customer actions records and inbox',asyn
       await expect(command.getByTestId('command-receipt')).toContainText(`rcpt_${id.replaceAll('-','')}`);
       await expect(command.getByTestId('review-command')).toHaveCount(0);
     }
-    const actions=page.locator('dialog[aria-label="Actions"]');
+    const actions=page.getByTestId('actions-page');
     expect(await actions.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/staff-receipts-${width}.png`,fullPage:true});
     await page.keyboard.press('Escape');

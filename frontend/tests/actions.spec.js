@@ -8,7 +8,7 @@ test('recorded action review confirms, rejects, expires and preserves real recei
   for(const width of [1280,768,390,320]) {
     await page.setViewportSize({width,height:900});
     await openMenuItem(page,'open-actions');
-    const dialog=page.locator('dialog[aria-label="Actions"]');
+    const dialog=page.getByTestId('actions-page');
     await expect(dialog.locator('[data-command-id]')).toHaveCount(5);
     const handoff=page.locator(`[data-command-id="${fixture.handoff_command_id}"]`);
     await expect(handoff.getByTestId('command-state')).toHaveText('succeeded');
@@ -17,8 +17,8 @@ test('recorded action review confirms, rejects, expires and preserves real recei
     expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/action-review-${width}.png`,fullPage:true});
-    await page.getByTestId('open-chat').first().click();
-    await expect(page.getByTestId('open-account-menu')).toBeFocused();
+    await page.getByTestId(page.viewportSize().width<=760?'tab-chat':'open-chat').click();
+    await expect(page.locator('#chat-composer')).toBeVisible();
   }
   await openMenuItem(page,'open-actions');
   const rejected=page.locator(`[data-command-id="${fixture.reject_command_id}"]`);

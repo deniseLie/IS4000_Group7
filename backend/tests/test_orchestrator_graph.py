@@ -79,11 +79,11 @@ def test_guests_get_guide_only_and_a_planner_failure_asks_to_rephrase(monkeypatc
 
 def test_a_yes_answers_the_open_offer_without_planning_or_agents(monkeypatch: pytest.MonkeyPatch):
     group=uuid4();calls=[]
-    async def open_group(ctx,conversation):return (group,1)
+    async def open_groups(ctx,conversation):return {group:[]}
     async def confirm(found,ctx):
         calls.append(('confirm',found));return []
     async def nothing(*a,**kw):raise AssertionError('no planner or agent on a confirmation turn')
-    monkeypatch.setattr(offers,'open_group',open_group);monkeypatch.setattr(offers,'confirm',confirm)
+    monkeypatch.setattr(offers,'open_groups',open_groups);monkeypatch.setattr(offers,'confirm',confirm)
     async def unchained(*a):return set()
     monkeypatch.setattr(offers,'chained',unchained)
     monkeypatch.setattr(orchestrator,'model_plan',nothing);monkeypatch.setattr(runner,'run_agent',nothing)
@@ -94,8 +94,8 @@ def test_a_yes_answers_the_open_offer_without_planning_or_agents(monkeypatch: py
 
 
 def test_a_yes_with_no_open_offer_after_one_was_shown_says_it_expired(monkeypatch: pytest.MonkeyPatch):
-    async def none(ctx,conversation):return None
-    monkeypatch.setattr(offers,'open_group',none)
+    async def none(ctx,conversation):return {}
+    monkeypatch.setattr(offers,'open_groups',none)
     req=ChatRequest(messages=[{'role':'user','content':'charges'},{'role':'assistant','content':'x '+orchestrator.CONFIRM_LINE},
         {'role':'user','content':'yes'}],mode='personal')
     turn=start(req,assess_request(req))

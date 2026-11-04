@@ -12,7 +12,7 @@ from app.schemas.actions import ActionOutcome
 from app.schemas.contracts import ActionCommand,RequestContext
 from tests.data_api_support import NativeAPI
 from tests.test_actions_api import headers,propose
-from tests.test_consent_actions import action_case,confirm,recipient
+from tests.test_consent_actions import action_case,confirm,recipient,unassigned_recipient
 from tests.test_notifications import drain,worker_uri
 
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native database/API integrations')
@@ -31,7 +31,7 @@ def test_confirmed_intake_and_historical_worker_receipt(local_data_api: NativeAP
     api=local_data_api;client=native_api_client;ctx=action_case(client,api,1003);values=target(api)
     values.update({'who':'Forged customer','recipient_name':'Forged advisor','status':'answered'})
     pending=request(client,ctx,values,'first');assert pending.receipt is None and pending.command.state=='proposed'
-    assert pending.command.target.who=='David Lee (DEMO)' and pending.command.target.recipient_name=='Sophie Lim (DEMO)'
+    assert pending.command.target.who=='David Lee (DEMO)' and pending.command.target.recipient_name=='Priya Nair (DEMO)'
     with psycopg.connect(api.database_uri) as db:assert db.execute('select count(*) from rm.requests where command_id is not null').fetchone()==(0,)
     def execute(_: int) -> ActionOutcome:return confirm(client,ctx,pending.command.command_id)
     with ThreadPoolExecutor(max_workers=3) as pool:results=list(pool.map(execute,range(3)))
@@ -73,7 +73,7 @@ def test_scope_redaction_rejection_and_expiry(local_data_api: NativeAPI,native_a
     for suffix in ['', '/confirm','/reject']:
         response=client.get(f'/commands/{pending.command.command_id}',headers=headers(alex)) if not suffix else client.post(f'/commands/{pending.command.command_id}{suffix}',headers=headers(alex))
         assert response.status_code==404,response.text
-    denied=client.post('/commands',headers=headers(alex),json={'command_id':str(uuid4()),'case_id':str(alex.case_id),'task_id':'foreign','type':'requests.create','target':values})
+    denied=client.post('/commands',headers=headers(alex),json={'command_id':str(uuid4()),'case_id':str(alex.case_id),'task_id':'foreign','type':'requests.create','target':{**values,'advisor_id':unassigned_recipient(api,1001)}})
     assert denied.status_code==403,denied.text
     assert client.post(f'/commands/{pending.command.command_id}/reject',headers=headers(ctx)).json()['command']['state']=='rejected'
     expired=request(client,ctx,target(api),'expired')

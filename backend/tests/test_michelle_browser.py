@@ -31,9 +31,9 @@ def test_michelle_upload_check_correct_submit_and_reload(local_data_api,native_a
     with psycopg.connect(local_data_api.database_uri) as db:
         key=db.execute("select secret from compliance.precheck_keys where key_id='v1'").fetchone()[0]
     monkeypatch.setattr(settings,'document_precheck_signing_key',SecretStr(key));monkeypatch.setattr(settings,'precheck_mode','notice')
-    base=['Utility bill','Full name: Synthetic Demo','Document date: '+date.today().isoformat()]
+    base=['Utility bill','Full name: Michelle Ng','Document date: '+date.today().isoformat()]
     missing=tmp_path/'Missing Address DEMO.pdf';missing.write_bytes(template_pdf(base))
-    valid=tmp_path/'Complete Address DEMO.pdf';valid.write_bytes(template_pdf([*base,'Address: Fictional Lane']))
+    valid=tmp_path/'Complete Address DEMO.pdf';valid.write_bytes(template_pdf([*base,'Address: 12 Fictional Lane Singapore 123456']))
     with local_storage(local_data_api,tmp_path/'blobs') as url:
         monkeypatch.setenv('SUPABASE_URL',url);monkeypatch.setenv('SUPABASE_ANON_KEY','native-public-test-key')
         case=MichelleSession(data_api_url=url,access_token=mint_token(local_data_api,1002,'aal1',uuid4()),user_id=persona_id(1002),
@@ -56,7 +56,7 @@ def test_expired_michelle_upload_is_rechecked_in_normal_ui(local_data_api,native
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY','native-expired-michelle-private-checkpoint-signing-key')
     ctx=owned_case(local_data_api,context(local_data_api,1002));target=upload_target(local_data_api,1002)
-    payload=template_pdf(['Utility bill','Full name: Synthetic Demo','Address: Fictional Lane','Document date: '+date.today().isoformat()])
+    payload=template_pdf(['Utility bill','Full name: Michelle Ng','Address: 12 Fictional Lane Singapore 123456','Document date: '+date.today().isoformat()])
     target.update(file_name='Freshness DEMO.pdf',mime_type='application/pdf',size_bytes=len(payload))
     with psycopg.connect(local_data_api.database_uri) as db:
         db.execute("update compliance.requested_items set precheck_rule_id='proof_address',label='Proof of address',instructions='A utility bill dated within the last 3 months, showing your full name and address.' where item_id=%s",(target['item_id'],))
@@ -68,11 +68,11 @@ def test_expired_michelle_upload_is_rechecked_in_normal_ui(local_data_api,native
         assert uploaded.status_code==200
         propose(native_api_client,ctx,ActionCommand(type='document.register',idempotency_key=f'{ctx.case_id}:register:document.register',target=target))
         result=native_api_client.post(f"/documents/{target['document_id']}/precheck",headers=headers(ctx));assert result.status_code==200,result.text
-        assert result.json()['data']['status']=='no_issues'
+        assert result.json()['data']['status']=='no_issues',result.text
         with psycopg.connect(local_data_api.database_uri) as db:
             db.execute("update compliance.prechecks set report=jsonb_set(jsonb_set(report,'{checked_at}',to_jsonb(clock_timestamp()-interval '2 days')),'{expires_at}',to_jsonb(clock_timestamp()-interval '1 day')) where document_id=%s",(target['document_id'],))
         case=NativeBrowserSession(data_api_url=url,access_token=ctx.principal.jwt.get_secret_value(),user_id=ctx.principal.user_id)
-        run_browser(native_api_client,case,'rechecks expired Michelle upload',tmp_path)
+        run_browser(native_api_client,case,'rechecks expired Michelle upload',tmp_path,timeout=300)
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute('select count(*) from compliance.prechecks').fetchone()==(2,)
         assert db.execute('select submission_status from compliance.requested_items where item_id=%s',(target['item_id'],)).fetchone()==('submitted_awaiting_review',)

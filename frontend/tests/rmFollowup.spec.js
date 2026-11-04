@@ -1,0 +1,50 @@
+import {test,expect} from '@playwright/test';
+import fs from 'node:fs';
+import {fixture,seedSession,seedIdentity} from './nativeSession';
+
+test('client compliance handover reaches the assigned RM and only her approved reply reaches the client',async({page,browser})=>{
+ test.setTimeout(540000);
+ const network=[];
+ const capture=response=>{const url=new URL(response.url());if(url.pathname.startsWith('/api/'))network.push({method:response.request().method(),path:url.pathname,status:response.status()});};
+ page.on('response',capture);
+ await seedSession(page);await page.goto('/#compliance');
+ const item=page.locator('[data-item-id="00000000-0000-4000-8000-100200000011"]');
+ await item.getByTestId('compliance-support').click();
+ await expect(page.getByTestId('handoff-summary')).toContainText('not_submitted');
+ await page.getByTestId('handoff-message').fill('Please help me confirm which proof of address to send for my compliance review.');
+ const created=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().method()==='POST');
+ await page.getByTestId('approve-handoff').click();
+ const handoffId=(await (await created).json()).receipt.result.handoff_id;
+ await expect(page.getByTestId('handoff-receipt')).toBeVisible();
+ const listed=page.waitForResponse(r=>r.url().endsWith('/tickets')&&r.request().method()==='GET');
+ await page.getByTestId('handoff-open-requests').click();
+ const snapshot=await (await listed).json();
+ const reference=snapshot.data.find(t=>t.handoff_id===handoffId).reference;
+ await expect(page.locator(`[data-testid="ticket"][data-reference="${reference}"]`)).toBeVisible();
+ const rmContext=await browser.newContext();
+ try {
+  const rm=await rmContext.newPage();rm.on('response',capture);
+  await seedIdentity(rm,fixture.rm_token,fixture.rm_user_id);await rm.goto('/#rm-tickets');
+  await expect(rm.getByTestId('rmw-shell')).toBeVisible();
+  await expect(rm.getByTestId('sidebar-profile')).toContainText(fixture.rm_display_name);
+  const rmTicket=rm.locator(`[data-testid="rm-ticket"][data-reference="${reference}"]`);
+  await rmTicket.getByTestId('rm-ticket-draft').click();
+  const draft=rm.getByTestId('rm-draft');await expect(draft).toBeVisible({timeout:180000});
+  await expect(draft.getByTestId('rm-draft-approve')).toBeDisabled();
+  await draft.getByTestId('rm-draft-confirm').check();
+  const body='I have received your compliance document question and will follow up after checking the requirements.';
+  await draft.getByTestId('rm-draft-text').fill(body);
+  await expect(draft.getByTestId('rm-draft-confirm')).not.toBeChecked();
+  await expect(draft.getByTestId('rm-draft-approve')).toBeDisabled();
+  expect(network.filter(r=>r.path==='/api/rm/messages')).toHaveLength(0);
+  await draft.getByTestId('rm-draft-confirm').check();
+  const sent=rm.waitForResponse(r=>r.url().endsWith('/rm/messages')&&r.request().method()==='POST');
+  await draft.getByTestId('rm-draft-approve').click();expect((await sent).status()).toBe(200);
+  await expect(draft.getByTestId('rm-draft-sent')).toBeVisible();
+  await page.reload();await page.getByTestId('ticket-tab-all').click();
+  await expect(page.locator(`[data-testid="ticket"][data-reference="${reference}"]`)).toContainText(body);
+  await rm.goto('/#rm-tickets');await rm.getByTestId('rm-tab-specialist').click();
+  await expect(rm.getByTestId('rm-ticket-draft')).toHaveCount(0);
+  await rm.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/rm-followup-specialist.png`,fullPage:true});
+ } finally {await rmContext.close();fs.writeFileSync(`${process.env.NATIVE_SCREENSHOT_DIR}/network.json`,JSON.stringify(network,null,2));}
+});

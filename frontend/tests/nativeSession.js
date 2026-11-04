@@ -5,8 +5,15 @@ const claims=JSON.parse(Buffer.from(fixture.access_token.split('.')[1],'base64ur
 const key=`sb-${new URL(fixture.data_api_url).hostname.split('.')[0]}-auth-token`;
 const session={access_token:fixture.access_token,refresh_token:'native-refresh-token-not-used',token_type:'bearer',
   expires_in:3600,expires_at:claims.exp,user:{id:fixture.user_id,aud:'authenticated',role:'authenticated',
-    email:'native.user@example.invalid',app_metadata:{provider:'email'},user_metadata:{},created_at:new Date().toISOString()}};
+    email:'native.user@example.invalid',app_metadata:{provider:'email',...claims.app_metadata},user_metadata:{},created_at:new Date().toISOString()}};
 
 export async function seedSession(page) {
   await page.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{key,session});
+}
+
+export async function seedIdentity(page,accessToken,userId) {
+  const identity=JSON.parse(Buffer.from(accessToken.split('.')[1],'base64url').toString('utf8'));
+  const user={...session.user,id:userId,app_metadata:{provider:'email',...identity.app_metadata}};
+  await page.addInitScript(({key,value})=>localStorage.setItem(key,JSON.stringify(value)),
+    {key,value:{...session,access_token:accessToken,expires_at:identity.exp,user}});
 }

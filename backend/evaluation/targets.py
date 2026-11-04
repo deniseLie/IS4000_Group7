@@ -148,14 +148,15 @@ async def plan_only(inputs: dict[str,Any]) -> dict[str,Any]:
     if risk.fixed_response is not None:return {'played':True,'plan':{'route':'fixed','tasks':[]},'model_calls':0}
     principal=Principal(kind='customer',user_id=uuid4(),customer_id=1002,jwt='evaluation-planner-only') if mode=='personal' else Principal(kind='guest')
     tctx=orchestrator.TurnContext(request=RequestContext(session_id=uuid4(),principal=principal),turn_id=uuid4(),conversation_id=uuid4())
-    async def open_group(ctx,conversation):
-        return (uuid4(),[]) if inputs.get('open_offers',0)==1 else None
+    async def open_groups(ctx,conversation):
+        return {uuid4():[] for _ in range(inputs.get('open_offers',0))}
     spans: list[tuple[str,dict[str,Any]]]=[];token=span_sink.set(spans)
     try:
-        with patch.object(offers,'open_group',open_group):
+        with patch.object(offers,'open_groups',open_groups):
             update=await orchestrator.planner(orchestrator.start(req,risk),SimpleNamespace(context=tctx))
     finally:span_sink.reset(token)
-    route='act' if update.get('confirm') else 'plan' if update.get('tasks') else 'rephrase' if update.get('lines') else 'none'
+    fixed_route=next((attrs.get('route') for name,attrs in spans if name=='planner'),None)
+    route=fixed_route if fixed_route in {'ask_which','expired'} else 'act' if update.get('confirm') else 'plan' if update.get('tasks') else 'rephrase' if update.get('lines') else 'none'
     tasks=plan_rows(update.get('tasks') or [])
     return {'played':True,'plan':{'route':route,'tasks':tasks,'unlinked':len(update.get('lines') or []) if route=='plan' else 0},
         'model_calls':sum(name=='llm' for name,_ in spans)}

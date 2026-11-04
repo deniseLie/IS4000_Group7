@@ -51,7 +51,7 @@ export default function BankRequest({review,request,disabled,onAnswered,onAsk,he
           <button className="primary-button" data-testid="bank-request-send" disabled={busy||disabled||!answer.trim()}>{busy?'Sending…':'Send to the bank'}</button></div>
         {error&&<p role="alert">{error}</p>}
       </form>}
-      <div className="panel-actions">{onAsk&&<button className="bank-chat-logout" disabled={busy||disabled} onClick={onAsk}>Explain in chat</button>}{help}</div>
+      <div className="panel-actions">{onAsk&&<button className="bank-chat-logout" data-testid="explain-bank-request" disabled={busy||disabled} onClick={onAsk}>Explain in chat</button>}{help}</div>
       <small className="cw-sent-at">Asked {formatDateTime(request.created_at)}</small>
     </div></article>;
 }

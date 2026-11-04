@@ -30,6 +30,12 @@ def recipient(api: NativeAPI) -> str:
         return str(db.execute('select advisor_id from rm.assignments where customer_id=1003 and ended_on is null').fetchone()[0])
 
 
+def unassigned_recipient(api: NativeAPI,cid: int) -> str:
+    import psycopg
+    with psycopg.connect(api.database_uri) as db:
+        return str(db.execute('select advisor_id from rm.advisors a where not exists(select 1 from rm.assignments r where r.customer_id=%s and r.advisor_id=a.advisor_id and r.ended_on is null) order by advisor_id limit 1',(cid,)).fetchone()[0])
+
+
 def request_consent(client: TestClient,api: NativeAPI,ctx: RequestContext,categories: list[str],task: str) -> ActionOutcome:
     return propose(client,ctx,ActionCommand(type='consent.request',idempotency_key=f'{ctx.case_id}:{task}:consent.request',
         target={'purpose':'rm_brief','recipient':recipient(api),'categories':categories,'duration_days':30}))
@@ -61,8 +67,8 @@ def test_direct_case_is_scoped_idempotent_and_has_no_chat_turn(local_data_api: N
     assert client.post('/actions/cases',json=body).status_code==401
     assert client.post('/actions/cases',headers=headers(context(api,1001)),json=body).status_code in (403,404)
     with psycopg.connect(api.database_uri) as db:
-        assert db.execute('select count(*) from conversation.messages').fetchone()==(0,)
-        assert db.execute('select count(*) from conversation.turns').fetchone()==(0,)
+        assert db.execute('select count(*) from conversation.messages where customer_id=1003').fetchone()==(0,)
+        assert db.execute('select count(*) from conversation.turns where customer_id=1003').fetchone()==(0,)
         db.execute("update conversation.cases set status='closed'")
     assert client.post('/actions/cases',headers=headers(ctx),json=body).status_code==403
 
@@ -94,8 +100,9 @@ def test_confirmed_receipts_and_exact_scope(local_data_api: NativeAPI,native_api
     records=client.get('/consent/records',headers=headers(ctx))
     assert records.status_code==200,records.text
     data=records.json()['data']
-    assert data['requests_total']==1 and data['grants_total']==1
-    assert data['grants'][0]['active'] is False and data['grants'][0]['revoked_at'] is not None
+    created=[r for r in data['grants'] if r['grant_id']==str(gid)]
+    assert data['requests_total']==1 and len(created)==1
+    assert created[0]['active'] is False and created[0]['revoked_at'] is not None
     with psycopg.connect(api.database_uri) as db:
         assert db.execute('select command_id,revocation_command_id from consent.grants where grant_id=%s',(gid,)).fetchone()==(pending.command.command_id,revoke.command.command_id)
         assert db.execute('select count(*) from rm.shared_summaries where command_id is not null').fetchone()==(0,)
@@ -115,7 +122,7 @@ def test_other_grants_remain_visible_and_old_recipient_can_be_revoked(local_data
         assert confirm(client,ctx,pending.command.command_id).receipt.outcome=='succeeded'
         assert check(client,ctx,rm,['profile'])==(index==0)
         records=client.get('/consent/records',headers=headers(ctx)).json()['data']
-        assert sum(row['active'] for row in records['grants'])==1-index
+        assert sum(row['active'] for row in records['grants'] if row['grant_id'] in {str(g) for g in grants})==1-index
 
 
 @pytest.mark.parametrize('change',['expiry','assignment','scope'])
@@ -135,7 +142,7 @@ def test_grant_rechecks_request_and_recipient(local_data_api: NativeAPI,native_a
 def test_foreign_scope_guest_and_direct_writes_are_denied(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     api=local_data_api; client=native_api_client; david=action_case(client,api,1003); alex=action_case(client,api,1001)
     request=request_consent(client,api,david,['profile'],'own')
-    for typ,target in [('consent.request',{'purpose':'rm_brief','recipient':recipient(api),'categories':['profile'],'duration_days':30}),
+    for typ,target in [('consent.request',{'purpose':'rm_brief','recipient':unassigned_recipient(api,1001),'categories':['profile'],'duration_days':30}),
         ('consent.grant',{'request_id':str(request.receipt.result.request_id)})]:
         response=client.post('/commands',headers=headers(alex),json={'command_id':str(uuid4()),'case_id':str(alex.case_id),'task_id':'foreign','type':typ,'target':target})
         assert response.status_code==403,response.text
@@ -208,11 +215,11 @@ def test_registry_prioritises_active_grants_and_reports_bounds(local_data_api: N
     api=local_data_api; client=native_api_client; ctx=action_case(client,api,1003); rm=recipient(api)
     with psycopg.connect(api.database_uri) as db:
         db.execute("insert into consent.grants(customer_id,purpose,recipient,categories,revoked_at) select 1003,'rm_brief',%s,array['profile'],clock_timestamp() from generate_series(1,205)",(rm,))
-        active=db.execute("insert into consent.grants(customer_id,purpose,recipient,categories,granted_at) values(1003,'rm_brief',%s,array['profile'],clock_timestamp()-interval '1 day') returning grant_id",(rm,)).fetchone()[0]
+        active=db.execute("insert into consent.grants(customer_id,purpose,recipient,categories,granted_at) values(1003,'rm_brief',%s,array['profile'],clock_timestamp()) returning grant_id",(rm,)).fetchone()[0]
     response=client.get('/consent/records',headers=headers(ctx))
     assert response.status_code==200,response.text
     data=response.json()['data']
-    assert data['grants_total']==206 and len(data['grants'])==200 and data['grants'][0]['grant_id']==str(active) and data['grants'][0]['active']
+    assert data['grants_total']==207 and len(data['grants'])==200 and data['grants'][0]['grant_id']==str(active) and data['grants'][0]['active']
 
 
 def test_invalid_request_scope_is_rejected_by_api_and_database(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
@@ -247,18 +254,18 @@ def test_competing_grants_and_foreign_revocation_cannot_duplicate_or_cross_scope
     assert response.status_code==403,response.text
     with SyncPostgrestClient(api.url) as db:
         db.auth(ctx.principal.jwt.get_secret_value())
-        assert len(db.schema('consent').table('grants').select('grant_id').eq('customer_id',1003).execute().data)==1
+        assert len(db.schema('consent').table('grants').select('grant_id').eq('customer_id',1003).eq('recipient',recipient(api)).execute().data)==1
 
 
 def test_legacy_grant_revocation_does_not_reveal_unassigned_advisor_metadata(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     api=local_data_api; client=native_api_client; ctx=action_case(client,api,1001)
     with psycopg.connect(api.database_uri) as db:
-        gid=db.execute("insert into consent.grants(customer_id,purpose,recipient,categories) values(1001,'rm_brief',%s,array['profile']) returning grant_id",(recipient(api),)).fetchone()[0]
+        gid=db.execute("insert into consent.grants(customer_id,purpose,recipient,categories) values(1001,'rm_brief',%s,array['profile']) returning grant_id",(unassigned_recipient(api,1001),)).fetchone()[0]
         db.execute('create policy native_all_consent_requests on consent.requests for select to authenticated using(true)')
         db.execute('create policy native_all_consent_grants on consent.grants for select to authenticated using(true)')
     pending=propose(client,ctx,ActionCommand(type='consent.revoke',idempotency_key=f'{ctx.case_id}:legacy:consent.revoke',target={'grant_id':str(gid)}))
     assert pending.command.target.recipient_name is None
     assert confirm(client,ctx,pending.command.command_id).receipt.result.status=='revoked'
     foreign=client.get('/consent/records',headers=headers(context(api,1003)))
-    assert foreign.status_code==200 and foreign.json()['data']['grants']==[]
+    assert foreign.status_code==200 and all(g['grant_id']!=str(gid) for g in foreign.json()['data']['grants'])

@@ -216,8 +216,9 @@ def test_clients_can_book_at_most_two_meetings_a_week(database: 'Connection[SqlR
     week=lambda t:database.execute("select date_trunc('week',%s::timestamptz at time zone 'Asia/Singapore')",(t,)).fetchone()[0]
     def offered():
         set_customer(database,1002)
-        rows=database.execute("select starts_at from appointments_find_slots(1002,(now() at time zone 'Asia/Singapore')::date,"
-            "(now() at time zone 'Asia/Singapore')::date+13,20)").fetchall()
+        rows=database.execute("select starts_at from appointments_find_slots(1002,greatest((now() at time zone 'Asia/Singapore')::date,"
+                "date_trunc('week',%s::timestamptz at time zone 'Asia/Singapore')::date),"
+                "date_trunc('week',%s::timestamptz at time zone 'Asia/Singapore')::date+6,20)",(meeting[0],meeting[0])).fetchall()
         database.execute('reset role')
         return [r[0] for r in rows]
     same_week=[s for s in offered() if week(s)==week(meeting[0])]
