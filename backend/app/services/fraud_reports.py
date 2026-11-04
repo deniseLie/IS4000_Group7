@@ -106,7 +106,7 @@ def charges_for(records: SecurityRecords,card_id: str,ids: Sequence[str]) -> lis
 
 
 async def confirmed(task: Task,ctx: RequestContext) -> tuple[AgentResult,FraudProposal | None,DisputeProposal | None]:
-    """No model call: re-read exactly the confirmed charges from her records and hand them to report_to_fraud_team."""
+    """No model call: re-read exactly the confirmed charges from her records for the fraud-team offer (orchestrator.act records it)."""
     choice=Confirmation.decode(str(task.entities['fraud_confirmed']))
     records=await fraud_records.load(ctx.model_copy(update={'agent':'fraud'}))
     card=next((item for item in records.cards if item.last4==choice.last4),None)

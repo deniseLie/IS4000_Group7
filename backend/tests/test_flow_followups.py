@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.schemas.agents import PlannedIssue
 from app.schemas.chat import ChatRequest,Message
-from app.schemas.contracts import RiskAssessment
+from app.schemas.contracts import PlanTask,RiskAssessment
 from app.schemas.fraud import SecurityTransaction
 from app.services import fraud_reports,guardrail,orchestrator,rm_handover
 from app.services.agents import compliance,request_status_answers
@@ -17,13 +17,13 @@ from tests.test_actions_api import context
 
 def test_handover_keeps_the_explicit_fee_question_when_the_planner_paraphrases_it() -> None:
     question="Can you waive the annual fee? I've been a client for ten years"
-    issues=[PlannedIssue(domain='retail',question='Explain annual fee eligibility')]
-    tasks=orchestrator.prioritise({'issues':issues,'risk':RiskAssessment(redacted_message=question)})['plan'].tasks
-    assert len(tasks)==1 and tasks[0].domain=='relationship'
-    assert tasks[0].entities=={'question':question,'handover':'rm'}
-    assert issues[0].domain=='retail'
-    unauthorised=orchestrator.prioritise({'issues':[PlannedIssue(domain='relationship',question='Can you waive my fee?')],
-        'risk':RiskAssessment(redacted_message='What is my annual fee?')})['plan'].tasks
+    planned=[PlanTask(id='t1',agent='accounts',intent='card_figures',question='Explain annual fee eligibility')]
+    tasks=orchestrator.overridden(planned,RiskAssessment(redacted_message=question))
+    assert len(tasks)==1 and tasks[0].agent=='relationship' and tasks[0].question==question
+    assert tasks[0].entities=={'handover':'rm'}
+    assert planned[0].agent=='accounts'
+    unauthorised=orchestrator.overridden([PlanTask(id='t1',agent='relationship',intent=orchestrator.OPEN_INTENT,question='Can you waive my fee?')],
+        RiskAssessment(redacted_message='What is my annual fee?'))
     assert 'handover' not in unauthorised[0].entities
 
 

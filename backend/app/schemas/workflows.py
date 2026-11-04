@@ -2,7 +2,6 @@
 from typing import Self
 from uuid import UUID
 from pydantic import BaseModel,ConfigDict,StrictBool,model_validator
-from app.schemas.contracts import RequestContext
 from app.schemas.conversations import ConversationAccess,TurnRecord
 from app.schemas.events import WorkflowStatus
 from app.schemas.events import Origin
@@ -12,12 +11,6 @@ class OwnedWorkflow(BaseModel):
     model_config=ConfigDict(extra='forbid')
     access: ConversationAccess
     turn: TurnRecord
-
-
-class PipelineContext(BaseModel):
-    model_config=ConfigDict(extra='forbid')
-    request: RequestContext
-    workflow: OwnedWorkflow | None
 
 
 class WorkflowSnapshot(BaseModel):

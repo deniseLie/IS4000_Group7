@@ -1,13 +1,13 @@
 """Test vehicle for machinery that outlived the client card actions retired in 0081.
 
-The action ledger (propose, confirm, reject, expiry, rollback), paused chat turns, notifications and the staff queue were
+The action ledger (propose, confirm, reject, expiry, rollback), notifications and the staff queue were
 built and tested with the client's temporary card block and dispute draft. Those are bank-only since 0081, but the
 machinery still serves other actions and turns saved before the change. This fixture re-enables the retired behaviour
 inside one test's private database only, so those mechanics stay tested. It never runs against a real project.
 """
 import psycopg
 import pytest
-from app.services import authorization,orchestrator
+from app.services import authorization
 from tests.data_api_support import NativeAPI
 
 
@@ -19,5 +19,4 @@ def legacy_card_actions(local_data_api: NativeAPI,monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(authorization,'CLIENT_ONLY_CARD_ACTIONS',frozenset())
     monkeypatch.setattr(authorization,'BANK_ONLY_CARD_ACTIONS',frozenset({'card.unblock','card.cancel_permanently'}))
     monkeypatch.setitem(authorization.AGENT_ACTIONS,'fraud',frozenset({'card.temporary_block','card.dispute','card.order_replacement'}))
-    monkeypatch.setattr(orchestrator,'propose_actions',orchestrator.offer_card_actions)
     return local_data_api

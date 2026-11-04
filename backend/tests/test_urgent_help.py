@@ -9,13 +9,12 @@ import re
 from datetime import date,datetime,timedelta,timezone
 from uuid import uuid4
 import pytest
-from app.schemas.agents import Evidence,PlannedIssue
+from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest
-from app.schemas.contracts import AgentResult,Principal,RequestContext,Task,TaskPlan
-from app.schemas.events import ActionRequiredEvent,AnswerSection,Source
+from app.schemas.contracts import PlanTask,Principal,RequestContext,Task
 from app.schemas.fraud import FraudProposal
-from app.schemas.disputes import DisputeItem,StoredDisputeTarget
-from app.schemas.workflows import PendingReview,ResponseMeta
+from app.schemas.disputes import DisputeItem
+from app.schemas.events import Source
 from app.services import prompts
 from app.services.agents import fraud,retail
 from app.services.agents.answer import validate_draft
@@ -23,7 +22,7 @@ from app.services.agents.fraud import decision_for,evidence_for
 from app.services.agents.fraud_records import eligible_proposals
 from app.services.guardrail import assess_request
 from app.services.knowledge import INDEX,source
-from app.services.orchestrator import compose,decision_text,preview_answer,prioritise,route_issues,task_priority,task_prompt_id
+from app.services.orchestrator import agent_history,checked,overridden,priority,simple_task
 from app.services.source_checks import check_sources,unit_matches
 from tests.test_fraud import records
 
@@ -49,15 +48,26 @@ def test_other_workflow_questions_are_not_fraud(question: str) -> None:
     assert 'fraud_suspected' not in assess_request(personal(question)).risk_flags
 
 
+def accounts(question: str,id_: str='t1',intent: str='open') -> PlanTask:
+    return PlanTask(id=id_,agent='accounts',intent=intent,question=question)
+
+
+def plan_for(tasks: list[PlanTask],message: str=MESSAGE) -> list[PlanTask]:
+    request=personal(message)
+    return sorted(checked(overridden(tasks,assess_request(request)),request),key=lambda t:t.priority)
+
+
 def test_fraud_comes_first_then_the_lockout_then_ordinary_issues() -> None:
-    issues=[PlannedIssue(domain='retail',question='my transfer to my landlord still says pending'),
-        PlannedIssue(domain='retail',question='i got locked out of the app on my phone'),
-        PlannedIssue(domain='retail',question='whats my credit card due date')]
-    plan=prioritise({'risk':assess_request(personal()),'issues':issues})['plan']
-    assert [(task.domain,task.priority) for task in plan.by_priority()]==[('fraud','P0'),('retail','P1'),('retail','P3'),('retail','P3')]
-    assert [task.entities['question'] for task in plan.by_priority()][1:]==[issues[1].question,issues[0].question,issues[2].question]
-    routed=route_issues([PlannedIssue(domain='retail',question='theres a $2400 charge i dont recognise'),*issues])
-    assert routed[0].domain=='fraud' and task_priority(PlannedIssue(domain='retail',question=issues[0].question))=='P3'
+    issues=[accounts('my transfer to my landlord still says pending'),accounts('i got locked out of the app on my phone','t2'),
+        accounts('whats my credit card due date','t3')]
+    plan=plan_for(issues)
+    assert [(t.agent,t.intent,t.priority) for t in plan]==[('security','unrecognised_charge','P0'),('security','login_help','P1'),
+        ('accounts','open','P3'),('accounts','open','P3')]
+    assert [t.question for t in plan][1:]==[issues[1].question,issues[0].question,issues[2].question]
+    # The fraud team's summary hears about the other issues raised in the same message.
+    assert plan[0].entities['lockout'] is True and plan[0].entities['transfer']==issues[0].question and plan[0].entities['message']==MESSAGE
+    routed=overridden([accounts('theres a $2400 charge i dont recognise'),*issues],assess_request(personal()))
+    assert (routed[0].agent,routed[0].intent)==('security','unrecognised_charge') and priority(issues[0])=='P3'
 
 
 @pytest.mark.parametrize('claimed,recorded,expected',[(('$',2400),('SGD',2400),True),(('$',2400),('USD',2400),True),
@@ -124,74 +134,6 @@ def test_unsupported_action_claims_are_withheld(claim: str) -> None:
     assert validate_draft(task,allowed,evidence).status=='ok'
 
 
-def state() -> dict[str,object]:
-    request=personal()
-    tasks=[Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',entities={'question':'charge'}),
-        Task(task_id='t2',domain='retail',intent='answer_question',priority='P3',entities={'question':'transfer'}),
-        Task(task_id='t3',domain='retail',intent='answer_question',priority='P3',entities={'question':'app'})]
-    results=[AgentResult(task_id=task.task_id,agent='x',status='needs_human' if task.domain=='fraud' else 'ok',answer_kind='conversation',
-        text=f'Answer {task.task_id}.') for task in tasks]
-    return {'request':request,'history':request.messages,'history_count':1,'plan':TaskPlan(tasks=tasks),'results':results,
-        'evidence':[[],[],[]],'metadata':[ResponseMeta(origin='ai',prompt_id=None)]*3,'decision_sections':[]}
-
-
-def test_preview_shows_every_section_with_the_block_offer_on_the_urgent_one() -> None:
-    action=ActionRequiredEvent(command_id=uuid4(),type='card.temporary_block',summary='Review a temporary block for synthetic card ending 4821',
-        expires_at=datetime.now(timezone.utc)+timedelta(minutes=10))
-    preview=preview_answer(state(),{'t1':[action]})
-    assert [section.task_id for section in preview.sections or []]==['t1','t2','t3']
-    assert [section.pending_actions for section in preview.sections or []]==[[action],[],[]]
-    assert all(section.decision is None for section in preview.sections or [])
-
-
-@pytest.mark.parametrize('command_state,receipt,first',[('succeeded','succeeded','Your card ending 4821 is temporarily blocked.'),
-    ('rejected',None,'You chose not to block the card ending 4821; it stays active.'),
-    ('expired',None,'The temporary-block proposal expired without changing your card.'),
-    ('failed','failed','The temporary block failed because the card changed. Your card was not changed.')])
-def test_decision_is_merged_into_the_urgent_section(command_state: str,receipt: str | None,first: str) -> None:
-    text=decision_text(command_state,receipt,'4821')
-    assert text.startswith(first)
-    if receipt=='succeeded':assert 'replacement card' in text and 'did not reverse' in text and 'urgent priority' in text
-    if command_state=='rejected':assert 'official fraud line' in text and 'handoff' not in text
-    current=state()
-    current['decision_sections']=[AnswerSection(task_id='t1_decision',domain='fraud',priority='P0',answer=text,
-        sources=[Source(id='action-receipt-t1',title='Recorded synthetic action decisions',url=None,version='v1')],needs_human=True,response_origin='safety')]
-    answer=compose(current)['answer']
-    sections=answer.sections or []
-    assert [section.task_id for section in sections]==['t1','t2','t3']
-    assert sections[0].decision==text and sections[0].answer=='Answer t1.' and sections[0].needs_human
-    assert 'action-receipt-t1' in [item.id for item in sections[0].sources] and text in answer.answer
-    assert all(section.pending_actions==[] and section.pending_action is None for section in sections)
-
-
-def test_block_and_dispute_offers_and_decisions_share_the_urgent_section() -> None:
-    from app.schemas.actions import ActionOutcome
-    from app.services.orchestrator import dispute_text,paused_preview
-    from tests.test_dispute_schema import TARGET,outcome
-    soon=datetime.now(timezone.utc)+timedelta(minutes=10)
-    block=ActionRequiredEvent(command_id=uuid4(),type='card.temporary_block',summary='Review a temporary block for synthetic card ending 4821',expires_at=soon)
-    dispute=ActionRequiredEvent(command_id=uuid4(),type='card.dispute',summary='Review a dispute draft of 2 charges on synthetic card ending 4821',expires_at=soon)
-    preview=preview_answer(state(),{'t1':[block,dispute]})
-    assert [section.pending_actions for section in preview.sections or []]==[[block,dispute],[],[]]
-    proposed=ActionOutcome.model_validate(outcome('proposed',None))
-    paused={**state(),'pending_reviews':[PendingReview(task_id='t1_dispute',command_id=proposed.command.command_id)]}
-    events,answer=paused_preview(paused,[proposed],[proposed.command.command_id])
-    assert [event.summary for event in events]==['Review a dispute draft of 2 charges on synthetic card ending 4821']
-    assert (answer.sections or [])[0].pending_actions==events
-    stored=StoredDisputeTarget.model_validate(TARGET)
-    recorded=dispute_text('succeeded','succeeded',stored)
-    assert recorded.startswith('Your dispute draft for 2 charges on the card ending 4821 is recorded for bank staff review.') and 'nothing has been refunded' in recorded
-    assert dispute_text('rejected',None,stored).startswith('You chose not to send the dispute draft') and dispute_text('failed','failed',stored).endswith('Nothing was sent.')
-    current=state()
-    current['decision_sections']=[AnswerSection(task_id=task,domain='fraud',priority='P0',answer=text,needs_human=True,response_origin='safety',
-        sources=[Source(id='action-receipt-'+task,title='Recorded synthetic action decisions',url=None,version='v1')])
-        for task,text in [('t1_decision',decision_text('succeeded','succeeded','4821')),('t1_dispute_decision',recorded)]]
-    sections=compose(current)['answer'].sections or []
-    assert [section.task_id for section in sections]==['t1','t2','t3']
-    assert sections[0].decision==decision_text('succeeded','succeeded','4821')+' '+recorded
-    assert {'action-receipt-t1_decision','action-receipt-t1_dispute_decision'}<={item.id for item in sections[0].sources}
-
-
 def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions() -> None:
     from app.schemas.customer_data import CustomerTransaction
     from app.services.case_summary import build
@@ -214,11 +156,12 @@ def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions
     assert 'Temporary block: declined.' in declined and 'card in possession: no' in declined and 'Also raised' not in declined and len(declined)<=1000
 
 
-def test_personal_retail_and_fraud_use_the_new_prompt_versions() -> None:
-    task=Task(task_id='t1',domain='retail',intent='answer_question',entities={'question':'car loan'})
-    assert task_prompt_id(task,personal())==prompts.load('retail',retail.PROMPT)['id']
-    assert task_prompt_id(task.model_copy(update={'domain':'fraud'}),personal())==prompts.load('fraud','v7')['id']
-    assert prompts.current('planner')['agent']=='planner'
+def test_personal_agents_use_the_v5_runner_and_the_moved_v4_prompts() -> None:
+    from app.services import orchestrator
+    from app.services.agents import retail,runner
+    assert runner.PROMPTS=={'guide':'v1','accounts':'v1','security':'v1'} and orchestrator.PLANNER=='v7'
+    assert retail.PROMPT=='v11' and fraud.PROMPT=='v7'  # the computed-checks path and the charge review keep their released prompts
+    assert set(runner.RULES)=={'guide','accounts','security','compliance','relationship'}
 
 
 def retail_records(cards: list[dict[str,object]]):
@@ -285,26 +228,25 @@ PART_B=('eh why is there a $2,400 charge?? i was in singapore the whole night. m
 def test_part_b_otp_and_locked_app_are_linked_security_help_not_a_second_fraud_task() -> None:
     risk=assess_request(personal(PART_B))
     assert risk.priority=='P0' and 'fraud_suspected' in risk.risk_flags and risk.fixed_response is None
-    issues=[PlannedIssue(domain='fraud',question='Why is there a $2,400 charge? I was in Singapore the whole night.'),
-        PlannedIssue(domain='retail',question='My rent transfer still says pending; will it reach by Friday?'),
-        PlannedIssue(domain='fraud',question='I got a weird OTP last night and now my app is locked.')]
-    routed=route_issues(issues)
-    assert [issue.domain for issue in routed]==['fraud','retail','retail']
-    plan=prioritise({'risk':risk,'issues':routed})['plan'].by_priority()
-    assert [(task.domain,task.priority) for task in plan]==[('fraud','P0'),('retail','P1'),('retail','P3')]
-    assert plan[1].entities['linked']=='card_fraud' and 'linked' not in plan[2].entities and 'linked' not in plan[0].entities
-    alone=prioritise({'risk':assess_request(personal('my app is locked')),'issues':[PlannedIssue(domain='retail',question='my app is locked')]})
-    assert 'linked' not in alone['plan'].tasks[0].entities and alone['plan'].tasks[0].priority=='P3'
-    assert route_issues([PlannedIssue(domain='retail',question='an unrecognised charge appeared after I changed my password')])[0].domain=='fraud'
+    issues=[PlanTask(id='t1',agent='security',intent='unrecognised_charge',question='Why is there a $2,400 charge? I was in Singapore the whole night.'),
+        accounts('My rent transfer still says pending; will it reach by Friday?','t2','transfer_status'),
+        PlanTask(id='t3',agent='security',intent='unrecognised_charge',question='I got a weird OTP last night and now my app is locked.')]
+    plan=plan_for(issues,PART_B)
+    assert [(t.agent,t.intent,t.priority) for t in plan]==[('security','unrecognised_charge','P0'),('security','login_help','P1'),
+        ('accounts','transfer_status','P3')]
+    assert plan[0].entities['lockout'] is True and 'transfer' in plan[0].entities
+    alone=plan_for([accounts('my app is locked')],'my app is locked')
+    assert [(t.agent,t.intent,t.priority) for t in alone]==[('security','login_help','P1')] and 'lockout' not in alone[0].entities
+    changed=overridden([accounts('an unrecognised charge appeared after I changed my password')],assess_request(personal()))[0]
+    assert (changed.agent,changed.intent)==('security','unrecognised_charge')
 
 
 def test_a_charge_the_planner_left_in_retail_becomes_the_one_fraud_task() -> None:
-    issues=[PlannedIssue(domain='retail',question='Why is there a $2,400 charge on my card?'),
-        PlannedIssue(domain='retail',question='Will my pending rent transfer reach by Friday?'),
-        PlannedIssue(domain='retail',question='I got a weird OTP and now my app is locked')]
-    plan=prioritise({'risk':assess_request(personal(PART_B)),'issues':route_issues(issues)})['plan'].by_priority()
-    assert [(task.domain,task.entities['question']) for task in plan][0]==('fraud',issues[0].question) and len(plan)==3
-    assert [task.domain for task in plan].count('fraud')==1 and plan[1].entities.get('linked')=='card_fraud'
+    issues=[accounts('Why is there a $2,400 charge on my card?','t1','transactions'),
+        accounts('Will my pending rent transfer reach by Friday?','t2','transfer_status'),accounts('I got a weird OTP and now my app is locked','t3')]
+    plan=plan_for(issues,PART_B)
+    assert [(t.agent,t.question) for t in plan][0]==('security',issues[0].question) and len(plan)==3
+    assert [t.intent for t in plan].count('unrecognised_charge')==1 and (plan[1].agent,plan[1].intent)==('security','login_help')
 
 
 def test_the_demo_amount_targets_the_us_charge_and_the_rule_adds_the_one_alex_did_not_mention() -> None:
@@ -338,29 +280,23 @@ def test_a_pasted_one_time_code_gets_the_fixed_secrets_reply_without_any_model_c
     assert fixed['response_origin']=='safety' and fixed['prompt_version'] is None and '482' not in fixed['answer']
 
 
-def test_retail_sees_only_its_own_issue_when_one_message_has_several() -> None:
-    from app.services.orchestrator import focused_history
-    request=personal(PART_B)
-    tasks=[Task(task_id='t1',domain='fraud',intent='answer_question',priority='P0',entities={'question':'the charge'}),
-        Task(task_id='t2',domain='retail',intent='answer_question',priority='P3',entities={'question':'Will my pending rent transfer arrive by Friday?'})]
-    state={'request':request,'history':request.messages,'plan':TaskPlan(tasks=tasks)}
-    assert [m.content for m in focused_history(state,tasks[1])]==['Will my pending rent transfer arrive by Friday?']
-    assert focused_history(state,tasks[0])==request.messages
-    assert focused_history({**state,'plan':TaskPlan(tasks=tasks[1:])},tasks[1])==request.messages
+def test_each_agent_sees_only_its_own_issue_and_never_assistant_text() -> None:
+    from app.schemas.chat import Message
+    history=[Message(role='user',content='one'),Message(role='assistant',content='Your balance is SGD 1.00.'),Message(role='user',content='two'),
+        Message(role='user',content='three'),Message(role='user',content=PART_B)]
+    rent=accounts('Will my pending rent transfer arrive by Friday?','t2')
+    assert [m.content for m in agent_history(history,rent,True)]==['two','three','Will my pending rent transfer arrive by Friday?']
+    assert [m.content for m in agent_history(history,rent,False)]==['two','three',PART_B]
+    assert all(m.role=='user' for m in agent_history(history,rent,True))
+    follow=rent.model_copy(update={'entities':{'follow_up':True}})  # a reply to our own question keeps it, for the rules
+    assert agent_history(history,follow,False)==history
 
 
-def test_linked_otp_and_lock_get_the_unexpected_code_guidance_by_id() -> None:
-    from app.services.orchestrator import linked_evidence
-    task=Task(task_id='t2',domain='retail',intent='answer_question',priority='P1',entities={'question':'weird OTP, app locked','linked':'card_fraud'})
-    ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),customer_id=1001))
-    evidence=asyncio.run(linked_evidence(task,ctx))
-    assert [item.id for item in evidence]==['app-login-recovery']
-    for guidance in ['did not request','the lock is protecting you','only inside the official DemoBank app','Never use a link in an SMS',
-        'including callers, bank staff and this chat','cannot see sign-in attempts, devices or where a sign-in came from']:
-        assert guidance in evidence[0].text
-    assert asyncio.run(linked_evidence(task.model_copy(update={'entities':{'question':'locked out'}}),ctx))==[]
-    system=prompts.load('retail',retail.PROMPT)['system']
-    assert 'likely linked to the card charges' in system and 'Never say that DemoBank or its systems detected' in system
+def test_an_unexpected_code_is_security_guidance_found_by_its_own_words() -> None:
+    from app.services.knowledge import search
+    assert 'app-login-recovery' in [a.id for a in search('I got a weird OTP last night and now my app is locked')]
+    assert 'Never say a login was detected' not in prompts.load('security','v1')['system']
+    assert 'never say a login was detected' in prompts.load('security','v1')['system']
     assert 'Never say that DemoBank or its systems detected a sign-in' in prompts.load('fraud','v7')['system']
 
 
@@ -401,9 +337,8 @@ def test_two_cards_need_a_which_card_question_without_figures() -> None:
 
 def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
     from app.services.knowledge import search
-    from app.services.orchestrator import simple_issue
-    issue=simple_issue('can i get a car loan','English')
-    assert issue is not None and issue.domain=='retail'
+    issue=simple_task('can i get a car loan','English')
+    assert issue is not None and (issue.agent,issue.intent)==('accounts','loans')
     assert search('can i get a car loan')[0].id=='car-loans'
     assert 'final decision' in INDEX['car-loans'].content and 'never say or imply that this customer is eligible' in prompts.load('retail',retail.PROMPT)['system']
 

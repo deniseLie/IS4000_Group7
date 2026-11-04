@@ -51,7 +51,16 @@ RELEASED[('relationship','v5')]='v5+82c591e9'
 RELEASED[('rm_planner','v1')]='v1+b780c1e3'
 RELEASED[('rm_assistant','v1')]='v1+162b341f'
 RELEASED[('rm_planner','v2')]='v2+baed2fc1'
+RELEASED[('rm_planner','v3')]='v3+2998b199'
+RELEASED[('rm_planner','v4')]='v4+6a9deeba'
+RELEASED[('rm_assistant','v3')]='v3+830de048'
 RELEASED[('rm_assistant','v2')]='v2+bdcb8a3f'
+RELEASED[('accounts','v1')]='v1+872a384c'
+RELEASED[('runner_common','v1')]='v1+0c95684c'
+RELEASED[('guide','v1')]='v1+3948ad35'
+RELEASED[('security','v1')]='v1+fb828ecf'
+RELEASED[('planner','v6')]='v6+e8bc7007'
+RELEASED[('planner','v7')]='v7+0590901b'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

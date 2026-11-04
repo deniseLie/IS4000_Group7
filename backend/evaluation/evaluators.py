@@ -32,6 +32,14 @@ def ticket_check(expected: str | None,out: dict[str,Any]) -> dict[str,Any]:
     return result('ticket',bool(match),', '.join(t['reference'] for t in match) or f'no {expected} ticket opened or quoted')
 
 
+def counts_match(got: dict[str,int],want: dict[str,int|str]) -> bool:
+    """Agent run counts: exact, or a range "a-b" (a fan-out whose size depends on the records, R21)."""
+    def fits(n: int,w: int|str) -> bool:
+        if isinstance(w,str) and re.fullmatch(r'\d+-\d+',w):lo,hi=map(int,w.split('-'));return lo<=n<=hi
+        return n==w
+    return all(fits(got.get(a,0),want.get(a,0)) for a in {*got,*want})
+
+
 def trajectory_checks(t: dict[str,Any],out: dict[str,Any]) -> list[dict[str,Any]]:
     found=[]
     if t.get('pipeline')=='rm':found.append(result('nodes',not out['nodes']['ran'],'RM uses /rm/assistant, not the client LangGraph'))
@@ -40,22 +48,57 @@ def trajectory_checks(t: dict[str,Any],out: dict[str,Any]) -> list[dict[str,Any]
         acted=set(out['nodes']['acted'])
         missing,extra=[n for n in t['nodes'] if n not in acted],[n for n in t['idle'] if n in acted]
         found.append(result('nodes',not missing and not extra,'; '.join(filter(None,[missing and 'did not act: '+', '.join(missing),extra and 'should be idle: '+', '.join(extra)]))))
-    if t['agents'] or t.get('graph') is False:
-        found.append(result('agents',Counter(out['agents'])==Counter(t['agents']),f"ran {out['agents']}, expected {t['agents']}"))
+    if t.get('agents') or t.get('graph') is False:
+        found.append(result('agents',counts_match(out['agents'],t['agents']),f"ran {out['agents']}, expected {t['agents']}"))
     called=out['tools']
-    if t['tools'] or t.get('no_tools') or t.get('graph') is False:
-        missing=[x for x in t['tools'] if x not in called]
+    if t.get('tools') or t.get('no_tools') or t.get('graph') is False:
+        missing=[x for x in t.get('tools',[]) if x not in called]
         banned=[x for x in called if any(fnmatch(x,p) for p in t.get('no_tools',[]))]+(called if t.get('graph') is False else [])
         found.append(result('tools',not missing and not banned,'; '.join(filter(None,[missing and 'not called: '+', '.join(missing),banned and 'must not call: '+', '.join(banned)]))))
     if 'model' in t:found.append(result('model',bool(out['model_calls'])==t['model'],f"{out['model_calls']} model calls"))
     if t.get('service_reads'):
         missing=[name for name in t['service_reads'] if name not in out.get('service_reads',[])]
         found.append(result('service_reads',not missing,'not read: '+', '.join(missing) if missing else ''))
+    if deps:=out.get('dependencies'):found+=dependency_checks(t,deps)
+    return found
+
+
+def dependency_checks(t: dict[str,Any],deps: dict[str,Any]) -> list[dict[str,Any]]:
+    """v5 agent interactions (phase 7): waves, exports passed (names only), skipped dependants and the one handoff."""
+    found=[]
+    if 'waves' in t:found.append(result('waves',deps['waves']==t['waves'],f"{deps['waves']} waves"))
+    if t.get('exports'):
+        missing=[f"{e['from']}>{e['to']}:{e['name']}" for e in t['exports'] if f"{e['from']}>{e['to']}:{e['name']}" not in deps['exports']]
+        found.append(result('exports',not missing,'not passed: '+', '.join(missing) if missing else ', '.join(deps['exports'])))
+    if 'skipped' in t:found.append(result('skipped',deps['skipped']==t['skipped'],f"skipped {deps['skipped']}"))
+    if 'rerouted' in t:found.append(result('rerouted',deps['rerouted']==t['rerouted'],f"rerouted {deps['rerouted']}"))
+    return found
+
+
+def plan_checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
+    """The planner-only dataset: the route, the agents, each expected dependency (upstream agent and condition) and priority."""
+    got=out.get('plan')
+    if got is None:return [result('played',None,'no plan: '+json.dumps(out.get('skipped')))]
+    found=[result('route',got['route']==ref.get('route','plan'),f"route {got['route']}")]
+    if ref.get('route') not in (None,'plan'):return found
+    expected=Counter(t['agent'] for t in ref['tasks']);planned=Counter(t['agent'] for t in got['tasks'])
+    found.append(result('agents',planned==expected,f'planned {dict(planned)}, expected {dict(expected)}'))
+    named={t['id']:t['agent'] for t in ref['tasks'] if 'id' in t}
+    links=[(t['agent'],named[t['depends_on']],t.get('condition')) for t in ref['tasks'] if 'depends_on' in t]
+    made={(t['agent'],t['depends_on'],t['condition']) for t in got['tasks'] if t['depends_on']}
+    if links:
+        missing=[f'{a} after {u}'+(f' if {c}' if c else '') for a,u,c in links if not any(m[0]==a and m[1]==u and (c is None or m[2]==c) for m in made)]
+        found.append(result('dependencies',not missing,'missing: '+', '.join(missing) if missing else f'{len(made)} linked'))
+    if ref.get('no_dependencies'):found.append(result('dependencies',not made,f'{len(made)} linked'))
+    if ref.get('no_agents'):found.append(result('no_agents',not set(ref['no_agents'])&set(planned),f'planned {dict(planned)}'))
+    wrong=[t['agent'] for t in ref['tasks'] if 'priority' in t and not any(g['agent']==t['agent'] and g['priority']==t['priority'] for g in got['tasks'])]
+    if any('priority' in t for t in ref['tasks']):found.append(result('priority',not wrong,'wrong: '+', '.join(wrong) if wrong else ''))
     return found
 
 
 def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     """out: the target's output. ref: the example's reference outputs."""
+    if 'plan' in ref:return plan_checks(out,ref['plan'])
     if not out['played']:return [result('played',None,'no step can be played in chat: '+json.dumps(out['skipped']))]
     first=out['replies'][0]
     errors=[r['error'] for r in out['replies'] if 'error' in r]
@@ -82,7 +125,8 @@ def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     for category in ref.get('ticket_categories',[]):
         checked=ticket_check(category,out)
         found.append({**checked,'key':'ticket_'+category})
-    if 'trajectory' in ref:found+=trajectory_checks(ref['trajectory'],out)
+    # A graph case also carries the v4 expectation it was written against; only the v5 one describes the running graph.
+    if t:=ref.get('trajectory_v5') or ref.get('trajectory'):found+=trajectory_checks(t,out)
     return found
 
 

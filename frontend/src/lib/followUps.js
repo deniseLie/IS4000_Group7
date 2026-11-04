@@ -40,6 +40,7 @@ export function topicOf(question,message) {
 export const CONFIRM_REPORT='Yes, report it';
 export function followUps({question,message,signedIn,asked=[]}) {
   if(!message||message.role!=='assistant'||!message.content)return [];
+  if(message.offer)return [];  // the offer block has its own Confirm and Cancel (v5)
   // A charge list to confirm keeps its button even when another part of the reply was withheld (CR12).
   if(signedIn&&message.content.includes(`“${CONFIRM_REPORT}”`))return [CONFIRM_REPORT];
   if(message.error||message.response_origin==='validation'||message.source_check==='rejected')return [];

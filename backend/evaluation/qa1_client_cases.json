@@ -31,18 +31,15 @@
     "schema": "At least one source, and every figure is in the cited article.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions",
-        "escalate_validation"
+        "act"
       ],
       "agents": {
-        "answer": 1
+        "guide": 1
       },
       "tools": [],
       "no_tools": [
@@ -180,23 +177,19 @@
     "schema": "Three sections, P0 fraud first; one suspected_fraud ticket only after turn 2; no action proposal.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "prioritise",
-        "dispatch",
-        "settle_actions",
+        "planner",
+        "agent",
+        "act",
         "compose"
       ],
-      "idle": [
-        "propose_actions",
-        "review_actions"
-      ],
+      "idle": [],
       "agents": {
-        "fraud": 1,
-        "retail": 2
+        "security": 2,
+        "accounts": 1
       },
       "tools": [],
       "model": true,
-      "order": "P0 fraud first, then the transfer and the login help (retail sees only its own issue); the confirming turn makes no model call",
+      "order": "P0 charge first, then the login help (both Security), then the transfer (Accounts & Cards sees only its own issue); the confirming turn is an act turn with no model call",
       "service_reads": [
         "customer.get_credit_cards",
         "customer.get_transactions"
@@ -266,18 +259,15 @@
     "schema": "After Confirm: one card_limit_change ticket with card, new_limit, duration, until and reason filled, owner Cards and credit team, status submitted, TCK- reference shown.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "prioritise",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {
-        "retail": 1
+        "accounts": 1
       },
       "tools": [],
       "order": "The ticket is created by the form's ticket.create proposal and her Confirm, never by the graph",
@@ -334,17 +324,15 @@
     "schema": "No ticket and no action proposal from this turn.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {
-        "retail": 1
+        "accounts": 1
       },
       "tools": [],
       "model": true,
@@ -458,15 +446,12 @@
     "schema": "Every item and status matches the Compliance review page; the due date is the recorded one.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "prioritise",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {
         "compliance": 1
@@ -527,23 +512,21 @@
     "schema": "Signed pre-check report with a date-rule finding; requested item status unchanged; a fresh bill then shows Sent to the bank on ....",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {
-        "document": 1
+        "compliance": 1
       },
       "tools": [
         "my_document_checks"
       ],
       "model": true,
-      "order": "The upload's template pre-check makes no model call; only Explain in chat runs the document agent"
+      "order": "The upload's template pre-check makes no model call; only Explain in chat runs Compliance & Documents"
     },
     "must_not": [
       "Submitting the file",
@@ -654,18 +637,19 @@
     "schema": "Exactly one rm_handover ticket owned by Your relationship manager, summary is her redacted question; the status reply matches My requests; the meeting turn creates no ticket.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "escalate_validation",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
-      "agents": {},
+      "agents": {
+        "relationship": 2
+      },
       "tools": [],
-      "model": false
+      "model": false,
+      "order": "Turn 1 is an RM handover preview from the relationship rules (no model); her send choice goes back to the same rules, which record the handoff"
     },
     "must_not": [
       "Investment advice",
@@ -731,21 +715,17 @@
     "schema": "One urgent card_lost handoff and one suspected_fraud ticket; asking again in a new chat quotes the same reference; both cards stay active until the bank acts.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "prioritise",
-        "dispatch",
+        "planner",
+        "act",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions",
-        "escalate_validation"
+        "agent"
       ],
       "agents": {},
       "tools": [],
       "model": false,
-      "order": "First turn is fixed urgent guidance with no model; the explicitly confirmed report uses the graph and a receipt-backed fraud handoff.",
+      "order": "Fixed lost-card route before the graph offers the report (her cards feed the summary); her yes is an act turn with no agent",
       "service_reads": [
         "tickets.list"
       ]
@@ -759,7 +739,7 @@
     "handoff": "P0 card_lost handoff to fraud operations, with a suspected_fraud ticket",
     "covered_by": [
       "tests/test_fraud_confirmation.py",
-      "tests/test_fraud_team_report.py",
+      "tests/test_offer_turns.py",
       "tests/test_safety_variants.py"
     ],
     "legacy_id": "C12",
@@ -807,17 +787,15 @@
     "schema": "At least one loan source; every figure is in a cited article or her records.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {
-        "retail": 1
+        "accounts": 1
       },
       "tools": [],
       "model": true
@@ -876,9 +854,7 @@
     "trajectory": {
       "nodes": [],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {},
       "tools": [],
@@ -943,9 +919,7 @@
     "trajectory": {
       "nodes": [],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {},
       "tools": [],
@@ -1160,15 +1134,12 @@
     "schema": "Every status and the due date match the Compliance review page.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "prioritise",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {
         "compliance": 2
@@ -1246,14 +1217,12 @@
     "schema": "Months offered match Statements; no ticket from chat (the copy request is her own form).",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {},
       "tools": [],
@@ -1327,17 +1296,19 @@
     "schema": "Turn 1 has no limit or due date; one rm_handover ticket on the fees topic (or the open one reused and quoted).",
     "trajectory": {
       "nodes": [
-        "plan",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
-      "agents": {},
+      "agents": {
+        "accounts": 2,
+        "relationship": 1
+      },
       "tools": [],
-      "order": "Card answers come from records without a model; the waiver is a rules handover (fees) answered by a fixed line",
+      "order": "Card answers come from records in the Accounts & Cards rules without a model; the waiver is an RM handover the relationship rules answer with a fixed line",
       "service_reads": [
         "customer.get_credit_cards"
       ]
@@ -1406,14 +1377,12 @@
     "schema": "Statuses and teams match My requests; no new ticket; no ticket status change.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [
-        "propose_actions",
-        "review_actions",
-        "settle_actions"
+        "act"
       ],
       "agents": {},
       "tools": [],
@@ -1486,23 +1455,19 @@
     "schema": "One rm_handover ticket (fees topic, summary without card details) after turn 1; one suspected_fraud ticket only after turn 2.",
     "trajectory": {
       "nodes": [
-        "plan",
-        "prioritise",
-        "dispatch",
-        "settle_actions",
-        "escalate_validation",
+        "planner",
+        "agent",
+        "act",
         "compose"
       ],
-      "idle": [
-        "propose_actions",
-        "review_actions"
-      ],
+      "idle": [],
       "agents": {
-        "fraud": 1
+        "security": 1,
+        "relationship": 2
       },
       "tools": [],
       "model": true,
-      "order": "P0 fraud first; the RM part is a rules handover recorded by escalate_validation",
+      "order": "P0 charge first; the RM part is a handover preview from the relationship rules; confirming the report is an act turn that keeps the RM preview; her send choice goes back to the relationship rules",
       "service_reads": [
         "customer.get_credit_cards",
         "customer.get_transactions"
@@ -1518,7 +1483,7 @@
     "covered_by": [
       "tests/test_rm_handover.py",
       "tests/test_fraud_confirmation.py",
-      "tests/test_fraud_team_report.py"
+      "tests/test_offer_turns.py"
     ],
     "legacy_id": "C17",
     "owner": "Kar Mun (CR8, CR9) / Denise (F24, F16)",
@@ -1558,8 +1523,8 @@
     "schema": "S schema: all offered slots exist in availability data\n S schema: hold expires at 10 min; one booking per slot\n C competency (LLM-judge): judge ≥ 4/5 for the correction handling\n T trajectory: slot recheck before final confirm; no create_ticket",
     "trajectory": {
       "nodes": [
-        "plan",
-        "dispatch",
+        "planner",
+        "agent",
         "compose"
       ],
       "idle": [],

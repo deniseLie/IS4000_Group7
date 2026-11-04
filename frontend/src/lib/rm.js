@@ -31,11 +31,14 @@ export async function askAssistant(body,token,onStatus,signal) {
   return answer;
 }
 
+// Every draft in a reply: one (`draft`), or one per client when the RM asked for a message to several (`drafts`, R21).
+export const allDrafts=reply=>reply?.drafts?.length?reply.drafts:reply?.draft?[reply.draft]:[];
+
 // Plain text of a reply, for the next turn's history (summary plus item texts, bounded).
 export function replyText(reply) {
   if(!reply)return '';
   const parts=[reply.summary||'',...(reply.sections||[]).flatMap(s=>[s.heading,...s.items.map(i=>`- ${i.text}`)])];
-  if(reply.draft)parts.push(`Draft: ${reply.draft.text}`);
+  for(const d of allDrafts(reply))parts.push(`Draft${d.client?` to ${d.client}`:''}: ${d.text}`);
   if(reply.documentation?.draft?.summary)parts.push(`Documentation: ${reply.documentation.draft.summary}`);
   return parts.filter(Boolean).join('\n').slice(0,3000);
 }
@@ -107,7 +110,7 @@ export function reportText(reply,client) {
     }
     lines.push('');
   }
-  if(reply.draft)lines.push('Draft (not sent):',reply.draft.text,'');
+  for(const d of allDrafts(reply))lines.push(`Draft${d.client?` to ${d.client}`:''} (not sent):`,d.text,'');
   if(sources.length)lines.push('Sources',...sources.map((s,i)=>`[${i+1}] ${s.title}`));
   lines.push('','AI-generated from DemoBank demo records. Check the sources before acting.');
   return lines.join('\n');

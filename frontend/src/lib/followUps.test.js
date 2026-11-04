@@ -36,6 +36,11 @@ test('no suggestion would itself be handed over to the RM as a ticket', async ()
   for(const text of all)assert.ok(!handover.test(text),text);
 });
 
+test('a reply with an offer suggests nothing; its own Confirm and Cancel answer it (v5)', () => {
+  const offer={offer_group:'12345678-1234-1234-1234-123456789011',expires_at:'2026-11-04T12:30:00Z',offers:[]};
+  assert.deepEqual(followUps({question:'I lost my card',message:answer({offer}),signedIn:true}),[]);
+});
+
 test('the fraud charge list offers only the one-tap confirmation (CR12)', () => {
   const message={role:'assistant',content:'…If they are, reply “Yes, report it” and I’ll pass them to the fraud team as urgent.'};
   assert.deepEqual(followUps({question:'I do not recognise these charges',message,signedIn:true}),['Yes, report it']);

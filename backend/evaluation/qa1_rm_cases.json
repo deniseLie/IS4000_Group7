@@ -550,7 +550,6 @@
     ],
     "handoff": "Withheld part to a person, with the validation reason",
     "covered_by": [
-      "tests/test_validation_handoffs.py",
       "tests/test_source_units.py"
     ],
     "owner": "Denise (F18) / TBC (F19, RM13)",

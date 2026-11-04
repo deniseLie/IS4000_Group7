@@ -12,9 +12,6 @@ from app.schemas.contracts import Principal, RequestContext
 from app.services.authorization import decide
 from app.services import customer_data
 from app.services.agents import request_status_answers
-from app.services import orchestrator
-from app.schemas.agents import PlannedIssue
-from app.schemas.contracts import Task
 from app.schemas.chat import ChatRequest,Message
 from app.schemas.contracts import RiskAssessment
 
@@ -54,22 +51,16 @@ def test_status_uses_typed_ticket_snapshot_not_json(monkeypatch):
 
 
 def test_status_read_failure_never_asks_for_new_limit_or_claims_approval(monkeypatch):
-    from app.services import client_intents
-    from app.services.llm_gateway import LLMError
-    from app.schemas.workflows import ResponseMeta
-    req=SimpleNamespace(mode='personal')
+    from app.schemas.contracts import PlanTask
+    from app.services.agents import registry,rules,runner
     question='Has the bank approved my credit limit increase?'
-    task=Task(task_id='t1',domain='retail',intent='answer_question',priority='P3',entities={'question':question})
-    state={'request':req}
+    planned=PlanTask(id='t1',agent='relationship',intent='request_status',question=question)
     async def failed(*args,**kwargs):
         raise PermissionError('simulated ticket permissions unavailable')
-    monkeypatch.setattr(orchestrator,'generate_task',failed)
-    monkeypatch.setattr(orchestrator,'log_event',lambda *args,**kwargs:None)
-    monkeypatch.setattr(orchestrator.audit,'add',lambda *args,**kwargs:None)
-    answer=asyncio.run(orchestrator.dispatch_task(task,state,customer('retail')))
-    assert answer['result'].status=='ok'
-    assert 'My Requests' in answer['result'].text
-    assert 'new credit limit' not in answer['result'].text
-    assert 'approved' not in answer['result'].text.lower()
-    assert answer['result'].citations==[]
-    assert answer['metadata'].origin=='safety'
+    monkeypatch.setattr(request_status_answers,'respond',failed)
+    output=asyncio.run(runner.run_agent(registry.SPECS['relationship'],planned,{},customer(None)))
+    assert output.status=='ok' and output.origin=='safety'
+    assert 'My Requests' in output.result.text
+    assert 'new credit limit' not in output.result.text
+    assert 'approved' not in output.result.text.lower()
+    assert output.result.citations==[] and rules.STATUS_UNAVAILABLE==output.result.text

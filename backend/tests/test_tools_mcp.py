@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.schemas.contracts import Principal,RequestContext,Task
 from app.schemas.knowledge import KnowledgeSection
-from app.services import kb,orchestrator,tools
+from app.services import kb,tools
+from app.services.agents import runner
 from tests.data_api_support import NativeAPI
 
 SECTION=KnowledgeSection(article_id='card-limit-change',version=1,anchor='main',cite='kb:card-limit-change@v1#main',title='Changing your credit card limit',
@@ -27,14 +28,15 @@ def fake_kb(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def evidence(transport: str) -> list:
-    settings.tool_transport=transport
+    settings.tool_transport,store=transport,settings.knowledge_store
+    settings.knowledge_store='database'
     try:
-        task=Task(task_id='t1',domain='retail',intent='answer_question',priority='P3',entities={'question':'increase my card limit'})
-        return asyncio.run(orchestrator.database_evidence(task,RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))))
-    finally:settings.tool_transport='direct'
+        ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'),agent='guide')
+        return asyncio.run(runner.read('knowledge_search',{'query':'increase my card limit','k':4},ctx,set()))
+    finally:settings.tool_transport,settings.knowledge_store='direct',store
 
 
-def test_direct_tool_call_feeds_orchestrator_evidence(fake_kb: list[str]) -> None:
+def test_direct_tool_call_feeds_agent_evidence(fake_kb: list[str]) -> None:
     rows=evidence('direct')
     assert [row.id for row in rows]==['kb:card-limit-change@v1#main'] and fake_kb==['increase my card limit']
 

@@ -18,16 +18,13 @@ from app.core.observability import log_event, start_trace, span
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import RequestContext
 from app.schemas.conversations import StoredFailure
-from app.schemas.events import AnswerEvent,WorkflowPausedEvent
-from app.schemas.workflows import OwnedWorkflow
+from app.schemas.events import AnswerEvent
 from app.services.answers import make_answer,make_database_answer
 from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
 from app.services.knowledge import INDEX, source
-from app.services.orchestrator import answer_personal,answer_public
-from app.services import fraud_reports,rm_handover
-from app.services.checkpoints import PostgrestCheckpointSaver,signing_key
+from app.services import orchestrator,rm_handover
 
 router=APIRouter()
 FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance','other_customer_data','instruction_override'}
@@ -114,22 +111,16 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
             else:
                 current_context=await personal_context() if settings.pipeline!='v2' and prepared is not None and req.mode=='personal' and risk.fixed_response is None else context
                 if settings.pipeline=='v2' and risk.fixed_response is None:
-                    if prepared is not None:
-                        with data_api.connect(ctx) as workflow_db:
-                            saver=PostgrestCheckpointSaver(workflow_db,prepared.access,ctx,turn.turn,signing_key())
-                            if req.mode=='personal':
-                                reply=await answer_personal(req,risk,ctx,OwnedWorkflow(access=prepared.access,turn=turn.turn),saver)
-                                if isinstance(reply,WorkflowPausedEvent):
-                                    audit_model_calls(batch,trace)
-                                    batch.add('chat','chat.workflow_review_ready',details={'action_count':len(reply.actions)})
-                                    await batch.flush()
-                                    trace.attrs.update(outcome='paused',route='workflow_review')
-                                    yield {'event':'workflow_paused','data':reply.model_dump_json()}
-                                    yield {'event':'done','data':''}
-                                    return
-                                result=reply.model_dump(mode='json')
-                            else:result=(await answer_public(req,risk,ctx,saver)).model_dump(mode='json')
-                    else:result=(await answer_public(req,risk,ctx,None)).model_dump(mode='json')
+                    tctx=orchestrator.TurnContext(request=ctx,turn_id=turn.turn.turn_id if turn is not None else None,
+                        conversation_id=turn.turn.session_id if turn is not None else None)
+                    reply=None
+                    async for kind,item in orchestrator.stream(req,risk,tctx):
+                        # A section as each agent finishes; the saved answer below stays the reply of record.
+                        if kind in ('plan','section'):yield {'event':kind,'data':item.model_dump_json()}
+                        else:reply=item
+                    if reply is None:raise ValueError('The turn ended without an answer')
+                    if reply.offer is not None:yield {'event':'offer','data':reply.offer.model_dump_json()}
+                    result=reply.model_dump(mode='json')
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
                 elif settings.knowledge_store=='database':result=(await make_database_answer(req,current_context,ctx)).model_dump(mode='json')
@@ -146,8 +137,10 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                             history=req.messages,document_ids=selected)
                         result.update(answer=handover.reply() if handover.failed else 'Of course. '+handover.reply(),needs_human=True)
                 elif 'lost_card' in risk.risk_flags and p.kind=='customer' and prepared is not None:
-                    # CR12: the safety steps come first; she confirms before the urgent fraud ticket is opened (her next turn).
-                    result.update(answer=result['answer']+'\n\n'+fraud_reports.LOST_OFFER,needs_human=True)
+                    # CR12: the safety steps come first; an urgent report is offered, and her yes on the next turn sends it (act).
+                    text,group=await orchestrator.lost_card_offer(risk.redacted_message,ctx,turn.turn.turn_id)
+                    result.update(answer=result['answer']+'\n\n'+text,needs_human=True,offer=group.model_dump(mode='json') if group else None)
+                    if group is not None:yield {'event':'offer','data':group.model_dump_json()}
                 if prepared is not None:
                     turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)
                     yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}

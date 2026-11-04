@@ -397,4 +397,4 @@ Agent-level only: the real planner, fraud and retail agents, validators and Open
 | `openrouter/free` | 3 issues, lockout retail P1 linked | Withheld: off-topic draft; both offers still produced from records | Passed: security step, cites `account-security-after-fraud` | Provider error |
 | `dots-studio/dots-3-note-preview:free` | 3 issues, lockout retail P1 linked | Withheld: echoed "$2,400" unsigned (fixed by listing charged amounts in `fraud-pattern`; the same draft now passes the validators) | Passed | Passed: pending since 2026-10-17 (7 business days), due 2026-10-30 in 3 days, don't resend, fall-below check |
 
-Four further runs ended in provider errors at the planner. The native browser runs (`test_urgent_help_browser.py`) still need the Mac setup.
+Four further runs ended in provider errors at the planner. The native browser runs of that dialog flow were retired in v5 phase 6; offer confirmations are covered by `test_offers_browser.py` (Mac setup).

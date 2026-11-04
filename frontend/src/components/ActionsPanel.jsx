@@ -2,7 +2,6 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
-import {resumeWorkflow} from '../lib/workflows';
 import {appointmentTime} from '../lib/appointmentData';
 import {consentCategoryText} from '../lib/consentData';
 import {displayName,formatDate,formatDateTime,formatMoney,formatTime} from '../lib/format';
@@ -193,7 +192,7 @@ const FILTERS=[['all','All'],['pending','Needs your OK'],['Compliance','Document
 const inFilter=(item,filter)=>filter==='all'||(filter==='pending'?item.command.state==='proposed':filter==='Requests'?['Requests','Support'].includes(groupOf(item.command)):groupOf(item.command)===filter);
 
 // Reopening shows the last loaded list at once; decisions stay disabled (busy) until the refreshed list arrives.
-export default function ActionsPanel({onWorkflowChange}) {
+export default function ActionsPanel() {
   const [items,setItems]=useState(()=>cached('actions'));
   const [selected,setSelected]=useState(null);
   const [acknowledged,setAcknowledged]=useState(false),[answer,setAnswer]=useState('');
@@ -229,19 +228,9 @@ export default function ActionsPanel({onWorkflowChange}) {
       const result=await operation(commandId,await token(),controller.signal);
       if(!controller.signal.aborted){
         setItems(previous=>previous.map(item=>item.command.command_id===commandId?result:item));setSelected(null);setAcknowledged(false);setAnswer('');
-        if(result.workflow)onWorkflowChange(result.workflow);
         const recorded=await loadActions(await token(),controller.signal);
         if(!controller.signal.aborted)setItems(recorded);
       }
-    } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
-    finally {if(!controller.signal.aborted){setBusy(false);setDeciding(false);}}
-  }
-  async function retry(turnId) {
-    const controller=new AbortController();active.current=controller;setBusy(true);setDeciding(true);setError('');
-    try {
-      const workflow=await resumeWorkflow(turnId,await token(),controller.signal);
-      const recorded=await loadActions(await token(),controller.signal);
-      if(!controller.signal.aborted){onWorkflowChange(workflow);setItems(recorded);}
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     finally {if(!controller.signal.aborted){setBusy(false);setDeciding(false);}}
   }
@@ -272,9 +261,7 @@ export default function ActionsPanel({onWorkflowChange}) {
           <div className="activity-line"><h3>{title}</h3><time dateTime={receipt?.created_at||command.proposed_at}>{formatTime(receipt?.created_at||command.proposed_at)}</time></div>
           {detail&&<p className="activity-detail" data-testid={command.type==='compliance.update_checklist_item'?'command-checklist':command.type.startsWith('consent.')?'command-consent-scope':undefined}>{detail}</p>}
           {status&&<span className={`act-pill ${status[1]}`}>{status[0]}</span>}
-          {item.workflow&&(item.workflow.state==='failed'||item.workflow.can_resume)&&<div data-testid="command-workflow" className="act-note">
-            <p>Your decision is saved, but the chat reply didn't finish.</p>
-            {item.workflow.can_resume&&<button className="bank-chat-logout" data-testid="resume-workflow" disabled={busy||!!error} onClick={()=>retry(item.workflow.turn_id)}>Finish the reply</button>}</div>}
+          {item.workflow?.state==='failed'&&<div data-testid="command-workflow" className="act-note"><p>Your decision is saved, but the chat reply didn't finish.</p></div>}
           {command.state==='proposed'&&<>
             {!chosen&&<div className="act-actions"><button className="primary-button" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);setAnswer('');}}><Icon name="check"/>Review</button>
               <span className="act-meta">Open until {formatTime(command.expires_at)}</span></div>}

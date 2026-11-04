@@ -74,7 +74,7 @@ async def run(args) -> dict:
         if (e.metadata or {}).get('state') not in ('spec','manual') and (not args.case or (e.metadata or {}).get('case_id') in args.case)]
     require_requested_cases(args.case,{case_id for e in examples if isinstance(case_id:=(e.metadata or {}).get('case_id'),str)})
     if not examples:raise SystemExit('No runnable examples (spec and manual cases are skipped)')
-    personas={e.inputs.get('persona') for e in examples}-{None,'guest'}
+    personas={e.inputs.get('persona') for e in examples if 'turns' in e.inputs}-{None,'guest'}  # the planner-only dataset signs in nobody
     tokens={}
     if personas:
         if not args.personas:raise SystemExit('Signed-in cases need --personas or TEST_PERSONA_FIXTURE_FILE')
@@ -87,7 +87,9 @@ async def run(args) -> dict:
         'dataset_file':DATASETS[args.dataset]}
     label=f"{args.dataset}-{args.pipeline}-{datetime.now(timezone.utc):%Y%m%d-%H%M}"
     async def target(inputs: dict) -> dict:
-        if inputs.get('persona')=='sophie':return await rm_target.play(inputs,app,tokens['sophie'])
+        if 'say' in inputs:return await targets.plan_only(inputs)
+        # QA1 RM cases use the read-only RM target; the graph cases (R21-R23) play the v5 RM graph and report its dependencies.
+        if inputs.get('persona')=='sophie' and args.dataset!='demobank-graph':return await rm_target.play(inputs,app,tokens['sophie'])
         return await targets.play(inputs,app,tokens.get(inputs.get('persona')))
     graders=[evaluators.deterministic,*([evaluators.judge] if args.judge else [])]
     if args.project:

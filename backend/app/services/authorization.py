@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, ValidationError
 from app.schemas.contracts import Decision, Principal, RequestContext
 from app.services import audit
+from app.services.agents import registry
 from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','kb.get_fact','tickets.categories'})
@@ -63,12 +64,15 @@ def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | 
     # Freezing is the client's own decision from her card controls (0096), never an agent's proposal.
     if action in CLIENT_ONLY_CARD_ACTIONS and context.agent is not None:return Decision(allow=False,reasons=['customer_only_action'])
     if action in STAFF_TYPES and action not in CUSTOMER_CARD_CHANGES:return Decision(allow=False,reasons=['staff_access_required'])
-    if context.agent is not None:
+    if (spec:=registry.spec_for(context.agent)) is not None:  # v5: the agent catalogue is the allow-list
+        if action not in registry.permissions(spec) and action not in spec.offers:return Decision(allow=False,reasons=['agent_tool_forbidden'])
+    elif context.agent is not None:
         allowed = action in TOOLS[context.agent] or action in AGENT_ACTIONS.get(context.agent,frozenset())
         if not allowed:return Decision(allow=False,reasons=['agent_tool_forbidden'])
     obligations: list[str] = []
     if action == 'customer.get_credit_cards':obligations.append('mask:pan')
-    if action in CONFIRM_TYPES:obligations.append('require:confirmation')
+    # Every action a v5 agent offers waits for the client (services/offers.py, 0100); AUTO_TYPES run unconfirmed only from UI forms.
+    if action in CONFIRM_TYPES or (spec is not None and action in spec.offers):obligations.append('require:confirmation')
     if action == 'rm.share_summary':obligations.append('require:consent:rm_brief')
     return Decision(allow=True,reasons=['explicit_rule'],obligations=obligations)
 
@@ -81,3 +85,12 @@ def require_permission(subject: Principal, action: str, resource: Mapping[str, J
         details={'tool':action if action in KNOWN_TOOLS else 'unregistered_tool','reasons':decision.reasons,'version':'v1'},**actor)
     if not decision.allow:raise PolicyDenied(f"Tool access denied: {decision.reasons[0]}")
     return decision
+
+
+def require_tool(name: str, context: RequestContext) -> None:
+    """A v5 agent may call only the model-facing tools in its spec; the service read then checks its own permission.
+    Only refusals are audited here, so an allowed call records one policy decision, as before."""
+    if (spec:=registry.spec_for(context.agent)) is None or name in spec.tools or name in spec.external:return
+    audit.add('policy','policy.decided','denied',details={'tool':name if name in registry.TOOL_PERMISSION or name in registry.EXTERNAL else 'unregistered_tool',
+        'reasons':['agent_tool_forbidden'],'version':'v1'},actor_type='agent',actor_id=context.agent)
+    raise PolicyDenied('Tool access denied: agent_tool_forbidden')

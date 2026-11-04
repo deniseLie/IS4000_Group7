@@ -15,9 +15,7 @@ from app.core.observability import log_event
 from app.schemas.actions import ActionCase,ActionOutcome,CreateAction,CreateActionCase
 from app.schemas.contracts import ActionCommand,RequestContext
 from app.schemas.disputes import DisputeInput
-from app.schemas.events import WorkflowPreview,WorkflowStatus
-from app.services import actions,audit,customer_data,workflows
-from app.services.checkpoint_codec import CheckpointIntegrityError
+from app.services import actions,audit,customer_data
 from app.services.conversations import ConversationIntegrityError
 from app.services.actions import store
 from app.services.authorization import PolicyDenied,require_permission
@@ -39,7 +37,7 @@ async def response_for(operation: Callable[[],Awaitable[T]],ctx: RequestContext,
     except ApiError:
         await flush(batch)
         raise
-    except (PolicyDenied,store.ActionNotFound,actions.ActionStateError,store.ActionIntegrityError,ConversationIntegrityError,CheckpointIntegrityError,customer_data.CustomerDataIntegrityError,ValidationError,APIError,httpx.TransportError) as error:
+    except (PolicyDenied,store.ActionNotFound,actions.ActionStateError,store.ActionIntegrityError,ConversationIntegrityError,customer_data.CustomerDataIntegrityError,ValidationError,APIError,httpx.TransportError) as error:
         code=data_api.database_code(error) if isinstance(error,APIError) else None
         log_event('action_request_failed',db_code=code,error_type=type(error).__name__)
         await flush(batch)
@@ -111,11 +109,7 @@ async def confirm(command_id: UUID,request: Request,ctx: RequestContext=Depends(
         item=current.command
         command=ActionCommand(command_id=item.command_id,type=item.type,idempotency_key=item.idempotency_key,target=item.target.model_dump(mode='json'))
         answers=await confirmation_answers(request,item.type)
-        try:result=await actions.run_action(command,ctx.model_copy(update={'case_id':item.case_id}),True,confirmation_input=answers)
-        except actions.ActionStateError:
-            if current.workflow is not None:await workflows.resume(current.workflow.turn_id,ctx)
-            raise
-        if current.workflow is not None:await workflows.resume(current.workflow.turn_id,ctx)
+        result=await actions.run_action(command,ctx.model_copy(update={'case_id':item.case_id}),True,confirmation_input=answers)
         with data_api.connect(ctx) as db:return await store.load(result.command_id,ctx,db)
     return await response_for(operation,ctx,request)
 
@@ -123,17 +117,7 @@ async def confirm(command_id: UUID,request: Request,ctx: RequestContext=Depends(
 @router.post('/commands/{command_id}/reject',response_model=ActionOutcome)
 async def reject(command_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ActionOutcome:
     async def operation() -> ActionOutcome:
-        with data_api.connect(ctx) as db:result=await actions.reject_action(command_id,ctx,db)
-        if result.workflow is not None:await workflows.resume(result.workflow.turn_id,ctx)
+        with data_api.connect(ctx) as db:await actions.reject_action(command_id,ctx,db)
         with data_api.connect(ctx) as db:return await store.load(command_id,ctx,db)
     return await response_for(operation,ctx,request)
 
-
-@router.post('/workflows/{turn_id}/resume',response_model=WorkflowStatus)
-async def resume(turn_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> WorkflowStatus:
-    return await response_for(lambda:workflows.resume(turn_id,ctx),ctx,request)
-
-
-@router.get('/workflows/{turn_id}/preview',response_model=WorkflowPreview)
-async def preview(turn_id: UUID,request: Request,ctx: RequestContext=Depends(get_ctx)) -> WorkflowPreview:
-    return await response_for(lambda:workflows.preview(turn_id,ctx),ctx,request)
