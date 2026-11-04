@@ -1054,6 +1054,19 @@ The phased plan, with files, tests and done criteria per phase, is [planning/v5-
 | 8 | Eval cases (C23–C27, handoff) and planner dataset; docs | No |
 | 9 | RM pipeline onto the same graph (R21–R23), later | Yes (RM) |
 
+## 15. Meeting lifecycle seam (RM copilot target, agreed 4 Nov 2026, not built yet)
+
+The next target centres the product on the relationship manager: a client's meeting request, a consent-gated pre-meeting brief, the meeting itself, and RM-approved minutes. The meeting lifecycle runs as its own LangGraph graph (durable, one thread per meeting, pauses for the RM's approvals), separate from the chat graphs, because it is started by events and lives for days. It is built by a second developer on a separate branch; migration `0105` and the files below are the only contract between the two halves.
+
+| Part | Where | Rule |
+|---|---|---|
+| Shared models | `schemas/meetings.py` | `MeetingRef`, `MeetingEvent`, `BriefCard` (items labelled record, client said, AI suggestion or gap; every non-gap item cited), `MinutesDraft`, `ActionItem` (supporting quote required), `Decision`, `MeetingStatus`. Additive changes only |
+| Public API | `services/meetings/__init__.py` | `on_event`, `prepare`, `decide`, `status`. `MeetingsUnavailable` until built and while `MEETINGS_ENABLED=false` |
+| Event queue | `meetings.events` (0105) | Private schema, not in the Data API. `enqueue` (payload of ids, codes and dates; `dedupe_key` for provider or command ids), `claim_next` (10-minute lease), `finish` (backoff, failed and audited after 5 attempts). Role `demobank_meetings` for the runner |
+| Consent by category | `rm.consent_active`, `rm_consent_status` (0105) | Client in the RM's book and an active `rm_brief` grant to that RM covering `transaction_insights`, `chat_topics` or `meeting_recording`. Checked inside SQL reads, so a gated reader returns nothing, never filtered in the prompt |
+| Identity | — | Steps that read client records run with the RM's JWT (`prepare`, `decide`, `status`). The runner has no user JWT and reads no client records |
+| Ownership | — | Meeting side: `services/meetings/**`, `api/meetings.py`, its prompts and UI, migrations 0120–0139. Client, consent and copilot side: the rest, migrations 0106–0119 |
+
 ## Appendix: knowledge base
 
 How the approved banking articles are stored, searched and cited, and which articles each story needs.
