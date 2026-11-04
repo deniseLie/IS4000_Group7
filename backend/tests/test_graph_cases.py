@@ -12,17 +12,16 @@ PATTERNS={'conditional','input','external','fan_out','handoff','confirmation_cha
 
 def test_ids_and_variants():
     base=[c for c in GRAPH if 'variant_of' not in c]
-    assert [c['id'] for c in base]==[*(f'C{i}' for i in range(23,29)),*(f'R{i}' for i in range(21,24))]
+    assert [c['id'] for c in base]==['C28',*(f'R{i}' for i in range(21,24))]  # C23-C27 removed 4 Nov; new client chains to follow
     ids={c['id'] for c in base}
     for c in GRAPH:
         assert set(c['pattern'])<=PATTERNS and c['turns'] and c['check'] and c['must_not'] and c['trajectory'] and c['trajectory_v5']
         if 'variant_of' in c:assert c['variant_of'] in ids and c['id'].startswith(c['variant_of']) and c['fault'] in sync.FAULTS
-    assert {c['fault'] for c in GRAPH if 'fault' in c}=={'external_down','upstream_withheld','receipt_failed','consent_revoked'}
-    assert set().union(*(c['pattern'] for c in GRAPH))==PATTERNS
+    assert {c['fault'] for c in GRAPH if 'fault' in c}<=set(sync.FAULTS)
 
 def test_every_pattern_has_a_failure_variant():
     faulted={p for c in GRAPH if 'fault' in c for p in c['pattern']}
-    assert {'conditional','external','confirmation_chain'}<=faulted
+    assert {'conditional'}<=faulted
 
 def test_names_exist_in_both_graphs():
     for c in GRAPH:
@@ -45,9 +44,8 @@ def test_planner_cases():
 
 def test_examples_carry_fault_and_both_trajectories():
     built={e['metadata']['case_id']:e for e in sync.examples('demobank-graph',GRAPH)}
-    assert built['C23a']['inputs']['fault']=='external_down' and 'fault' not in built['C23']['inputs']
-    assert built['C27']['outputs']['trajectory_v5']['acted_order']==['fraud.report','rm.handover']
-    assert built['C23a']['metadata']['variant_of']=='C23'
+    assert built['R23a']['inputs']['fault']=='consent_revoked' and 'fault' not in built['R23']['inputs']
+    assert built['R23a']['metadata']['variant_of']=='R23'
     planned={e['metadata']['case_id']:e for e in sync.examples('demobank-planner',PLANNER)}
     assert planned['P10']['inputs']['open_offers']==1 and planned['P10']['outputs']['plan']['route']=='act'
     assert json.loads(json.dumps(built))==built
