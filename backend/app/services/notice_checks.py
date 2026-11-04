@@ -7,6 +7,8 @@ from datetime import date,datetime,timedelta
 from app.schemas.prechecks import CheckPolicy,Finding,NoticeRequirement
 from app.services import llm_gateway,prompts
 
+PLAN_PROMPT,EVIDENCE_PROMPT='v2','v2'  # notice_requirements, document_evidence
+
 
 def object_schema(title,properties):
     return {'title':title,'type':'object','additionalProperties':False,'properties':properties,'required':list(properties)}
@@ -140,7 +142,7 @@ async def check(text,pages,notice,today,policy=None):
     policy=policy or CheckPolicy()
     if not text.strip() or len(text)>32000 or not notice.strip():return [],[Finding(code='unassessable')]
     if re.search(r'ignore (?:all |the |previous )?(?:rules|instructions)|system prompt|approve (?:me|this)',text,re.I):return [],[Finding(code='unassessable')]
-    plan=prompts.load('notice_requirements','v2');extract=prompts.load('document_evidence','v2')
+    plan=prompts.load('notice_requirements',PLAN_PROMPT);extract=prompts.load('document_evidence',EVIDENCE_PROMPT)
     try:
         result=await llm_gateway.call(plan,plan['system'],[('user',json.dumps({'notice':notice}))],PLAN_SCHEMA)
         requirements=requirements_from(result.data,notice)

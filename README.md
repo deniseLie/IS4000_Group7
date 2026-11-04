@@ -11,6 +11,7 @@ A coursework demo of an AI assistant for a private bank. Both workflows are buil
 |---|---|---|---|
 | 1 – Client | Michelle (`demo.michelle@example.com`) | Built | [docs/workflows/workflow-1-client.md](docs/workflows/workflow-1-client.md) |
 | 2 – Relationship manager | Sophie (`demo.sophie@example.com`, app_metadata `demobank_role=rm`) | Built (1 Nov 2026: RM1–RM12, RM16) | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) |
+| AI engineering (admin) | `demo.admin@example.com` (app_metadata `demobank_role=admin`; create the Auth user, then run `backend/supabase/hosted/32_admin_login_hosted.sql`) | Built (5 Nov 2026) | [docs/planning/admin-dashboard.md](docs/planning/admin-dashboard.md) |
 
 The client uses the assistant for:
 - everyday banking questions, within guardrails;
@@ -165,6 +166,7 @@ cd ../frontend && npm test                                                # fron
 ## Tracing and audit
 
 - **Tracing.** Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` to send each chat request to LangSmith as one run, with the graph nodes, agents and model calls nested inside. Text is redacted before upload (`core/langsmith_client.py`).
+- **Admin dashboard.** Sign in as `demo.admin@example.com` to see what LangSmith holds: failures with a debug card each, evaluation accuracy over time, agent scorecards, prompt versions, and latency and tokens. The backend reads LangSmith with its own key; nothing LangSmith-related reaches the browser.
 - **Audit log.** Every request writes an append-only, hash-chained audit trail in Supabase (`audit.events`). It holds ids and counts only, never chat text. Run `python -m scripts.audit_walkthrough --case-id … --database-url … --markdown` to print one case end to end.
 
 ## Rules for contributors

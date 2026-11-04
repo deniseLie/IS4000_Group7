@@ -36,6 +36,11 @@ TAP_ALIASES={'Confirm':'yes'}  # the offer's Confirm button; a typed yes takes t
 NODES=('planner','agent','gather','act','compose')
 
 
+def prompt_ids(spans) -> list[str]:
+    """family/version+hash of every model call the case made (the admin dashboard's accuracy per prompt version)."""
+    return sorted({f"{a['agent']}/{a['prompt_version']}" for n,a in spans if n=='llm' and a.get('agent') and a.get('prompt_version')})
+
+
 class NodeLog(AsyncCallbackHandler):
     """A graph node acted when its update changes the state (a new or different non-empty value)."""
     def __init__(self) -> None:
@@ -159,7 +164,7 @@ async def plan_only(inputs: dict[str,Any]) -> dict[str,Any]:
     route=fixed_route if fixed_route in {'ask_which','expired'} else 'act' if update.get('confirm') else 'plan' if update.get('tasks') else 'rephrase' if update.get('lines') else 'none'
     tasks=plan_rows(update.get('tasks') or [])
     return {'played':True,'plan':{'route':route,'tasks':tasks,'unlinked':len(update.get('lines') or []) if route=='plan' else 0},
-        'model_calls':sum(name=='llm' for name,_ in spans)}
+        'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans)}
 
 
 def plan_rows(tasks: list) -> list[dict[str,Any]]:
@@ -179,7 +184,7 @@ async def plan_only_rm(inputs: dict[str,Any]) -> dict[str,Any]:
     spans: list[tuple[str,dict[str,Any]]]=[];token=span_sink.set(spans)
     try:tasks,lines=orchestrator.linked(graph.tasks_from(await graph.model_plan(rt,req.message),req.message),req)
     finally:span_sink.reset(token)
-    return {'played':True,'plan':{'route':'plan','tasks':plan_rows(tasks),'unlinked':len(lines)},'model_calls':sum(name=='llm' for name,_ in spans)}
+    return {'played':True,'plan':{'route':'plan','tasks':plan_rows(tasks),'unlinked':len(lines)},'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans)}
 
 
 def rm_text(reply: dict[str,Any]) -> str:
@@ -221,7 +226,7 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':[None]*len(replies),'skipped':skipped,'not_offered':[],
         'played':bool(replies),'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},
         'agents':dict(Counter(attrs.get('agent') for name,attrs in spans if name=='agent')),
-        'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),'model_calls':sum(name=='llm' for name,_ in spans),
+        'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),'exports':sorted({e for w in waves for e in w.get('exports',[])}),
             'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},'rerouted':next((w['rerouted'] for w in waves if w.get('rerouted')),{})},
         'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,'tickets':{'opened':[],'all':[]}}
@@ -300,7 +305,7 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
         'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
         'service_reads':sorted({attrs['tool'] for _,attrs in spans if 'call_id' in attrs and 'tool' in attrs}),
-        'model_calls':sum(name=='llm' for name,_ in spans),
+        'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),
             'exports':sorted({e for w in waves for e in w.get('exports',[])}),
             'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},

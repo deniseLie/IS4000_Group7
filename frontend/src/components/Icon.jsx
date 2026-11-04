@@ -31,6 +31,9 @@ const paths = {
   bank: <><path d="m3 9 9-5 9 5H3Zm2 0v9m4.7-9v9m4.6-9v9M19 9v9M3 21h18"/></>,
   pin: <><path d="M12 21s-7-6-7-12a7 7 0 0 1 14 0c0 6-7 12-7 12Z"/><circle cx="12" cy="9" r="2.5"/></>,
   logout: <><path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/></>,
+  chart: <path d="M4 20V10m6 10V4m6 16v-7m4 7H3"/>,
+  clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+  layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></>,
 };
 
 export default function Icon({name}) {

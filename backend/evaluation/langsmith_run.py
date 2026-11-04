@@ -65,7 +65,8 @@ async def run(args) -> dict:
     from app.services import prompts
     from evaluation import evaluators,targets,rm_target
     from app.services.llm_gateway import model_name,transport
-    from evaluation.langsmith_sync import DATASETS
+    from evaluation.langsmith_sync import DATASETS,load as load_cases
+    from app.core.observability import app_version
     if settings.conversation_store!='database':raise SystemExit('Set CONVERSATION_STORE=database: the runner plays saved chats like the browser')
     if args.judge:evaluators.judge_name()
     settings.pipeline=args.pipeline
@@ -84,7 +85,11 @@ async def run(args) -> dict:
     meta={'dataset':args.dataset,'pipeline':args.pipeline,'answer_prompt':prompt,'prompt_versions':settings.prompt_versions,
         'model':model_name(),'transport':transport(),'judge_model':os.getenv('JUDGE_MODEL') if args.judge else None,
         'judge_prompt':evaluators.JUDGE_PROMPT.stem+'+'+sha256(evaluators.JUDGE_PROMPT.read_bytes()).hexdigest()[:8] if args.judge else None,
-        'dataset_file':DATASETS[args.dataset]}
+        'dataset_file':DATASETS[args.dataset],
+        # Admin dashboard (docs/planning/admin-dashboard.md §1.4): what makes two runs comparable, and every prompt in use.
+        'prompts_in_use':prompts.in_use(),'dataset_file_tag':'sha-'+load_cases(args.dataset)[1][:12],'case_count':len(examples),
+        'case_ids_hash':sha256(','.join(sorted(str((e.metadata or {}).get('case_id')) for e in examples)).encode()).hexdigest()[:12],
+        'partial':bool(args.case),'app_version':app_version()}
     label=f"{args.dataset}-{args.pipeline}-{datetime.now(timezone.utc):%Y%m%d-%H%M}"
     async def target(inputs: dict) -> dict:
         if 'say' in inputs:return await targets.plan_only(inputs)

@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core import langsmith_client
-from app.core.observability import current_trace, span, start_trace
+from app.core.observability import current_trace, request_facts, span, start_trace
 from app.services import answers
 
 client=TestClient(app)
@@ -70,5 +70,26 @@ def test_nothing_is_sent_while_tracing_is_off():
 
 def test_trace_keeps_only_budget_audit_and_request_facts():
     trace=start_trace()
-    try:assert vars(trace)=={'attrs':{},'llm_calls':[],'tokens':0}
+    try:assert vars(trace)=={'attrs':{},'llm_calls':[],'agents':[],'tokens':0}
     finally:current_trace.set(None)
+
+
+def test_agent_runs_and_model_calls_become_the_request_summary():
+    """The root run's summary (admin dashboard): agent names with their worst status, the plan route and model-call counts."""
+    trace=start_trace()
+    try:
+        with langsmith.tracing_context(enabled=False):
+            with span('planner','agent') as a:a.update(route='model',tasks=2)
+            with span('agent','agent',agent='guide',intent='faq') as a:a.update(path='reads',status='ok')
+            with span('agent','agent',agent='security',intent='login_help') as a:a.update(path='rule',status='needs_human')
+            with span('agent','agent',agent='security',intent='unrecognised_charge') as a:a.update(outcome='timeout',status='withheld')
+            with span('route','agent',route='llm'):pass
+        trace.llm_calls+=[{'ok':True,'agent':'planner','model':'m1','prompt_version':'v7+abc','transport':'api','input_tokens':10,'output_tokens':5,'ms':100},
+            {'ok':False,'agent':'guide','model':'m1','prompt_version':'v1+def','transport':'api','input_tokens':None,'output_tokens':None,'ms':50}]
+        facts=request_facts(trace)
+    finally:current_trace.set(None)
+    assert trace.attrs=={'plan_route':'model','tasks':2}
+    assert [a['agent'] for a in trace.agents]==['guide','security','security'] and all(isinstance(a['ms'],int) for a in trace.agents)
+    assert facts['agents']==['guide','security','security'] and facts['agent_status']=={'guide':'ok','security':'withheld'}
+    assert {k:facts[k] for k in ('model_calls','model_failures','llm_ms','llm_tokens','model','prompt_ids')}=={'model_calls':2,'model_failures':1,
+        'llm_ms':150,'llm_tokens':15,'model':'m1','prompt_ids':['guide/v1+def','planner/v7+abc']}

@@ -44,7 +44,7 @@ All seven v3.1 principles are implemented; the notes say how.
 | Reply over SSE | **Streaming Response (SSE)** | `fetch` + parser | `api/chat.py`, `frontend/src/lib/chatTools.js` |
 | Human handoff queue | **Human Handoff** | `handoffs.py` executor + staff script | `actions/handoffs.py`, `actions/staff.py`, `scripts/staff_support.py` |
 | Proactive triggers + event bus + rules | **Background Worker** | Outbox poller + reminder scheduler (no pg_cron) | `app/worker.py`, `core/lifecycle.py` |
-| Observability | **Tracing & Evaluation** | LangSmith runs (redacted), JSON request logs, eval harness | `core/observability.py`, `core/langsmith_client.py`, `backend/evaluation/` |
+| Observability | **Tracing & Evaluation** | LangSmith runs (redacted), JSON request logs, eval harness, admin dashboard | `core/observability.py`, `core/langsmith_client.py`, `backend/evaluation/`, `services/quality.py`, `services/insights.py`, `api/admin.py` |
 | — (new) | **Audit Log Service** | Append-only hash-chained `audit.events` | `services/audit.py`, migrations `0005`–`0007`, `0054` |
 | LLM provider | **LLM Gateway** | One client for planner and agents | `services/llm_gateway.py`, `prompts.py` |
 | Supabase Postgres | **Operational Database** | Hosted Supabase Postgres + RLS | `backend/supabase/migrations/` |
@@ -499,7 +499,7 @@ Neither RM agent decides approvals or gives investment advice, and neither chang
 ### 5.12 Tracing & Evaluation
 - **Category:** Tracing, structured logs, evaluation harness.
 - **Responsibility & boundaries:** One LangSmith root run per request with nested runs per node/agent/tool/LLM call (redacted before upload), JSON request logs with ids and counts only, offline and live evaluation sets. Not the compliance record — that is the Audit Log Service.
-- **Infrastructure / pattern:** LangSmith (`core/observability.py`, `core/langsmith_client.py`), `backend/evaluation/` (`run.py`, `--live --suite focused`, `langsmith_sync.py`). `ops.traces`/`ops.spans` (`0001`) are retired history; `0074` drops `log_trace`.
+- **Infrastructure / pattern:** LangSmith (`core/observability.py`, `core/langsmith_client.py`), `backend/evaluation/` (`run.py`, `--live --suite focused`, `langsmith_sync.py`). `ops.traces`/`ops.spans` (`0001`) are retired history; `0074` drops `log_trace`. Each root run carries a per-request summary in its metadata (`request_facts`: agents and their worst status, model calls, tokens, prompt ids; plus the route's time to first section and offers) so the admin dashboard (`api/admin.py`, admin role only) reads one run per request; `services/quality.py` does the bounded LangSmith reads and `services/insights.py` the arithmetic (overview, failures and debug cards, evaluation timelines and comparisons, agent scorecards, prompt versions, latency). Read-only; it never writes to LangSmith.
 - **Dependencies:** ↑ all backend modules. ↓ LangSmith.
 
 ### 5.13 Agent tools

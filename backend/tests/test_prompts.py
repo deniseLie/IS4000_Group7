@@ -76,3 +76,10 @@ def test_agent_versions_are_configured_not_guessed(monkeypatch):
     assert prompts.current()['id']==RELEASED[('answer','v1')]
     monkeypatch.setattr(settings,'prompt_versions',{})
     with pytest.raises(ValueError):prompts.current('planner')
+
+
+def test_prompts_in_use_are_released_versions():
+    """The admin dashboard's "live" version per family: every one exists on disk, and the v5 runner agents are included."""
+    used=prompts.in_use()
+    assert set(used.items())<=set(prompts.released())
+    assert {'planner','guide','accounts','security','runner_common','rm_planner','rm_assistant'}<=set(used)

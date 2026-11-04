@@ -14,8 +14,6 @@ import {loadInbox} from './lib/notifications';
 import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
-import QualityPage from './components/QualityPage';
-import {isTeam} from './lib/quality';
 import RecordsPanel from './components/RecordsPanel';
 import OfferBlock from './components/OfferBlock';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
@@ -45,7 +43,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable right now. Please retry later.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat','overview','inbox','compliance','requests','actions','quality'];  // one client view (the RM pages are not shown); 'quality' is team-only (lib/quality.isTeam)
+const PAGES=['chat','overview','inbox','compliance','requests','actions'];  // one client view (the RM and admin pages are not shown)
 // CR8 routing for "Talk to a person". Michelle is a private-banking client, so her relationship manager is her person for
 // general, account and compliance questions (the RM coordinates with the compliance team). Fraud and lost cards go
 // straight to the urgent fraud flow; card limit changes go to the cards and credit team's request form.
@@ -520,7 +518,6 @@ export default function Chat({session,onSignIn}) {
     {view:'actions',testid:'nav-actions',icon:'history',label:'Actions',short:'Actions',onSelect:session?openActions:null},
     {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',short:'Review'},
     {view:'requests',testid:'open-requests',icon:'clip',label:'My requests',short:'Requests'},
-    ...(isTeam(session)?[{view:'quality',testid:'open-quality',icon:'spark',label:'Quality',short:'Quality'}]:[]),
   ].map(page=>({...page,locked:!session&&page.view!=='chat',onSelect:page.onSelect||(()=>{if(page.view!=='chat')closeOverlays();navigate(page.view);})}));
   const current=view;
 
@@ -581,7 +578,6 @@ export default function Chat({session,onSignIn}) {
         {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
         {session&&view==='actions'&&<ActionsPanel key={pageKey}/>}
-        {session&&view==='quality'&&isTeam(session)&&<QualityPage key={pageKey}/>}
         {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary} rmName={rmIntro?.current?.name} initialTab={ticketPrefill?.tab||'open'}/>}
         {session&&view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
         {footer}

@@ -573,6 +573,7 @@ async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
         chained = await offers.chained(reply.group, ctx, runtime.context.conversation_id) if reply.decision == 'confirm' else set()
         outcomes = await (offers.confirm if reply.decision == 'confirm' else offers.cancel)(reply.group, ctx)
         attrs['offers'], attrs['chained'] = len(outcomes), len(chained)
+        if reply.decision == 'confirm':attrs['failed'] = sum(o.receipt is None or o.receipt.outcome != 'succeeded' for o in outcomes)
     lines, earlier = [], None
     for i, outcome in enumerate(outcomes):
         reason = getattr(outcome.command.target, 'reason', None)
