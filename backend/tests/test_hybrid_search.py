@@ -59,3 +59,16 @@ def test_respell_switch_changes_the_search_text(monkeypatch: pytest.MonkeyPatch)
     assert for_search('Wats my CRAD bal') == 'whats my card balance'
     monkeypatch.setattr(settings, 'knowledge_respell', False)
     assert for_search('Wats my CRAD bal') == 'wats my crad bal'
+
+
+def test_hosted_sql_embedder_matches_the_python_one_and_holds_no_key() -> None:
+    """hosted/embed_knowledge.sql must store what scripts/embed_knowledge.py stores, so --check agrees with it."""
+    from pathlib import Path
+    from scripts import embed_knowledge
+    sql = (Path(__file__).parents[1] / 'supabase/hosted/embed_knowledge.sql').read_text(encoding='utf-8')
+    assert embed_knowledge.text('T', 'H', 'B') == 'T\nH\nB'
+    assert sql.count("a.title||E'\\n'||s.heading||E'\\n'||s.body") == 3
+    assert "extensions.digest(convert_to(b->>'text','UTF8'),'sha256'),'hex')" in sql
+    assert f"p_model text:='{Settings().embedding_model}'" in sql and f"'{Settings().embedding_base_url}/embeddings'" in sql
+    assert "api_key text:='PASTE_EMBEDDING_API_KEY_HERE'" in sql and 'sk-' not in sql
+    assert sql.index('create extension if not exists http') < sql.index('drop extension http') < sql.index('commit;')

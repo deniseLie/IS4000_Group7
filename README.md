@@ -108,7 +108,7 @@ Then open http://127.0.0.1:5173 and sign in as Michelle, or as Sophie for the re
 cd backend
 ../.venv/bin/python -m scripts.embed_knowledge --database-url "postgresql://..."           # add --check to only report
 ```
-Leave `EMBEDDING_API_KEY` empty and restart for keyword-only search. Each search logs a `knowledge_search` line (and a LangSmith `kb.search` run) with the mode and how long the embedding and database steps took, so the two can be compared. `KNOWLEDGE_RESPELL=false` turns off the chat-spelling table for search only.
+Without the owner password, paste `backend/supabase/hosted/embed_knowledge.sql` into the Supabase SQL editor instead (put the embedding key in it; it stores the same vectors). Leave `EMBEDDING_API_KEY` empty and restart for keyword-only search. Each search logs a `knowledge_search` line (and a LangSmith `kb.search` run) with the mode and how long the embedding and database steps took, so the two can be compared. `KNOWLEDGE_RESPELL=false` turns off the chat-spelling table for search only.
 
 Reminders are sent from 7 days before a due date, only for documents she still has to send, and disappear from her Inbox once she has sent everything (or the file the bank asked for). Michelle's review is due 30 Nov, so to see one today, ask for a correction due in 3 days (see *Demo data*); it reaches her Inbox within a minute.
 

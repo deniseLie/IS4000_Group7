@@ -4,7 +4,7 @@ The approved articles the assistant can retrieve, as of 4 Nov 2026 (migrations u
 
 **One store.** Since 4 Nov 2026 (`0102`) articles live only in the database; the in-memory copy (`knowledge.py`) and the `KNOWLEDGE_STORE` switch are gone.
 - **Articles and sections** (`kb.articles`, `kb.sections`) keep each section separately (anchors below), plus retired versions, which stay citable.
-- **Section vectors** (`kb.section_embeddings`, migration `0099`) are used by hybrid search, which runs whenever `EMBEDDING_API_KEY` is set; without a key, or if the provider fails, search is keyword only. Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …`; until then the new sections are found by keywords only.
+- **Section vectors** (`kb.section_embeddings`, migration `0099`) are used by hybrid search, which runs whenever `EMBEDDING_API_KEY` is set; without a key, or if the provider fails, search is keyword only. Each published section is embedded as its title, heading and body, without its keywords. After any migration that adds or changes sections, run `python -m scripts.embed_knowledge --database-url …` (or, on the hosted project, `backend/supabase/hosted/embed_knowledge.sql` in the SQL editor); until then the new sections are found by keywords only.
 
 All content is synthetic demo guidance or a summary of an allowed public source. The 2 Nov articles were informed by [research on how a private bank explains these topics](research/ubs-practices.md). They are written as DemoBank guidance and do not name or quote that bank.
 
