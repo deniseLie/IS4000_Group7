@@ -2,7 +2,7 @@
 
 TOOLS is the v4 allow-list (permission names per agent). SPECS is the v5 agent catalogue (architecture §5.6.1, §14.8):
 one AgentSpec per target agent is the single source for its tools, field views, limits, intents and default reads,
-loop tools and offers. authorization.decide and tools.call both read it. All five specs run on /chat since phase 5, but
+loop tools and offers. authorization.decide and tools.call both read it. The client specs run on /chat since phase 5, but
 the rules in agents/rules.py still call the v4 responders under their v4 names (retail, fraud, compliance, document,
 relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from SPECS (ENFORCED).
 The three RM specs (Client, Requests, Calendar; build plan 3a) run on the RM graph (services/rm/graph.py) for a verified
@@ -46,10 +46,10 @@ CARD_FIELDS=frozenset({'last4','name','network','status','currency','limit','out
 TXN_DAYS,TXN_ROWS=90,100
 
 GUIDE=AgentSpec(name='guide',role='public',scope='public',prompt='guide',
-    answers='General banking questions with no personal data: products, fees, how-to steps, which request to raise. '
-        'Personal questions get "sign in to check".',
+    answers='General banking questions with no personal data: products, fees, how-to steps, which request to raise, '
+        'login trouble, unexpected one-time codes and phishing. Personal questions get "sign in to check".',
     tools={'knowledge_search':KB,'request_categories':ToolView()},
-    intents={'general':(ASK,),'how_to_request':(ASK,Read(tool='request_categories'))},
+    intents={'general':(ASK,),'how_to_request':(ASK,Read(tool='request_categories')),'login_help':(ASK,),'phishing':(ASK,)},
     loop_tools=frozenset({'knowledge_search','request_categories'}),external=frozenset({'public_holidays','fx_rate'}))
 
 ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='accounts',
@@ -76,17 +76,8 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
     external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
     exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]'},sort_by={'account_refs':'last4'})
 
-SECURITY=AgentSpec(name='security',role='client',scope='own_customer',prompt='security',
-    answers='Unrecognised charges, lost or stolen cards, login trouble, unexpected codes, phishing and travel readiness. '
-        'Reports to the fraud team and sends travel notices; never freezes, unfreezes, disputes or cancels.',
-    tools={'my_cards':ToolView(fields=frozenset({'card_id','last4','status'})),
-        'my_transactions':ToolView(fields=frozenset({'txn_id','date','description','amount','currency','status','card_id','card_last4','is_overseas'}),
-            max_days=TXN_DAYS,max_rows=TXN_ROWS),
-        'travel_flags':ToolView(),'knowledge_search':KB},
-    intents={'unrecognised_charge':(Read(tool='my_cards'),Read(tool='my_transactions'),Read(tool='travel_flags'),ASK),
-        'lost_card':(Read(tool='my_cards'),ASK),'login_help':(ASK,),'phishing':(ASK,),
-        'travel_readiness':(Read(tool='my_cards'),ASK)},
-    external=frozenset({'public_holidays'}),offers=frozenset({'handoff.create','card.order_replacement','ticket.create'}))  # ticket: travel notice (0101)
+# No Security agent since build plan 2b: a lost card or a charge she doesn't recognise gets fixed steps and one urgent
+# request to her RM (orchestrator, rm_handover.urgent_*), and login, OTP and phishing questions are Guide's.
 
 COMPLIANCE=AgentSpec(name='compliance',role='client',scope='own_customer',prompt='compliance',
     answers='The client\'s compliance review: checklist, missing items, deadlines, bank questions, uploads and check '
@@ -101,7 +92,7 @@ COMPLIANCE=AgentSpec(name='compliance',role='client',scope='own_customer',prompt
         'guidance':(ASK,Read(tool='document_templates'))},
     loop_tools=frozenset({'my_document_checks','document_templates','knowledge_search'}),
     offers=frozenset({'compliance.update_checklist_item','compliance.answer_request','document.submit','handoff.create'}),
-    hands_to=frozenset({'relationship'}),imports=frozenset({'account_refs'}))  # C24: account type, currency, last 4; no balances
+    hands_to=frozenset({'relationship'}),imports=frozenset({'account_refs'}))  # account type, currency, last 4; no balances
 
 RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',prompt='relationship',
     answers='Everything about a person at the bank: the client\'s RM, meeting requests and free times, consent to share, '
@@ -191,7 +182,7 @@ RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_as
 # cards the RM approves one by one through the /rm write routes (rm.send_client_update, rm.save_interaction,
 # rm.create_tasks, /rm/meeting-requests/{id}/decide, /rm/availability/...). No write tool is a model-facing tool.
 
-SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,SECURITY,COMPLIANCE,RELATIONSHIP,RM_CLIENT,RM_REQUESTS,RM_CALENDAR)})
+SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,COMPLIANCE,RELATIONSHIP,RM_CLIENT,RM_REQUESTS,RM_CALENDAR)})
 CLIENT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in SPECS.items() if s.role!='rm'})
 RM_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in SPECS.items() if s.role=='rm'})
 INTENT_AGENT: MappingProxyType[str, TargetAgent] = MappingProxyType({i:s.name for s in RM_SPECS.values() for i in s.intents})  # RM intents are unique
@@ -204,7 +195,7 @@ BORROWED: MappingProxyType[TargetAgent, frozenset[str]] = MappingProxyType({'rm_
 # Reads SQL answers only under the client's consent (rm.consent_active, 0106; rm_brief for the shared note and handover):
 # fixed reads of the Client agent only, never in loop_tools, their purpose set by the intent.
 CONSENT_GATED=frozenset({'rm_transaction_insights','rm_talking_points','rm_cash_events','rm_shared_summary','rm_handover_sources'})
-ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts, security and the RM agents; the rest once the v4 responders move into specs
+ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts and the RM agents; the rest once the v4 responders move into specs
 
 
 def spec_for(agent: str | None) -> AgentSpec | None:

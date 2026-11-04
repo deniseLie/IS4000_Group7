@@ -110,7 +110,7 @@ def test_agents_reach_only_the_external_tools_in_their_spec(served):
     ctx=lambda agent:RequestContext(session_id=uuid4(),agent=agent,principal=Principal(kind='customer',user_id=uuid4(),customer_id=1001,jwt='synthetic'))
     result,_=run(tools.call('fx_rate',{'base':'SGD','quote':'JPY'},ctx('accounts')))
     assert result['rate']==RATES['rates']['JPY']
-    with pytest.raises(PolicyDenied,match='agent_tool_forbidden'):run(tools.call('fx_rate',{'base':'SGD','quote':'JPY'},ctx('security')))
+    with pytest.raises(PolicyDenied,match='agent_tool_forbidden'):run(tools.call('fx_rate',{'base':'SGD','quote':'JPY'},ctx('rm_requests')))
 
 
 @pytest.mark.skipif(os.getenv('TEST_EXTERNAL_LIVE')!='1',reason='set TEST_EXTERNAL_LIVE=1 for one real call to each API')

@@ -78,7 +78,7 @@ def test_fixed_route_cases_run_without_a_model(case):
 def test_qa1_examples_carry_persona_and_trajectory():
     built={e['metadata']['case_id']:e for e in sync.examples('demobank-qa1-client',CLIENT)}
     assert built['C01']['inputs']=={'turns':CLIENT[0]['turns'],'persona':'guest','mode':'public'}
-    assert built['C03']['inputs']['mode']=='personal' and built['C03']['outputs']['trajectory']['agents']=={'security':2,'accounts':1}
+    assert built['C03']['inputs']['mode']=='personal' and built['C03']['outputs']['trajectory']['agents']=={'relationship':1,'accounts':1,'guide':1}
     assert built['C03']['metadata']['backlog']['id']=='C03' and built['C03']['metadata']['legacy_id']=='C15'
     assert json.loads(json.dumps(built))==built  # plain JSON for LangSmith
 

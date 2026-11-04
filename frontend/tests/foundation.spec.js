@@ -31,9 +31,9 @@ test('real v2 planner orders fraud security and banking sections',async({page})=
   await expect(sections).toHaveCount(3);
   await expect(sections.nth(0)).toHaveAttribute('data-domain','fraud');
   await expect(sections.nth(0)).toHaveAttribute('data-priority','P0');
-  await expect(sections.nth(0)).toHaveAttribute('data-response-origin','ai');
+  await expect(sections.nth(0)).toHaveAttribute('data-response-origin','safety');  // build plan 2b: fixed urgent card steps
   await expect(sections.nth(1)).toHaveAttribute('data-domain','retail');
-  await expect(sections.nth(1)).toHaveAttribute('data-priority','P1');
+  await expect(sections.nth(1)).toHaveAttribute('data-priority','P3');  // sign-in help is Guide's (P1 unused since 2b)
   await expect(sections.nth(1)).toHaveAttribute('data-response-origin','ai');
   await expect(sections.nth(2)).toHaveAttribute('data-domain','retail');
   await expect(sections.nth(2)).toHaveAttribute('data-priority','P3');

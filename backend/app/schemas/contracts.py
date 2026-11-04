@@ -6,12 +6,13 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, model_validator
 
-Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
+Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 urgent card > P2 regulatory deadline or RM handover > P3 everything else (P1 unused since 2b)
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
 AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
-# v5 agents (architecture §5.6.1): five client agents and two RM agents (phase 9). `compliance` and `relationship` keep
-# their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still calls the v4 responders under these names.
-TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship', 'rm_client', 'rm_requests', 'rm_calendar']
+# v5 agents (architecture §5.6.1): four client agents (Security removed in build plan 2b) and three RM agents (build
+# plan 3a). `compliance` and `relationship` keep their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still
+# calls the v4 responders under these names.
+TargetAgent = Literal['guide', 'accounts', 'compliance', 'relationship', 'rm_client', 'rm_requests', 'rm_calendar']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py

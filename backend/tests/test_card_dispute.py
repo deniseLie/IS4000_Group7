@@ -57,7 +57,7 @@ def test_impossible_travel_seed_reads_back_with_time_and_country(database: 'Conn
 
 
 def test_the_client_cannot_propose_a_dispute_draft(database: 'Connection[SqlRow]') -> None:
-    """Disputes are bank-only since 0081: the charges go to the fraud team in a P0 handoff instead (tests/test_offer_turns.py)."""
+    """Disputes are bank-only since 0081: since build plan 2b the charge goes to her RM as one urgent request instead (below)."""
     for customer in (1001,1002):
         case_id=owned_case(database,customer)
         assert sqlstate(database,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case_id,'card.dispute',json.dumps(TARGET),
@@ -74,3 +74,44 @@ def test_the_dispute_handoff_reason_is_registered_for_staff(database: 'Connectio
     set_customer(database,1001)
     assert sqlstate(database,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case_id,'handoff.create',
         json.dumps({'reason':'refund','priority':'P0','summary':summary}),f'{case_id}:t9:handoff.create'))=='22023'
+
+
+def test_a_confirmed_urgent_card_request_lands_first_in_the_rms_ticket_inbox(database: 'Connection[SqlRow]') -> None:
+    """Build plan 2b: the code-built urgent target (rm_handover.urgent_target), offered and confirmed as in a chat, opens an
+    urgent rm_handover ticket (0082 trigger) that Sophie sees at the top of her own inbox (0089 rm_tickets)."""
+    from app.services import rm_handover
+    from tests.test_rm_workspace import SOPHIE,as_rm
+    case_id,group=owned_case(database,1002),uuid4()
+    target=rm_handover.urgent_target('charge','eh there is a charge in London I did not make','card ending 7310 (active)')
+    key=f'{case_id}:t1:handoff.create'
+    database.execute('select public.action_offer(%s,%s,%s,%s::jsonb,%s,%s,%s,%s::smallint,%s)',(uuid4(),case_id,'handoff.create',json.dumps(target),key,30,group,1,None))
+    database.execute('reset role')
+    assert database.execute('select count(*) from support.tickets where case_id=%s',(case_id,)).fetchone()==(0,)  # nothing before she confirms
+    set_customer(database,1002)
+    assert [o['command']['state'] for o in database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0]]==['succeeded']
+    database.execute('reset role')
+    category,urgency,summary,reference=database.execute('select category,urgency,summary,reference from support.tickets where case_id=%s',(case_id,)).fetchone()
+    assert (category,urgency)==('rm_handover','urgent') and summary==target['summary'] and summary.startswith('[Urgent card] Charge')
+    assert rm_handover.urgent(summary) and reference.startswith('TCK-')
+    as_rm(database,rm_id=SOPHIE)
+    owned=call_rm_tickets(database)['rm_owned']
+    mine=next(i for i,t in enumerate(owned) if t['reference']==reference)
+    assert owned[mine]['customer_id']==1002 and owned[mine]['summary']==summary and all(t['urgency']=='urgent' for t in owned[:mine+1])
+
+
+def test_after_an_rm_request_in_the_same_chat_the_urgent_yes_returns_that_handoff(database: 'Connection[SqlRow]') -> None:
+    """Why orchestrator.outcome_text checks `created` (rm_handover.urgent_elsewhere): one open general_support handoff per case."""
+    from app.services import rm_handover
+    case_id,group=owned_case(database,1002),uuid4()
+    assert propose(database,case_id,'handoff.create',{'reason':'general_support','priority':'P3','summary':'[Fees or rates] Client question for you: waive my fee'})['receipt']['outcome']=='succeeded'
+    target=rm_handover.urgent_target('lost','i lost my card')
+    database.execute('select public.action_offer(%s,%s,%s,%s::jsonb,%s,%s,%s,%s::smallint,%s)',(uuid4(),case_id,'handoff.create',json.dumps(target),
+        f'{case_id}:lost_card:handoff.create',30,group,1,None))
+    confirmed=database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0][0]
+    assert confirmed['receipt']['outcome']=='succeeded' and confirmed['receipt']['result']['created'] is False
+    database.execute('reset role')
+    assert database.execute("select count(*) from support.tickets where case_id=%s and urgency='urgent'",(case_id,)).fetchone()==(0,)
+
+
+def call_rm_tickets(db: 'Connection[SqlRow]') -> dict:
+    return db.execute('select public.rm_tickets()').fetchone()[0]['data']

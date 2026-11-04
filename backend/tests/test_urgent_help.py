@@ -5,7 +5,6 @@ Model planning and wording are covered by the opt-in real-provider browser and e
 """
 import asyncio
 import json
-import re
 from datetime import date,datetime,timedelta,timezone
 from uuid import uuid4
 import pytest
@@ -13,9 +12,8 @@ from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import PlanTask,Principal,RequestContext,Task
 from app.schemas.fraud import FraudProposal
-from app.schemas.disputes import DisputeItem
 from app.schemas.events import Source
-from app.services import prompts
+from app.services import prompts, rm_handover
 from app.services.agents import fraud,retail
 from app.services.agents.answer import validate_draft
 from app.services.agents.fraud import decision_for,evidence_for
@@ -57,17 +55,28 @@ def plan_for(tasks: list[PlanTask],message: str=MESSAGE) -> list[PlanTask]:
     return sorted(checked(overridden(tasks,assess_request(request)),request),key=lambda t:t.priority)
 
 
-def test_fraud_comes_first_then_the_lockout_then_ordinary_issues() -> None:
+def test_the_urgent_card_request_comes_first_and_the_lockout_goes_to_guide() -> None:
+    """Build plan 2b: no Security agent. The disowned charge is the one P0 urgent task (fixed steps and an urgent RM request);
+    the lockout is a Guide login_help task in message order (P1 is no longer used)."""
     issues=[accounts('my transfer to my landlord still says pending'),accounts('i got locked out of the app on my phone','t2'),
         accounts('whats my credit card due date','t3')]
     plan=plan_for(issues)
-    assert [(t.agent,t.intent,t.priority) for t in plan]==[('security','unrecognised_charge','P0'),('security','login_help','P1'),
-        ('accounts','open','P3'),('accounts','open','P3')]
-    assert [t.question for t in plan][1:]==[issues[1].question,issues[0].question,issues[2].question]
-    # The fraud team's summary hears about the other issues raised in the same message.
-    assert plan[0].entities['lockout'] is True and plan[0].entities['transfer']==issues[0].question and plan[0].entities['message']==MESSAGE
+    assert [(t.agent,t.intent,t.priority) for t in plan]==[('relationship','open','P0'),('accounts','open','P3'),('guide','login_help','P3'),
+        ('accounts','open','P3')]
+    assert [t.question for t in plan]==[MESSAGE,*(issue.question for issue in issues)]
+    assert plan[0].entities=={'urgent':True,'message':MESSAGE} and not any('urgent' in t.entities for t in plan[1:])
     routed=overridden([accounts('theres a $2400 charge i dont recognise'),*issues],assess_request(personal()))
-    assert (routed[0].agent,routed[0].intent)==('security','unrecognised_charge') and priority(issues[0])=='P3'
+    assert routed[0].entities['urgent'] is True and routed[0].question=='theres a $2400 charge i dont recognise' and priority(issues[0])=='P3'
+    assert sum('urgent' in t.entities for t in routed)==1
+
+
+def test_a_model_plan_cannot_make_a_task_urgent() -> None:
+    """The planner's entity values are strings; only the rules set the bool marker that skips the model."""
+    forged=PlanTask(id='t1',agent='relationship',intent='open',question='When is my next meeting?',entities={'urgent':'true'})
+    plain=PlanTask(id='t1',agent='accounts',intent='open',question='What is my balance?')
+    plan=checked(overridden([forged,plain.model_copy(update={'id':'t2'})],assess_request(personal('When is my next meeting? And my balance?'))),
+        personal('When is my next meeting? And my balance?'))
+    assert [t.priority for t in plan]==['P3','P3'] and not any(t.entities.get('urgent') is True for t in plan)
 
 
 @pytest.mark.parametrize('claimed,recorded,expected',[(('$',2400),('SGD',2400),True),(('$',2400),('USD',2400),True),
@@ -134,34 +143,19 @@ def test_unsupported_action_claims_are_withheld(claim: str) -> None:
     assert validate_draft(task,allowed,evidence).status=='ok'
 
 
-def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions() -> None:
-    from app.schemas.customer_data import CustomerTransaction
-    from app.services.case_summary import build
-    from tests.test_dispute_schema import ITEMS
-    items=[DisputeItem.model_validate(item) for item in ITEMS]
-    transfer=CustomerTransaction.model_validate({'txn_id':'txn_100112','date':'2026-10-17','description':'Transfer to landlord','amount':-1800.0,
-        'currency':'SGD','status':'pending','card_id':None,'card_last4':None,'is_overseas':False,'failure_reason':None})
-    summary=build(last4='4821',reported_id='txn_100111',items=items,block='succeeded',dispute='succeeded',possession='yes',transfers=[transfer],
-        due=date(2026,10,30),lockout=True,customer_words=PART_B)
-    for fact in ['Card ending 4821.','Reported charge: 2026-10-17 TECHVAULT ELECTRONICS SGD -2400.00.',
-        'Also flagged by the travel rule (card used in two countries too close in time; a flag, not a fraud decision): 2026-10-17 SUNSET GRILL LA SGD -86.40.',
-        'Temporary block: confirmed.','Dispute draft for 2 charges: confirmed; card in possession: yes.',
-        'Also raised: pending transfer Transfer to landlord SGD -1800.00 since 2026-10-17, customer-stated due date 2026-10-30; '
-        'app sign-in problem (locked app or unrequested one-time code), answered as a security step.',
-        'Customer’s words: "eh why is there a $2,400 charge','Staff decide refunds and cancellation.']:
-        assert fact in summary
-    assert len(summary)<=1000 and not re.search(r'(?<![0-9])([0-9][ -]?){13,19}(?![0-9])',summary)
-    declined=build(last4='4821',reported_id='txn_100111',items=items,block='rejected',dispute='succeeded',possession='no',transfers=[],
-        due=None,lockout=False,customer_words='x '*900)
-    assert 'Temporary block: declined.' in declined and 'card in possession: no' in declined and 'Also raised' not in declined and len(declined)<=1000
+def test_the_rm_hears_her_own_words_about_the_card_never_the_planners() -> None:
+    """The urgent request's summary: the topic, what happened, her cards (last 4 and status) and her own redacted words."""
+    summary=rm_handover.urgent_target('charge',PART_B,'card ending 4821 (active)')['summary']
+    assert summary.startswith('[Urgent card] Charge the client does not recognise. Cards on record: card ending 4821 (active).')
+    assert 'eh why is there a $2,400 charge' in summary and len(summary)<=rm_handover.SUMMARY_LIMIT
 
 
 def test_personal_agents_use_the_v5_runner_and_the_moved_v4_prompts() -> None:
     from app.services import orchestrator
     from app.services.agents import retail,runner
-    assert runner.PROMPTS=={'guide':'v1','accounts':'v1','security':'v1'} and orchestrator.PLANNER=='v8'
-    assert retail.PROMPT=='v11' and fraud.PROMPT=='v7'  # the computed-checks path and the charge review keep their released prompts
-    assert set(runner.RULES)=={'guide','accounts','security','compliance','relationship'}
+    assert runner.PROMPTS=={'guide':'v2','accounts':'v1'} and orchestrator.PLANNER=='v9'
+    assert retail.PROMPT=='v11'  # the computed-checks path keeps its released prompt
+    assert set(runner.RULES)=={'guide','accounts','compliance','relationship'}
 
 
 def retail_records(cards: list[dict[str,object]]):
@@ -225,28 +219,28 @@ PART_B=('eh why is there a $2,400 charge?? i was in singapore the whole night. m
     'also i got a weird OTP last night and now my app is locked')
 
 
-def test_part_b_otp_and_locked_app_are_linked_security_help_not_a_second_fraud_task() -> None:
+def test_part_b_otp_and_locked_app_are_guide_help_not_a_second_urgent_task() -> None:
     risk=assess_request(personal(PART_B))
     assert risk.priority=='P0' and 'fraud_suspected' in risk.risk_flags and risk.fixed_response is None
-    issues=[PlanTask(id='t1',agent='security',intent='unrecognised_charge',question='Why is there a $2,400 charge? I was in Singapore the whole night.'),
+    issues=[accounts('Why is there a $2,400 charge? I was in Singapore the whole night.','t1','transactions'),
         accounts('My rent transfer still says pending; will it reach by Friday?','t2','transfer_status'),
-        PlanTask(id='t3',agent='security',intent='unrecognised_charge',question='I got a weird OTP last night and now my app is locked.')]
+        accounts('I got a weird OTP last night and now my app is locked.','t3')]
     plan=plan_for(issues,PART_B)
-    assert [(t.agent,t.intent,t.priority) for t in plan]==[('security','unrecognised_charge','P0'),('security','login_help','P1'),
-        ('accounts','transfer_status','P3')]
-    assert plan[0].entities['lockout'] is True and 'transfer' in plan[0].entities
+    assert [(t.agent,t.intent,t.priority) for t in plan]==[('relationship','open','P0'),('accounts','transfer_status','P3'),
+        ('guide','login_help','P3')]
+    assert plan[0].entities=={'urgent':True,'message':PART_B}
     alone=plan_for([accounts('my app is locked')],'my app is locked')
-    assert [(t.agent,t.intent,t.priority) for t in alone]==[('security','login_help','P1')] and 'lockout' not in alone[0].entities
+    assert [(t.agent,t.intent,t.priority) for t in alone]==[('guide','login_help','P3')] and 'urgent' not in alone[0].entities
     changed=overridden([accounts('an unrecognised charge appeared after I changed my password')],assess_request(personal()))[0]
-    assert (changed.agent,changed.intent)==('security','unrecognised_charge')
+    assert changed.entities['urgent'] is True and changed.priority=='P0'
 
 
-def test_a_charge_the_planner_left_in_retail_becomes_the_one_fraud_task() -> None:
+def test_a_charge_the_planner_left_in_retail_becomes_the_one_urgent_task() -> None:
     issues=[accounts('Why is there a $2,400 charge on my card?','t1','transactions'),
         accounts('Will my pending rent transfer reach by Friday?','t2','transfer_status'),accounts('I got a weird OTP and now my app is locked','t3')]
     plan=plan_for(issues,PART_B)
-    assert [(t.agent,t.question) for t in plan][0]==('security',issues[0].question) and len(plan)==3
-    assert [t.intent for t in plan].count('unrecognised_charge')==1 and (plan[1].agent,plan[1].intent)==('security','login_help')
+    assert [(t.agent,t.question) for t in plan][0]==('relationship',issues[0].question) and len(plan)==3
+    assert sum('urgent' in t.entities for t in plan)==1 and [(t.agent,t.intent) for t in plan][1:]==[('accounts','transfer_status'),('guide','login_help')]
 
 
 def test_the_demo_amount_targets_the_us_charge_and_the_rule_adds_the_one_alex_did_not_mention() -> None:
@@ -292,11 +286,10 @@ def test_each_agent_sees_only_its_own_issue_and_never_assistant_text() -> None:
     assert agent_history(history,follow,False)==history
 
 
-def test_an_unexpected_code_is_security_guidance_found_by_its_own_words() -> None:
-    # Search for this wording is checked in the database (test_knowledge_database.py).
-    assert 'Never say a login was detected' not in prompts.load('security','v1')['system']
-    assert 'never say a login was detected' in prompts.load('security','v1')['system']
-    assert 'Never say that DemoBank or its systems detected a sign-in' in prompts.load('fraud','v7')['system']
+def test_an_unexpected_code_is_guide_guidance_found_by_its_own_words() -> None:
+    # Search for this wording is checked in the database (test_knowledge_database.py). Build plan 2b moved it to Guide.
+    guide=prompts.load('guide','v2')['system']
+    assert 'never say a login was detected' in guide and 'Never ask for' in guide and 'Never say a login was detected' not in guide
 
 
 def test_card_payment_figures_are_supported_by_alexs_record_without_a_currency() -> None:

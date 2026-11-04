@@ -20,7 +20,7 @@ flowchart LR
   AS --> DB
 ```
 
-The guardrail runs first and never calls the model. Lost card and pasted secrets get fixed safety wording (a lost card also offers an urgent report); "talk to a person" shows the RM preview. Urgent words are matched on a typo-tolerant copy (`services/typos.py`), so "i lsot my crad" is still a lost card.
+The guardrail runs first and never calls the model. Lost card and pasted secrets get fixed safety wording (signed in, a lost card also offers one urgent request to her RM); "talk to a person" shows the RM preview. Urgent words are matched on a typo-tolerant copy (`services/typos.py`), so "i lsot my crad" is still a lost card.
 
 ## 2. The orchestrator graph (`services/orchestrator.py`)
 
@@ -36,23 +36,22 @@ There is no checkpointer and no paused turn: an offer is saved on the Action Ser
 
 | # | Node | What it does | Model? |
 |---|---|---|---|
-| 1 | `planner` | Rules first: an open offer plus a whole short yes/no (or the `offer` button) goes to `act`; a "yes" after an expired offer gets a fixed line; a reply to our own question (which card, card limit, meeting time, RM preview choice) goes back to that agent; a selected record goes to Compliance; fraud and login wording go to Security; an explicit RM request goes to Relationship; greetings go to Guide. Otherwise one `planner/v7` call returns up to 5 tasks (agent + intent from `registry.SPECS`, or `open`; a task may depend on an earlier one). Then the rule overrides (fraud → Security P0, login → Security P1, RM handover) and the plan check (`checked`: guests get Guide only; unknown intents fixed; entities bounded; `linked`: a dependency the specs do not declare is dropped with a fixed line). If the planner fails and no rule matched, a fixed rephrase line | Yes, unless a rule decides |
-| 2 | `agent` | `runner.run_agent` for one task, in parallel with the others, within `AGENT_TIMEOUT_S`. History is the client's last 3 redacted messages (the task's own question when one message held several issues); assistant text only for a reply to our own question | Inside agents |
+| 1 | `planner` | Rules first: an open offer plus a whole short yes/no (or the `offer` button) goes to `act`; a "yes" after an expired offer gets a fixed line; a reply to our own question (which card, card limit, meeting time, RM preview choice) goes back to that agent; a selected record goes to Compliance; a charge she doesn't recognise or a lost card becomes the urgent card task (fixed steps by code, never the model); login, OTP and phishing wording go to Guide; an explicit RM request goes to Relationship; greetings go to Guide. Otherwise one `planner/v9` call returns up to 5 tasks (agent + intent from `registry.SPECS`, or `open`; a task may depend on an earlier one). Then the rule overrides (urgent card → P0, login → Guide, RM handover) and the plan check (`checked`: guests get Guide only; unknown intents fixed; entities bounded; `linked`: a dependency the specs do not declare is dropped with a fixed line). If the planner fails and no rule matched, a fixed rephrase line | Yes, unless a rule decides |
+| 2 | `agent` | `runner.run_agent` for one task, in parallel with the others, within `AGENT_TIMEOUT_S`. History is the client's last 3 redacted messages (the task's own question when one message held several issues); assistant text only for a reply to our own question. An urgent card task is answered in the node by `urgent_output` (no runner, no model) | Inside agents |
 | 3 | `gather` | After wave 1, once: the dependent tasks with only the exports they import (computed by code, `agents/derived.py`), skipped with a fixed line when their condition is false or unknown; at most 5 per list export ("first 5 of N"); an `out_of_scope` task handed once to an agent in its spec's `hands_to`, question only. After wave 2 it goes to `compose` | No |
 | 4 | `act` | Confirm or cancel the open offer group in order (`offers.confirm` / `cancel`); SQL checks owner, expiry and order, and a double confirm records once; a chained step receives the earlier receipt, and is not run when the earlier one fails. Fixed outcome lines quote the receipt or ticket reference | No |
-| 5 | `compose` | Sections in priority order (P0 fraud, P1 login, P2 compliance deadline, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `plan` event after the planner (task ids, domains, priorities: the UI shows a placeholder per task), a `section` event as each agent finishes (filling its placeholder), then the `answer` (with `offer`: the UI shows one Confirm and one Cancel) | No |
+| 5 | `compose` | Sections in priority order (P0 urgent card, P2 compliance deadline or RM handover, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `plan` event after the planner (task ids, domains, priorities: the UI shows a placeholder per task), a `section` event as each agent finishes (filling its placeholder), then the `answer` (with `offer`: the UI shows one Confirm and one Cancel) | No |
 
 ## 3. Who answers what
 
 | Agent | Rules first (no model, `agents/rules.py`) | Model answer | Prompt |
 |---|---|---|---|
-| `guide` | `client_guidance` (signed in) | Public products, fees, how-to, greetings; guests get only this agent | `guide/v1` |
+| `guide` | `client_guidance` (signed in) | Public products, fees, how-to, greetings, sign-in/OTP help, phishing; guests get only this agent (plus the fixed urgent card steps) | `guide/v2` |
 | `accounts` | `card_answers.py` (balance, limit, minimum payment, due date, annual fee, which card, card limit guidance), `transaction_answers.py`, `account_answers.py` | Transfers and due-day checks (`retail_checks`) on the released `retail/v10`; everything else on the runner | `accounts/v1`, `retail/v10` |
-| `security` | Unrecognised charges: the released fraud responder lists the charges and offers the fraud-team report | Login, OTP, phishing | `security/v1`, `fraud/v7` |
 | `compliance` | Pre-check rules (`document_templates.py`); selected document → document responder | Review status, requests, deadlines, document findings | `compliance/v5`, `document/v5` |
-| `relationship` | RM handover (preview, then her choice), request status from her tickets, `meeting_answers.py` | RM, requests, meetings | `relationship/v5` |
+| `relationship` | RM handover (preview, then her choice), request status from her tickets, `meeting_answers.py` (meeting request drafts); the urgent card task (fixed steps and one urgent RM request, `orchestrator.urgent_output`) | RM, requests, meetings | `relationship/v6` |
 
-The rules call the v4 responders under their v4 names (`retail`, `fraud`, `compliance`, `document`, `relationship`), so their audits and allow-lists are unchanged; Guide, Accounts & Cards and Security are enforced from their specs.
+The rules call the v4 responders under their v4 names (`retail`, `compliance`, `document`, `relationship`), so their audits and allow-lists are unchanged; Guide, Accounts & Cards and the RM agents are enforced from their specs. There is no Security agent since build plan 2b.
 
 ## 4. Inside one AI agent (`services/agents/runner.py`)
 
@@ -76,19 +75,19 @@ Reads use the caller's JWT and RLS through `services/tools.py`, shaped to the sp
 - Each turn carries the chat history (saved chats: server's redacted history, about 29 messages); the planner and agents receive it.
 - A yes or no answers the one open offer in the chat (no need to read the previous reply). For our own questions (which card, meeting time, RM preview), the planner's rules read the previous reply to know what is being answered (§2 node 1), and only that agent gets the full history.
 - Corrections: the card limit request uses the latest amount she stated (`ticketData.limitSummary`).
-- The fixed reply phrases these rules look for are pinned by tests (`test_card_answers.py`, `test_fraud_confirmation.py`, `test_rm_handover.py`).
+- The fixed reply phrases these rules look for are pinned by tests (`test_card_answers.py`, `test_fraud_confirmation.py`, `test_rm_handover.py`; native `test_card_dispute.py` for the urgent ticket).
 
 ## 6. Confirm-first and tickets
 
 | Journey | Her choice | Result |
 |---|---|---|
 | RM matter | Send to my RM / Add to TCK-… / Open a new request / Cancel | `rm_handover` ticket; same topic adds to the open one (`customer_ticket_follow_up`); different topic opens a new one, even in the same chat (`customer_open_rm_ticket`) |
-| Unrecognised charge | Yes (typed, or *Yes, report it*) | Urgent `suspected_fraud` ticket, from the saved offer |
-| Lost card | Yes (typed, or *Yes, report my card*) | Urgent `card_lost` ticket, from the saved offer |
-| Meeting | Book … → Confirm booking | `appointment.hold` → `appointment.confirm`; no ticket |
+| Unrecognised charge | Confirm, or a typed yes | Urgent `rm_handover` ticket to her RM (P0 `general_support` handoff, topic *Urgent card*), from the saved offer |
+| Lost card | Confirm, or a typed yes | The same urgent RM ticket; an open urgent lost-card request is quoted instead |
+| Meeting | Confirm the drafted request | `meeting.request` (her RM accepts a time, proposes another or declines in the workspace); no ticket |
 | Card limit | Raise a card limit request (form) | `card_limit_change` ticket for the cards and credit team |
 
-What the RM receives: topic, her question, up to three earlier messages (redacted, never the assistant's replies), her open requests with status, and the selected document as an attachment (0082). If sending fails, she's told nothing was sent and offered Talk to a person.
+What the RM receives: topic, her question, up to three earlier messages (redacted, never the assistant's replies), her open requests with status, and the selected document as an attachment (0082). If sending fails, she's told nothing was sent and offered Talk to a person. For an urgent card request: the topic, what happened, her cards (last 4 and status) and her own redacted words.
 
 **Talk to a person** (header): routes by topic; for RM topics it shows a drafted message she can edit before sending.
 

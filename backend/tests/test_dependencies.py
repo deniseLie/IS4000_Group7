@@ -53,8 +53,8 @@ def test_the_planner_numbers_become_links_and_survive_the_plan_check(monkeypatch
     assert [(x.id, x.depends_on, x.condition) for x in tasks] == [('t1', None, None), ('t2', 't1', 'due_in_window'), ('t3', None, None)]
     schema = orchestrator.plan_schema()['properties']['tasks']['items']
     assert {'depends_on', 'condition', 'for_each'} <= set(schema['required'])
-    # a security task inserted in front renumbers the plan; links follow their tasks
-    shifted = orchestrator.checked([t('t0', 'security', 'login_help'), *tasks], PERSONAL)
+    # a rule task inserted in front renumbers the plan; links follow their tasks
+    shifted = orchestrator.checked([t('t0', 'guide', 'login_help'), *tasks], PERSONAL)
     assert [(x.id, x.depends_on) for x in shifted] == [('t1', None), ('t2', None), ('t3', 't2'), ('t4', None)]
     assert orchestrator.catalogue().count('due_in_window (bool)') == 1
 
@@ -144,9 +144,9 @@ def test_an_out_of_scope_question_is_handed_on_once_with_the_question_only():
     # handed once: a rerouted task, a second wave, or an agent outside hands_to is not handed on again
     assert orchestrator.gather(state([update['tasks'][0]], [handed]))['next'] == []
     assert orchestrator.gather(state([asked], [handed], wave=2))['next'] == []
-    sec = AgentOutput(task_id='t1', agent='security', status='out_of_scope', suggested='relationship')
-    assert orchestrator.gather(state([t('t1', 'security', 'phishing')], [sec]))['next'] == []
-    assert orchestrator.section_for(t('t1', 'security', 'phishing'), sec).answer == orchestrator.OUT_OF_SCOPE
+    public = AgentOutput(task_id='t1', agent='guide', status='out_of_scope', suggested='relationship')
+    assert orchestrator.gather(state([t('t1', 'guide', 'phishing')], [public]))['next'] == []
+    assert orchestrator.section_for(t('t1', 'guide', 'phishing'), public).answer == orchestrator.OUT_OF_SCOPE
 
 
 def test_a_fee_waiver_in_accounts_is_out_of_scope_for_relationship():
@@ -229,22 +229,6 @@ def test_account_refs_carry_no_balances():
     assert derived.account_refs([runner.note('my_accounts-unavailable', 'x')]) == {}
 
 
-def test_a_travel_notice_is_offered_for_one_active_card_from_records():
-    spec = SPECS['security']
-    item = t('t1', 'security', 'travel_readiness', entities={'from_date': '2026-12-20', 'to_date': '2026-12-31', 'destination': 'Japan'})
-    one = asyncio.run(derived.compute(spec, item, ctx('security'), [evidence('my_cards', [CARD])], holidays_reader([])))
-    [offer] = one.proposals
-    assert (offer.type, offer.target['category'], offer.target['details']) == ('ticket.create', 'travel_notice',
-        {'card': '4821', 'from_date': '2026-12-20', 'to_date': '2026-12-31', 'destination': 'Japan'})
-    two = [CARD, {**CARD, 'last4': '5592'}]
-    with pytest.raises(derived.Clarify, match='ending 4821 or the card ending 5592'):
-        asyncio.run(derived.compute(spec, item, ctx('security'), [evidence('my_cards', two)], holidays_reader([])))
-    named = item.model_copy(update={'entities': {**item.entities, 'card': '5592'}})
-    assert asyncio.run(derived.compute(spec, named, ctx('security'), [evidence('my_cards', two)], holidays_reader([]))).proposals[0].target['details']['card'] == '5592'
-    undated = asyncio.run(derived.compute(spec, t('t1', 'security', 'travel_readiness'), ctx('security'), [evidence('my_cards', [CARD])], holidays_reader([])))
-    assert undated.proposals == [] and undated.exports == {}
-
-
 def test_a_missing_trip_window_is_a_question_with_no_model_call(served, monkeypatch):
     async def no_model(*a, **kw):raise AssertionError('no model call for a clarifying question')
     monkeypatch.setattr(runner, 'checked_model_answer', no_model)
@@ -255,15 +239,15 @@ def test_a_missing_trip_window_is_a_question_with_no_model_call(served, monkeypa
 # ---- Offer chains ----
 
 def proposal(task_id: str, kind: str = 'handoff.create') -> OfferProposal:
-    return OfferProposal(task_id=task_id, agent='security' if task_id == 't1' else 'relationship', type=kind, summary=f'offer {task_id}',
+    return OfferProposal(task_id=task_id, agent='compliance' if task_id == 't1' else 'relationship', type=kind, summary=f'offer {task_id}',
         target={'reason': 'general_support', 'priority': 'P3', 'summary': 'x'})
 
 
 def test_a_dependants_offers_follow_its_upstream_and_the_first_is_chained():
-    up = AgentOutput(task_id='t1', agent='security', status='needs_human', proposals=[proposal('t1')])
+    up = AgentOutput(task_id='t1', agent='compliance', status='needs_human', proposals=[proposal('t1')])
     other = AgentOutput(task_id='t3', agent='relationship', status='ok', proposals=[proposal('t3')])
     after = AgentOutput(task_id='t2', agent='relationship', status='ok', proposals=[proposal('t2'), proposal('t2')])
-    rows = [(t('t1', 'security', 'unrecognised_charge', priority='P0'), up), (t('t3', 'relationship', 'my_rm', priority='P2'), other),
+    rows = [(t('t1', 'compliance', 'review_status', priority='P0'), up), (t('t3', 'relationship', 'my_rm', priority='P2'), other),
         (t('t2', 'relationship', 'my_rm', depends_on='t1'), after)]
     order = orchestrator.offer_order(rows)
     assert [(p.task_id, p.chained) for p in order] == [('t1', False), ('t2', True), ('t2', False), ('t3', False)]

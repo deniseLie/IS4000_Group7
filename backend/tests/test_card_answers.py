@@ -108,7 +108,7 @@ def test_a_typed_or_tapped_meeting_time_finds_its_slot() -> None:
 def test_charge_and_transaction_questions_route_to_records_not_fraud(question: str) -> None:
     issue=simple_task(question,'English')
     assert issue is not None and issue.agent=='accounts'
-    assert simple_task('i dont recognise this $25 charge','English').agent=='security'
+    assert simple_task('i dont recognise this $25 charge','English').entities.get('urgent') is True  # the urgent card task (2b)
 
 
 def test_a_follow_up_stays_on_the_card_just_discussed() -> None:

@@ -1,9 +1,9 @@
 """v5 confirmations as chat turns (build plan phase 5), through the normal /chat route on native PostgreSQL/PostgREST.
 
-Turn 1 offers the fraud-team report and records nothing; a typed "yes" is planner → act → compose (no agent, no model) and
-records one P0 card_verification handoff with its suspected_fraud ticket; a second "yes" finds nothing open. The Security
-output is a fixed safety-origin fixture for the graph mechanics (the charge wording is tested in test_fraud_confirmation.py);
-no model answer is simulated.
+Turn 1 gives the fixed urgent card steps and offers one urgent request to her RM, recording nothing; a typed "yes" is
+planner → act → compose (no agent, no model) and records one P0 general_support handoff with its urgent rm_handover ticket;
+a second "yes" finds nothing open. Since build plan 2b the urgent card task is answered by code (orchestrator.urgent_output,
+wording in test_fraud_confirmation.py), so no agent runs and no model answer is simulated.
 
 Run from backend/: TEST_DATA_API_LOCAL=1 ../.venv/bin/python -m pytest tests/test_offer_turns.py -q
 """
@@ -15,8 +15,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from app.core.config import settings
-from app.schemas.contracts import AgentOutput,AgentResult,OfferProposal
-from app.services import orchestrator
+from app.services import orchestrator,rm_handover
 from app.services.agents import runner
 from evaluation.targets import sse
 from tests.data_api_support import NativeAPI
@@ -24,21 +23,18 @@ from tests.test_actions_api import context,headers
 
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native PostgreSQL/PostgREST')
 QUERY="I don't recognise the London charges on my card ending 7310."
-ASK='Can I report these charges to our fraud team as urgent?'
+URGENT="summary like '[Urgent card]%%'"
 
 
 @pytest.fixture
-def security(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+def urgent(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     monkeypatch.setattr(settings,'conversation_store','database')
     monkeypatch.setattr(settings,'pipeline','v2')
     ran: list[str]=[]
-    async def run(spec,task,inputs,ctx,history=None,language='English'):
+    async def run(spec,task,inputs,ctx,history=None,language='English'):  # never called: the urgent card task is code
         ran.append(spec.name)
-        return AgentOutput(task_id=task.id,agent=spec.name,status='needs_human',origin='safety',decision=ASK,
-            result=AgentResult(task_id=task.id,agent=spec.name,status='needs_human',answer_kind='conversation',text='Call the fraud line on the back of your card now.'),
-            proposals=[OfferProposal(task_id=task.id,agent='security',type='handoff.create',summary='Report these charges to our fraud team as urgent',
-                target={'reason':'card_verification','priority':'P0','summary':'Card ending 7310: two London charges the customer does not recognise.'})])
+        raise AssertionError('no agent runs for the urgent card task')
     monkeypatch.setattr(runner,'run_agent',run)
     return ran
 
@@ -62,46 +58,48 @@ def conversation(client: TestClient,auth: dict[str,str]) -> tuple[str,int]:
 
 def counts(api: NativeAPI) -> tuple[int,int]:
     with psycopg.connect(api.database_uri) as db:
-        return (db.execute("select count(*) from support.handoffs where customer_id=1002 and reason='card_verification'").fetchone()[0],
-            db.execute("select count(*) from support.tickets where customer_id=1002 and category='suspected_fraud'").fetchone()[0])
+        return (db.execute(f"select count(*) from support.handoffs where customer_id=1002 and reason='general_support' and {URGENT}").fetchone()[0],
+            db.execute(f"select count(*) from support.tickets where customer_id=1002 and category='rm_handover' and urgency='urgent' and {URGENT}").fetchone()[0])
 
 
-def test_a_typed_yes_records_the_offered_report_once(local_data_api: NativeAPI,native_api_client: TestClient,security: list[str]) -> None:
+def test_a_typed_yes_records_the_offered_urgent_request_once(local_data_api: NativeAPI,native_api_client: TestClient,urgent: list[str]) -> None:
     auth=headers(context(local_data_api,1002))
     session,revision=conversation(native_api_client,auth)
     first,revision=chat(native_api_client,auth,session,revision,QUERY)
-    assert security==['security'] and counts(local_data_api)==(0,0)
-    assert first['offer'] and [o['type'] for o in first['offer']['offers']]==['handoff.create'] and ASK in first['answer']
+    assert urgent==[] and counts(local_data_api)==(0,0)
+    assert first['offer'] and [o['type'] for o in first['offer']['offers']]==['handoff.create'] and first['response_origin']=='safety'
+    assert rm_handover.URGENT_STEPS in first['answer'] and rm_handover.URGENT_OFFER['charge'] in first['answer']
     second,revision=chat(native_api_client,auth,session,revision,'yes')
-    assert security==['security'] and counts(local_data_api)==(1,1)  # no agent on the confirming turn
+    assert urgent==[] and counts(local_data_api)==(1,1)  # no agent on either turn
     with psycopg.connect(local_data_api.database_uri) as db:
-        reference,priority=db.execute("""select t.reference,h.priority from support.tickets t join support.handoffs h using(handoff_id)
-            where h.customer_id=1002 and h.reason='card_verification'""").fetchone()
+        reference,priority=db.execute(f"""select t.reference,h.priority from support.tickets t join support.handoffs h using(handoff_id)
+            where h.customer_id=1002 and h.reason='general_support' and h.{URGENT}""").fetchone()
         assert db.execute('select status from banking.credit_cards where card_id=10021').fetchone()==('active',)  # only the bank blocks it
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
     assert priority=='P0' and reference in second['answer'] and second['offer'] is None and second['needs_human']
+    assert second['answer'].startswith(rm_handover.URGENT_SENT.split('{reference}')[0])
     third,_=chat(native_api_client,auth,session,revision,'yes')
     assert third['answer']==orchestrator.EXPIRED and counts(local_data_api)==(1,1)
 
 
-def test_a_no_cancels_the_offer_and_records_nothing(local_data_api: NativeAPI,native_api_client: TestClient,security: list[str]) -> None:
+def test_a_no_cancels_the_offer_and_records_nothing(local_data_api: NativeAPI,native_api_client: TestClient,urgent: list[str]) -> None:
     auth=headers(context(local_data_api,1002))
     session,revision=conversation(native_api_client,auth)
     _,revision=chat(native_api_client,auth,session,revision,QUERY)
     declined,_=chat(native_api_client,auth,session,revision,'no')
-    assert declined['answer']==orchestrator.FRAUD_DECLINED and counts(local_data_api)==(0,0)
+    assert declined['answer']==rm_handover.URGENT_DECLINED and counts(local_data_api)==(0,0)
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select state from actions.commands where customer_id=1002 and type='handoff.create'").fetchall()==[('rejected',)]
 
 
-def test_typed_yes_with_several_open_groups_asks_which_without_executing(local_data_api: NativeAPI,native_api_client: TestClient,security: list[str]) -> None:
+def test_typed_yes_with_several_open_groups_asks_which_without_executing(local_data_api: NativeAPI,native_api_client: TestClient,urgent: list[str]) -> None:
     auth=headers(context(local_data_api,1002))
     session,revision=conversation(native_api_client,auth)
     _,revision=chat(native_api_client,auth,session,revision,QUERY)
     _,revision=chat(native_api_client,auth,session,revision,QUERY)
     answer,_=chat(native_api_client,auth,session,revision,'yes')
     assert answer['answer']==orchestrator.ASK_WHICH and counts(local_data_api)==(0,0)
-    assert security==['security','security']
+    assert urgent==[]
 
 
 def test_a_completed_offer_does_not_capture_yes_after_a_new_question(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,5 +119,5 @@ def test_a_completed_offer_does_not_capture_yes_after_a_new_question(local_data_
     answer,_=chat(native_api_client,auth,session,revision,'yes')
     assert answer['answer']==orchestrator.REPHRASE
     with psycopg.connect(local_data_api.database_uri) as db:
-        assert db.execute("select count(*) from support.handoffs where customer_id=1001 and reason='card_lost'").fetchone()==(1,)
+        assert db.execute(f"select count(*) from support.handoffs where customer_id=1001 and reason='general_support' and {URGENT}").fetchone()==(1,)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)

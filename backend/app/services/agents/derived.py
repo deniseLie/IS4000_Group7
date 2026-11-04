@@ -43,7 +43,7 @@ def records(evidence: list[Evidence], tool: str) -> tuple[list[dict], str | None
 
 
 def account_refs(evidence: list[Evidence]) -> dict[str, Export]:
-    """Type, currency and the last 4 digits of each account; no balances (C24 tax self-certification)."""
+    """Type, currency and the last 4 digits of each account; no balances (for a tax self-certification)."""
     rows, source = records(evidence, 'my_accounts')
     digits = lambda r: ''.join(ch for ch in str(r.get('number', '')) if ch.isdigit())
     refs = [{'type': r.get('type'), 'currency': r.get('currency'), 'last4': digits(r)[-4:]} for r in rows
@@ -59,7 +59,7 @@ def trip_evidence(body: dict, ctx: RequestContext) -> Evidence:
 
 
 async def trip_due_dates(spec: AgentSpec, task: PlanTask, ctx: RequestContext, evidence: list[Evidence], read: Reader) -> Derived:
-    """C23: which card and loan payments fall due while she is away, after weekend and public-holiday shifts."""
+    """Which card and loan payments fall due while she is away, after weekend and public-holiday shifts."""
     today = tools.today(ctx)
     if (trip := trip_checks.window(task.entities, task.question, today)) is None:raise Clarify(trip_checks.ASK_WINDOW)
     start, end = trip
@@ -85,29 +85,8 @@ async def trip_due_dates(spec: AgentSpec, task: PlanTask, ctx: RequestContext, e
         'due_dates': Export(value=inside, source_ids=provenance)})
 
 
-async def travel_notice(spec: AgentSpec, task: PlanTask, ctx: RequestContext, evidence: list[Evidence], read: Reader) -> Derived:
-    """Travel readiness with dates: one travel notice for one active card, offered for her confirmation (migration 0101)."""
-    today = tools.today(ctx)
-    if (trip := trip_checks.window(task.entities, task.question, today)) is None:return Derived()  # general readiness only
-    cards = [c for c in records(evidence, 'my_cards')[0] if isinstance(c, dict) and c.get('last4') and c.get('status') == 'active']
-    named = str(task.entities.get('card') or '')[-4:]
-    chosen = [c for c in cards if c['last4'] == named] or (cards if len(cards) == 1 else [])
-    if not chosen:
-        if not cards:return Derived()
-        raise Clarify('Which card will you use on the trip: ' + ' or '.join(f'the card ending {c["last4"]}' for c in cards[:4]) + '?')
-    card, (start, end) = chosen[0]['last4'], trip
-    start = max(start, today)  # a trip already under way is noticed from today (the ticket executor takes no past date)
-    details = {'card': card, 'from_date': start.isoformat(), 'to_date': end.isoformat()}
-    if isinstance(where := task.entities.get('destination'), str) and where.strip():details['destination'] = where.strip()[:80]
-    return Derived(proposals=[OfferProposal(task_id=task.id, agent=spec.name, type='ticket.create',
-        summary=f'Send a travel notice for your card ending {card}, {start.day} {start:%b} to {end.day} {end:%b}',
-        target={'category': 'travel_notice', 'urgency': 'normal', 'details': details,
-            'summary': f'Travel notice: card ending {card}, {start.isoformat()} to {end.isoformat()}.'})])
-
-
 HOOKS: dict[tuple[str, str], Callable[..., Awaitable[Derived]]] = {
     ('accounts', 'trip_due_dates'): trip_due_dates,
-    ('security', 'travel_readiness'): travel_notice,
 }
 
 

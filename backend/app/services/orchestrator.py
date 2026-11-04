@@ -2,8 +2,10 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-fraud and login wording, an explicit request for a person, greetings), then one planner/v8 call, then the rule
-overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent. Agents never
+urgent card and login wording, an explicit request for a person, greetings), then one planner/v9 call, then the rule
+overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent, except an
+urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
+offer from code, never the model (build plan 2b: there is no Security agent). Agents never
 write: what they propose is saved by compose as one offer group, and only a later confirmation (act) runs it. There is
 no checkpointer: a crash fails the turn and the client retries, which is safe because offers are idempotent.
 
@@ -30,19 +32,18 @@ from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain,
 from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, PlanEvent, PlannedSection, Source
 from app.schemas.meeting_requests import MeetingRequestResult
 from app.schemas.tickets import TicketResult
-from app.services import audit, fraud_reports, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
+from app.services import audit, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
 from app.services.llm_gateway import LLMError
-from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, request_status_answers, retail_checks, runner, rules  # noqa: F401 (rules registers)
+from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, request_status_answers, runner, rules  # noqa: F401 (rules registers)
 from app.services.agents.answer import WITHHELD
-from app.services.answers import NOTICE, clean_history
+from app.services.answers import NOTICE, PINNED, clean_history
 from app.services.guardrail import FRAUD
 
 MAX_TASKS = 5
 MAX_ITEMS = 5  # fan-out cap per list export
-PLANNER = 'v8'  # v8: Relationship meeting_request (RM copilot build plan 2a)
+PLANNER = 'v9'  # v8: Relationship meeting_request (2a); v9: no Security agent, urgent card cases go to the RM (2b)
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
 GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
-SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b', re.I)
 LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app"
     r"|(?:app|account)\s+(?:is\s+|was\s+|got\s+|has\s+been\s+)?locked|otps?|one[- ]time\s+(?:codes?|passwords?))\b", re.I)
 PHISHING = re.compile(r'\b(?:phishing|scams?|suspicious\s+(?:sms|text|message|email|link|call))\b', re.I)
@@ -53,7 +54,7 @@ DEADLINE = re.compile(r'\b(?:deadline|overdue|expir(?:ation|e[sd]?|ing|y)|time l
 DOCUMENTS = re.compile(r'\b(?:documents?|docx|pdf|files?|upload|pages)\b', re.I)
 TOPICS: dict[TargetAgent, re.Pattern[str]] = {
     'accounts': re.compile(r'\b(?:accounts?|balances?|loans?|cards?|payments?|transfers?|deposits?|statements?'
-        # A charge, fee or spending question is a records question; disowned charges are caught as fraud first (topic_agent).
+        # A charge, fee or spending question is a records question; disowned charges are caught as urgent first (urgent_task).
         r'|charged|charges?|fees?|transactions?|spent|spend|spending|purchases?)\b', re.I),
     'compliance': re.compile(r'\b(?:compliance|review|checklist|notice|documents?|docx|pdf|files?|upload|pages)\b'
         r'|\bletter\b[^.!?]{0,100}\b(?:update|provide|send)\b[^.!?]{0,80}\b(?:info(?:rmation)?|documents?|details)\b', re.I),
@@ -74,12 +75,6 @@ REPHRASE = ('Sorry, I couldn’t work out what you need just now. Could you ask 
     'and I’ll show you what I would send to your relationship manager?')
 CONFIRM_LINE = 'Reply “yes” to confirm or “no” to cancel. Nothing happens until you confirm, and this expires in 30 minutes.'
 EXPIRED = 'That offer has expired or was already answered, so nothing was sent. Ask again if you still want this.'
-FRAUD_TEAM = ('I’ve passed this to our fraud team as urgent{reference}. They will contact you, block the card if needed and review '
-    'the charges. Don’t wait for them if your card is at risk: freeze it yourself now on Overview under Cards (Manage, then Freeze '
-    'card), or call the fraud line on the back of your card. Only the bank can unfreeze it while the case is open. I can’t freeze '
-    'the card or reverse a charge from here. You can follow it in My requests.')  # 0096: the client's own freeze
-FRAUD_DECLINED = ('Okay, I haven’t sent the charges to the fraud team. If you don’t recognise a charge, call the fraud line on the '
-    'back of your card or use the report function in the official app now.')
 CANCELLED = 'Okay, nothing has been sent.'
 STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try again, or use the official app.'
 DONE = 'Done. You can see the receipt in Activity.'
@@ -99,8 +94,8 @@ MORE_ITEMS = 'I’ve shown the first {shown} of {total}. Ask about the others if
 OUT_OF_SCOPE = 'I can’t help with that part here. Say “talk to a person” and I’ll show you what I would send to your relationship manager.'
 # Our own fixed asks a short yes or no answers; with no open offer left, the reply says so instead of guessing.
 ASK_WHICH = 'You have more than one open offer. Use the Confirm or Cancel button on the offer you mean; nothing has been sent.'
-OFFER_MARKS = (CONFIRM_LINE, fraud_reports.CONFIRM_REPLY, fraud_reports.LOST_REPLY)
-DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship',
+OFFER_MARKS = (CONFIRM_LINE, 'Yes, report it', 'Yes, report my card')  # the last two: fraud-team asks in chats from before 2b
+DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship',
     'rm_client': 'relationship', 'rm_requests': 'relationship', 'rm_calendar': 'relationship'}
 
 
@@ -140,10 +135,31 @@ class AgentInput(TypedDict):
 
 # ---- Planner rules ----
 
+def urgent_wording(question: str) -> bool:
+    """A charge she doesn't recognise or a lost, stolen or missing card (her words or the typo-tolerant copy)."""
+    probe = typos.normalise(question)
+    return bool(FRAUD.search(question) or FRAUD.search(probe) or LOST.search(probe))
+
+
+def urgent_task(question: str, message: str, task_id: str = 't1') -> PlanTask:
+    """Fixed steps and one urgent RM request, answered by code in `agent` (urgent_output), never by a model. The marker is
+    a bool set only here: the planner's entity values are strings, so a model plan can never make a task urgent."""
+    return PlanTask(id=task_id, agent='relationship', intent=OPEN_INTENT, question=question, priority='P0',
+        entities={'urgent': True, 'message': message})
+
+
+def is_urgent(item: PlanTask) -> bool:
+    return item.entities.get('urgent') is True
+
+
+def domain_of(item: PlanTask) -> Domain:
+    return 'fraud' if is_urgent(item) else DOMAIN[item.agent]
+
+
 def entity_agent(question: str) -> TargetAgent | None:
     """Rules own clear agent assignments, including questions the planner extracted."""
-    if FRAUD.search(question) and not (LOGIN.search(question) and RELATED.search(question)):return 'security'
-    if LOGIN.search(question) or PHISHING.search(question) or LOST.search(question):return 'security'
+    if urgent_wording(question):return 'relationship'  # simple_task makes it the urgent RM request
+    if LOGIN.search(question) or PHISHING.search(question):return 'guide'
     if RM_REQUEST.search(question):return 'relationship'
     if meeting_answers.ASK.search(question) and not meeting_answers.EXISTING.search(question):return 'relationship'  # a meeting request, whatever its topic
     found = [agent for agent, pattern in TOPICS.items() if pattern.search(question)]
@@ -156,9 +172,7 @@ def topic_agent(question: str) -> TargetAgent | None:
 
 def intent_for(agent: TargetAgent, question: str) -> str:
     """The listed intent a rule-planned question fits; the model never chooses reads for it."""
-    if agent == 'security':
-        if FRAUD.search(question) or FRAUD.search(typos.normalise(question)):return 'unrecognised_charge'
-        if LOST.search(question):return 'lost_card'
+    if agent == 'guide' and (LOGIN.search(question) or LOGIN.search(typos.normalise(question)) or PHISHING.search(question)):
         return 'phishing' if PHISHING.search(question) and not LOGIN.search(question) else 'login_help'
     if agent == 'accounts':
         probe = typos.normalise(question)
@@ -181,19 +195,20 @@ def simple_task(question: str, language: str) -> PlanTask | None:
     if language == 'English' and GREETING.fullmatch(question):return task('guide', question)
     if language != 'English' or MULTIPLE.search(question):return None
     probe = typos.normalise(question)
+    if urgent_wording(question):return urgent_task(question, question)
     if rm_handover.needs_person(probe) and not FRAUD.search(probe):return task('relationship', question, handover='rm')
     agent = topic_agent(question)
     return task(agent, question) if agent is not None else None
 
 
 def critical_task(question: str, language: str) -> PlanTask | None:
-    """Only urgent, security and greeting questions bypass the planner (no keyword-to-answer mapping for ordinary intents)."""
+    """Only urgent card, sign-in and greeting questions bypass the planner (no keyword-to-answer mapping for ordinary intents)."""
     if language != 'English' or MULTIPLE.search(question):return None
     if GREETING.fullmatch(question):return task('guide', question)
     probe = typos.normalise(question)
-    if FRAUD.search(question) or FRAUD.search(probe):return task('security', question, message=question)
+    if urgent_wording(question):return urgent_task(question, question)
     # The typo copy reads "locked" as "blocked", so sign-in words are matched on her own words too.
-    if LOGIN.search(question) or LOGIN.search(probe) or LOST.search(probe):return task('security', question)
+    if LOGIN.search(question) or LOGIN.search(probe):return task('guide', question)
     # A meeting she asks the RM to arrange is a meeting request (2a), never a handover (rm_handover.MEETING).
     if (RM_REQUEST.search(probe) and not rm_handover.MEETING.search(probe)) or rm_handover.needs_person(probe):return task('relationship', question, handover='rm')
     return None
@@ -280,41 +295,36 @@ async def model_plan(history: list[Message]) -> list[PlanTask]:
 
 
 def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
-    """Rules win over the model for fraud, login and explicit asks for a person; ordinary words never override it."""
+    """Rules win over the model for urgent card wording, login and explicit asks for a person; ordinary words never override it."""
     message = risk.redacted_message
     handovers = rm_handover.requested_questions(message)
     routed: list[PlanTask] = []
     for item in tasks:
         text = typos.normalise(item.question)
         if (FRAUD.search(item.question) or FRAUD.search(text)) and not (LOGIN.search(text) and RELATED.search(text)):
-            item = item.model_copy(update={'agent': 'security', 'intent': 'unrecognised_charge'})
-        elif LOGIN.search(item.question) or LOGIN.search(text):item = item.model_copy(update={'agent': 'security', 'intent': 'login_help'})
+            item = urgent_task(item.question, message, item.id)
+        elif LOGIN.search(item.question) or LOGIN.search(text):item = item.model_copy(update={'agent': 'guide', 'intent': 'login_help'})
         elif RM_REQUEST.search(text) and not handovers and not rm_handover.MEETING.search(text):
             item = item.model_copy(update={'agent': 'relationship', 'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
         routed.append(item)
-    if handovers:  # one handover per part she asked a person about, in her words; a fraud report stays with Security
-        if len(routed) == 1 and routed[0].agent != 'security':routed = []
-        else:routed = [t for t in routed if t.agent == 'security' or (t.agent != 'relationship' and not rm_handover.needs_person(t.question))]
+    if handovers:  # one handover per part she asked a person about, in her words; an urgent card request stays
+        if len(routed) == 1 and not is_urgent(routed[0]):routed = []
+        else:routed = [t for t in routed if is_urgent(t) or (t.agent != 'relationship' and not rm_handover.needs_person(t.question))]
         used = {t.id for t in routed}
         fresh = (f't{n}' for n in range(1, 2 * MAX_TASKS + 2) if f't{n}' not in used)
         routed += [PlanTask(id=next(fresh), agent='relationship', intent=OPEN_INTENT, question=q, priority='P2', entities={'handover': 'rm'})
             for q in handovers]
-    if {'fraud_suspected', 'lost_card'} & set(risk.risk_flags) and not any(t.intent == 'unrecognised_charge' for t in routed):
-        # The planner's own charge question becomes the Security task, so the charge is not answered twice.
+    if {'fraud_suspected', 'lost_card'} & set(risk.risk_flags) and not any(is_urgent(t) for t in routed):
+        # The planner's own charge question becomes the urgent request, so the charge is not answered twice.
         charge = next((i for i, t in enumerate(routed) if CHARGE.search(t.question) and not LOGIN.search(t.question)), None)
-        if charge is not None:routed[charge] = routed[charge].model_copy(update={'agent': 'security', 'intent': 'unrecognised_charge'})
-        else:routed.insert(0, PlanTask(id='t0', agent='security', intent='unrecognised_charge', question=message))
-    # The fraud team's summary names the other issues raised in the same message (case_summary).
-    transfer = next((t.question for t in routed if t.agent == 'accounts' and retail_checks.TRANSFER.search(t.question)), None)
-    lockout = any(t.agent == 'security' and t.intent == 'login_help' for t in routed)
-    return [t.model_copy(update={'entities': {**t.entities, 'message': message, 'lockout': lockout, **({'transfer': transfer} if transfer else {})}})
-        if t.intent == 'unrecognised_charge' else t for t in routed][:MAX_TASKS]
+        if charge is not None:routed[charge] = urgent_task(routed[charge].question, message, routed[charge].id)
+        else:routed.insert(0, urgent_task(message, message, 't0'))
+    return routed[:MAX_TASKS]
 
 
 def priority(item: PlanTask) -> Priority:
-    """Bounded English rules: fraud first, then security, then regulatory deadlines; ties keep message order."""
-    if item.agent == 'security' and item.intent in {'unrecognised_charge', 'lost_card'}:return 'P0'
-    if item.agent == 'security' or SECURITY.search(item.question):return 'P1'
+    """Bounded English rules: regulatory deadlines and RM handovers before the rest; ties keep message order. An urgent
+    card task is P0 from its rule (urgent_task); P1 is no longer used (build plan 2b)."""
     if item.agent == 'compliance' and DEADLINE.search(item.question):return 'P2'
     return 'P2' if item.entities.get('handover') == 'rm' else 'P3'
 
@@ -332,7 +342,7 @@ def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
     ids: dict[str, str] = {}
     for item in tasks[:MAX_TASKS]:
         if req.mode != 'personal':item = item.model_copy(update={'agent': 'guide', 'intent': item.intent if item.agent == 'guide' else 'general',
-            'entities': {}})
+            'entities': {'urgent': True} if is_urgent(item) else {}})  # a guest's urgent card task: the fixed steps, no offer
         spec = registry.SPECS[item.agent]
         intent = item.intent if item.intent in spec.intents or (item.intent == OPEN_INTENT and spec.loop_tools) else \
             OPEN_INTENT if spec.loop_tools else next(iter(spec.intents))
@@ -462,8 +472,35 @@ def after_planner(state: Turn) -> list[Send] | str:
         inputs={})) for item in first]
 
 
+async def urgent_output(item: PlanTask, ctx: RequestContext) -> AgentOutput:
+    """A lost card or a charge she doesn't recognise: fixed steps (no model, no tool for a guest) and, signed in, one urgent
+    request to her RM, saved by compose and sent only when she confirms. An open lost-card request is quoted instead."""
+    kind = 'lost' if LOST.search(typos.normalise(item.question)) and not FRAUD.search(typos.normalise(item.question)) else 'charge'
+    pin = PINNED['lost-card' if kind == 'lost' else 'unrecognised-charge']
+    text = rm_handover.URGENT_LOST_STEPS if kind == 'lost' else rm_handover.URGENT_STEPS
+    proposals: list[OfferProposal] = []
+    with span('agent', 'agent', agent=item.agent, intent=item.intent, path='urgent', status='needs_human') as facts:
+        if ctx.principal.kind != 'customer':text += ' ' + rm_handover.URGENT_GUEST
+        else:
+            try:existing = await rm_handover.open_urgent(kind, ctx) if kind == 'lost' else None
+            except rm_handover.HANDOVER_ERRORS:existing = None
+            if existing:text += ' ' + rm_handover.URGENT_REUSED.format(reference=f' (reference {existing})')
+            else:proposals = [OfferProposal(task_id=item.id, agent='relationship', type='handoff.create', summary=rm_handover.URGENT_OFFER[kind],
+                target=rm_handover.urgent_target(kind, str(item.entities.get('message') or item.question), await rm_handover.urgent_cards(ctx)))]
+        facts['offers'] = len(proposals)
+    steps = Evidence(id=pin['id'], text=text, publisher=pin['publisher'], scope='Fixed urgent card steps that follow this approved section',
+        source=Source.model_validate(pin))
+    return AgentOutput(task_id=item.id, agent=item.agent, status='needs_human', origin='safety', proposals=proposals,
+        evidence=[steps.model_dump(mode='json')], result=AgentResult(task_id=item.id, agent=item.agent, status='needs_human',
+            answer_kind='conversation', text=text, citations=[{'source_id': pin['id']}]))
+
+
 async def agent(item: AgentInput, runtime: Runtime[TurnContext]) -> dict:
     current = item['task']
+    if is_urgent(current):
+        output = await urgent_output(current, runtime.context.request)
+        if (collected := evidence_sink.get()) is not None:collected.extend(Evidence.model_validate(d) for d in output.evidence)
+        return {'outputs': [output]}
     try:output = await runner.run_agent(registry.SPECS[current.agent], current, item.get('inputs') or {}, runtime.context.request,
         item['history'], item['language'])
     except runner.PlanRefused as error:
@@ -565,18 +602,16 @@ async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str
     """Fixed wording per recorded outcome; "sent" is said only with a succeeded receipt. `earlier` is the reference of the
     step this one was chained to (it received that step's receipt)."""
     command, receipt = outcome.command, outcome.receipt
-    reason = getattr(command.target, 'reason', None)
-    if command.state == 'rejected':
-        return FRAUD_DECLINED if reason == 'card_verification' else fraud_reports.LOST_DECLINED if reason == 'card_lost' else CANCELLED
+    urgent = rm_handover.urgent(getattr(command.target, 'summary', None) or '')
+    if command.state == 'rejected':return rm_handover.URGENT_DECLINED if urgent else CANCELLED
     if command.state == 'expired':return EXPIRED
     if receipt is None or receipt.outcome != 'succeeded':
         return CHAIN_STOPPED if getattr(receipt, 'result', None) is not None and getattr(receipt.result, 'error_code', None) == 'earlier_offer_failed' else STEP_FAILED
     link = LINKED.format(reference=earlier) if earlier else ''
     if isinstance(receipt.result, HandoffResult):
         reference = await rm_handover.ticket_reference(receipt.result.handoff_id, ctx)
-        where = f' (reference {reference})' if reference else ''
-        if reason == 'card_verification':return FRAUD_TEAM.format(reference=where)
-        if reason == 'card_lost':return fraud_reports.LOST_SENT.format(reference=where)
+        if urgent and not receipt.result.created:return await rm_handover.urgent_elsewhere(command.target.summary, reference, ctx)
+        if urgent:return rm_handover.URGENT_SENT.format(reference=f' (reference {reference})' if reference else '')
         return rm_handover.handed_over(reference) + link
     if isinstance(receipt.result, TicketResult):
         label = getattr(command.target, 'category_label', 'support').lower()
@@ -603,8 +638,7 @@ async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
         if reply.decision == 'confirm':attrs['failed'] = sum(o.receipt is None or o.receipt.outcome != 'succeeded' for o in outcomes)
     lines, earlier = [], None
     for i, outcome in enumerate(outcomes):
-        reason = getattr(outcome.command.target, 'reason', None)
-        urgent = reason in {'card_verification', 'card_lost'}
+        urgent = rm_handover.urgent(getattr(outcome.command.target, 'summary', None) or '')
         succeeded = outcome.receipt is not None and outcome.receipt.outcome == 'succeeded'
         link = earlier if outcome.command.command_id in chained else None
         earlier = await reference_of(outcome, ctx) if succeeded else None
@@ -631,7 +665,7 @@ def section_for(item: PlanTask, output: AgentOutput, decision: str | None = None
     result = output.result or AgentResult(task_id=item.id, agent=item.agent, status='error', text=WITHHELD)
     sources = {e.id: e.source for e in (Evidence.model_validate(d) for d in output.evidence)}
     cited = list({s.id: s for s in (sources[c.source_id] for c in result.citations if c.source_id in sources)}.values())
-    domain: Domain = 'smalltalk' if item.agent == 'guide' and result.answer_kind == 'conversation' else DOMAIN[item.agent]
+    domain: Domain = 'smalltalk' if item.agent == 'guide' and result.answer_kind == 'conversation' and not is_urgent(item) else domain_of(item)
     return AnswerSection(task_id=item.id, domain=domain, priority=item.priority, answer_kind=result.answer_kind, answer=result.text,
         sources=cited, needs_human=output.status in ('error', 'needs_human') or bool(decision), response_origin=output.origin,
         prompt_version=output.prompt_id, decision=decision)
@@ -639,7 +673,7 @@ def section_for(item: PlanTask, output: AgentOutput, decision: str | None = None
 
 def offer_order(rows: list[tuple[PlanTask, AgentOutput]]) -> list[OfferProposal]:
     """Offers in section order, each dependent task's straight after its upstream's. A single dependent task's first offer
-    is chained: it runs after the upstream's last offer and receives its receipt (C27: the RM note after the fraud report)."""
+    is chained: it runs after the upstream's last offer and receives its receipt."""
     usable = [(t, o) for t, o in rows if o.status != 'error']
     found: list[OfferProposal] = []
     for item, output in usable:
@@ -654,8 +688,9 @@ def offer_order(rows: list[tuple[PlanTask, AgentOutput]]) -> list[OfferProposal]
 
 def validation_offer(rows: list[tuple[PlanTask, AgentOutput]], ctx: RequestContext) -> list[OfferProposal]:
     """VALIDATION_HANDOFF=1 only (CR9): one withheld section may be offered to the RM; the summary carries no rejected text."""
-    failed = next((t for t, o in rows if o.status == 'error' and o.origin == 'validation' and t.agent != 'security'), None)
-    if failed is None or not rm_handover.validation_handoff() or ctx.principal.kind != 'customer' or ctx.case_id is None:return []
+    failed = next((t for t, o in rows if o.status == 'error' and o.origin == 'validation'), None)
+    # One general_support handoff per case: an urgent card request in the same reply wins.
+    if failed is None or any(is_urgent(t) for t, _ in rows) or not rm_handover.validation_handoff() or ctx.principal.kind != 'customer' or ctx.case_id is None:return []
     return [OfferProposal(task_id='validation', agent='relationship', type='handoff.create', target={'reason': 'general_support',
         'priority': failed.priority, 'summary': 'An assistant section was withheld because it could not be verified. Review the saved '
         'customer case; no rejected answer is included.'}, summary='Pass the part I couldn’t check to your relationship manager')]
@@ -743,7 +778,7 @@ async def stream(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> A
             for node, update in chunk.items():
                 if node == 'planner':
                     tasks = {t.id: t for t in (update or {}).get('tasks') or []}
-                    if tasks:yield 'plan', PlanEvent(tasks=[PlannedSection(task_id=t.id, domain=DOMAIN[t.agent], priority=t.priority)
+                    if tasks:yield 'plan', PlanEvent(tasks=[PlannedSection(task_id=t.id, domain=domain_of(t), priority=t.priority)
                         for t in sorted(tasks.values(), key=lambda t: t.priority)])
                 elif node in ('agent', 'gather'):
                     tasks.update({t.id: t for t in (update or {}).get('tasks') or []})
@@ -760,16 +795,15 @@ async def answer(req: ChatRequest, risk: RiskAssessment, tctx: TurnContext) -> A
 
 
 async def lost_card_offer(question: str, ctx: RequestContext, turn_id: UUID) -> tuple[str, OfferGroupEvent | None]:
-    """CR12 with offers: the fixed lost-card reply offers an urgent card_lost report; an open report is quoted instead."""
+    """CR12, build plan 2b: the fixed lost-card reply offers one urgent request to her RM; an open one is quoted instead."""
+    summary = rm_handover.URGENT_OFFER['lost']
     try:
-        if (existing := await fraud_reports.open_lost_card_ticket(ctx)) is not None:
-            return fraud_reports.LOST_REUSED.format(reference=f' (reference {existing})'), None
-        from app.services.agents import fraud_records
-        records = await fraud_records.load(ctx.model_copy(update={'agent': 'fraud'}))
-        saved = await offers.save([OfferProposal(task_id='lost_card', agent='security', type='handoff.create', summary='Report your card as lost or stolen to our fraud team as urgent',
-            target={'reason': 'card_lost', 'priority': 'P0', 'summary': fraud_reports.lost_summary(question, records)})], ctx, turn_id)
-    except fraud_reports.HANDOFF_ERRORS as error:
+        if (existing := await rm_handover.open_urgent('lost', ctx)) is not None:
+            return rm_handover.URGENT_REUSED.format(reference=f' (reference {existing})'), None
+        saved = await offers.save([OfferProposal(task_id='lost_card', agent='relationship', type='handoff.create', summary=summary,
+            target=rm_handover.urgent_target('lost', question, await rm_handover.urgent_cards(ctx)))], ctx, turn_id)
+    except rm_handover.HANDOVER_ERRORS as error:
         log_event('lost_card_offer_failed', error_type=type(error).__name__)
-        return fraud_reports.LOST_FAILED, None
-    return fraud_reports.LOST_OFFER, offer_event(saved, ctx)
+        return rm_handover.URGENT_FAILED, None
+    return f'Would you like me to: {summary}? {CONFIRM_LINE}', offer_event(saved, ctx)
 

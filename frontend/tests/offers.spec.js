@@ -3,7 +3,7 @@ import {seedSession} from './nativeSession';
 
 // v5 offers in the normal UI (build plan phase 6): one Confirm and one Cancel per reply, a typed yes, expiry and a group of two.
 // Native: backend/tests/test_offers_browser.py (signed local session, native JWT/RLS data; the lost card is a fixed route,
-// the two-offer reply starts after the planner with a fixed safety-origin Security output, so no model answer is simulated).
+// the two-offer reply starts after the planner with a fixed safety-origin output, so no model answer is simulated).
 
 async function ask(page,text) {
   await page.locator('#chat-composer').fill(text);
@@ -42,7 +42,7 @@ test('offer cancel records nothing',async({page})=>{
   const offer=await lostCard(page);
   await offer.getByTestId('offer-cancel').click();
   await expect(page.getByTestId('chat-message-user').last()).toHaveText('No, cancel');
-  await expect(latest(page)).toContainText('haven’t reported it');
+  await expect(latest(page)).toContainText('haven’t sent anything');
   await expect(latest(page)).not.toContainText(/TCK-\d+/);
 });
 
@@ -59,7 +59,7 @@ test('offer expired disables the buttons',async({page})=>{
 test('offer two in one reply confirm together by button',async({page})=>{
   await seedSession(page);
   await page.goto('/');
-  await ask(page,'I don’t recognise a charge on my card');
+  await ask(page,'I’m locked out of the app');
   const offer=page.getByTestId('offer-block');
   await expect(offer.getByTestId('offer-item')).toHaveCount(2);
   for(const width of [1280,390,320]) {

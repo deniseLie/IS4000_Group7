@@ -25,12 +25,12 @@ from app.services import audit, customer_data, kb, llm_gateway, prompts, tools
 from app.services.authorization import PolicyDenied
 from app.services.external import ExternalError
 from app.services.llm_gateway import LLMError
-from app.services.agents import derived, fraud, registry
+from app.services.agents import derived, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
-PROMPTS = {'guide': 'v1', 'accounts': 'v1', 'security': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
+PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
 COMMON = 'v1'  # runner_common: the shared answer contract and step format
-DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
+DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'DemoBank synthetic records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
     'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
@@ -337,8 +337,7 @@ def withheld(spec: AgentSpec, task: PlanTask, error: BaseException, got: Gathere
         'db_code': data_api.database_code(error) if isinstance(error, APIError) else None}
     log_event('agent_failed', **fields)
     audit.add('agent', 'agent.failed', 'failed', details=fields)
-    text = (fraud.URGENT + ' ' + WITHHELD) if spec.name == 'security' else WITHHELD  # urgent steps first, never replaced
-    return output(spec, task, AgentResult(task_id=task.id, agent=spec.name, status='error', text=text), got, prompt_id)
+    return output(spec, task, AgentResult(task_id=task.id, agent=spec.name, status='error', text=WITHHELD), got, prompt_id)
 
 
 async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], ctx: RequestContext,

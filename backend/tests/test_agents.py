@@ -62,32 +62,32 @@ def planned(agent,question,intent='open',id_='t1'):
     return PlanTask(id=id_,agent=agent,intent=intent,question=question)
 
 
-def test_planning_prioritises_fraud_without_modifying_input():
-    tasks=[planned('accounts','Explain my loan.','loans'),planned('security','Unfamiliar charge','unrecognised_charge','t2')]
+def test_planning_prioritises_the_urgent_card_task_without_modifying_input():
+    tasks=[planned('accounts','Explain my loan.','loans'),planned('accounts','Unfamiliar charge','transactions','t2')]
     before=[item.model_dump() for item in tasks]
     plan=checked(overridden(tasks,assess_request(PERSONAL)),PERSONAL)
-    assert [item.agent for item in sorted(plan,key=lambda t:t.priority)]==['security','accounts']
+    assert [(item.agent,item.priority) for item in sorted(plan,key=lambda t:t.priority)]==[('relationship','P0'),('accounts','P3')]
     assert [item.model_dump() for item in tasks]==before
     assert simple_task('Hello!','English').agent=='guide'
     assert simple_task('What happens if I withdraw my fixed deposit early?','English').agent=='accounts'
-    assert simple_task('I cannot log in.','English').agent=='security'
+    assert (simple_task('I cannot log in.','English').agent,simple_task('I cannot log in.','English').intent)==('guide','login_help')
     assert simple_task('There is an unfamiliar card charge. Also, explain loans.','English') is None
     # Ordinary words never override the planner: a loan comparison it gave to Compliance stays there.
     mistaken=[planned('compliance','What is the difference between secured and unsecured loans?','guidance')]
     assert overridden(mistaken,assess_request(PERSONAL))[0].agent=='compliance' and mistaken[0].agent=='compliance'
 
 
-def test_security_deadline_order_and_guardrail_override_preserve_every_issue():
+def test_urgent_deadline_order_and_guardrail_override_preserve_every_issue():
     tasks=[planned('accounts','Explain account fees.','card_fees'),planned('compliance','When is my review due?','review_status','t2'),
         planned('accounts','I cannot log in.','open','t3'),planned('compliance','When is the document deadline?','document_findings','t4'),
         planned('accounts','Explain deposit interest.','product_info','t5')]
     request=ChatRequest(messages=[{'role':'user','content':'There is an unfamiliar card charge.'}],mode='personal')
     before=[item.model_dump() for item in tasks]
     plan=sorted(checked(overridden(tasks,assess_request(request)),request),key=lambda t:t.priority)
-    assert len(plan)==5 and [t.priority for t in plan]==['P0','P1','P2','P2','P3']  # at most five tasks: the last ordinary one is dropped
-    assert plan[0].agent=='security' and plan[0].intent=='unrecognised_charge' and plan[0].question==request.messages[-1].content
-    assert plan[1].agent=='security' and plan[1].intent=='login_help'
-    assert plan[0].entities['lockout'] is True and plan[0].entities['message']==request.messages[-1].content
+    assert len(plan)==5 and [t.priority for t in plan]==['P0','P2','P2','P3','P3']  # at most five tasks: the last ordinary one is dropped
+    message=request.messages[-1].content
+    assert plan[0].agent=='relationship' and plan[0].question==message and plan[0].entities=={'urgent':True,'message':message}
+    assert (plan[4].agent,plan[4].intent)==('guide','login_help')  # build plan 2b: sign-in help is Guide's, no longer P1
     assert [t.model_dump() for t in tasks]==before
     assert priority(planned('accounts','When is my loan payment due?','loans'))=='P3'
     for question in ['Explain compliance due diligence.','Is my review due to a transfer?']:
@@ -98,8 +98,11 @@ def test_guests_get_only_guide_and_unknown_intents_are_checked():
     guest=ChatRequest(messages=[{'role':'user','content':'What is my balance?'}])
     plan=checked([planned('accounts','What is my balance?','account_balance')],guest)
     assert [(t.agent,t.intent) for t in plan]==[('guide','general')]
-    plan=checked([planned('accounts','x','made_up'),planned('security','y','made_up','t2'),planned('accounts','z','transactions','t3')],PERSONAL)
-    assert [(t.agent,t.intent) for t in plan]==[('accounts','open'),('security','unrecognised_charge'),('accounts','transactions')]
+    plan=checked([planned('accounts','x','made_up'),planned('compliance','y','made_up','t2'),planned('accounts','z','transactions','t3')],PERSONAL)
+    assert [(t.agent,t.intent) for t in plan]==[('accounts','open'),('compliance','open'),('accounts','transactions')]
+    # A guest's urgent card task keeps only its marker, so she gets the fixed steps (no offer, no reads).
+    urgent=checked([PlanTask(id='t1',agent='relationship',intent='open',question='not mine',priority='P0',entities={'urgent':True,'message':'x'})],guest)
+    assert [(t.agent,t.priority,t.entities) for t in urgent]==[('guide','P0',{'urgent':True})]
     days=checked([PlanTask(id='t1',agent='accounts',intent='transactions',question='q',entities={'days':'31','status':'pending'}),
         PlanTask(id='t2',agent='accounts',intent='transactions',question='q',entities={'days':'400'})],PERSONAL)
     assert days[0].entities=={'days':31,'status':'pending'} and days[1].entities=={}

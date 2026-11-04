@@ -27,12 +27,14 @@ def test_every_agent_offer_requires_confirmation_even_an_automatic_type():
     def obligations(action, agent):
         return decide(base.principal, action, {'customer_id': 1001}, base.model_copy(update={'agent': agent})).obligations
     assert 'require:confirmation' in obligations('ticket.create', 'accounts')
-    assert 'require:confirmation' in obligations('handoff.create', 'security')
+    # The urgent card request (build plan 2b): relationship keeps its v4 allow-list, so the wait comes from offers.save itself
+    # (action_offer never executes; only offer_group_confirm does).
+    assert decide(base.principal, 'handoff.create', {'customer_id': 1001}, base.model_copy(update={'agent': 'relationship'})).allow
     assert 'require:confirmation' not in obligations('handoff.create', None)  # a UI form path
 
 
 def test_an_offer_outside_the_agents_spec_is_refused_before_any_database_call():
-    proposal = Proposal(task_id='t1', agent='security', type='rm.share_summary', target={}, summary='Share a summary')
+    proposal = Proposal(task_id='t1', agent='accounts', type='rm.share_summary', target={}, summary='Share a summary')
     with pytest.raises(PolicyDenied, match='agent_tool_forbidden'):asyncio.run(offers.save([proposal], ctx()))
     with pytest.raises(PolicyDenied, match='agent_tool_forbidden'):
         asyncio.run(offers.save([Proposal(task_id='t1', agent='guide', type='handoff.create', target={}, summary='x')], ctx()))

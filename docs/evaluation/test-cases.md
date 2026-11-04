@@ -49,12 +49,12 @@ Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset
 | Owner | Denise (CR12, CR13, F18) / Kar Mun (CR1) |
 | State | ready |
 | Setup | Signed in as Michelle. Demo data 0075: London charges on card 7310 (SGD 1.00 and SGD 3,850.00 on 27 Oct) and the pending SGD 12,000 FAST transfer to Lim Interiors. |
-| Input | eh why is there a SGD 3,850 charge in London?? i was in singapore the whole day. my transfer to lim interiors still says pending, will it reach by friday? also i got a weird OTP last night and now my app is locked → Yes, report it |
-| Expected output | One reply, fraud first: urgent steps, the London charges and the impossible-travel pattern, asks her to confirm before reporting. Then the transfer is still pending, don't send it again, no promise it lands by Friday. Then the unrequested code and locked app as security help (recovery in the official app), never claiming a login was detected. After Yes, report it: urgent fraud ticket with a TCK- reference. |
-| Must not happen | Wrong order; A promised arrival time; A claimed login detection; A full card number; A ticket before she confirms |
-| Schema | Three sections, P0 fraud first; one suspected_fraud ticket only after turn 2; no action proposal. |
-| Trajectory | {"nodes": ["planner", "agent", "act", "compose"], "idle": [], "agents": {"security": 2, "accounts": 1}, "tools": [], "model": true, "order": "P0 charge first, then the login help (both Security), then the transfer (Accounts & Cards sees only its own issue); the confirming turn is an act turn with no model call", "service_reads": ["customer.get_credit_cards", "customer.get_transactions"]} |
-| Automated cover | tests/test_urgent_help.py, tests/test_fraud_confirmation.py, tests/test_retail_agent.py |
+| Input | eh why is there a SGD 3,850 charge in London?? i was in singapore the whole day. my transfer to lim interiors still says pending, will it reach by friday? also i got a weird OTP last night and now my app is locked → Confirm |
+| Expected output | One reply, the card first: fixed urgent steps (freeze the card yourself on Overview, or call the fraud line) and an offer to send it to her relationship manager as urgent, sent only when she confirms. Then the transfer is still pending, don't send it again, no promise it lands by Friday. Then the unrequested code and locked app as Guide sign-in help from the articles (recovery in the official app), never claiming a login was detected. After Confirm: an urgent request to her RM with a TCK- reference. |
+| Must not happen | Wrong order; A promised arrival time; A claimed login detection; A full card number; A request to the RM before she confirms |
+| Schema | Three sections, P0 urgent card steps first; one urgent rm_handover ticket (topic Urgent card) for her RM only after turn 2; no action proposal. |
+| Trajectory | {"nodes": ["planner", "agent", "act", "compose"], "idle": [], "agents": {"relationship": 1, "accounts": 1, "guide": 1}, "tools": [], "model": true, "order": "P0 urgent card steps first (fixed by code, no model), then the transfer (Accounts & Cards sees only its own issue), then the login help (Guide); the confirming turn is an act turn with no model call", "service_reads": ["customer.get_credit_cards", "customer.get_transactions"]} |
+| Automated cover | tests/test_urgent_help.py, tests/test_fraud_confirmation.py, tests/test_orchestrator_graph.py, tests/test_retail_agent.py |
 
 ## C04 – Card limit increase
 
@@ -177,12 +177,12 @@ Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset
 | Owner | Denise (CR12) / TBC (F16) |
 | State | ready |
 | Setup | Signed in as Michelle, saved chat. Cards 7310 and 5592 are active. |
-| Input | I lost my card, please block it → Yes, report my card |
-| Expected output | Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers the urgent report and, only after Yes, report my card, records or quotes the existing suspected_fraud ticket. Never claims the chat itself froze, blocked or cancelled a card. The configured category for a card_lost handoff is suspected_fraud. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted. |
+| Input | I lost my card, please block it → Confirm |
+| Expected output | Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers one urgent request to her relationship manager and, only after Confirm, records it (an urgent rm_handover ticket) or quotes her open urgent lost-card request. Never claims the chat itself froze, blocked or cancelled a card. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted. |
 | Must not happen | A card block or cancel action button inside the assistant response; Saying the card is blocked; A full card number; A model-written answer |
-| Schema | One urgent card_lost handoff and one suspected_fraud ticket; asking again in a new chat quotes the same reference; both cards stay active until the bank acts. |
-| Trajectory | {"nodes": ["planner", "act", "compose"], "idle": ["agent"], "agents": {}, "tools": [], "model": false, "order": "Fixed lost-card route before the graph offers the report (her cards feed the summary); her yes is an act turn with no agent", "service_reads": ["tickets.list"]} |
-| Automated cover | tests/test_fraud_confirmation.py, tests/test_fraud_team_report.py, tests/test_safety_variants.py |
+| Schema | One urgent general_support handoff (topic Urgent card) and one urgent rm_handover ticket for her RM; asking again in a new chat quotes the same reference; both cards stay active until she or the bank acts. |
+| Trajectory | {"nodes": ["planner", "act", "compose"], "idle": ["agent"], "agents": {}, "tools": [], "model": false, "order": "Fixed lost-card route before the graph offers the urgent RM request (her cards feed the summary); her yes is an act turn with no agent", "service_reads": ["tickets.list", "customer.get_credit_cards"]} |
+| Automated cover | tests/test_fraud_confirmation.py, tests/test_card_dispute.py, tests/test_offer_turns.py, tests/test_safety_variants.py |
 
 ## C12 – Loan enquiry, no decision
 
@@ -210,7 +210,7 @@ Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset
 | State | manual: Requires an intentionally unavailable model in an isolated test service, not the working shared backend. |
 | Setup | Signed in as Michelle. Start the backend with a model that really fails (LLM_MODEL set to an id the provider does not serve, or LLM_BASE_URL at a closed port). No fake model. The runner skips this case; run it by hand. |
 | Input | I don't recognise the London charges on my card |
-| Expected output | The failure is explicit: the reply is withheld or the saved chat says the assistant could not answer, with Talk to a person. If any card text is shown it is the approved urgent guidance (fraud line, official app). Nothing invented, no ticket claimed, no stack trace. |
+| Expected output | The card part never needs the model: the fixed urgent steps (freeze the card yourself, the fraud line) and the offer to send it to her relationship manager as urgent still appear. Anything else that needs the model is withheld or the saved chat says the assistant could not answer, with Talk to a person. Nothing invented, no ticket claimed before she confirms, no stack trace. |
 | Must not happen | A generic error with no next step; A pending action with no explanation; A stack trace; An answer that looks model-written |
 | Schema | LLM gateway retries only transient errors, then the turn fails or is withheld; the audit records the failure by code; no pending action left behind. |
 | Trajectory | {"nodes": [], "idle": ["act"], "agents": {}, "tools": [], "order": "Provider failure is reported, never replaced by a sample answer"} |
@@ -353,12 +353,12 @@ Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset
 | Owner | Kar Mun (CR8, CR9) / Denise (F24, F16) |
 | State | ready |
 | Setup | Signed in as Michelle, saved chat. Her RM is Sophie Lim. Demo data 0075: SGD 3,850.00 London charge on card 7310. |
-| Input | I want to talk to my RM about my annual fee, and also there's a SGD 3,850 charge in London I don't recognise → Yes, report it → Confirm the actual offered RM handover (reuse or send) |
-| Expected output | Keeps fraud first and the annual-fee RM question separate. Confirms the selected charges before reporting them, and previews the RM question before explicit confirmation using the offered Send to my RM or Add to existing request button. Both confirmed issues retain their context and get the appropriate real ticket references; never claims the chat completed a card block or promises a waiver. |
-| Must not happen | The fraud charge in the RM ticket; A fraud ticket before she confirms; A card number in any summary; Saying the RM has replied |
-| Schema | One rm_handover ticket (fees topic, summary without card details) after turn 1; one suspected_fraud ticket only after turn 2. |
-| Trajectory | {"nodes": ["planner", "agent", "act", "compose"], "idle": [], "agents": {"security": 1, "relationship": 2}, "tools": [], "model": true, "order": "P0 charge first; the RM part is a handover preview from the relationship rules; confirming the report is an act turn that keeps the RM preview; her send choice goes back to the relationship rules", "service_reads": ["customer.get_credit_cards", "customer.get_transactions"]} |
-| Automated cover | tests/test_rm_handover.py, tests/test_fraud_confirmation.py, tests/test_fraud_team_report.py |
+| Input | I want to talk to my RM about my annual fee, and also there's a SGD 3,850 charge in London I don't recognise → Confirm → Confirm the actual offered RM handover (reuse or send) |
+| Expected output | Keeps the card first and the annual-fee RM question separate. Gives the fixed urgent card steps and offers to send the charge to her relationship manager as urgent (sent only when she confirms), and previews the RM question before explicit confirmation using the offered Send to my RM or Add to existing request button. Both confirmed issues get their own real ticket references; never claims the chat completed a card block or promises a waiver. |
+| Must not happen | The card charge in the fees ticket; An urgent request before she confirms; A card number in any summary; Saying the RM has replied |
+| Schema | One urgent rm_handover ticket (topic Urgent card) only after turn 2, and one rm_handover ticket (fees topic, summary without card details) after turn 3. |
+| Trajectory | {"nodes": ["planner", "agent", "act", "compose"], "idle": [], "agents": {"relationship": 3}, "tools": [], "model": true, "order": "P0 urgent card steps first (fixed by code, no model); the RM part is a handover preview from the relationship rules; confirming the urgent request is an act turn that keeps the RM preview; her send choice goes back to the relationship rules", "service_reads": ["customer.get_credit_cards", "tickets.list"]} |
+| Automated cover | tests/test_rm_handover.py, tests/test_fraud_confirmation.py, tests/test_flow_followups.py, tests/test_offer_turns.py |
 
 ## C23 – Request a meeting with my RM
 

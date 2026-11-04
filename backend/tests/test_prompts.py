@@ -62,6 +62,8 @@ RELEASED[('accounts','v1')]='v1+872a384c'
 RELEASED[('runner_common','v1')]='v1+0c95684c'
 RELEASED[('guide','v1')]='v1+3948ad35'
 RELEASED[('security','v1')]='v1+fb828ecf'
+RELEASED[('guide','v2')]='v2+20d159f2'  # build plan 2b: login, OTP and phishing move to Guide
+RELEASED[('planner','v9')]='v9+a4b3c8fd'  # 2a meeting_request line (from v8) + build plan 2b: four client agents, no Security intents
 RELEASED[('planner','v6')]='v6+e8bc7007'
 RELEASED[('planner','v7')]='v7+0590901b'
 RELEASED[('planner','v8')]='v8+2710b2ab'
@@ -86,4 +88,5 @@ def test_prompts_in_use_are_released_versions():
     """The admin dashboard's "live" version per family: every one exists on disk, and the v5 runner agents are included."""
     used=prompts.in_use()
     assert set(used.items())<=set(prompts.released())
-    assert {'planner','guide','accounts','security','runner_common','rm_planner','rm_assistant'}<=set(used)
+    assert {'planner','guide','accounts','runner_common','rm_planner','rm_assistant'}<=set(used)
+    assert not {'security','fraud'}&set(used)  # build plan 2b: no Security agent, and the fraud v7 review no longer runs

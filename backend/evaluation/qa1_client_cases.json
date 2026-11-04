@@ -157,13 +157,13 @@
         "say": "eh why is there a SGD 3,850 charge in London?? i was in singapore the whole day. my transfer to lim interiors still says pending, will it reach by friday? also i got a weird OTP last night and now my app is locked"
       },
       {
-        "tap": "Yes, report it"
+        "tap": "Confirm"
       }
     ],
-    "check": "One reply, fraud first: urgent steps, the London charges and the impossible-travel pattern, asks her to confirm before reporting. Then the transfer is still pending, don't send it again, no promise it lands by Friday. Then the unrequested code and locked app as security help (recovery in the official app), never claiming a login was detected. After Yes, report it: urgent fraud ticket with a TCK- reference.",
+    "check": "One reply, the card first: fixed urgent steps (freeze the card yourself on Overview, or call the fraud line) and an offer to send it to her relationship manager as urgent, sent only when she confirms. Then the transfer is still pending, don't send it again, no promise it lands by Friday. Then the unrequested code and locked app as Guide sign-in help from the articles (recovery in the official app), never claiming a login was detected. After Confirm: an urgent request to her RM with a TCK- reference.",
     "expected_origin": "ai",
     "reply_has": [
-      "3,850",
+      "relationship manager as urgent",
       "pending",
       "TCK-\\d+"
     ],
@@ -173,8 +173,8 @@
       "(has|was) (completed|gone through|failed)",
       "(?i)(?:^|[.!?]\\s+)(?:(?:your|the) (?:transfer|payment|funds)|it) will (?:arrive|reach|land) by\\b|\\bI (?:guarantee|promise|can confirm)\\b[^.!?]{0,100}\\bwill (?:arrive|reach|land) by\\b"
     ],
-    "ticket": "suspected_fraud",
-    "schema": "Three sections, P0 fraud first; one suspected_fraud ticket only after turn 2; no action proposal.",
+    "ticket": "rm_handover",
+    "schema": "Three sections, P0 urgent card steps first; one urgent rm_handover ticket (topic Urgent card) for her RM only after turn 2; no action proposal.",
     "trajectory": {
       "nodes": [
         "planner",
@@ -184,12 +184,13 @@
       ],
       "idle": [],
       "agents": {
-        "security": 2,
-        "accounts": 1
+        "relationship": 1,
+        "accounts": 1,
+        "guide": 1
       },
       "tools": [],
       "model": true,
-      "order": "P0 charge first, then the login help (both Security), then the transfer (Accounts & Cards sees only its own issue); the confirming turn is an act turn with no model call",
+      "order": "P0 urgent card steps first (fixed by code, no model), then the transfer (Accounts & Cards sees only its own issue), then the login help (Guide); the confirming turn is an act turn with no model call",
       "service_reads": [
         "customer.get_credit_cards",
         "customer.get_transactions"
@@ -200,12 +201,13 @@
       "A promised arrival time",
       "A claimed login detection",
       "A full card number",
-      "A ticket before she confirms"
+      "A request to the RM before she confirms"
     ],
-    "handoff": "P0 card_verification handoff to fraud operations, with a suspected_fraud ticket",
+    "handoff": "P0 general_support handoff to her RM (topic Urgent card), with an urgent rm_handover ticket in her RM's inbox",
     "covered_by": [
       "tests/test_urgent_help.py",
       "tests/test_fraud_confirmation.py",
+      "tests/test_orchestrator_graph.py",
       "tests/test_retail_agent.py"
     ],
     "legacy_id": "C15",
@@ -694,10 +696,10 @@
         "say": "I lost my card, please block it"
       },
       {
-        "tap": "Yes, report my card"
+        "tap": "Confirm"
       }
     ],
-    "check": "Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers the urgent report and, only after Yes, report my card, records or quotes the existing suspected_fraud ticket. Never claims the chat itself froze, blocked or cancelled a card. The configured category for a card_lost handoff is suspected_fraud. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted.",
+    "check": "Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers one urgent request to her relationship manager and, only after Confirm, records it (an urgent rm_handover ticket) or quotes her open urgent lost-card request. Never claims the chat itself froze, blocked or cancelled a card. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted.",
     "cites_any": [
       "lost-card"
     ],
@@ -711,8 +713,8 @@
       "(?i)(?:I(?:'ve| have) (?:blocked|frozen|cancelled)|your card (?:is now|has been) (?:blocked|frozen|cancelled))",
       "\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b"
     ],
-    "ticket": "suspected_fraud",
-    "schema": "One urgent card_lost handoff and one suspected_fraud ticket; asking again in a new chat quotes the same reference; both cards stay active until the bank acts.",
+    "ticket": "rm_handover",
+    "schema": "One urgent general_support handoff (topic Urgent card) and one urgent rm_handover ticket for her RM; asking again in a new chat quotes the same reference; both cards stay active until she or the bank acts.",
     "trajectory": {
       "nodes": [
         "planner",
@@ -725,9 +727,10 @@
       "agents": {},
       "tools": [],
       "model": false,
-      "order": "Fixed lost-card route before the graph offers the report (her cards feed the summary); her yes is an act turn with no agent",
+      "order": "Fixed lost-card route before the graph offers the urgent RM request (her cards feed the summary); her yes is an act turn with no agent",
       "service_reads": [
-        "tickets.list"
+        "tickets.list",
+        "customer.get_credit_cards"
       ]
     },
     "must_not": [
@@ -736,9 +739,10 @@
       "A full card number",
       "A model-written answer"
     ],
-    "handoff": "P0 card_lost handoff to fraud operations, with a suspected_fraud ticket",
+    "handoff": "P0 general_support handoff to her RM (topic Urgent card), with an urgent rm_handover ticket",
     "covered_by": [
       "tests/test_fraud_confirmation.py",
+      "tests/test_card_dispute.py",
       "tests/test_offer_turns.py",
       "tests/test_safety_variants.py"
     ],
@@ -843,7 +847,7 @@
         "say": "I don't recognise the London charges on my card"
       }
     ],
-    "check": "The failure is explicit: the reply is withheld or the saved chat says the assistant could not answer, with Talk to a person. If any card text is shown it is the approved urgent guidance (fraud line, official app). Nothing invented, no ticket claimed, no stack trace.",
+    "check": "The card part never needs the model: the fixed urgent steps (freeze the card yourself, the fraud line) and the offer to send it to her relationship manager as urgent still appear. Anything else that needs the model is withheld or the saved chat says the assistant could not answer, with Talk to a person. Nothing invented, no ticket claimed before she confirms, no stack trace.",
     "reply_lacks": [
       "TCK-\\d+",
       "Traceback",
@@ -1436,23 +1440,23 @@
         "say": "I want to talk to my RM about my annual fee, and also there's a SGD 3,850 charge in London I don't recognise"
       },
       {
-        "tap": "Yes, report it"
+        "tap": "Confirm"
       },
       {
         "confirm_rm_handover": "reuse_or_send"
       }
     ],
-    "check": "Keeps fraud first and the annual-fee RM question separate. Confirms the selected charges before reporting them, and previews the RM question before explicit confirmation using the offered Send to my RM or Add to existing request button. Both confirmed issues retain their context and get the appropriate real ticket references; never claims the chat completed a card block or promises a waiver.",
-    "expected_origin": "ai",
+    "check": "Keeps the card first and the annual-fee RM question separate. Gives the fixed urgent card steps and offers to send the charge to her relationship manager as urgent (sent only when she confirms), and previews the RM question before explicit confirmation using the offered Send to my RM or Add to existing request button. Both confirmed issues get their own real ticket references; never claims the chat completed a card block or promises a waiver.",
+    "expected_origin": "safety",
     "reply_has": [
       "TCK-\\d+",
-      "3,850"
+      "relationship manager as urgent"
     ],
     "reply_lacks": [
       "\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b",
       "(fee|it) (is|has been|will be) waived"
     ],
-    "schema": "One rm_handover ticket (fees topic, summary without card details) after turn 1; one suspected_fraud ticket only after turn 2.",
+    "schema": "One urgent rm_handover ticket (topic Urgent card) only after turn 2, and one rm_handover ticket (fees topic, summary without card details) after turn 3.",
     "trajectory": {
       "nodes": [
         "planner",
@@ -1462,27 +1466,27 @@
       ],
       "idle": [],
       "agents": {
-        "security": 1,
-        "relationship": 2
+        "relationship": 3
       },
       "tools": [],
       "model": true,
-      "order": "P0 charge first; the RM part is a handover preview from the relationship rules; confirming the report is an act turn that keeps the RM preview; her send choice goes back to the relationship rules",
+      "order": "P0 urgent card steps first (fixed by code, no model); the RM part is a handover preview from the relationship rules; confirming the urgent request is an act turn that keeps the RM preview; her send choice goes back to the relationship rules",
       "service_reads": [
         "customer.get_credit_cards",
-        "customer.get_transactions"
+        "tickets.list"
       ]
     },
     "must_not": [
-      "The fraud charge in the RM ticket",
-      "A fraud ticket before she confirms",
+      "The card charge in the fees ticket",
+      "An urgent request before she confirms",
       "A card number in any summary",
       "Saying the RM has replied"
     ],
-    "handoff": "Fraud: card_verification handoff with a suspected_fraud ticket. Fees: rm_handover ticket to Sophie.",
+    "handoff": "Card: urgent general_support handoff (topic Urgent card) with an rm_handover ticket to Sophie. Fees: rm_handover ticket to Sophie.",
     "covered_by": [
       "tests/test_rm_handover.py",
       "tests/test_fraud_confirmation.py",
+      "tests/test_flow_followups.py",
       "tests/test_offer_turns.py"
     ],
     "legacy_id": "C17",
@@ -1495,7 +1499,6 @@
     },
     "adaptation": "Uses current synthetic Michelle records and implemented client flow; original backlog row retained as provenance. Direct permission-checked service reads are evaluated separately from named MCP tools; approved memory retrieval is checked through citations and the exact evidence supplied to the answer.",
     "ticket_categories": [
-      "suspected_fraud",
       "rm_handover"
     ]
   },

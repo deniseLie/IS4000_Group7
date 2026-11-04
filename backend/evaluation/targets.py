@@ -26,12 +26,11 @@ from app.core.observability import span_sink,evidence_sink
 from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest
 from app.schemas.tickets import CustomerTicket
-from app.services.fraud_reports import CONFIRM_REPLY,LOST_REPLY
 from app.services.rm_handover import SEND_REPLY,PREVIEW_MARK,OFFERED
 from app.services.guardrail import assess_request
 
 PERSONAS={'michelle':'demo.michelle@example.com','sophie':'demo.sophie@example.com'}
-CHAT_TAPS={CONFIRM_REPLY,LOST_REPLY,SEND_REPLY,'yes'}  # buttons whose label is sent as the next chat message (a typed yes confirms an offer)
+CHAT_TAPS={SEND_REPLY,'yes'}  # buttons whose label is sent as the next chat message (a typed yes confirms an offer)
 TAP_ALIASES={'Confirm':'yes'}  # the offer's Confirm button; a typed yes takes the same act path
 NODES=('planner','agent','gather','act','compose')
 

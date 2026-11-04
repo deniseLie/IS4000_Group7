@@ -1,24 +1,19 @@
 """Rules that answer before the runner's model call (architecture §5.6.2; build plan phase 5).
 
-The v4 rule answerers move here unchanged: card, account and transaction figures (Accounts), the charge review that
-lists charges for the fraud team (Security), meetings, request status and RM handovers (Relationship), app guidance
-(Guide). Compliance and Relationship still answer with their released v4 prompts, and the charge review with fraud v7,
-so these reads run under the v4 agent names and allow-lists (registry.TOOLS) until their own runner prompts land.
+The v4 rule answerers move here unchanged: card, account and transaction figures (Accounts), meetings, request status
+and RM handovers (Relationship), app guidance (Guide). Compliance and Relationship still answer with their released v4
+prompts, so these reads run under the v4 agent names and allow-lists (registry.TOOLS) until their own runner prompts
+land. Urgent card help (a lost card, a charge she doesn't recognise) is not a rule here: the orchestrator answers it
+with fixed steps and an urgent RM request (build plan 2b).
 A rule returns None to let the runner's model answer. Importing this module registers the rules in runner.RULES."""
 import re
-from datetime import timedelta
 from zoneinfo import ZoneInfo
-from pydantic import TypeAdapter
 from app.schemas.agents import Evidence
 from app.schemas.chat import Message, RecordSelection
 from app.schemas.contracts import AgentOutput, AgentResult, AgentSpec, OfferProposal, PlanTask, RequestContext, Task
-from app.schemas.customer_data import CustomerTransaction
-from app.schemas.disputes import DisputeItem
-from app.schemas.fraud import DisputeProposal, FraudProposal
-from app.services import case_summary, client_intents, compliance_selection, customer_data, fraud_reports, prompts, rm_handover
-from app.services.agents import (account_answers, card_answers, client_guidance, compliance, document, fraud, fraud_records,
-    meeting_answers, relationship, relationship_records, request_status_answers, retail, retail_checks, retail_records, runner,
-    transaction_answers)
+from app.services import client_intents, compliance_selection, prompts, rm_handover
+from app.services.agents import (account_answers, card_answers, client_guidance, compliance, document, meeting_answers,
+    relationship, relationship_records, request_status_answers, retail, retail_checks, retail_records, runner, transaction_answers)
 from app.services.agents.answer import WITHHELD
 
 SGT = ZoneInfo('Asia/Singapore')
@@ -91,53 +86,6 @@ async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, h
     return out(spec, task, result, evidence, prompt_id)
 
 
-# ---- Security ----
-
-async def other_issues(task: PlanTask, ctx: RequestContext) -> tuple[list[CustomerTransaction], object, bool]:
-    """The other issues the planner saw in the same message: a pending transfer (and its due day) and a lockout."""
-    today = ctx.received_at.astimezone(SGT).date()
-    transfer = task.entities.get('transfer')
-    pending: list[CustomerTransaction] = []
-    if isinstance(transfer, str):
-        read = await customer_data.get_transactions(ctx, today - timedelta(days=90), today, {'status': 'pending'})
-        pending = [row for row in TypeAdapter(list[CustomerTransaction]).validate_python(read.data) if row.card_id is None and row.amount < 0]
-    due = retail_checks.due_date(transfer, today) if isinstance(transfer, str) else None
-    return pending, due, task.entities.get('lockout') is True
-
-
-async def fraud_team_offer(task: PlanTask, proposal: FraudProposal, flagged: DisputeProposal | None, ctx: RequestContext) -> tuple[str, OfferProposal] | None:
-    """The charge list for the client to confirm and the urgent fraud-team handoff it offers; the summary comes from records."""
-    v4 = shim(task, 'fraud')
-    text = await fraud_reports.ask_to_confirm(v4, proposal, flagged, ctx)
-    if text is None:return None
-    records = await fraud_records.load(ctx)
-    card = next(item for item in records.cards if item.card_id == proposal.card_id)
-    ids = set(flagged.transaction_ids if flagged is not None and flagged.card_id == proposal.card_id else [proposal.transaction_id])
-    items = [DisputeItem(transaction_id=row.txn_id, date=row.date, merchant=row.description, amount=row.amount, currency=row.currency)
-        for row in records.transactions if row.txn_id in ids and row.amount < 0]
-    transfers, due, lockout = await other_issues(task, ctx)
-    words = task.entities.get('message')
-    summary = case_summary.build(last4=card.last4, reported_id=proposal.transaction_id, items=items, block=None, dispute=None, possession=None,
-        transfers=transfers, due=due, lockout=lockout, customer_words=words if isinstance(words, str) else task.question)
-    return text, OfferProposal(task_id=task.id, agent='security', type='handoff.create',
-        target={'reason': 'card_verification', 'priority': 'P0', 'summary': summary},
-        summary=f'Send the charges on your card ending {card.last4} to our fraud team as urgent')
-
-
-async def security_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput | None:
-    """An unrecognised charge keeps the fraud v7 review; a single eligible card gives one fraud-team offer to confirm."""
-    if task.intent != 'unrecognised_charge':return None
-    current = as_v4(ctx, 'fraud')
-    decision, evidence = await fraud.respond(shim(task, 'fraud'), history, language, current, await knowledge(task, ctx))
-    offer = await fraud_team_offer(task, decision.proposal, decision.dispute, current) if decision.proposal is not None else None
-    if offer is None:return out(spec, task, decision.result, evidence, decision.prompt_id)
-    text, proposal = offer
-    if decision.result.status == 'error':  # the urgent steps and the charge list from records still go out
-        return AgentOutput(task_id=task.id, agent='security', status='needs_human', origin='safety', prompt_id=decision.prompt_id,
-            result=conversation(task, 'fraud', decision.result.text), decision=text, proposals=[proposal])
-    return out(spec, task, decision.result.model_copy(update={'status': 'needs_human'}), evidence, decision.prompt_id, decision=text, proposals=[proposal])
-
-
 # ---- Compliance & Documents ----
 
 async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput:
@@ -192,5 +140,5 @@ async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContex
     return out(spec, task, result, evidence, prompt_id)
 
 
-runner.RULES.update({'guide': (guide_rules,), 'accounts': (accounts_rules,), 'security': (security_rules,),
+runner.RULES.update({'guide': (guide_rules,), 'accounts': (accounts_rules,),
     'compliance': (compliance_rules,), 'relationship': (relationship_rules,)})

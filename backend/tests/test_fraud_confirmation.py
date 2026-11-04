@@ -1,56 +1,99 @@
-"""CR12 (0082): the charge list the client confirms, and reading her confirmation back. Pure rules; no model or database."""
-from datetime import date
-import pytest
-from app.schemas.chat import Message
-from app.schemas.fraud import SecurityTransaction
-from app.services import fraud_reports
+"""Build plan 2b: urgent card help without a Security agent. A charge the client doesn't recognise or a lost card gets fixed
+steps (no model) and one urgent request to her RM, which is sent only when she confirms. These are the fixed texts and the
+handoff target, built by code. Pure rules: no model or database (the native ticket and RM inbox check is in
+test_card_dispute.py)."""
+import asyncio
+from types import SimpleNamespace
+from uuid import uuid4
+from app.schemas.actions import HandoffResult, HandoffTarget
+from app.services import orchestrator, rm_handover
 
 
-def charge(txn: str,day: int,merchant: str,amount: float) -> SecurityTransaction:
-    return SecurityTransaction(txn_id=txn,date=date(2026,10,day),description=merchant,amount=amount,currency='SGD',status='posted',
-        card_id='card_10021',card_last4='7310')
+def test_the_urgent_request_is_a_p0_rm_handover_with_its_own_topic() -> None:
+    target = rm_handover.urgent_target('charge', 'someone used my card 4111 1111 1111 1111 in London', 'card ending 7310 (active)')
+    HandoffTarget.model_validate(target)  # the executor's own target check
+    assert target['reason'] == 'general_support' and target['priority'] == 'P0'  # 0082: an urgent rm_handover ticket for her RM
+    summary = target['summary']
+    assert summary.startswith('[Urgent card] Charge the client does not recognise. Cards on record: card ending 7310 (active).')
+    assert rm_handover.urgent(summary) and rm_handover.topic_of(summary) == rm_handover.URGENT_TOPIC
+    assert '4111 1111 1111 1111' not in summary and 'London' in summary and len(summary) <= rm_handover.SUMMARY_LIMIT
+    lost = rm_handover.urgent_target('lost', 'i lsot my crad ' + 'x' * 900)['summary']
+    assert lost.startswith('[Urgent card] Card reported lost or stolen.') and len(lost) <= rm_handover.SUMMARY_LIMIT
+    assert not rm_handover.urgent(rm_handover.summary_for('Can you waive my annual fee?'))
 
 
-ASK=fraud_reports.ask_text('7310',[charge('txn_100215',27,'MAYFAIR AUDIO LONDON',-1.0),charge('txn_100216',27,'LUXEHAUS LONDON',-3850.0)])
+def test_the_fixed_texts_never_promise_what_the_assistant_cannot_do() -> None:
+    for text in (rm_handover.URGENT_STEPS, rm_handover.URGENT_LOST_STEPS):
+        assert 'Freeze card' in text and 'fraud line on the back of your card' in text and 'PIN' in text and 'TCK-' not in text
+    for text in (rm_handover.URGENT_STEPS, rm_handover.URGENT_LOST_STEPS, rm_handover.URGENT_SENT, rm_handover.URGENT_REUSED,
+            rm_handover.URGENT_DECLINED, rm_handover.URGENT_FAILED, rm_handover.URGENT_SEPARATE):
+        assert 'fraud team' not in text and 'Only the bank can unfreeze' not in text and 'is blocked' not in text
+    assert 'nothing has been sent' in rm_handover.URGENT_FAILED and 'haven’t sent anything' in rm_handover.URGENT_DECLINED
 
 
-def test_the_list_names_each_charge_and_asks_for_a_plain_yes() -> None:
-    assert 'card ending 7310' in ASK and '27 Oct 2026, LUXEHAUS LONDON, SGD 3,850.00 (ref. 100216)' in ASK
-    assert '“Yes, report it”' in ASK and 'fraud line on the back of your card' in ASK and 'TCK-' not in ASK
+def outcome(state: str, summary: str, created: bool = True):
+    handoff = HandoffResult(handoff_id=uuid4(), priority='P0', status='open', created=created)
+    return SimpleNamespace(command=SimpleNamespace(state=state, target=HandoffTarget(reason='general_support', priority='P0', summary=summary)),
+        receipt=SimpleNamespace(outcome='succeeded', result=handoff) if state == 'succeeded' else None)
 
 
-@pytest.mark.parametrize('reply',['Yes, report it','yes','Yes please report them','That’s right','Correct','go ahead'])
-def test_a_plain_yes_confirms_exactly_the_listed_charges(reply: str) -> None:
-    history=[Message(role='user',content='I do not recognise the London charges'),Message(role='assistant',content='Urgent steps…\n\n'+ASK),
-        Message(role='user',content=reply)]
-    found=fraud_reports.pending(history)
-    assert [item.encoded() for item in found]==['7310:txn_100215,txn_100216']
-    assert fraud_reports.Confirmation.decode(found[0].encoded())==found[0]
+def test_her_yes_quotes_the_rm_ticket_and_her_no_sends_nothing(monkeypatch) -> None:
+    async def reference(handoff_id, ctx):return 'TCK-001234'
+    monkeypatch.setattr(rm_handover, 'ticket_reference', reference)
+    urgent = rm_handover.urgent_target('charge', 'a charge I did not make')['summary']
+    sent = asyncio.run(orchestrator.outcome_text(outcome('succeeded', urgent), None))
+    assert sent.startswith('I’ve sent this to your relationship manager as urgent (reference TCK-001234).') and 'My requests' in sent
+    assert asyncio.run(orchestrator.outcome_text(outcome('rejected', urgent), None)) == rm_handover.URGENT_DECLINED
+    plain = asyncio.run(orchestrator.outcome_text(outcome('succeeded', '[Fees or rates] Client question for you: waive my fee'), None))
+    assert plain == rm_handover.handed_over('TCK-001234') and 'urgent' not in plain
+    assert asyncio.run(orchestrator.outcome_text(outcome('rejected', '[Fees or rates] waive my fee'), None)) == orchestrator.CANCELLED
 
 
-@pytest.mark.parametrize('reply',['No, only the second one','yes but not the 1 dollar one','What is my balance?','Not that card','wait'])
-def test_anything_but_a_plain_yes_reports_nothing(reply: str) -> None:
-    history=[Message(role='assistant',content=ASK),Message(role='user',content=reply)]
-    assert fraud_reports.pending(history)==[]
+def test_a_yes_that_returns_the_chats_earlier_handoff_never_claims_a_new_urgent_request(monkeypatch) -> None:
+    """One open general_support handoff per case (0003): after an RM request in the same chat, her yes returns that one."""
+    urgent = rm_handover.urgent_target('lost', 'i lost my card')['summary']
+    calls: list[tuple] = []
+    async def reference(handoff_id, ctx):return 'TCK-001050'
+    async def note(ref, text, ctx):calls.append(('note', ref, text))
+    async def separate(text, ctx):
+        calls.append(('separate', text))
+        return 'TCK-001051'
+    monkeypatch.setattr(rm_handover, 'ticket_reference', reference)
+    monkeypatch.setattr(rm_handover, 'follow_up', note)
+    monkeypatch.setattr(rm_handover, 'open_separate', separate)
+    for topic, expected, call in ((rm_handover.URGENT_TOPIC, rm_handover.URGENT_REUSED.format(reference=' (reference TCK-001050)'), ('note', 'TCK-001050', urgent)),
+            ('Fees or rates', rm_handover.URGENT_SEPARATE.format(reference=' (reference TCK-001051)'), ('separate', urgent))):
+        async def topic_of(ref, ctx, topic=topic):return topic
+        monkeypatch.setattr(rm_handover, 'topic_of_reference', topic_of)
+        calls.clear()
+        assert asyncio.run(orchestrator.outcome_text(outcome('succeeded', urgent, created=False), None)) == expected and calls == [call]
+    async def broken(text, ctx):raise rm_handover.ActionIntegrityError('no reference')
+    monkeypatch.setattr(rm_handover, 'open_separate', broken)
+    assert asyncio.run(orchestrator.outcome_text(outcome('succeeded', urgent, created=False), None)) == rm_handover.URGENT_FAILED
 
 
-def test_a_yes_to_some_other_question_reports_nothing() -> None:
-    history=[Message(role='assistant',content='Would you like to know your card balance?'),Message(role='user',content='yes')]
-    assert fraud_reports.pending(history)==[]
+def test_a_lost_card_offers_one_urgent_rm_request_for_her_confirmation(monkeypatch) -> None:
+    saved = []
+    async def none(kind, ctx):return None
+    async def cards(ctx):return 'card ending 4821 (active)'
+    async def save(proposals, ctx, turn):
+        saved.extend(proposals)
+        return []
+    monkeypatch.setattr(rm_handover, 'open_urgent', none)
+    monkeypatch.setattr(rm_handover, 'urgent_cards', cards)
+    monkeypatch.setattr(orchestrator.offers, 'save', save)
+    text, _ = asyncio.run(orchestrator.lost_card_offer('my card was stolen', None, uuid4()))
+    assert rm_handover.URGENT_OFFER['lost'] in text and orchestrator.CONFIRM_LINE in text
+    [proposal] = saved
+    assert proposal.agent == 'relationship' and proposal.type == 'handoff.create' and proposal.target['priority'] == 'P0'
+    assert proposal.target['summary'].startswith('[Urgent card] Card reported lost or stolen. Cards on record: card ending 4821 (active).')
 
 
-def test_lost_card_reply_quotes_the_reference_and_never_claims_a_block() -> None:
-    sent=fraud_reports.LostCardReport(reference='TCK-001234').reply()
-    assert 'TCK-001234' in sent and 'fraud team as urgent' in sent and 'My requests' in sent and 'is blocked' not in sent
-    assert 'already have an open lost-card report' in fraud_reports.LostCardReport(reference='TCK-001234',reused=True).reply()
-    assert 'nothing has been sent' in fraud_reports.LostCardReport(reference=None,failed=True).reply()
-
-
-def test_lost_card_is_reported_only_after_she_confirms() -> None:
-    """CR12: safety steps first; the urgent ticket waits for "Yes, report my card"; "No" reports nothing."""
-    offer='Call the fraud line now…\n\n'+fraud_reports.LOST_OFFER
-    history=lambda reply:[Message(role='user',content='i lost my card'),Message(role='assistant',content=offer),Message(role='user',content=reply)]
-    assert fraud_reports.lost_pending(history('Yes, report my card'))==('i lost my card',True)
-    assert fraud_reports.lost_pending(history('yes'))==('i lost my card',True)
-    assert fraud_reports.lost_pending(history('no'))==('i lost my card',False)
-    assert fraud_reports.lost_pending(history('what is my balance')) is None
+def test_an_open_lost_card_request_is_quoted_and_a_failure_says_nothing_was_sent(monkeypatch) -> None:
+    async def existing(kind, ctx):return 'TCK-000777'
+    monkeypatch.setattr(rm_handover, 'open_urgent', existing)
+    text, group = asyncio.run(orchestrator.lost_card_offer('i lost my card', None, uuid4()))
+    assert group is None and 'already have an open urgent card request' in text and 'TCK-000777' in text
+    async def broken(kind, ctx):raise PermissionError('denied')
+    monkeypatch.setattr(rm_handover, 'open_urgent', broken)
+    assert asyncio.run(orchestrator.lost_card_offer('i lost my card', None, uuid4())) == (rm_handover.URGENT_FAILED, None)

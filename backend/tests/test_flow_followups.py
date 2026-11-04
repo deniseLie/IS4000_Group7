@@ -10,7 +10,7 @@ from app.schemas.agents import PlannedIssue
 from app.schemas.chat import ChatRequest,Message
 from app.schemas.contracts import PlanTask,RiskAssessment
 from app.schemas.fraud import SecurityTransaction
-from app.services import fraud_reports,guardrail,orchestrator,rm_handover
+from app.services import guardrail,orchestrator,rm_handover
 from app.services.agents import compliance,request_status_answers
 from tests.test_actions_api import context
 
@@ -27,23 +27,20 @@ def test_handover_keeps_the_explicit_fee_question_when_the_planner_paraphrases_i
     assert 'handover' not in unauthorised[0].entities
 
 
-def test_mixed_confirmations_survive_either_order_without_forwarding_fraud_to_the_rm() -> None:
+def test_mixed_turn_keeps_the_rm_preview_apart_from_the_urgent_card_request() -> None:
+    """Build plan 2b: the urgent card request is a saved offer (a yes confirms it); the RM preview stays her separate choice."""
     question="I want to talk to my RM about my annual fee, and also a charge I don't recognise"
     parts=rm_handover.requested_questions(question)
     assert parts==['I want to talk to my RM about my annual fee']
-    charge=SecurityTransaction(txn_id='txn_100216',date=date(2026,10,27),description='LUXEHAUS LONDON',amount=-3850,
-        currency='SGD',status='posted',card_id='card_10021',card_last4='7310')
-    fraud=fraud_reports.ask_text('7310',[charge])
-    rm=rm_handover.preview(parts[0],[],None,'')
-    combined=fraud+'\n\n'+rm
-    history=[Message(role='assistant',content=combined),Message(role='user',content=fraud_reports.CONFIRM_REPLY)]
-    kept=rm_handover.unanswered_preview(history)
-    assert kept and 'annual fee' in kept and '3,850' not in kept and '7310' not in kept
+    urgent=f'{rm_handover.URGENT_STEPS}\n\nWould you like me to: {rm_handover.URGENT_OFFER["charge"]}? {orchestrator.CONFIRM_LINE}'
+    combined=urgent+'\n\n'+rm_handover.preview(parts[0],[],None,'')
+    kept=rm_handover.unanswered_preview([Message(role='assistant',content=combined),Message(role='user',content='yes')])
+    assert kept and 'annual fee' in kept and 'recognise' not in kept
     assert rm_handover.pending_choice([Message(role='assistant',content=kept),Message(role='user',content=rm_handover.SEND_REPLY)])==(parts[0],'send',None)
-    reversed_history=[Message(role='assistant',content=combined),Message(role='user',content=rm_handover.SEND_REPLY)]
-    prompts=fraud_reports.unanswered_prompts(reversed_history)
-    assert prompts==[fraud]
-    assert fraud_reports.pending([Message(role='assistant',content=prompts[0]),Message(role='user',content=fraud_reports.CONFIRM_REPLY)])[0].transaction_ids==('txn_100216',)
+    assert rm_handover.pending_choice([Message(role='assistant',content=combined),Message(role='user',content=rm_handover.SEND_REPLY)])==(parts[0],'send',None)
+    # The two never share a ticket: the urgent request has its own topic, which no RM handover topic matches.
+    summary=rm_handover.urgent_target('charge',question)['summary']
+    assert rm_handover.topic_of(summary)==rm_handover.URGENT_TOPIC!=rm_handover.topic_for(parts[0])
     assert rm_handover.unanswered_preview([Message(role='assistant',content='What is your next question?'),Message(role='user',content='yes')]) is None
 
 

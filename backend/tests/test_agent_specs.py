@@ -27,8 +27,8 @@ def ctx(agent=None,kind='customer') -> RequestContext:
 
 
 def test_every_spec_tool_is_a_registered_tool_with_known_permissions():
-    assert set(SPECS)=={'guide','accounts','security','compliance','relationship','rm_client','rm_requests','rm_calendar'}
-    assert set(registry.CLIENT_SPECS)=={'guide','accounts','security','compliance','relationship'}
+    assert set(SPECS)=={'guide','accounts','compliance','relationship','rm_client','rm_requests','rm_calendar'}
+    assert set(registry.CLIENT_SPECS)=={'guide','accounts','compliance','relationship'}  # build plan 2b: no Security agent
     for spec in SPECS.values():
         for tool in spec.tools:
             assert tool in tools.TOOLS and tool in TOOL_PERMISSION, (spec.name,tool)
@@ -71,10 +71,9 @@ def test_free_text_tools_are_never_loop_tools():
 
 
 def test_field_views_drop_excluded_fields():
-    security=tools.shaped({'items':[CARD],'customer_id':1001,'call_id':'c1'},SPECS['security'].tools['my_cards'])
-    assert security=={'items':[{'card_id':'card_4821','last4':'4821','status':'active'}],'call_id':'c1'}
-    accounts=tools.shaped({'items':[CARD]},SPECS['accounts'].tools['my_cards'])['items'][0]
-    assert 'card_id' not in accounts and accounts['limit']==20000 and accounts['due_date']=='2026-11-25'
+    accounts=tools.shaped({'items':[CARD],'customer_id':1001,'call_id':'c1'},SPECS['accounts'].tools['my_cards'])
+    assert set(accounts)=={'items','call_id'} and 'card_id' not in accounts['items'][0]
+    assert accounts['items'][0]['limit']==20000 and accounts['items'][0]['due_date']=='2026-11-25'
     rm=tools.shaped({'data':RM},SPECS['relationship'].tools['my_rm'])['data']
     assert rm=={'current':{'name':'Sophie Lim (DEMO)','role':'RM','team':'Private','timezone':'Asia/Singapore',
         'contact':{'phone':'+65 6000 0000'},'started_on':'2026-01-01'},'previous':{'name':'Rachel (DEMO)','ended_on':'2025-12-31'}}
@@ -86,11 +85,11 @@ def test_field_views_drop_excluded_fields():
 
 
 def test_limits_fill_in_or_refuse_windows_and_rows():
-    sec=ctx('security');view=SPECS['security'].tools['my_transactions']
-    assert tools.bounded('my_transactions',{},view,sec)=={'days':90}
-    assert tools.bounded('my_transactions',{'days':30,'status':'pending'},view,sec)=={'days':30,'status':'pending'}
+    acc=ctx('accounts');view=SPECS['accounts'].tools['my_transactions']
+    assert tools.bounded('my_transactions',{},view,acc)=={'days':90}
+    assert tools.bounded('my_transactions',{'days':30,'status':'pending'},view,acc)=={'days':30,'status':'pending'}
     for days in (91,365,0):
-        with pytest.raises(tools.ToolLimitExceeded):tools.bounded('my_transactions',{'days':days},view,sec)
+        with pytest.raises(tools.ToolLimitExceeded):tools.bounded('my_transactions',{'days':days},view,acc)
     rows=tools.shaped({'items':[{'date':str(i)} for i in range(150)]},view)['items']
     assert len(rows)==view.max_rows==100
     rel=ctx('relationship');slots=SPECS['relationship'].tools['free_slots'];first=tools.today(rel)
@@ -101,15 +100,14 @@ def test_limits_fill_in_or_refuse_windows_and_rows():
 
 def test_policy_reads_the_spec_for_new_agents():
     for agent,allowed,forbidden in [('accounts','customer.get_loans','compliance.get_case'),
-            ('security','customer.get_transactions','customer.get_loans'),('guide','kb.search','customer.get_credit_cards'),
-            ('accounts','ticket.create','handoff.create'),('security','handoff.create','rm.share_summary')]:
+            ('guide','kb.search','customer.get_credit_cards'),('accounts','ticket.create','handoff.create'),('guide','kb.search','handoff.create')]:
         c=ctx(agent)
         assert decide(c.principal,allowed,{'customer_id':1001},c).allow, (agent,allowed)
         assert decide(c.principal,forbidden,None,c).reasons==['agent_tool_forbidden'], (agent,forbidden)
     # Ticket guidance (knowledge_article) is the Requests agent's only knowledge read; Client and Calendar have none.
     assert 'kb.search' in registry.permissions(SPECS['rm_requests'])
     assert 'kb.search' not in registry.permissions(SPECS['rm_client'])|registry.permissions(SPECS['rm_calendar'])
-    c=ctx('security')
+    c=ctx('accounts')
     assert decide(c.principal,'card.temporary_block',{'customer_id':1001},c).reasons==['customer_only_action']
     assert decide(c.principal,'card.dispute',{'customer_id':1001},c).reasons==['bank_only_action']
     guest=ctx('guide',kind='guest')
@@ -118,7 +116,7 @@ def test_policy_reads_the_spec_for_new_agents():
 
 
 def test_v4_agents_keep_their_allow_lists_until_the_switch_over():
-    assert registry.ENFORCED=={'guide','accounts','security','rm_client','rm_requests','rm_calendar'}
+    assert registry.ENFORCED=={'guide','accounts','rm_client','rm_requests','rm_calendar'}
     for agent in ('compliance','relationship','retail'):assert registry.spec_for(agent) is None
     c=ctx('compliance')
     assert decide(c.principal,'compliance.update_checklist_item',{'customer_id':1001},c).allow
@@ -126,8 +124,8 @@ def test_v4_agents_keep_their_allow_lists_until_the_switch_over():
     assert decide(d.principal,'documents.precheck',{'customer_id':1001},d).allow  # was docs.precheck, which no service checks
 
 
-@pytest.mark.parametrize('agent,name,args,error',[('security','my_loans',{},'agent_tool_forbidden'),
-    ('guide','my_cards',{},'agent_tool_forbidden'),('security','my_transactions',{'days':120},'at most 90 days')])
+@pytest.mark.parametrize('agent,name,args,error',[('accounts','my_compliance_case',{},'agent_tool_forbidden'),
+    ('guide','my_cards',{},'agent_tool_forbidden'),('accounts','my_transactions',{'days':120},'at most 90 days')])
 def test_tool_calls_outside_the_spec_are_refused_before_any_read(agent,name,args,error):
     c=ctx(agent)
     batch=audit.start_batch(session_id=c.session_id)

@@ -21,9 +21,10 @@ def test_informal_fraud_is_urgent_and_routes_to_fraud(message):
     assert 'fraud_suspected' in risk.risk_flags
     assert risk.priority=='P0'
     assert risk.fixed_response is None
-    assert critical_task(message,'English').agent=='security' and critical_task(message,'English').intent=='unrecognised_charge'
+    # Build plan 2b: the urgent card task (fixed steps and one urgent request to the RM), never the model.
+    assert (critical_task(message,'English').priority,critical_task(message,'English').entities)==('P0',{'urgent':True,'message':message})
     routed=overridden([PlanTask(id='t1',agent='accounts',intent='transactions',question=message)],risk)[0]
-    assert (routed.agent,routed.intent)==('security','unrecognised_charge')
+    assert (routed.agent,routed.priority,routed.entities['urgent'])==('relationship','P0',True)
 
 @pytest.mark.parametrize('message',[
     'I need more spending power for my overseas trip.',

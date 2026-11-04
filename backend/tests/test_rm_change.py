@@ -55,7 +55,7 @@ def test_davids_messages_route_to_the_relationship_agent(message: str) -> None:
 
 
 @pytest.mark.parametrize('message,agent',[('How do I find my statement?','accounts'),('whats my balance','accounts'),
-    ('my transfer to my landlord still says pending','accounts'),('theres a $2400 charge i dont recognise','security'),('what is the status of my compliance review','compliance')])
+    ('my transfer to my landlord still says pending','accounts'),('theres a $2400 charge i dont recognise','relationship'),('what is the status of my compliance review','compliance')])
 def test_existing_workflow_routing_is_unchanged(message: str,agent: str) -> None:
     assert topic_agent(message)==agent
 

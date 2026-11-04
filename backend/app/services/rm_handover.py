@@ -198,7 +198,7 @@ def preview(question: str,history: Sequence[Message]=(),existing: str | None=Non
 
 
 def unanswered_preview(history: Sequence[Message]) -> str | None:
-    """Re-show the separate RM preview after the client confirms only the fraud report."""
+    """Re-show the separate RM preview after the client confirms only the urgent card request."""
     if len(history)<2 or history[-2].role!='assistant':return None
     text=history[-2].content
     if PREVIEW_MARK not in text:return None
@@ -414,3 +414,73 @@ async def route(question: str,priority: Priority,ctx: RequestContext,owned: Owne
         code=data_api.database_code(error) if isinstance(error,APIError) else None
         log_event('handover_failed',error_type=type(error).__name__,db_code=code)
         return Handover(reference=None,topic=topic,failed=True)
+
+
+# Urgent card help (build plan 2b) -----------------------------------------------------------------------------------
+# There is no Security agent. A lost or stolen card, or a charge the client doesn't recognise, gets fixed steps (never the
+# model) and one offer: an urgent request to her RM. It is a general_support handoff at P0 with the topic "Urgent card", so
+# SQL (0082) opens an urgent rm_handover ticket that heads her RM's inbox (rm_tickets, 0089). The client freezes the card
+# herself (0096); nothing here blocks, cancels or disputes a card, and nothing is sent until she confirms.
+URGENT_TOPIC='Urgent card'
+LOST_TITLE='Card reported lost or stolen'
+CHARGE_TITLE='Charge the client does not recognise'
+FREEZE='freeze the card yourself on Overview under Cards (Manage, then Freeze card), or call the fraud line on the back of your card'
+URGENT_STEPS=('If you don’t recognise a charge, act now: '+FREEZE+'. Check your other recent transactions, and never share your PIN, '
+    'password, one-time code or full card number. I can’t freeze the card, investigate or reverse a charge from here.')
+URGENT_LOST_STEPS=('If your card is lost or stolen, act now: '+FREEZE+'. Never share your PIN, password, one-time code or full card '
+    'number. I can’t freeze, cancel or replace the card from here.')
+URGENT_GUEST='If you’re a client, sign in and ask again, and I can send it to your relationship manager as urgent.'
+URGENT_OFFER={'charge':'Send the charge you don’t recognise to your relationship manager as urgent',
+    'lost':'Tell your relationship manager as urgent that your card is lost or stolen'}
+URGENT_SENT=('I’ve sent this to your relationship manager as urgent{reference}. They will contact you. Don’t wait for them if your card '
+    'is at risk: '+FREEZE+'. I can’t freeze the card or reverse a charge from here. You can follow it in My requests.')
+URGENT_REUSED=('You already have an open urgent card request with your relationship manager{reference}, so I haven’t opened another one. '
+    'Don’t wait for them: '+FREEZE+'. You can follow it in My requests.')
+URGENT_DECLINED='Okay, I haven’t sent anything to your relationship manager. If your card is at risk, '+FREEZE+' now.'
+URGENT_FAILED=('I couldn’t prepare an urgent request to your relationship manager just now, so nothing has been sent. Please '+FREEZE
+    +' straight away.')
+URGENT_SEPARATE=('This chat already has an open request with your relationship manager, so I’ve sent your card problem to them as a '
+    'separate request{reference}. They will contact you. Don’t wait for them if your card is at risk: '+FREEZE+'. You can follow it in My requests.')
+
+
+def urgent(summary: str) -> bool:
+    return topic_of(summary)==URGENT_TOPIC
+
+
+async def urgent_cards(ctx: RequestContext) -> str:
+    """Her cards as the RM reads them in the ticket (last 4 and status only); '' when they cannot be read."""
+    try:
+        read=await customer_data.get_credit_cards(ctx.model_copy(update={'agent':None}))
+        cards=[f'card ending {row["last4"]} ({row.get("status","unknown")})' for row in read.data if isinstance(row,dict) and row.get('last4')][:5]
+    except HANDOVER_ERRORS:return ''
+    return ', '.join(cards) or 'no cards on record'
+
+
+def urgent_target(kind: str,question: str,cards: str='') -> dict:
+    """The handoff target, from code only: topic, what happened, her cards and her own redacted words (at most 500)."""
+    title=LOST_TITLE if kind=='lost' else CHARGE_TITLE
+    summary=f'[{URGENT_TOPIC}] {title}.'+(f' Cards on record: {cards}.' if cards else '')
+    words=compact(question)[:SUMMARY_LIMIT-len(summary)-20]
+    return {'reason':'general_support','priority':'P0','summary':(summary+(f' Client’s words: “{words}”' if words else ''))[:SUMMARY_LIMIT]}
+
+
+async def open_urgent(kind: str,ctx: RequestContext) -> str | None:
+    """Her open urgent request of this kind (from any chat), so a second lost-card report is not opened."""
+    read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
+    tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    title=f'[{URGENT_TOPIC}] {LOST_TITLE if kind=="lost" else CHARGE_TITLE}'
+    return next((ticket.reference for ticket in tickets if ticket.category=='rm_handover' and ticket.status in OPEN
+        and ticket.summary.startswith(title)),None)
+
+
+async def urgent_elsewhere(summary: str,reference: str | None,ctx: RequestContext) -> str:
+    """Her yes returned this chat's earlier open handoff (one general_support handoff per case, 0003), so no new urgent request
+    is claimed: an open urgent card request gets the new detail as a note; another RM request leaves the card its own ticket."""
+    try:
+        if reference is not None and await topic_of_reference(reference,ctx)==URGENT_TOPIC:
+            await follow_up(reference,summary,ctx)
+            return URGENT_REUSED.format(reference=f' (reference {reference})')
+        return URGENT_SEPARATE.format(reference=f' (reference {await open_separate(summary,ctx)})')
+    except HANDOVER_ERRORS as error:
+        log_event('urgent_card_failed',error_type=type(error).__name__)
+        return URGENT_FAILED

@@ -46,11 +46,11 @@ const ERRORS = {
 const PAGES=['chat','overview','inbox','compliance','requests','actions'];  // one client view (the RM and admin pages are not shown)
 // CR8 routing for "Talk to a person". Michelle is a private-banking client, so her relationship manager is her person for
 // general, account and compliance questions (the RM coordinates with the compliance team). Fraud and lost cards go
-// straight to the urgent fraud flow; card limit changes go to the cards and credit team's request form.
+// to the chat's urgent card request to the RM (build plan 2b); card limit changes go to the cards and credit team's request form.
 // [title, explanation, secondary [label, action] or null, primary [label, action] where 'send' = send to the RM]
 const HELP_ROUTES={
   general:['Your relationship manager can help','Tip: the assistant answers most general questions instantly from approved bank information.',['Ask the assistant','chat'],['Send to my relationship manager','send']],
-  fraud:['Report it to the fraud team now','This goes straight to the fraud team as urgent, not to your relationship manager. You’ll see the details to confirm before anything is sent. If money is at risk, also call the fraud line on the back of your card.',['Lost or stolen card','lost'],['Charge I don’t recognise','charge']],
+  fraud:['Tell your relationship manager now','The assistant gives you the urgent steps and sends this to your relationship manager as urgent. You’ll see the details to confirm before anything is sent. If your card is at risk, freeze it on Overview or call the fraud line on the back of your card.',['Lost or stolen card','lost'],['Charge I don’t recognise','charge']],
   card:['Card requests go to the cards and credit team','Limit changes and other card requests are decided by the cards and credit team. Raise the request and you’ll get a reference to follow in My requests.',null,['Open a card request','card']],
   compliance:['Your review is handled by the compliance team','Your relationship manager can pass your question to the compliance team. Your documents, checks and the bank’s questions are on Compliance review.',['Open Compliance review','compliance'],['Send to my relationship manager','send']],
 };
@@ -583,7 +583,7 @@ export default function Chat({session,onSignIn}) {
         {footer}
       </main>}
     </div>
-    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={route&&route[3][1]!=='send'?(helpTopic==='fraud'?'The fraud team handles this as urgent.':'The cards and credit team decides card requests.'):rmIntro?.current?`Your relationship manager, ${displayName(rmIntro.current.name)}, will pick this up and reply to you.`:'Your relationship manager will pick this up and reply to you.'} onClose={()=>setSummary(null)}
+    {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={route&&route[3][1]!=='send'?(helpTopic==='fraud'?'Your relationship manager handles this as urgent.':'The cards and credit team decides card requests.'):rmIntro?.current?`Your relationship manager, ${displayName(rmIntro.current.name)}, will pick this up and reply to you.`:'Your relationship manager will pick this up and reply to you.'} onClose={()=>setSummary(null)}
       footer={<><span>IS4000 · Coursework demo · No real banking services</span>{handoff.outcome?<div className="panel-actions"><button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button><button className="primary-button" data-testid="handoff-open-requests" onClick={()=>{setSummary(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button></div>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button>
         {route?.[2]&&<button className="bank-chat-logout" data-testid="handoff-route-secondary" onClick={()=>followRoute(route[2][1])}>{route[2][0]}</button>}
         <button className="primary-button" data-testid={route&&route[3][1]!=='send'?'handoff-route':'approve-handoff'} disabled={handoff.saving}

@@ -39,12 +39,13 @@ def test_meeting_requests_stay_with_the_assistant_whatever_the_topic(question: s
 
 
 def test_handover_is_marked_on_the_task_but_never_on_fraud() -> None:
-    tasks=[PlanTask(id='t1',agent='security',intent='unrecognised_charge',question='I did not make this charge, can you waive the fee?'),
+    tasks=[PlanTask(id='t1',agent='accounts',intent='transactions',question='I did not make this charge, can you waive the fee?'),
         PlanTask(id='t2',agent='accounts',intent='card_fees',question='Can you waive my late fee?')]
-    # The RM gets the part she asked a person about, in her own words (rm_handover.requested_questions); the charge stays with Security.
+    # The RM gets the part she asked a person about, in her own words (rm_handover.requested_questions); the charge stays the
+    # separate urgent card task (fixed steps and its own urgent request, build plan 2b), never part of the handover preview.
     risk=RiskAssessment(redacted_message='I did not make this charge. Can you waive my late fee?')
     routed=overridden(tasks,risk)
-    assert routed[0].agent=='security' and 'handover' not in routed[0].entities
+    assert routed[0].entities['urgent'] is True and 'handover' not in routed[0].entities
     assert [(t.agent,t.question,t.entities.get('handover')) for t in routed[1:]]==[('relationship','Can you waive my late fee','rm')]
     assert 'handover' not in overridden(tasks[1:],RiskAssessment(redacted_message='x'))[0].entities
 

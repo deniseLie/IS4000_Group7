@@ -148,7 +148,7 @@ def test_rule_planning_and_the_relationship_spec() -> None:
     spec=registry.SPECS['relationship']
     assert 'meeting.request' in spec.offers and not {'appointment.hold','appointment.confirm'}&spec.offers
     assert [read.tool for read in spec.intents['meeting_request']]==['my_rm','free_slots']
-    assert orchestrator.PLANNER=='v8'
+    assert orchestrator.PLANNER=='v9'  # v8's meeting line is kept in v9 (2b)
 
 
 def outcome(kind: str,target: dict,result: dict) -> dict:

@@ -1,8 +1,9 @@
 """v5 offers in the normal React UI (build plan phase 6): Confirm and Cancel buttons, a typed yes, expiry and two offers in one
 reply, over native JWT/RLS data and the real /chat route.
 
-The lost card is a fixed no-model route. The two-offer reply starts after the planner with a fixed safety-origin Security
-output (as the earlier native workflow browser checks did); no model answer is simulated.
+The lost card is a fixed no-model route (one urgent request to her RM since build plan 2b). The two-offer reply starts after
+the planner (a lockout is a rule-planned Guide task) with a fixed safety-origin output for the graph mechanics; no model
+answer is simulated.
 
 Run from backend/: TEST_BROWSER_LOCAL=1 ../.venv/bin/python -m pytest tests/test_offers_browser.py -q
 Needs the native Data API (see test_data_api_local.py) and frontend npm dependencies.
@@ -26,11 +27,11 @@ def two_offers(monkeypatch: pytest.MonkeyPatch) -> None:
     async def run(spec,task,inputs,ctx,history=None,language='English'):
         target=lambda reason,priority,summary:{'reason':reason,'priority':priority,'summary':summary}
         return AgentOutput(task_id=task.id,agent=spec.name,status='needs_human',origin='safety',
-            result=AgentResult(task_id=task.id,agent=spec.name,status='needs_human',answer_kind='conversation',text='Call the fraud line on the back of your card now.'),
-            proposals=[OfferProposal(task_id=task.id,agent='security',type='handoff.create',summary='Report the charge to our fraud team as urgent',
+            result=AgentResult(task_id=task.id,agent=spec.name,status='needs_human',answer_kind='conversation',text='Here is what happens next.'),
+            proposals=[OfferProposal(task_id=task.id,agent='relationship',type='handoff.create',summary='Ask the bank to check your card',
                     target=target('card_verification','P0','Card ending 4821: one charge the customer does not recognise.')),
-                OfferProposal(task_id=task.id+'b',agent='security',type='handoff.create',summary='Ask your relationship manager to follow up',
-                    target=target('general_support','P3','The customer asked for a follow-up after a fraud report.'))])
+                OfferProposal(task_id=task.id+'b',agent='relationship',type='handoff.create',summary='Ask your relationship manager to follow up',
+                    target=target('general_support','P3','The customer asked for a follow-up after a card check.'))])
     monkeypatch.setattr(runner,'run_agent',run)
 
 
@@ -49,6 +50,6 @@ def test_offers_ui(local_data_api: NativeAPI,native_api_client: TestClient,monke
         states=sorted(row[0] for row in db.execute("select state from actions.commands where customer_id=1001 and type='handoff.create'").fetchall())
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
         meetings=[row[0] for row in db.execute('select r.status from rm.meeting_requests r join actions.commands c using(command_id) where c.customer_id=1001').fetchall()]
-    expected={'button confirm':(['card_lost'],['succeeded']),'typed yes':(['card_lost'],['succeeded']),'cancel':([],['rejected']),
+    expected={'button confirm':(['general_support'],['succeeded']),'typed yes':(['general_support'],['succeeded']),'cancel':([],['rejected']),
         'expired':([],['proposed']),'two in one reply':(['card_verification','general_support'],['succeeded','succeeded']),'meeting request':([],[])}[case]
     assert (reasons,states)==expected and meetings==(['requested'] if case=='meeting request' else [])

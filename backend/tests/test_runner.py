@@ -53,9 +53,10 @@ def served(monkeypatch):
 
 def test_tasks_the_agent_cannot_run_are_refused(monkeypatch):
     with pytest.raises(PlanRefused, match="no intent 'move_money'"):check_task(ACCOUNTS, task('move_money'), {})
-    with pytest.raises(PlanRefused, match='is for security'):check_task(ACCOUNTS, task('card_figures', agent='security'), {})
-    monkeypatch.setitem(runner.PROMPTS, 'security', 'v1')  # a prompt alone does not let an agent without loop tools loop
-    with pytest.raises(PlanRefused, match='listed intents only'):check_task(SPECS['security'], task('open', agent='security'), {})
+    with pytest.raises(PlanRefused, match='is for guide'):check_task(ACCOUNTS, task('card_figures', agent='guide'), {})
+    no_loop = SPECS['compliance'].model_copy(update={'loop_tools': frozenset()})  # since 3a every spec has loop tools
+    monkeypatch.setitem(runner.PROMPTS, 'compliance', 'v1')  # a prompt alone does not let an agent without loop tools loop
+    with pytest.raises(PlanRefused, match='listed intents only'):check_task(no_loop, task('open', agent='compliance'), {})
 
 
 def test_an_agent_without_a_released_prompt_or_an_unlisted_import_is_refused(monkeypatch):

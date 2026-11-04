@@ -21,7 +21,7 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 |---|---|---|---|---|
 | 1 | ~~Seam for the meeting side (`0106`, `0107`)~~ **Done 5 Nov 2026**, on hosted | L | – | Delivered |
 | 2a | ~~Meeting requests end to end: client request, RM accept / propose / decline, `care` flag~~ **Done 5 Nov 2026** | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
-| 2b | Remove the Security agent | S–M | 1 | No |
+| 2b | ~~Remove the Security agent~~ **Done 5 Nov 2026** | S–M | 1 | No |
 | 3 | RM copilot: ~~three agents, tracing~~ (3a **done 5 Nov 2026**), daily work | L | 2a | No |
 | 4 | Talking-point pipeline, on seeded consent (`0108`) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
 | 5 | Connect to the meeting graph, evaluate, demo, document | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
@@ -90,6 +90,12 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 - The loan answer shows the chip; "I just lost my job, should I still take a loan?" gets its answer with *Talk to a person* and no meeting chip.
 
 ### 2b. Remove the Security agent
+
+**Status:** built 5 Nov 2026 (no migration; `planner/v9`, which keeps v8's meeting line, and `guide/v2`). Differences from the plan:
+- The urgent request is a P0 `general_support` handoff whose summary starts `[Urgent card]`; 0082 turns it into an urgent `rm_handover` ticket that heads Sophie's `rm_tickets`. The topic label stands for `urgent_card`.
+- One `general_support` handoff is open per case (0003). If her yes returns an earlier handoff from the same chat, `rm_handover.urgent_elsewhere` adds a note to an open urgent request or opens a separate RM ticket (normal urgency, `[Urgent card]` summary) and says so; it never claims a new urgent request.
+- `services/fraud_reports.py` and `services/case_summary.py` are removed; `agents/fraud.py` and `fraud_records.py` stay as libraries behind `tools.travel_flags`.
+- **Known gap:** the fixed `answers.LOST_CARD` and `HUMAN_SUPPORT` replies and the pinned unrecognised-charge v3 and support articles still say an unrecognised charge goes to the fraud team. `test_knowledge_checks` ties them together, so the fix is a knowledge migration (a later phase).
 
 **Goal:** four client agents (Guide, Accounts & Cards, Compliance & Documents, Relationship & Service). Safety stays: the guardrail's fixed lost-card and fraud replies never call the model, and urgent cases go to the RM's queue instead of a fraud team. Independent of 2a and 3; must land before phase 5's evaluation.
 

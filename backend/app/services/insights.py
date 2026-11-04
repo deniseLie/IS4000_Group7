@@ -556,7 +556,7 @@ def card(detail: dict) -> dict[str,Any]:
 
 # ---- Agents (§2.3) ----
 
-AGENT_ORDER=('guide','accounts','security','compliance','relationship','rm_client','rm_requests','rm_calendar')
+AGENT_ORDER=('guide','accounts','compliance','relationship','rm_client','rm_requests','rm_calendar')  # older runs' 'security' sorts after
 LAT_EDGES=(2,5,10,20,30,60)  # seconds; histogram buckets of request latency
 
 

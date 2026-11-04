@@ -166,7 +166,7 @@ Pydantic models in `backend/app/schemas/contracts.py` (shared; change only by a 
   "intent": "report_unrecognised_txn", "priority": "P0", "entities": {"amount": 2400},
   "needs_auth": true, "status": "pending|running|awaiting_confirmation|done|failed" }] }
 ```
-Priority: **P0 fraud > P1 security > P2 regulatory deadline > P3 everything else**; ties keep message order. In the build the planner fills `intent: "answer_question"` and `entities: {question}` (the part of the message for that task); intent and entity extraction were not needed.
+Priority: **P0 fraud > P1 security > P2 regulatory deadline > P3 everything else**; ties keep message order. (Since build plan 2b: P0 urgent card, P2 compliance deadline or RM handover, P3 the rest; P1 is no longer assigned.) In the build the planner fills `intent: "answer_question"` and `entities: {question}` (the part of the message for that task); intent and entity extraction were not needed.
 
 **AgentResult** (Agent → Orchestrator)
 ```json
@@ -333,7 +333,7 @@ The agents above are split by topic. The target set is split by **the data an ag
 |---|---|---|
 | **Guide** (public) | shared public answer agent, `smalltalk` | Guests and general questions get an agent with no personal data, instead of borrowing Retail's name |
 | **Accounts & Cards** | `retail` without login, tickets and RM requests | One financial data domain |
-| **Security** | `fraud`, plus login/OTP/phishing from `retail` | Same risk class (P0/P1); login help no longer has full financial access |
+| ~~**Security**~~ (removed in build plan 2b) | `fraud`, plus login/OTP/phishing from `retail` | Superseded: urgent card cases get fixed steps and an urgent RM request (Relationship, by rules, no model); login, OTP and phishing go to Guide |
 | **Compliance & Documents** | `compliance` + `document` | Document only read the compliance workspace; merging loses no protection |
 | **Relationship & Service** | `relationship`, plus request/ticket status from `retail` | Everything about a person at the bank |
 | **RM Client** (`rm_client`; was RM Client Insight) | part of the RM assistant ([workflow 2](workflows/workflow-2-relationship-manager.md)) | Sensitive per-client reads, including what a client shared under consent; read-only |
@@ -346,9 +346,11 @@ The agents above are split by topic. The target set is split by **the data an ag
 |---|---|---|---|---|
 | **Guide** | Approved knowledge only | `knowledge_search`, `request_categories` | `public_holidays`, `fx_rate` | None; personal questions get "sign in to check" |
 | **Accounts & Cards** | Accounts (type, balance, currency); cards (last 4, product, limit, balance, due date, fee, status); loans; transactions ≤90 days; statements | `my_accounts`, `my_cards`, `my_loans`, `my_transactions` (window ≤90 days), `my_statements`, `knowledge_search` | `fx_rate`, `public_holidays` | Card-limit request, statement copy request (`ticket.create`) |
-| **Security** | Cards: `card_id`, `last4`, `status` only; transactions ≤90 days; travel flags. No balances, profile or loans | `my_cards` (security view), `my_transactions`, `travel_flags`, `knowledge_search` (security articles) | `public_holidays` | Fraud report (P0 handoff), lost-card report, travel notice, replacement card. Never freeze, unfreeze, dispute or cancel |
+| ~~**Security**~~ (removed in build plan 2b) | Cards: `card_id`, `last4`, `status` only; transactions ≤90 days; travel flags. No balances, profile or loans | `my_cards` (security view), `my_transactions`, `travel_flags`, `knowledge_search` (security articles) | `public_holidays` | Fraud report (P0 handoff), lost-card report, travel notice, replacement card. Never freeze, unfreeze, dispute or cancel |
 | **Compliance & Documents** | Review case, checklist, bank questions, upload metadata and check results (counts, no file contents); only the profile fields a form needs (tax-form pre-fill) | `my_compliance_case`, `my_document_checks`, `document_templates`, `my_profile` (form fields), `knowledge_search` | — | Checklist mark, answer a bank request, submit a document, compliance handoff. Never a bank decision |
 | **Relationship & Service** | RM name and phone (no email or ids), appointments, free slots ≤14 days, consent records, own tickets (status and client-safe text, no internal notes), request categories | `my_rm`, `my_appointments`, `free_slots`, `my_consents`, `my_tickets`, `request_categories`, `knowledge_search` | `public_holidays` | Appointment hold/confirm/cancel, RM handover, ticket follow-up, consent grant/revoke, share summary with the RM (active consent required) |
+
+**Build plan 2b (5 Nov 2026): no Security agent.** A charge she doesn't recognise or a lost card gets fixed steps from code and one urgent request to her RM (a P0 `general_support` handoff that 0082 turns into an urgent `rm_handover` ticket at the top of the RM's inbox). Login, OTP and phishing questions are Guide's (`login_help`, `phishing`).
 
 **RM agents.** Row scope is the RM's own book (`rm.in_book`); a client outside the book gets an audited refusal that reads the same whether or not the client exists.
 
@@ -383,7 +385,7 @@ The request summary (`observability.request_facts`) adds side, role, tool calls,
 |---|---|
 | Guide | General question while logged out; loan enquiry; investment advice (refused, RM offered) |
 | Accounts & Cards | Card limit increase; pressure to approve; statement then the other account; two cards and a fee waiver (waiver handed to Relationship & Service) |
-| Security | Lost card; model unavailable during a fraud message; wrong and forgotten password; password, OTP and NRIC in chat (guardrail first); travel readiness |
+| Security (since 2b: Guide and the urgent card rules) | Lost card; model unavailable during a fraud message; wrong and forgotten password; password, OTP and NRIC in chat (guardrail first); travel readiness |
 | Compliance & Documents | Compliance checklist; uploads with an address mismatch; tax-form pre-fill; unreadable or wrong-format upload; review status with mixed results |
 | Relationship & Service | Book a meeting; ticket status with internal notes hidden; RM matter and fraud in one message (with Security in parallel); claiming to be her assistant (refused, no data) |
 | RM Client Insight | Pre-meeting brief with and without consent; client outside the book; 360 overview then switch client; inherited client; transition message |
@@ -922,7 +924,7 @@ flowchart TD
 
 | Node | What it does | Model? |
 |---|---|---|
-| `planner` | Rules first: replies to our own question (offer confirmation, which card, meeting time), fraud/login wording, explicit RM requests, greetings. Otherwise one structured call on a fast model returning `PlanTask`s. Rules then set priority (P0 fraud to Security, P1 security, P2 compliance deadlines, P3 the rest) and RM handover flags, and code checks the plan against the agent catalogue. A confirmation goes straight to `act` | Only when rules cannot decide |
+| `planner` | Rules first: replies to our own question (offer confirmation, which card, meeting time), urgent card and login wording, explicit RM requests, greetings. Otherwise one structured call on a fast model returning `PlanTask`s. Rules then set priority (P0 urgent card, P2 compliance deadlines or RM handover, P3 the rest; no Security agent and no P1 since build plan 2b) and RM handover flags, and code checks the plan against the agent catalogue. A confirmation goes straight to `act` | Only when rules cannot decide |
 | `agent` | One run per task through LangGraph `Send`. Rules-first answers, then the bounded tool loop (§14.5), then the Response Validator against that agent's own evidence. Returns an `AgentOutput` | Yes, per agent |
 | `gather` | Join node: runs once per wave after all parallel agents finish, merges their outputs, and `next_wave` either sends wave 2 or goes to `compose` (a conditional edge on `agent` itself would fire once per `Send`) | No |
 | `act` | Confirmation turns only. Executes confirmed offers through the Action Service in dependency order; a later offer may use an earlier receipt | No |
@@ -950,7 +952,7 @@ The web client receives a `section` SSE event as each agent finishes, then the f
 
 ### 14.5 Agents and the tool loop
 
-The agents are the target set in §5.6.1 (Guide, Accounts & Cards, Security, Compliance & Documents, Relationship & Service; RM Client Insight and RM Service Desk). Inside one agent:
+The agents are the target set in §5.6.1 (Guide, Accounts & Cards, Compliance & Documents, Relationship & Service; RM Client, RM Requests and RM Calendar since build plan 3a; Security was removed in build plan 2b). Inside one agent:
 
 1. **Rules first.** Records answers that must not be withheld (card figures, which card, meeting times, request status) return without a model call.
 2. **Tool loop.** A strict-JSON step through `llm_gateway` (`calls` or `answer`; not native function calling, so any model and the Codex transport work) picks the next tool from its spec, at most **4 tool calls**, 30 s per agent, 60 s per turn; independent calls in one step run in parallel. Each call goes through `tools.call` (policy, caller JWT + RLS, audit) and returns only the agent's field view. The model sees results as untrusted evidence.
@@ -1026,6 +1028,8 @@ On the next turn the planner's rules recognise the confirmation and go straight 
 
 `TaskPlan`, `AgentResult` and the SSE events are replaced or extended by these. Contract changes no longer need a separate all-developer review (decided 3 Nov 2026; AGENTS.md is updated in phase 1).
 
+Build plans 2b and 3a: `TargetAgent` is `guide`, `accounts`, `compliance`, `relationship`, `rm_client`, `rm_requests`, `rm_calendar` (`security` removed; the two RM agents split into three). `Priority` keeps P0–P3, but P1 is no longer assigned: P0 urgent card, P2 compliance deadline or RM handover, P3 the rest.
+
 ### 14.9 Data and migrations
 
 - **New:** `0097` adds `offer_group`, `group_order` and `turn_id` to `actions.commands`, an `action_offer` RPC with a TTL (`action_propose` keeps its 5 minutes), a `customer_open_offers` read, and expires turns still paused for a decision; `0098` adds the `travel_notice` request category. `offer_id` is the command id and its idempotency key.
@@ -1034,7 +1038,7 @@ On the next turn the planner's rules recognise the confirmation and go straight 
 
 ### 14.10 Removed
 
-`propose_actions`, `review_actions`, `interrupt` and `WorkflowPausedEvent`; `/workflows/{turn}/preview|resume`; the card-block and dispute dialogs; the `smalltalk` domain; the separate Document agent; the `linked: card_fraud` flag (login moves into Security); `resume_pending` and `prioritise` as separate nodes (their rules move into `planner`).
+`propose_actions`, `review_actions`, `interrupt` and `WorkflowPausedEvent`; `/workflows/{turn}/preview|resume`; the card-block and dispute dialogs; the `smalltalk` domain; the separate Document agent; the `linked: card_fraud` flag (login moves into Security); in build plan 2b, the Security agent itself (login help to Guide, urgent card cases to fixed rules and the RM); `resume_pending` and `prioritise` as separate nodes (their rules move into `planner`).
 
 ### 14.11 RM side
 

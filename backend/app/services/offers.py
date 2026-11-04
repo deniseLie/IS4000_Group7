@@ -84,7 +84,7 @@ async def open_group(ctx: RequestContext, conversation_id: UUID) -> tuple[UUID, 
 
 YES = {'yes', 'y', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'confirm', 'confirmed', 'go ahead', 'do it', 'please do',
     'yes please', 'yes do it', 'yes go ahead', 'yes confirm', 'yes that s right', 'yes thanks', 'yes thank you', 'ok go ahead',
-    'yes report it', 'yes report my card'}  # the v4 chips (fraud_reports.CONFIRM_REPLY, LOST_REPLY)
+    'yes report it', 'yes report my card'}  # the v4 fraud-team chips, typed in chats from before build plan 2b
 NO = {'no', 'n', 'nope', 'cancel', 'no thanks', 'no thank you', 'don t', 'do not', 'stop', 'not now', 'no cancel', 'no don t'}
 
 
