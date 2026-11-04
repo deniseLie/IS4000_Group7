@@ -1,4 +1,4 @@
-"""Payloads for the team-only Quality page (services/quality.py)."""
+"""Payloads for the admin dashboard (services/quality.py, api/admin.py)."""
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel

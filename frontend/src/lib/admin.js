@@ -1,12 +1,12 @@
-// Team-only Quality page: LangSmith experiments and /chat traces, read through the backend (the LangSmith key stays server-side).
+// Admin dashboard (AI engineering view): LangSmith evaluations and traces, read through the backend (the LangSmith key
+// stays server-side). Only the page link depends on this check; the backend verifies the signed token on every call.
 const API=import.meta.env?.VITE_API_URL||'/api';
-export const TEAM_ROLES=['rm','support'];
+export const ADMIN_ROLE='admin';
 
-// Shows the page link only; the backend checks the signed token's app_metadata role on every call.
-export function isTeam(session) {return TEAM_ROLES.includes(session?.user?.app_metadata?.demobank_role);}
+export function isAdmin(session) {return session?.user?.app_metadata?.demobank_role===ADMIN_ROLE;}
 
 async function get(path,token,signal) {
-  const response=await fetch(`${API}/quality${path}`,{headers:{Authorization:`Bearer ${token}`},signal});
+  const response=await fetch(`${API}/admin${path}`,{headers:{Authorization:`Bearer ${token}`},signal});
   const body=await response.json().catch(()=>null);
   if(!response.ok)throw new Error(body?.error?.message||'LangSmith cannot be read right now. Please retry.');
   return body;

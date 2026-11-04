@@ -1,7 +1,7 @@
-"""Team-only Quality page (LangSmith read-back): evaluation experiments and recent client/RM traces.
+"""Admin dashboard (LangSmith read-back): evaluation experiments and recent client/RM traces.
 
-The backend reads LangSmith with its own server key; the browser never sees it. Only signed-in staff whose
-administrator-owned app_metadata.demobank_role is a team role may read it (user_metadata is never trusted). Results are
+The backend reads LangSmith with its own server key; the browser never sees it. Only signed-in users whose
+administrator-owned app_metadata.demobank_role is 'admin' may read it (user_metadata is never trusted). Results are
 cached briefly so the page does not hammer the LangSmith API. Text shown here already passed the redacting client."""
 import os
 import time
@@ -10,15 +10,15 @@ from typing import Any
 from app.core import langsmith_client
 from app.schemas.quality import Case,Check,Experiment,Span,Trace
 
-TEAM_ROLES={'rm','support'}
-DATASETS=('demobank-qa1-client','demobank-qa1-rm','demobank-focused','demobank-standard','demobank-safety')
+ADMIN_ROLE='admin'
+DATASET_PREFIX='demobank-'  # every evaluation dataset langsmith_sync uploads (evaluation/langsmith_sync.DATASETS)
 CACHE_S=60
 _cache: dict[tuple,tuple[float,Any]]={}
 _client=None
 
 
-def is_team(claims: dict[str,Any]) -> bool:
-    return (claims.get('app_metadata') or {}).get('demobank_role') in TEAM_ROLES
+def is_admin(claims: dict[str,Any]) -> bool:
+    return (claims.get('app_metadata') or {}).get('demobank_role')==ADMIN_ROLE
 
 
 def client():
@@ -27,11 +27,11 @@ def client():
     return _client
 
 
-def cached(key: tuple,load):
+def cached(key: tuple,load,ttl: int=CACHE_S):
     hit=_cache.get(key)
     if hit and hit[0]>time.monotonic():return hit[1]
     value=load()
-    _cache[key]=(time.monotonic()+CACHE_S,value)
+    _cache[key]=(time.monotonic()+ttl,value)
     return value
 
 
@@ -47,17 +47,26 @@ def status(checks: list[Check],error: str | None) -> str:
     return 'pass' if any(s is not None for s in scores) else 'skipped'
 
 
+def datasets() -> list[dict[str,Any]]:
+    """The synced evaluation datasets, read from LangSmith so a new one shows without a code change."""
+    def load():
+        return sorted(({'name':d.name,'id':str(d.id),'examples':d.example_count} for d in client().list_datasets(dataset_name_contains=DATASET_PREFIX)
+            if d.name.startswith(DATASET_PREFIX)),key=lambda d:d['name'])
+    return cached(('datasets',),load,600)
+
+
+def case_ids(dataset_id: str) -> dict[str,str | None]:
+    """example id -> case id (example metadata)."""
+    return cached(('cases',dataset_id),lambda:{str(e.id):(e.metadata or {}).get('case_id') for e in client().list_examples(dataset_id=dataset_id)},600)
+
+
 def experiments(limit: int=20) -> list[Experiment]:
     def load():
         found=[]
-        for dataset in DATASETS:
-            try:projects=list(islice(client().list_projects(reference_dataset_name=dataset),limit))
-            except Exception as error:
-                if 'not found' in str(error).lower():continue  # a dataset that was never synced
-                raise
-            for p in projects:
+        for dataset in datasets():
+            for p in islice(client().list_projects(reference_dataset_id=dataset['id']),limit):
                 meta=(p.extra or {}).get('metadata',{})
-                found.append(Experiment(name=p.name,dataset=dataset,started_at=p.start_time,pipeline=meta.get('pipeline'),
+                found.append(Experiment(name=p.name,dataset=dataset['name'],started_at=p.start_time,pipeline=meta.get('pipeline'),
                     model=meta.get('model'),answer_prompt=meta.get('answer_prompt'),judge_model=meta.get('judge_model'),url=p.url))
         return sorted(found,key=lambda e:e.started_at,reverse=True)[:limit]
     return cached(('experiments',limit),load)
@@ -66,13 +75,12 @@ def experiments(limit: int=20) -> list[Experiment]:
 def experiment(name: str) -> list[Case]:
     def load():
         project=client().read_project(project_name=name)
-        dataset=client().read_dataset(dataset_id=project.reference_dataset_id)
-        ids={e.id:(e.metadata or {}).get('case_id') for e in client().list_examples(dataset_id=dataset.id)}
+        ids=case_ids(str(project.reference_dataset_id))
         cases=[]
         for run in client().list_runs(project_name=name,is_root=True):
             out=run.outputs or {}
             checks=checks_of(run.feedback_stats)
-            cases.append(Case(case_id=ids.get(run.reference_example_id),status=status(checks,run.error),checks=checks,
+            cases.append(Case(case_id=ids.get(str(run.reference_example_id)),status=status(checks,run.error),checks=checks,
                 answer=(out.get('answer') or '')[:2000],agents=out.get('agents') or {},tools=out.get('tools') or [],
                 service_reads=out.get('service_reads') or [],
                 model_calls=out.get('model_calls'),latency_s=run.latency,tokens=run.total_tokens,error=(run.error or '')[:300] or None,
