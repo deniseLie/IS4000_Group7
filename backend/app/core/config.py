@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     external_timeout_s: float = Field(default=5,gt=0,le=30)
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
+    meetings_enabled: bool = False  # meeting lifecycle (services/meetings, 0105); off until the meeting graph is built and wired
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
     document_ocr_command: str | None = None
     precheck_mode: Literal['template','notice'] = 'template'  # template: fixed per-document rules (document_templates.py); notice: model reads the notice
