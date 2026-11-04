@@ -1,6 +1,12 @@
 # Admin dashboard (AI engineering view)
 
-Plan written 4 Nov 2026. Nothing here is built yet.
+Plan written 4 Nov 2026; built 5 Nov 2026 in the six slices under *Build order*. Where the build differs from this plan:
+
+- The source filter is `source=live|eval|all` (live is the app's tracing project, eval the requests inside the latest experiments); there is no separate surface filter. Latency is split by surface on the page, and agents by client and RM.
+- Responses are plain dicts built by `services/insights.py`; no `schemas/admin.py`. The root-run summary lists agent names and each agent's worst status, not one dict per agent run.
+- Experiment case rows come from one `/datasets/{id}/runs` call per dataset (fast and not rate-limited); requests and steps are bounded `list_runs` reads per project behind a small gate with backoff, because LangSmith rate-limits run queries.
+- LangGraph node runs inherit their ancestors' metadata, so the app's own span of a node's name (planner, agent, gather, act) is told apart by its parent or its own facts.
+- Not built: the 'turn this failure into an eval case' button and the annotation queue (both listed under *Later*).
 
 ## Goal
 

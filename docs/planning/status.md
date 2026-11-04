@@ -29,10 +29,14 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F23 | Ticket service | Done | – |
 | F24 | Request categories | Done | – |
 | F25 | MCP tool layer | Done | MCP is the default transport; every agent record read goes through it. RM tools come with F14. |
-| F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches Quality. Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
+| F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches the admin dashboard. Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
 | QA1 | Test case set (44 cases) | **Runnable / manual boundaries explicit** | [C01–C24 and R01–R20](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 16 runnable, 8 manual; RM: 13 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
+
+## Admin dashboard (5 Nov 2026)
+
+Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-dashboard.md)): the admin role and workspace (Quality removed from the RM workspace and client view), per-request summaries on root runs, Overview and Failures, Evaluations and Prompts, Agents and Latency. Still to do by the owner: create the `demo.admin@example.com` Auth user, run `backend/supabase/hosted/32_admin_login_hosted.sql`, add the login to the persona fixture and run the opt-in hosted check (`npm run test:hosted`). Offer counts and the other new root-run facts appear only on requests made after this change; older runs show "not recorded".
 
 ## Persona 1 (client) – open items
 
