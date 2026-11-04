@@ -145,6 +145,34 @@ test('Today page lists upcoming meetings, meetings to document, waiting requests
   assert.equal(body.structured.appointment_id,'a1');
 });
 
+test('Today keeps the backend’s rank and shows its reasons; the page never scores (3b)',async()=>{
+  const {rankIndex,keyOf,byRank,reasonText,firstThings,nextStep,REPORT_TITLES}=await import('./rm.js');
+  const items=[
+    {key:'ticket:TCK-001010',kind:'request',customer_id:1002,client:'Michelle Ng',title:'Urgent card',when:'Fri 6 Nov 2026, 12:00 pm',score:51,rank:1,do_first:true,
+      parts:[{code:'urgent',points:50,reason:'Urgent request'},{code:'waiting',points:1,reason:'Waiting 1 day'}],ref:{reference:'TCK-001010'}},
+    {key:'meeting_request:r1',kind:'meeting_request',customer_id:1007,client:'Tan Mei Ling',title:'Meeting request',when:'Thu 5 Nov 2026, 9:00 am',score:32,rank:2,do_first:true,
+      parts:[{code:'respond_by_passed',points:30,reason:'Answer was due Thu 5 Nov 2026, 9:00 am'},{code:'waiting',points:2,reason:'Waiting 2 days'}],ref:{request_id:'r1'}},
+    {key:'meeting:a1',kind:'meeting',customer_id:1002,client:'Michelle Ng',title:'Meeting',when:'Sat 7 Nov 2026, 10:00 am',score:20,rank:3,do_first:true,
+      parts:[{code:'meeting_2d',points:20,reason:'Meeting in 2 days'}],ref:{appointment_id:'a1'}},
+    {key:'review:1002:2026-11-12',kind:'review',customer_id:1002,client:'Michelle Ng',title:'Compliance review',when:'12 Nov 2026',score:20,rank:4,do_first:false,
+      parts:[{code:'deadline_14d',points:20,reason:'Review due in 7 days (12 Nov 2026)'}],ref:{}},
+    {key:'task:k1:2026-11-20',kind:'task',customer_id:1007,client:'Tan Mei Ling',title:'Your task: Send the form',when:'20 Nov 2026',score:0,rank:5,do_first:false,parts:[],ref:{item_key:'task:k1:2026-11-20'}}];
+  const ranked=rankIndex(items);
+  assert.deepEqual(byRank([{reference:'TCK-000001'},{reference:'TCK-001010'},{reference:'TCK-000002'}],'ticket',ranked).map(t=>t.reference),
+    ['TCK-001010','TCK-000001','TCK-000002']);  // unranked rows keep their order after the ranked ones
+  const followups=[{item_key:'task:k1:2026-11-20',kind:'task'},{item_key:'review:c9:2026-11-12',kind:'review_deadline',customer_id:1002,due_on:'2026-11-12'},{item_key:'m',kind:'milestone'}];
+  assert.deepEqual(byRank(followups,'followup',ranked).map(f=>f.item_key),['review:c9:2026-11-12','task:k1:2026-11-20','m']);
+  assert.equal(keyOf('appointment',{appointment_id:'a1'}),'meeting:a1');assert.equal(keyOf('meeting_request',{request_id:'r1'}),'meeting_request:r1');
+  assert.equal(reasonText(items[0]),'Urgent request · Waiting 1 day');assert.equal(reasonText(items[4]),'');assert.equal(reasonText(undefined),'');
+  assert.deepEqual(firstThings(items).map(x=>x.key),['ticket:TCK-001010','meeting_request:r1','meeting:a1']);
+  assert.deepEqual(nextStep(items[0]),{label:'Draft a reply',message:'Draft a reply to Michelle Ng about TCK-001010',intent:'draft_message',
+    context:{client_id:1002,ticket_ref:'TCK-001010'}});
+  assert.deepEqual(nextStep(items[1]),{label:'Answer',schedule:'requests'});
+  assert.equal(nextStep(items[2]).intent,'meeting_brief');assert.equal(nextStep(items[2]).context.appointment_id,'a1');
+  assert.equal(nextStep(items[4]).message,"What do I need to know about Tan Mei Ling's Send the form (due 20 Nov 2026)?");
+  assert.equal(REPORT_TITLES.today,'Your day');
+});
+
 test('meeting requests to answer: overdue first, new ones marked, waiting on the client left out (2a)',async()=>{
   const {requestsToAnswer,needsAnswer,requestLabel,topicLabel,slotProblemText}=await import('./rm.js');
   const now=Date.parse('2026-11-05T10:00:00Z');

@@ -10,9 +10,13 @@ api/rm.py runs it only for a verified `rm` login (rm_caller); a client never rea
   handler (rm/handlers.py) with the agent's context, so the tool layer allows only that spec's tools. An `open` task runs
   the runner's bounded loop over the spec's loop_tools (handlers.h_open, build plan 3a). Exports are computed here by
   code from what the handler read (exports_for), never by the model.
-- gather: orchestrator.gather unchanged (conditions, fan-out of at most 5 with "first 5 of N", fixed skip wording).
+- feeds (build plan 3b): `today` and `priorities` rank items other agents own (services/rm/priority.py), so code links
+  them (FEEDS) to the Calendar's and Client's fixed reads: an independent task of that intent already in the plan, or a
+  feed task added for it that only reads (no model, nothing shown). The first is depends_on, the others inputs_from.
+- gather: orchestrator.gather unchanged (conditions, fan-out of at most 5 with "first 5 of N", fixed skip wording; the
+  exports of every upstream a task names).
 - compose: one task's reply is returned as it is (the workspace reply shape the UI already shows); several are merged
-  in plan order: sections in order, every draft as a review card, sources and checks added up.
+  in plan order: sections in order, every draft as a review card, sources and checks added up. Feeds are left out.
 
 Tracing (build plan 3a): the planner, agent, loop_step, tool_call, gather and compose spans carry ids, codes and counts
 only (side, source, tasks, refusal, path, stop reason, evidence ids, exports, cards); client text reaches LangSmith only
@@ -24,7 +28,7 @@ through the separate write routes, so the RM graph has no `act` node and saves n
 import json
 import operator
 from dataclasses import dataclass,field
-from datetime import date,timedelta
+from datetime import timedelta
 from typing import Annotated,TypedDict
 from langgraph.graph import END,START,StateGraph
 from langgraph.runtime import Runtime
@@ -37,12 +41,13 @@ from app.services import llm_gateway,orchestrator,prompts,tools
 from app.services.agents import registry
 from app.services.privacy import redact
 from app.services.rm import evidence as ev
-from app.services.rm import handlers
+from app.services.rm import handlers,priority
 from app.services.rm.handlers import Say,capability_refusal,clarify,refusal,today
 
 PLANNER_VERSION='v5'
 MAX_TASKS=5
 SEVERAL='Here are the parts of your request in order. Review each draft or proposal on its own: nothing goes to a client and nothing is saved or created until you approve it.'
+FEEDS={'today':('schedule','meeting_requests','reviews'),'priorities':('meeting_requests',)}  # intent -> the intents it ranks
 
 
 @dataclass
@@ -115,6 +120,24 @@ def tasks_from(rows: list[dict],message: str) -> list[PlanTask]:
     return [t.model_copy(update={'entities':{**t.entities,'shared':False}}) if t.intent=='handover_brief' and t.id in noted else t for t in plan]
 
 
+def with_feeds(tasks: list[PlanTask]) -> list[PlanTask]:
+    """Build plan 3b: link `today` and `priorities` to the intents whose records they rank (FEEDS): an independent task of
+    that intent already in the plan, else a feed task (entities feed: its intent's fixed reads, no model, left out of the
+    reply). The first upstream is depends_on, the rest inputs_from; a link the model gave such a task is replaced."""
+    out=list(tasks)
+    for i,task in enumerate(tasks):
+        if task.intent not in FEEDS:continue
+        ups=[]
+        for intent in FEEDS[task.intent]:
+            found=next((t for t in out if t.intent==intent and t.depends_on is None and t.id!=task.id),None)
+            if found is None:
+                found=PlanTask(id=f't{len(out)+1}',agent=registry.INTENT_AGENT[intent],intent=intent,question=task.question,entities={'feed':True})
+                out.append(found)
+            ups.append(found.id)
+        out[i]=task.model_copy(update={'depends_on':ups[0],'inputs_from':ups[1:],'condition':None,'for_each':None})
+    return out
+
+
 async def planner(state: RmTurn,runtime: Runtime[RmRuntime]) -> dict:
     rt=runtime.context
     message,_=redact(rt.req.message)
@@ -144,25 +167,25 @@ async def planner(state: RmTurn,runtime: Runtime[RmRuntime]) -> dict:
         else:
             attrs.update(route='model',source='model')
             tasks=tasks_from(await model_plan(rt,message),message)
-        tasks,lines=orchestrator.linked(tasks,rt.req,attrs)
-        if len(tasks)>1:tasks=[t.model_copy(update={'entities':{**t.entities,'several':True}}) for t in tasks]
-        attrs['tasks'],attrs['dependent']=len(tasks),sum(1 for t in tasks if t.depends_on)
+        tasks,lines=orchestrator.linked(with_feeds(tasks),rt.req,attrs)
+        if sum(not t.entities.get('feed') for t in tasks)>1:
+            tasks=[t if t.entities.get('feed') else t.model_copy(update={'entities':{**t.entities,'several':True}}) for t in tasks]
+        attrs['tasks'],attrs['dependent'],attrs['feeds']=len(tasks),sum(1 for t in tasks if t.depends_on),sum(1 for t in tasks if t.entities.get('feed'))
         attrs['plan']=orchestrator.plan_facts(tasks)
     return {'tasks':tasks,'lines':lines}
 
 
 # ---- Agents ----
 
-def exports_for(intent: str,turn: handlers.Turn,client_id: int|None=None) -> dict[str,Export]:
+def exports_for(intent: str,turn: handlers.Turn,client_id: int|None=None,feed: bool=False) -> dict[str,Export]:
     """Small values computed by code from what the handler read (§14.6 rule 4), never by the model. Only the agent's
     own declared exports leave it (agent() filters by spec.exports); an `open` task exports from what its loop read.
-    Never transaction, talking-point or note content: references, dates, counts and codes only."""
+    Never transaction, talking-point or note content: references, dates, counts and codes only. A feed's window is the
+    fixed one (the task it feeds ranks its own), never a period named in her message."""
     reads,found=turn.reads,{}
     if intent in ('reviews',OPEN_INTENT) and (rows:=reads.get('rm_review_status')) is not None:
-        period=ev.asked_period(turn.message,today())
-        end=period[1] if period else today()+timedelta(days=30)
-        due=[{'customer_id':r['customer_id'],'name':r['client'],'due_date':str(r['due_date'])} for r in rows['data']
-            if r.get('due_date') and date.fromisoformat(str(r['due_date'])[:10])<=end]  # an overdue review is still due
+        period=None if feed else ev.asked_period(turn.message,today())
+        due=priority.reviews_due(rows['data'],period[1] if period else today()+timedelta(days=30))  # an overdue review is still due
         for name in ('clients_due','reviews_due'):found[name]=Export(value=due,source_ids=[f"review-{r['customer_id']}" for r in due] or ['reviews-none'])
     if intent in ('meeting_brief','meeting_history',OPEN_INTENT) and (notes:=reads.get('rm_meeting_notes')) is not None and notes['data']['notes']:
         found['latest_note']=Export(value=str(notes['data']['notes'][0]['note_id']),source_ids=[ev.note_ids(notes['data']['notes'])[0]])
@@ -175,11 +198,17 @@ def exports_for(intent: str,turn: handlers.Turn,client_id: int|None=None) -> dic
         found['needs_meeting']=Export(value=bool(tickets) and not confirmed,source_ids=['profile'])  # open requests and no meeting booked
         found['topics']=Export(value=sorted({str(t['category']) for t in tickets if t.get('category')}),source_ids=[f"ticket-{t['reference']}" for t in tickets] or ['profile'])
     if (rows:=reads.get('rm_appointments')) is not None and intent in ('schedule',OPEN_INTENT):
-        week=today()+timedelta(days=7)
-        soon=[{'appointment_id':str(a['appointment_id']),'customer_id':a['customer_id'],'name':a.get('client'),'starts_at':str(a['starts_at'])}
-            for a in rows['data'] if a.get('status')=='confirmed' and date.fromisoformat(str(a.get('date') or str(a['starts_at'])[:10]))<=week]
-        found['meetings_next_7d']=Export(value=soon,source_ids=['appointments'])
+        found['meetings_next_7d']=Export(value=priority.meetings_next_7d(rows['data'],today()),source_ids=['appointments'])
+    if (rows:=reads.get('rm_meeting_requests')) is not None and intent in ('meeting_requests',OPEN_INTENT):  # 3b: today, priorities
+        mine=[r for r in rows.get('data') or [] if client_id is None or r.get('customer_id')==client_id]
+        found['requests_to_answer']=Export(value=priority.requests_to_answer(mine),source_ids=['meeting-requests'])
     return found
+
+
+async def feed_reads(turn: handlers.Turn,intent: str,spec) -> dict:
+    """A feed task (FEEDS): its intent's fixed reads, for the exports only. No model call and nothing shown."""
+    for read in spec.intents[intent]:await turn.read(read.tool,dict(read.fixed))
+    return handlers.no_change(intent,'',turn.context(None))
 
 
 def cards_of(reply: dict) -> dict[str,int]:
@@ -199,12 +228,14 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
     spec=registry.SPECS[task.agent]
     e,inputs=task.entities,item.get('inputs') or {}
     turn=handlers.Turn(rt.req,rt.ctx.model_copy(update={'agent':spec.name}),rt.say,base=rt.ctx,book=rt.book)
+    turn.inputs,feed=inputs,bool(e.get('feed'))
     plan={'intent':task.intent,'client_name':e.get('client_name') or '','uses_active_client':bool(e.get('uses_active_client')),
         'ticket_ref':e.get('ticket_ref') or '','draft_scope':e.get('draft_scope') or 'client','appointment_hint':e.get('appointment_hint') or '',
         'is_new_notes':bool(e.get('is_new_notes')),'shared':e.get('shared',True),'fan_out':isinstance(e.get('item'),dict)}
     with span('agent','agent',agent=spec.name,intent=task.intent,wave=2 if task.depends_on else 1,side='rm',
-            path='loop' if task.intent==OPEN_INTENT else 'reads') as facts:  # 'rule' when the book check or resolution answers first
-        if plan['fan_out']:  # one client from the upstream's list; checked against the book again
+            path='loop' if task.intent==OPEN_INTENT else 'reads',**({'feed':True} if feed else {})) as facts:  # 'rule' when the book check or resolution answers first
+        if feed:client_id,stop=None,None  # FEEDS: book-wide reads for the task that ranks them
+        elif plan['fan_out']:  # one client from the upstream's list; checked against the book again
             client_id=e['item'].get('customer_id')
             stop=None if any(c['customer_id']==client_id for c in rt.book) else refusal(turn.context(None))
         else:
@@ -216,10 +247,12 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
         if 'latest_note' in inputs and client_id:  # R22: follow-ups from the note the brief read
             turn.req=rt.req.model_copy(update={'context':rt.req.context.model_copy(update={'client_id':client_id,'note_id':inputs['latest_note'].value})})
         if stop:reply=stop
+        elif feed:reply=await feed_reads(turn,task.intent,spec)
         elif task.intent==OPEN_INTENT:reply=await handlers.h_open(turn,plan,client_id,spec,inputs,facts)
         else:reply=await handlers.HANDLERS[task.intent](turn,plan,client_id)
+        facts.update(turn.facts)  # codes and counts a handler adds (the priority score's factors)
         status=status_of(reply)
-        exports={k:v for k,v in exports_for(task.intent,turn,client_id).items() if k in spec.exports} if status=='ok' else {}
+        exports={k:v for k,v in exports_for(task.intent,turn,client_id,feed).items() if k in spec.exports} if status=='ok' else {}
         facts.update(status=status,reads=sorted(turn.reads),evidence=[s.get('id') for s in reply.get('sources') or []][:40],export_names=sorted(exports),
             cards=cards_of(reply),withheld=(reply.get('validation') or {}).get('withheld',0),origin=reply.get('origin'))
         if stop:facts['path']='rule'
@@ -268,11 +301,12 @@ def merged(rows: list[tuple[PlanTask,AgentOutput]],lines: list[AnswerSection]) -
 
 def compose(state: RmTurn) -> dict:
     if state.get('reply') is not None:return {}
-    rows,lines=orchestrator.ordered(state),state.get('lines') or []
+    every,lines=orchestrator.ordered(state),state.get('lines') or []
+    rows=[(t,o) for t,o in every if not t.entities.get('feed')]  # feeds only passed their exports on
     with span('compose','decision',side='rm') as facts:
         reply=merged(rows,lines)
         facts.update(sections=[{'task':t.id,'agent':t.agent,'intent':t.intent,'status':o.status} for t,o in rows],fixed_lines=len(lines),
-            cards=cards_of(reply),merged=len(rows)>1 or bool(lines),status=reply.get('status'))
+            cards=cards_of(reply),merged=len(rows)>1 or bool(lines),status=reply.get('status'),feeds=len(every)-len(rows))
     return {'reply':reply}
 
 

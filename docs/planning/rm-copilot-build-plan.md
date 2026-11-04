@@ -22,7 +22,7 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | 1 | ~~Seam for the meeting side (`0106`, `0107`)~~ **Done 5 Nov 2026**, on hosted | L | – | Delivered |
 | 2a | ~~Meeting requests end to end: client request, RM accept / propose / decline, `care` flag~~ **Done 5 Nov 2026** | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
 | 2b | ~~Remove the Security agent~~ **Done 5 Nov 2026** | S–M | 1 | No |
-| 3 | RM copilot: ~~three agents, tracing~~ (3a **done 5 Nov 2026**), daily work | L | 2a | No |
+| 3 | ~~RM copilot: three agents, tracing, daily work~~ 3a **done 5 Nov 2026**; 3b **built 5 Nov 2026** (R24–R27 not yet run on hosted) | L | 2a | No |
 | 4 | Talking-point pipeline, on seeded consent (`0108`) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
 | 5 | Connect to the meeting graph, evaluate, demo, document | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
 | 6 | Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log (`0109`–`0113`) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
@@ -195,6 +195,14 @@ Today's spans: `planner`, `agent` (with `path` reads/loop on the client side onl
 - "Which clients have a review due this month and an open ticket?" is answered by a loop (Client, then Requests through the export) with every line cited.
 
 ### 3b. RM copilot daily work
+
+**Status:** built 5 Nov 2026 (no migration; `rm_planner/v5` and `rm_assistant/v5` re-pinned, new task file `today`). Not yet met: R24–R27 have not been run against the hosted project or a real model (R24, R25 and R27 need `rm.reset_meeting_demo()` first). Differences from the plan:
+- The score is `services/rm/priority.py` (pure functions, no SQL view): urgent 50, past target or overdue 30, respond-by passed 30, review within 14 days 20, meeting within 2 days 20, 1 a day waiting up to 10. Specialist tickets and commitments are not scored; milestones within 14 days are listed with 0 points. The first 3 items above 0 are *Do first*.
+- `today` and `priorities` are linked to the records they rank by code (`graph.FEEDS`), never by the planner: an independent task of the fed intent already in the plan, or a feed task that only does its fixed reads (no model, not shown).
+- Contract: `PlanTask.inputs_from` (additive) for a dependant with more than one upstream; Calendar exports `requests_to_answer` as well (ids, dates and codes, never the purpose); `meetings_next_7d` drops past meetings.
+- `GET /rm/priorities` gives the Today page the same ranking; the page no longer scores in JavaScript.
+- The `%-d` date format in `rm/evidence.py` (Windows) is replaced by `evidence.day_words`.
+- No planner-only cases for `today` in `planner_cases.json` yet.
 
 **Goal:** the copilot covers Sophie's day: what's on today, her book, which request first, summaries and draft replies.
 

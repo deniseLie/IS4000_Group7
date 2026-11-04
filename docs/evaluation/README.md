@@ -2,7 +2,7 @@
 
 How answers are tested and the results so far. Raw evidence is in `evidence/`.
 
-The QA1 case set (Michelle C01–C24, Sophie R01–R20, with setup, expected output, must-not-happen and S/C/T checks) is in [test-cases.md](test-cases.md). The same cases are eval data in `backend/evaluation/qa1_client_cases.json` and `qa1_rm_cases.json` (LangSmith datasets `demobank-qa1-client` and `demobank-qa1-rm`); `tests/test_qa1_cases.py` keeps the two in step.
+The QA1 case set (Michelle C01–C24, Sophie R01–R20 and build plan 3b R24–R27, with setup, expected output, must-not-happen and S/C/T checks) is in [test-cases.md](test-cases.md). The same cases are eval data in `backend/evaluation/qa1_client_cases.json` and `qa1_rm_cases.json` (LangSmith datasets `demobank-qa1-client` and `demobank-qa1-rm`); `tests/test_qa1_cases.py` keeps the two in step.
 
 ## Knowledge retrieval (offline, no model)
 
@@ -178,7 +178,7 @@ New `backend/evaluation/langsmith_sync.py`: idempotent upload of local case file
 | `demobank-focused` | `focused_cases.json` | source questions plus the three Workflow 1 public questions |
 | `demobank-safety` (new) | new `safety_cases.json` | lost card, secrets, human support, guest "my balance": must route to fixed responses with no model call |
 | `demobank-qa1-client` | `qa1_client_cases.json` | QA1 C01–C24: whole conversations (`turns`, `persona`, `mode` personal or public) with `reply_has`/`reply_lacks`, `ticket`, `schema`, `check` and `trajectory` (nodes, agents, tools, model) |
-| `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20: 13 runnable RM API cases and 7 manual approval/fixture boundaries. Client cases have 16 runnable and 8 manual boundaries; manual cases are excluded from scoring |
+| `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20 and R24–R27: 17 runnable RM API cases and 7 manual approval/fixture boundaries (R24–R27, build plan 3b, not yet run). Client cases have 16 runnable and 8 manual boundaries; manual cases are excluded from scoring |
 | `demobank-graph` | `graph_cases.json` | v5 agent interactions C23–C28 (trip window, tax self-certification, affordability, failed document check, fraud report then RM note, fee-waiver handoff) and R21–R23. Each case has a failure variant through `fault`: `external_down` (the public-holiday call fails), `upstream_withheld` (the upstream agent's answer is withheld) , `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b, C28 and R21–R23a are ready). Sophie's cases play on `POST /rm/assistant` (`targets.play_rm`, workspace context carried between turns); `consent_revoked` reads her rm_brief grant as revoked |
 | `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases run the RM planner (`rm_planner/v4`) without book reads |
 

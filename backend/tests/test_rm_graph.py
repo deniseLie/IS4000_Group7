@@ -114,6 +114,10 @@ def test_exports_are_computed_from_what_the_handler_read():
     assert graph.exports_for('meeting_brief', turn)['latest_note'].value == 'n2'
     turn.reads['rm_handover_sources'] = {'data': {'eligible': False}}
     assert 'consent_active' not in graph.exports_for('handover_brief', turn)  # no reassignment: unknown, so a dependant is skipped
+    # 3b: a feed for `today` keeps the fixed window; "this week" in her message limits only a reviews answer of its own
+    week = handlers.Turn(RmAssistantRequest(message='What do I have this week?'), rm_ctx(), None)
+    week.reads['rm_review_status'] = {'data': reviews(1, (handlers.today() + timedelta(days=10)).isoformat())}
+    assert graph.exports_for('reviews', week)['reviews_due'].value == [] and len(graph.exports_for('reviews', week, feed=True)['reviews_due'].value) == 1
 
 
 def test_r21_fans_out_one_draft_per_client_due_at_most_five(records, monkeypatch):
@@ -302,16 +306,16 @@ def brief_ids(schema: dict) -> list[str]:
 @pytest.fixture
 def model(monkeypatch):
     """Sample model replies by schema title (no provider is called): the loop's steps from state['steps'] (then an answer
-    step), a brief citing state['cite'] (or the first record) and a plain draft. Each call's title, prompt and system text
-    are recorded."""
-    seen, state = [], {'steps': [], 'cite': None}
+    step), a brief citing state['cite'] (or the first record), or state['sections'] as given, and a plain draft. Each call's
+    title, prompt and system text are recorded."""
+    seen, state = [], {'steps': [], 'cite': None, 'sections': None}
     async def call(prompt, system, messages, schema):
         seen.append({'title': schema['title'], 'prompt': prompt['id'], 'system': system})
         if schema['title'] == 'agent_step':data = state['steps'].pop(0) if state['steps'] else {'action': 'answer', 'calls': []}
         elif schema['title'] == 'rm_brief':
             ids = brief_ids(schema)
             data = {'status': 'ok', 'summary': 'Here is what your records show.', 'clarification_question': '', 'clarification_options': [],
-                'sections': [{'heading': 'From your records', 'items': [{'text': 'Read from your records.', 'kind': 'record', 'owner': 'rm',
+                'sections': state['sections'] or [{'heading': 'From your records', 'items': [{'text': 'Read from your records.', 'kind': 'record', 'owner': 'rm',
                     'source_ids': [i for i in state['cite'] or [] if i in ids] or ids[:1]}]}]}
         elif schema['title'] == 'rm_draft':
             data = {'status': 'ok', 'draft': 'Hi Michelle, I would like to catch up about your plans. Would a short call suit you?', 'facts_used': [],
@@ -569,3 +573,168 @@ def test_a_merged_reply_keeps_the_calendar_cards():
             'summary': 'x', 'sections': [{'heading': 'Inbox', 'items': []}], 'origin': 'ai'}))]
     out = graph.merged(rows, [])
     assert out['decision'] == card and 'availability' not in out and graph.cards_of(out) == {'decision': 1}
+
+
+# Build plan 3b: one priority score, her day in one answer and the links that feed it ---------------------------------------
+def day_rows(data: dict) -> None:
+    """Her day: an urgent card request and an overdue one, Mei Ling's overdue meeting request, two reviews due in 3 days, a
+    meeting tomorrow (and one already over today), an overdue task and a milestone. Client-written text says 'zebra lantern'."""
+    t = handlers.today()
+    later, tomorrow, before = (t + timedelta(days=3)).isoformat(), (t + timedelta(days=1)).isoformat(), (t - timedelta(days=2)).isoformat()
+    data['reviews'] = reviews(2, later)
+    data['rows'].update(
+        rm_tickets={'data': {'rm_owned': [
+            {'reference': 'TCK-001010', 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'category_label': 'Talk to my RM', 'urgency': 'urgent',
+                'status': 'submitted', 'overdue': False, 'age_hours': 30, 'target_at': f'{tomorrow}T12:00:00+08:00', 'target_sgt': 'tomorrow noon',
+                'summary': '[Urgent card] Card reported lost. zebra lantern'},
+            {'reference': 'TCK-001001', 'customer_id': 1003, 'client': 'David Lee (DEMO)', 'category_label': 'Card limit change', 'urgency': 'normal',
+                'status': 'in_review', 'overdue': True, 'age_hours': 100, 'target_at': f'{before}T12:00:00+08:00', 'target_sgt': 'two days ago',
+                'summary': 'zebra lantern'}], 'specialist': []}, 'as_of': 'now'},
+        rm_followups={'data': [
+            {'item_key': f'task:k1:{before}', 'customer_id': 1003, 'client': 'David Lee (DEMO)', 'kind': 'task', 'title': 'Send the renewal form',
+                'due_on': before, 'due_text': 'two days ago', 'overdue': True, 'owner': 'rm', 'confirmed_meeting': None},
+            {'item_key': f'milestone:m1:{later}', 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'kind': 'milestone', 'title': 'Fixed deposit matures',
+                'due_on': later, 'due_text': 'in three days', 'overdue': False, 'owner': 'rm', 'confirmed_meeting': 'tomorrow 10 am'},
+            {'item_key': 'specialist:TCK-001004', 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'kind': 'specialist_ticket',
+                'title': 'Suspected fraud with the fraud team', 'due_on': None, 'owner': 'specialist', 'confirmed_meeting': 'tomorrow 10 am'}], 'as_of': 'now'},
+        rm_meeting_requests={'data': [meeting_request(overdue=True, created_at=f'{(t - timedelta(days=3)).isoformat()}T00:00:00+08:00',
+            respond_by=f'{t - timedelta(days=1)}T09:00:00+08:00')], 'as_of': 'now'},
+        rm_appointments={'data': [
+            {'appointment_id': 'a1', 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'starts_at': f'{tomorrow}T10:00:00+08:00', 'date': tomorrow,
+                'when': 'tomorrow 10 am', 'format': 'video', 'status': 'confirmed', 'past': False, 'purpose': 'zebra lantern'},
+            {'appointment_id': 'a0', 'customer_id': 1009, 'client': 'Mei Ling Goh (DEMO)', 'starts_at': f'{t}T08:00:00+08:00', 'date': t.isoformat(),
+                'when': 'today 8 am', 'format': 'phone', 'status': 'confirmed', 'past': True}], 'as_of': 'now'})
+
+
+def said(*ids: str, kind: str = 'record', text: str = 'From your records.') -> list[dict]:
+    return [{'text': text, 'kind': kind, 'owner': 'rm', 'source_ids': [i]} for i in ids]
+
+
+RANKED = ['ticket-TCK-001010', 'ticket-TCK-001001', 'meeting-request-mei', 'task-david', 'meeting-michelle', 'review-david', 'review-michelle',
+    'milestone-michelle']
+
+
+def test_today_links_the_calendar_and_client_exports_and_code_keeps_the_rank_order(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    day_rows(data)
+    async def no_plan(rt, message):raise AssertionError('the Today button sets the intent')
+    monkeypatch.setattr(graph, 'model_plan', no_plan)
+    state['sections'] = [  # the model's sections out of order; code puts them, and their items, in rank order
+        {'heading': 'Deadlines and tasks', 'items': said('review-michelle', 'task-david', 'milestone-michelle', 'review-david')
+            + said('review-michelle', kind='suggestion', text='Book a review meeting with Michelle to go through it.')},
+        {'heading': 'Meetings in the next 7 days', 'items': said('meeting-michelle')},
+        {'heading': 'Do first', 'items': said('meeting-request-mei', 'ticket-TCK-001001', 'ticket-TCK-001010')}]
+    reply, spans = traced("What's on today?", intent='today')
+    planned = next(a for n, a in spans if n == 'planner')
+    assert planned['plan'] == [{'id': 't1', 'agent': 'rm_requests', 'intent': 'today', 'depends_on': 't2', 'condition': None, 'for_each': None,
+        'inputs_from': ['t3', 't4']}, *({'id': f't{n}', 'agent': a, 'intent': i, 'depends_on': None, 'condition': None, 'for_each': None}
+            for n, a, i in ((2, 'rm_calendar', 'schedule'), (3, 'rm_calendar', 'meeting_requests'), (4, 'rm_client', 'reviews')))]
+    assert (planned['feeds'], planned['unlinked']) == (3, [])
+    # Each agent reads its own records; the feeds call no model, so the only model call is the day's answer.
+    assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_appointments', 'rm_calendar'),
+        ('rm_meeting_requests', 'rm_calendar'), ('rm_review_status', 'rm_client'), ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests')}
+    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v5+')
+    gather = next(a for n, a in spans if n == 'gather')
+    assert {(p['from'], p['to'], p['name']) for p in gather['passed']} >= {('rm_calendar', 'rm_requests', 'meetings_next_7d'),
+        ('rm_calendar', 'rm_requests', 'requests_to_answer'), ('rm_client', 'rm_requests', 'reviews_due')}
+    evidence = json.loads(evidence_in(seen[0]))
+    assert [e['id'] for e in evidence] == RANKED and [e['record']['rank'] for e in evidence] == list(range(1, 9))  # not the meeting already over
+    assert [e['record']['priority_score'] for e in evidence] == [51, 34, 33, 30, 20, 20, 20, 0] and [e['record']['do_first'] for e in evidence][:4] == [True] * 3 + [False]
+    assert evidence[0]['record']['score_parts'] == [{'factor': 'urgent', 'points': 50, 'reason': 'Urgent request'},
+        {'factor': 'waiting', 'points': 1, 'reason': 'Waiting 1 day'}] and evidence[0]['record']['title'] == 'Urgent card'
+    text = evidence_in(seen[0])
+    assert not any(w in text for w in ('zebra lantern', 'Ignore your rules', 'a1b2c3d4', '"customer_id"', '"a1"', 'appointment_id'))
+    assert reply['intent'] == 'today' and [s['heading'] for s in reply['sections']] == ['Do first', 'Meetings in the next 7 days', 'Deadlines and tasks']
+    assert [[i['source_ids'][0] for i in s['items']] for s in reply['sections']] == [RANKED[:3], ['meeting-michelle'], ['task-david', 'review-david',
+        'review-michelle', 'milestone-michelle']]  # the suggestion to book a second meeting with Michelle is withheld (RM11)
+    assert 'duplicate_meeting_suggestion' in reply['validation']['reasons'] and all(i['source_ids'] for s in reply['sections'] for i in s['items'])
+    assert {s['id'] for s in reply['sources']} == set(RANKED)
+    agents = {a['intent']: a for n, a in spans if n == 'agent'}
+    assert (agents['today']['wave'], agents['today']['scored'], agents['today']['top_score'], agents['today']['factors']) == (2, 8, 51,
+        {'urgent': 1, 'waiting': 3, 'past_target': 2, 'respond_by_passed': 1, 'meeting_2d': 1, 'deadline_14d': 2})
+    assert all(agents[i].get('feed') and agents[i]['origin'] == 'records' for i in ('schedule', 'meeting_requests', 'reviews'))
+    compose = next(a for n, a in spans if n == 'compose')
+    assert (compose['feeds'], [s['task'] for s in compose['sections']]) == (3, ['t1'])
+    for name, facts in spans:  # the app's own spans: ids, codes and counts only
+        assert not any(w in json.dumps(facts, default=str) for w in ('zebra lantern', 'Ignore your rules', 'Urgent request', 'Waiting 1 day')), name
+
+
+def test_today_from_a_typed_question_gets_the_same_links_and_reuses_a_planned_schedule(records, model, monkeypatch):
+    calls, data = records
+    seen, _ = model
+    day_rows(data)
+    plan(monkeypatch, [{'intent': 'today', 'depends_on': 0}])
+    reply, spans = traced("What's on today?")
+    assert [(p['id'], p['intent'], p['depends_on'], p.get('inputs_from')) for p in next(a for n, a in spans if n == 'planner')['plan']] == [
+        ('t1', 'today', 't2', ['t3', 't4']), ('t2', 'schedule', None, None), ('t3', 'meeting_requests', None, None), ('t4', 'reviews', None, None)]
+    assert reply['intent'] == 'today' and [c['title'] for c in seen] == ['rm_brief']
+    # A schedule the planner asked for is shown and also feeds the day; a link the model gave today is replaced.
+    tasks = graph.with_feeds(graph.tasks_from([{'intent': 'schedule'}, {'intent': 'today', 'depends_on': 1}], 'q'))
+    assert [(t.id, t.intent, t.depends_on, t.inputs_from, bool(t.entities.get('feed'))) for t in tasks] == [('t1', 'schedule', None, [], False),
+        ('t2', 'today', 't1', ['t3', 't4'], False), ('t3', 'meeting_requests', None, [], True), ('t4', 'reviews', None, [], True)]
+    kept, lines = orchestrator.linked(tasks, RmAssistantRequest(message='q'))
+    assert len(kept) == 4 and not lines
+
+
+def test_today_for_someone_outside_the_book_is_refused_before_any_record_or_plan(records, monkeypatch):
+    calls, data = records
+    data['outside'] = True
+    async def no_plan(rt, message):raise AssertionError('no planner call for a refusal')
+    monkeypatch.setattr(graph, 'model_plan', no_plan)
+    for request in ({}, {'intent': 'today'}):
+        calls.clear()
+        reply = run("What's on today for Wei Ming?", None, **request)
+        assert reply['status'] == 'denied' and {name for name, _ in calls} == {'rm_book', 'rm_match_clients'}
+
+
+def test_extra_upstreams_pass_the_same_link_checks():
+    from app.schemas.contracts import PlanTask
+    def task(i, agent, intent, **link):return PlanTask(id=i, agent=agent, intent=intent, question='q', **link)
+    reviews_task, schedule = task('t1', 'rm_client', 'reviews'), task('t2', 'rm_calendar', 'schedule')
+    cases = {'chained_upstream': [task('t3', 'rm_calendar', 'schedule', depends_on='t1'), task('t4', 'rm_requests', 'today', depends_on='t1', inputs_from=['t3'])],
+        'imports_nothing': [task('t3', 'rm_requests', 'ticket_inbox'), task('t4', 'rm_requests', 'today', depends_on='t1', inputs_from=['t3'])],
+        'other_side': [task('t3', 'accounts', 'open'), task('t4', 'rm_requests', 'today', depends_on='t1', inputs_from=['t3'])],
+        'no_upstream': [task('t4', 'rm_requests', 'today', depends_on='t1', inputs_from=['t9'])]}
+    for reason, extra in cases.items():
+        facts = {}
+        kept, lines = orchestrator.linked([reviews_task, schedule, *extra], RmAssistantRequest(message='q'), facts)
+        assert 't4' not in {t.id for t in kept} and facts['unlinked'] == [{'task': 't4', 'agent': 'rm_requests', 'reason': reason}], reason
+        assert lines[0].answer == orchestrator.UNLINKED
+    ok = [reviews_task, schedule, task('t4', 'rm_requests', 'today', depends_on='t2', inputs_from=['t1'])]
+    assert orchestrator.linked(ok, RmAssistantRequest(message='q'))[0] == ok
+    for bad in ({'inputs_from': ['t1']}, {'depends_on': 't1', 'inputs_from': ['t1']}, {'depends_on': 't2', 'inputs_from': ['t1', 't1']}):
+        with pytest.raises(ValueError):task('t4', 'rm_requests', 'today', **bad)
+
+
+def test_priorities_rank_with_the_same_score_and_keep_the_other_follow_ups(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    day_rows(data)
+    plan(monkeypatch, [{'intent': 'priorities'}])
+    reply, spans = traced('Which clients should I follow up with this week, and why?')
+    assert [(p['intent'], p['depends_on']) for p in next(a for n, a in spans if n == 'planner')['plan']] == [('priorities', 't2'), ('meeting_requests', None)]
+    assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_meeting_requests', 'rm_calendar'),
+        ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests'), ('rm_appointments', 'rm_requests')}
+    evidence = json.loads(evidence_in(seen[0]))
+    ranked = [e['id'] for e in evidence if 'rank' in (e['record'] if isinstance(e['record'], dict) else {})]
+    assert ranked == ['ticket-TCK-001010', 'ticket-TCK-001001', 'meeting-request-mei', 'task-david', 'meeting-michelle', 'milestone-michelle']  # reviews: none in the follow-ups
+    assert [e['id'] for e in evidence if e['id'].startswith('followup-')] == ['followup-1'] and evidence[-1]['id'] == 'appointments'
+    assert next(e for e in evidence if e['id'] == 'followup-1')['record']['kind'] == 'specialist_ticket'  # unscored, still listed
+    assert reply['status'] == 'ok' and next(a for n, a in spans if n == 'agent' and a['intent'] == 'priorities')['top_score'] == 51
+
+
+def test_the_other_requests_and_client_intents_still_answer(records, model, monkeypatch):
+    calls, data = records
+    seen, _ = model
+    data['rows'].update(consent_rows({1002: True}), rm_ticket=ticket, rm_availability=availability(),
+        rm_book_facts={'data': [{'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'open_requests': 1}], 'as_of': 'now'})
+    for rows, message, title in (([{'intent': 'ticket_summary', 'ticket_ref': 'TCK-001001'}], 'Summarise TCK-001001', 'rm_brief'),
+            ([{'intent': 'draft_message', 'client_name': 'Michelle'}], 'Draft Michelle a short note', 'rm_draft'),
+            ([{'intent': 'book_question'}], 'Who has requests waiting for me?', 'rm_brief'),
+            ([{'intent': 'client_overview', 'client_name': 'Michelle'}], 'Give me an overview of Michelle', 'rm_brief')):
+        seen.clear()
+        plan(monkeypatch, rows)
+        reply, spans = traced(message)
+        assert reply['status'] == 'ok' and reply['intent'] == rows[0]['intent'] and [c['title'] for c in seen] == [title], rows
+        assert len(next(a for n, a in spans if n == 'planner')['plan']) == 1  # no feeds outside today and priorities

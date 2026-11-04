@@ -349,12 +349,14 @@ def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
         entities = {k: v for k, v in ((k, entity_value(k, v)) for k, v in item.entities.items()) if v is not None}
         ids[item.id] = f't{len(plan)+1}'
         plan.append(item.model_copy(update={'id': ids[item.id], 'intent': intent, 'entities': entities}))
-    plan = [t.model_copy(update={'depends_on': ids.get(t.depends_on, '?')}) if t.depends_on else t for t in plan]  # '?': not in the plan
+    plan = [t.model_copy(update={'depends_on': ids.get(t.depends_on, '?'), 'inputs_from': [ids.get(u, '?') for u in t.inputs_from]})
+        if t.depends_on else t for t in plan]  # '?': not in the plan
     return [t.model_copy(update={'priority': t.priority if t.priority != 'P3' else priority(t)}) for t in plan]
 
 
-def unlinked(item: PlanTask, up: PlanTask | None) -> str | None:
-    """Why a dependency is not declared by the specs (a code for the planner span), or None when it is."""
+def unlinked(item: PlanTask, up: PlanTask | None, by_id: dict[str, PlanTask] | None = None) -> str | None:
+    """Why a dependency is not declared by the specs (a code for the planner span), or None when it is. Each extra
+    upstream in inputs_from (build plan 3b) passes the same checks and must export something the receiver imports."""
     exports = registry.SPECS[up.agent].exports if up else {}
     if item.depends_on is None:return None
     if up is None or up.id == item.id:return 'no_upstream'
@@ -362,6 +364,9 @@ def unlinked(item: PlanTask, up: PlanTask | None) -> str | None:
     if (registry.SPECS[up.agent].role == 'rm') != (registry.SPECS[item.agent].role == 'rm'):return 'other_side'
     if item.condition is not None and exports.get(item.condition) != 'bool':return 'condition_not_bool_export'
     if item.for_each is not None and not exports.get(item.for_each, '').startswith('list['):return 'for_each_not_list_export'
+    for extra in ((by_id or {}).get(u) for u in item.inputs_from):
+        if why := unlinked(item.model_copy(update={'condition': None, 'for_each': None, 'inputs_from': []}), extra):return why
+        if not registry.SPECS[item.agent].imports & registry.SPECS[extra.agent].exports.keys():return 'imports_nothing'
     return None
 
 
@@ -373,11 +378,11 @@ def linked(tasks: list[PlanTask], req: ChatRequest, facts: dict | None = None) -
     dropped = [] if facts is None else facts.setdefault('unlinked', [])  # the planner span: links dropped and why
     if getattr(req, 'mode', 'personal') != 'personal':  # the RM request (rm/graph.py) has no mode: an RM is always signed in
         dropped += [{'task': t.id, 'agent': t.agent, 'reason': 'guest'} for t in tasks if t.depends_on]
-        return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None}) for t in tasks], []
+        return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None, 'inputs_from': []}) for t in tasks], []
     by_id = {t.id: t for t in tasks}
     kept, lines = [], []
     for item in tasks:
-        why = unlinked(item, by_id.get(item.depends_on) if item.depends_on else None)
+        why = unlinked(item, by_id.get(item.depends_on) if item.depends_on else None, by_id)
         if why is None:kept.append(item)
         else:
             log_event('plan_unlinked', task=item.id, agent=item.agent)
@@ -387,8 +392,9 @@ def linked(tasks: list[PlanTask], req: ChatRequest, facts: dict | None = None) -
 
 
 def plan_facts(tasks: list[PlanTask]) -> list[dict]:
-    """The planner span's tasks: agent, intent and dependency only (never the question or entities)."""
-    return [{'id': t.id, 'agent': t.agent, 'intent': t.intent, 'depends_on': t.depends_on, 'condition': t.condition, 'for_each': t.for_each} for t in tasks]
+    """The planner span's tasks: agent, intent and dependency only (never the question or entities); inputs_from when set."""
+    return [{'id': t.id, 'agent': t.agent, 'intent': t.intent, 'depends_on': t.depends_on, 'condition': t.condition, 'for_each': t.for_each,
+        **({'inputs_from': t.inputs_from} if t.inputs_from else {})} for t in tasks]
 
 
 async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired', 'ambiguous'] | None:
@@ -565,14 +571,16 @@ def next_wave(state: Turn, facts: dict) -> dict:
                 sends.append(AgentInput(task=item, history=[Message(role='user', content=item.question)], language=language, inputs={}))
             tasks.append(item)
             continue
-        if up is None or up.status != 'ok' or any(name and name not in up.exports for name in (item.condition, item.for_each)):
+        ups = [up, *(outputs.get(u) for u in item.inputs_from)]  # inputs_from: more upstreams, inputs only (build plan 3b)
+        if any(u is None or u.status != 'ok' for u in ups) or any(name and name not in up.exports for name in (item.condition, item.for_each)):
             extra.append(skipped(item, UPSTREAM_UNKNOWN, 'upstream_unavailable', facts));tasks.append(item);continue
         if item.condition and up.exports[item.condition].value is not True:
             extra.append(skipped(item, CONDITION_FALSE.get(item.condition, CONDITION_FALSE_ANY), 'condition_false', facts));tasks.append(item);continue
-        inputs = {k: up.exports[k] for k in registry.SPECS[item.agent].imports & up.exports.keys()}
+        given = [(u, {k: u.exports[k] for k in registry.SPECS[item.agent].imports & u.exports.keys()}) for u in ups]
+        inputs = {k: v for _, part in reversed(given) for k, v in part.items()}  # a name two upstreams export: depends_on's
         own = agent_history(history, item, True)
         if not item.for_each:
-            passed(up, item, inputs, facts)
+            for u, part in given:passed(u, item, part, facts)
             sends.append(AgentInput(task=item, history=own, language=language, inputs=inputs));tasks.append(item);continue
         values = items_of(up.exports[item.for_each], item.for_each, up.agent)
         if not values:
@@ -580,7 +588,8 @@ def next_wave(state: Turn, facts: dict) -> dict:
         for i, value in enumerate(values[:MAX_ITEMS]):
             one = item.model_copy(update={'id': item.id if i == 0 else f'{item.id}-{i+1}', 'entities': {**item.entities, 'item': value}})
             mine = {**inputs, **({item.for_each: Export(value=value, source_ids=up.exports[item.for_each].source_ids)} if item.for_each in inputs else {})}
-            passed(up, one, mine, facts)
+            passed(up, one, {k: v for k, v in mine.items() if k in given[0][1]}, facts)
+            for u, part in given[1:]:passed(u, one, part, facts)
             sends.append(AgentInput(task=one, history=own, language=language, inputs=mine));tasks.append(one)
         if len(values) > MAX_ITEMS:
             facts.setdefault('fan_out', []).append({'task': item.id, 'shown': MAX_ITEMS, 'total': len(values)})

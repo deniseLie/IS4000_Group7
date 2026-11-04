@@ -95,7 +95,8 @@ export function receivedText(hours) {
 export const REPORT_TITLES={ticket_inbox:'Ticket triage',priorities:'Follow-up priorities',reviews:'Review deadlines',schedule:'Your schedule',
   client_overview:'Client overview',meeting_history:'Meeting history',meeting_brief:'Meeting briefing',ticket_summary:'Ticket summary',
   draft_message:'Client message',document_interaction:'Interaction record',actions_from_note:'Follow-up actions',handover_brief:'Handover brief',book_question:'Across your book',help:'RM assistant',
-  open:'From your records',meeting_requests:'Meeting requests',decide_request:'Answer a meeting request',availability_change:'Your availability'};
+  open:'From your records',meeting_requests:'Meeting requests',decide_request:'Answer a meeting request',availability_change:'Your availability',
+  today:'Your day'};
 
 // A reply as plain text with numbered references and a source list (for Copy).
 export function reportText(reply,client) {
@@ -321,4 +322,31 @@ export function todayView({appointments=[],tickets=null,followups=[]},today) {
     .sort((x,y)=>x.due_on.localeCompare(y.due_on));
   const overdueTasks=followups.filter(f=>f.kind==='task'&&f.overdue);
   return {upcoming,today:upcoming.filter(a=>days(a.date)===0),toDocument,requests:mine,fresh,pastTarget:mine.filter(t=>t.overdue),soon,overdueTasks};
+}
+
+// Build plan 3b: GET /rm/priorities scores and ranks (services/rm/priority.py, the assistant's score); the page never
+// scores. Each list on Today keeps the backend's rank by the item key of the record it shows, and shows its reasons.
+export function rankIndex(items) {return new Map((items||[]).map(x=>[x.key,x]));}
+export function keyOf(kind,row) {
+  if(kind==='ticket')return `ticket:${row.reference}`;
+  if(kind==='meeting_request')return `meeting_request:${row.request_id}`;
+  if(kind==='appointment')return `meeting:${row.appointment_id}`;
+  return row.kind==='review_deadline'?`review:${row.customer_id}:${row.due_on}`:row.item_key;  // a follow-up row
+}
+export function byRank(rows,kind,ranked) {  // ranked rows first in rank order, the rest after them as they were
+  const at=row=>ranked?.get(keyOf(kind,row))?.rank??Infinity;
+  return (rows||[]).map((row,i)=>[row,i]).sort(([a,i],[b,j])=>(at(a)-at(b))||(i-j)).map(([row])=>row);
+}
+export function reasonText(item) {return (item?.parts||[]).map(p=>p.reason).join(' · ');}
+export function firstThings(items) {return (items||[]).filter(x=>x.do_first);}
+// The one obvious next step for a ranked item (meeting requests are answered on Schedule → Requests).
+export function nextStep(item) {
+  const ctx={client_id:item.customer_id};
+  if(item.kind==='meeting_request')return {label:'Answer',schedule:'requests'};
+  if(item.kind==='request')return {label:'Draft a reply',message:`Draft a reply to ${item.client} about ${item.ref.reference}`,intent:'draft_message',
+    context:{...ctx,ticket_ref:item.ref.reference}};
+  if(item.kind==='meeting')return {label:'Brief me',message:`Brief me for my meeting with ${item.client} on ${item.when}`,intent:'meeting_brief',
+    context:{...ctx,appointment_id:item.ref.appointment_id}};
+  return {label:'Ask',message:`What do I need to know about ${item.client}'s ${String(item.title||'').replace(/^Your task: /,'')} (due ${item.when})?`,
+    intent:'client_overview',context:ctx};
 }

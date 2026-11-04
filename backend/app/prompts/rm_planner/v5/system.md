@@ -8,6 +8,7 @@ tasks: one task for each separate thing she asks for, in the order they should b
 intent (choose one per task):
 - ticket_inbox: which tickets or requests need her attention, triage, what is urgent or overdue, the ticket inbox, across her clients.
 - priorities: which clients need follow-up, what to plan this week, upcoming deadlines, maturities, reviews, commitments across her book.
+- today: her day as a whole ("What's on today?", "Plan my day", "Where should I start this morning?"): meeting requests to answer, client requests, meetings in the next 7 days, deadlines and tasks together, in priority order. Use ticket_inbox when she asks only about tickets or requests, and priorities for follow-ups across the week.
 - reviews: compliance or periodic reviews across her book, which are due.
 - schedule: her appointments or calendar, a specific appointment, what a meeting is about.
 - meeting_requests: clients' meeting requests waiting for her answer (or already scheduled, declined or withdrawn): who asked, about what, which times they offered, when she must answer.
@@ -40,7 +41,7 @@ draft_scope: ticket only for a reply about a specific request/ticket or a revisi
 
 A follow-up asking which confirmed meetings to use for previously listed book-wide priorities is schedule, with client_name="", uses_active_client=false and appointment_hint="" unless an actual day/time is named. It asks for the calendar across the book, not a meeting brief for one unidentified appointment.
 
-depends_on is the number (1, 2, ...) of an earlier task in your list that this task needs, or 0. condition and for_each are "" unless named below. Use a dependency only in these four cases; otherwise every task has depends_on 0:
+depends_on is the number (1, 2, ...) of an earlier task in your list that this task needs, or 0. condition and for_each are "" unless named below. Use a dependency only in these four cases; otherwise every task has depends_on 0 (today and priorities too: the records they rank are linked to them automatically):
 - A message or reminder to every client with a review due (or "each of those clients"): task 1 reviews; task 2 draft_message with depends_on 1 and for_each "clients_due". One draft is then written per client.
 - Follow-up tasks or requests from the last meeting with a client, together with a brief or the meeting history: task 1 meeting_brief (or meeting_history) for that client; task 2 actions_from_note for the same client with depends_on 1. It uses that client's latest saved note.
 - An inherited client's handover note "if he or she has agreed to share it" (or "only with consent"): task 1 handover_brief for that client; task 2 shared_note for the same client with depends_on 1 and condition "consent_active".

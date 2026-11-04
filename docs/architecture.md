@@ -357,8 +357,8 @@ The agents above are split by topic. The target set is split by **the data an ag
 | Agent | Fields it may see | Tools | Offers (RM approval required) |
 |---|---|---|---|
 | **RM Client** | 360 profile, products, review status, shared notes (previous RMs' private notes withheld), book facts; under the client's consent only: transaction insights, talking points, cash events ≥10,000 over 180 days, the shared summary, handover sources after a recorded reassignment | `rm_client_profile`, `rm_meeting_notes`, `rm_review_status`, `rm_book_facts`; consent-gated fixed reads `rm_transaction_insights`, `rm_talking_points`, `rm_cash_events`, `rm_shared_summary`, `rm_handover_sources` | None: read-only (overview, meeting history, briefs, reviews, book questions) |
-| **RM Requests** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data. Never consent-gated data | `rm_tickets`, `rm_ticket`, `rm_followups`, `request_categories`, `knowledge_article` (the approved article a ticket's request type names, read by id); borrowed fixed reads of the profile, notes, availability and appointments for drafts | Draft reply (sent only on Approve), tickets and tasks from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
-| **RM Calendar** | Her appointments, availability and working hours, clients' meeting requests (purposes are the client's words). Never client financial data | `rm_appointments`, `rm_availability`, `rm_meeting_requests` | Accept a requested time, propose another, decline with a reason; block time, open it again, change weekly hours (cards built by code, approved one by one) |
+| **RM Requests** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data. Never consent-gated data | `rm_tickets`, `rm_ticket`, `rm_followups`, `request_categories`, `knowledge_article` (the approved article a ticket's request type names, read by id); borrowed fixed reads of the profile, notes, availability and appointments for drafts; the ranking from `services/rm/priority.py` over its own tickets and follow-ups plus the Calendar and Client exports (3b: `today` answers her day in rank order) | Draft reply (sent only on Approve), tickets and tasks from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
+| **RM Calendar** | Her appointments, availability and working hours, clients' meeting requests (purposes are the client's words). Never client financial data | `rm_appointments`, `rm_availability`, `rm_meeting_requests`; exports `meetings_next_7d` and `requests_to_answer` (ids, dates and codes, never the client's purpose) | Accept a requested time, propose another, decline with a reason; block time, open it again, change weekly hours (cards built by code, approved one by one) |
 
 No RM agent decides approvals or gives investment advice, and none changes specialist-managed fraud tickets.
 
@@ -987,6 +987,7 @@ Rules:
 4. **Unknown means no.** A failed, withheld or missing upstream export skips the dependent task, and the client is told in fixed wording (for example "I couldn't check your due dates, so I haven't changed your meeting").
 5. **No crossing roles.** Client exports never reach RM agents in the same turn, or the other way round. Guests get no dependent tasks.
 6. **Audit records names and counts**, never values: `export.passed {from, to, name, count}`.
+7. **More than one upstream (build plan 3b).** A dependant may name further wave-1 upstreams in `PlanTask.inputs_from`, for inputs only (no condition or fan-out). Each one passes the same link checks and must export something the receiver imports. `gather` skips the dependant if any upstream is not ok, and records `agent.export_passed` per upstream.
 
 ```python
 def next_wave(state: Turn) -> list[Send] | str:
@@ -1022,7 +1023,7 @@ On the next turn the planner's rules recognise the confirmation and go straight 
 | Contract | Fields |
 |---|---|
 | `AgentSpec` | `name`, `role` (public/client/rm), `scope` (public/own_customer/rm_book), `answers` (what it handles; builds the planner prompt), `tools` (tool → field view and limits), `external` (hosts), `exports`, `imports`, `hands_to`, `offers` (action types), `prompt` |
-| `PlanTask` | `id`, `agent`, `question`, `entities`, `priority`, `depends_on`, `condition`, `for_each` |
+| `PlanTask` | `id`, `agent`, `question`, `entities`, `priority`, `depends_on`, `condition`, `for_each`, `inputs_from` (3b) |
 | `AgentOutput` | `section`, `evidence`, `exports` (with provenance), `offers`, `status` (`ok`, `needs_clarification`, `needs_human`, `out_of_scope`, `error`), `suggested` |
 | `Offer` | `offer_id`, `type`, `target`, `summary`, `expires_at`, `after_offer` |
 
@@ -1059,6 +1060,8 @@ Four links are declared:
 - a brief → follow-ups from its latest note (`latest_note`);
 - a handover brief → the shared note under consent (`consent_active`);
 - reviews due → an `open` Requests task on those clients' tickets (`reviews_due`).
+
+Build plan 3b adds the RM's priority score in code (`services/rm/priority.py`): urgent 50, past target or overdue 30, respond-by passed 30, review within 14 days 20, meeting within 2 days 20, and 1 a day waiting, up to 10. Each item carries its score parts and ties are fixed (score, date, kind, client, key). The model only explains the parts, and code keeps its items in rank order. `today` (Requests) and `priorities` are linked by code, never by the planner (`graph.FEEDS`): code reuses an independent task of the fed intent or adds a feed task that only does fixed reads (no model, not shown). `today` gets the Calendar's `meetings_next_7d` and `requests_to_answer` and the Client's `reviews_due`; `priorities` gets `requests_to_answer`. The Today page reads the same ranking from `GET /rm/priorities`.
 
 Calendar cards are approved one by one through the 2a routes (`/rm/meeting-requests/{id}/decide`, `/rm/availability/blocks`, `/rm/availability/hours`). The assistant writes nothing.
 

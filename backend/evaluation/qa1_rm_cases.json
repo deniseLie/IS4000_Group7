@@ -1178,5 +1178,276 @@
     },
     "manual_reason": "Requires an owner-prepared synthetic ticket containing attack text; no untrusted instructions are inserted into a live ticket by the target.",
     "adaptation": "Sophie owns Michelle (1002) and Mei Ling (1007); David, Grace and Hafiz are outside her current book. RM calls /rm/assistant and never the client LangGraph."
+  },
+  {
+    "id": "R24",
+    "title": "Plan my day",
+    "persona": "sophie",
+    "type": "normal",
+    "priority": "must",
+    "stories": [
+      "RM7",
+      "RM11",
+      "RM12"
+    ],
+    "ubs": [
+      5,
+      6
+    ],
+    "state": "ready",
+    "setup": "Signed in as Sophie. Today → Plan my day (the today intent). Run owner-only rm.reset_meeting_demo() first (hosted 34_reset_meeting_demo.sql) so Mei Ling's open request (Monday and Tuesday 16:30) and Michelle's confirmed meeting are dated from today.",
+    "turns": [
+      {
+        "say": "What’s on today?"
+      }
+    ],
+    "check": "One answer in the fixed order: Do first, meeting requests to answer, client requests, meetings in the next 7 days, deadlines and tasks. Every item cites a ranked record and gives its reasons from the code’s score parts (for example the respond-by time or a past target); the order is the code’s rank, the same as the Today page. A category with nothing recorded says so. Mei Ling’s open meeting request is listed with its respond-by time; Michelle’s confirmed meeting is referred to, not booked again.",
+    "ticket": null,
+    "schema": "Every item cites a ranked record (rank, priority_score, score_parts) or a none/not-read record; items follow rank order; the Calendar exports meetings_next_7d and requests_to_answer and the Client export reviews_due were passed (ids, dates and codes only, never a meeting request’s purpose).",
+    "trajectory": {
+      "nodes": [],
+      "idle": [],
+      "agents": {
+        "rm_assistant": 1
+      },
+      "tools": [
+        "rm_book",
+        "rm_tickets",
+        "rm_followups",
+        "rm_appointments",
+        "rm_meeting_requests",
+        "rm_review_status"
+      ],
+      "model": true,
+      "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.",
+      "pipeline": "rm"
+    },
+    "must_not": [
+      "The model ranking or re-scoring records",
+      "A record left out or listed twice",
+      "A meeting request answered or a meeting booked",
+      "A second meeting suggested for Michelle",
+      "A client outside the book",
+      "A message sent to a client"
+    ],
+    "handoff": null,
+    "covered_by": [
+      "tests/test_rm_priority.py",
+      "tests/test_rm_graph.py",
+      "tests/test_rm_workspace.py"
+    ],
+    "owner": "Denise (build plan 3b)",
+    "backlog": {
+      "id": "R24",
+      "sheet": "Build plan 3b",
+      "row": null,
+      "sha256": null
+    },
+    "adaptation": "Sophie owns Michelle (1002) and Mei Ling (1007); David, Grace and Hafiz are outside her current book. RM calls /rm/assistant and never the client LangGraph.",
+    "context": {},
+    "intent": "today",
+    "reply_has": [
+      "(?i)meeting requests? to answer",
+      "(?i)Mei Ling"
+    ],
+    "reply_lacks": [
+      "(?i)\\b(?:I have|I've) (?:booked|accepted|sent|answered)"
+    ]
+  },
+  {
+    "id": "R25",
+    "title": "Accept a client’s meeting time",
+    "persona": "sophie",
+    "type": "normal",
+    "priority": "must",
+    "stories": [
+      "RM12",
+      "CR17"
+    ],
+    "ubs": [
+      6,
+      7
+    ],
+    "state": "ready",
+    "setup": "Signed in as Sophie. Mei Ling (1007) has an open meeting request with Monday and Tuesday 16:30. Run owner-only rm.reset_meeting_demo() first (hosted 34_reset_meeting_demo.sql) so Mei Ling's open request (Monday and Tuesday 16:30) and Michelle's confirmed meeting are dated from today.",
+    "turns": [
+      {
+        "say": "Accept Mei Ling’s Monday 4:30 pm time"
+      }
+    ],
+    "check": "A decision card built from the records with no model call: Mei Ling’s request (topics, received, answer-by), her two times, and the suggested answer Accept Monday 4:30 pm. Nothing is recorded until Sophie approves the card (POST /rm/meeting-requests/{id}/decide); the target never approves.",
+    "ticket": null,
+    "schema": "The card carries the request id, Mei Ling’s customer id, both preferred times with any slot problem, her free times and suggested {decision: accept, starts_at: the Monday 16:30 time}; the request stays open.",
+    "trajectory": {
+      "nodes": [],
+      "idle": [],
+      "agents": {},
+      "tools": [
+        "rm_book",
+        "rm_meeting_requests",
+        "rm_availability"
+      ],
+      "model": false,
+      "order": "Authorised RM records → a card built by code (no model) → reply. The answer is recorded only when she approves it through the /rm write route.",
+      "pipeline": "rm"
+    },
+    "must_not": [
+      "The meeting booked or the request answered without her approval",
+      "A time the client did not offer suggested as accepted",
+      "A model call",
+      "Another client’s request"
+    ],
+    "handoff": null,
+    "covered_by": [
+      "tests/test_rm_graph.py",
+      "tests/test_rm_workspace.py"
+    ],
+    "owner": "Denise (build plan 3b)",
+    "backlog": {
+      "id": "R25",
+      "sheet": "Build plan 3b",
+      "row": null,
+      "sha256": null
+    },
+    "adaptation": "Sophie owns Michelle (1002) and Mei Ling (1007); David, Grace and Hafiz are outside her current book. RM calls /rm/assistant and never the client LangGraph.",
+    "context": {
+      "client_id": 1007
+    },
+    "intent": "decide_request",
+    "reply_has": [
+      "(?i)Accept Mon",
+      "(?i)Review your answer"
+    ],
+    "reply_lacks": [
+      "(?i)\\b(?:has|have) been (?:accepted|booked|sent)"
+    ]
+  },
+  {
+    "id": "R26",
+    "title": "Block Friday afternoon",
+    "persona": "sophie",
+    "type": "normal",
+    "priority": "should",
+    "stories": [
+      "RM12"
+    ],
+    "ubs": [
+      7
+    ],
+    "state": "ready",
+    "setup": "Signed in as Sophie. Uses her current working hours and free times; the target never approves the change.",
+    "turns": [
+      {
+        "say": "Block Friday afternoon"
+      }
+    ],
+    "check": "An availability card built from her hours and free times with no model call: the free runs on Friday afternoon to block, and any booked meeting there kept with a note to move it with the client first. Clients keep seeing the old free times until she approves the card (the existing availability routes).",
+    "ticket": null,
+    "schema": "The card is kind block with blocks inside Friday’s working hours only (12:00 onward) and kept bookings listed; no block is recorded by the assistant.",
+    "trajectory": {
+      "nodes": [],
+      "idle": [],
+      "agents": {},
+      "tools": [
+        "rm_book",
+        "rm_availability"
+      ],
+      "model": false,
+      "order": "Authorised RM records → a card built by code (no model) → reply. The answer is recorded only when she approves it through the /rm write route.",
+      "pipeline": "rm"
+    },
+    "must_not": [
+      "A block recorded without her approval",
+      "A confirmed meeting cancelled or moved",
+      "Time outside her working hours blocked",
+      "A model call"
+    ],
+    "handoff": null,
+    "covered_by": [
+      "tests/test_rm_graph.py",
+      "tests/test_rm_workspace.py"
+    ],
+    "owner": "Denise (build plan 3b)",
+    "backlog": {
+      "id": "R26",
+      "sheet": "Build plan 3b",
+      "row": null,
+      "sha256": null
+    },
+    "adaptation": "Sophie owns Michelle (1002) and Mei Ling (1007); David, Grace and Hafiz are outside her current book. RM calls /rm/assistant and never the client LangGraph.",
+    "context": {},
+    "intent": "availability_change",
+    "reply_has": [
+      "(?i)Block Fri",
+      "(?i)Review the change"
+    ]
+  },
+  {
+    "id": "R27",
+    "title": "Prioritised follow-ups with reasons",
+    "persona": "sophie",
+    "type": "normal",
+    "priority": "must",
+    "stories": [
+      "RM11",
+      "RM7"
+    ],
+    "ubs": [
+      5,
+      6
+    ],
+    "state": "ready",
+    "setup": "Signed in as Sophie. Follow-ups → Prioritise with assistant (the priorities intent). Run owner-only rm.reset_meeting_demo() first (hosted 34_reset_meeting_demo.sql) so Mei Ling's open request (Monday and Tuesday 16:30) and Michelle's confirmed meeting are dated from today.",
+    "turns": [
+      {
+        "say": "Which clients should I follow up with this week, and why?"
+      }
+    ],
+    "check": "Do first, Coming up and Specialist-managed sections. Ranked items come in the code’s order with the reasons from their score parts (a request past its target, a meeting request past its respond-by time, a review due within 14 days, a meeting within 2 days, days waiting); unscored follow-ups (specialist tickets, later dates, commitments) follow without a score. A confirmed meeting is referred to instead of suggesting another.",
+    "ticket": null,
+    "schema": "Ranked items cite records with rank, priority_score and score_parts; items keep rank order; the Calendar export requests_to_answer was passed (ids, dates and codes only); specialist tickets are never ranked as RM-owned.",
+    "trajectory": {
+      "nodes": [],
+      "idle": [],
+      "agents": {
+        "rm_assistant": 1
+      },
+      "tools": [
+        "rm_book",
+        "rm_tickets",
+        "rm_followups",
+        "rm_appointments",
+        "rm_meeting_requests"
+      ],
+      "model": true,
+      "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.",
+      "pipeline": "rm"
+    },
+    "must_not": [
+      "The model ranking or re-scoring records",
+      "A reason not in the score parts or records",
+      "A second meeting suggested for Michelle",
+      "The fraud ticket shown as RM-owned",
+      "A message sent to a client"
+    ],
+    "handoff": null,
+    "covered_by": [
+      "tests/test_rm_priority.py",
+      "tests/test_rm_graph.py"
+    ],
+    "owner": "Denise (build plan 3b)",
+    "backlog": {
+      "id": "R27",
+      "sheet": "Build plan 3b",
+      "row": null,
+      "sha256": null
+    },
+    "adaptation": "Sophie owns Michelle (1002) and Mei Ling (1007); David, Grace and Hafiz are outside her current book. RM calls /rm/assistant and never the client LangGraph.",
+    "context": {},
+    "intent": "priorities",
+    "reply_has": [
+      "(?i)do first",
+      "(?i)\\b(?:because|past|overdue|due|waiting|respond)"
+    ]
   }
 ]

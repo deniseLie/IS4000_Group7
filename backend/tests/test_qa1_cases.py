@@ -23,7 +23,7 @@ MUST_CLIENT={'CR1','CR2','CR3','CR4','CR5','CR6','CR8','CR9','CR10','CR11','CR12
 UBS=set(range(1,8))  # the seven UBS feedback points in the two-week plan
 
 def test_ids_follow_the_template():
-    assert [c['id'] for c in CLIENT]==[f'C{i:02}' for i in range(1,25)] and [c['id'] for c in RM]==[f'R{i:02}' for i in range(1,21)]
+    assert [c['id'] for c in CLIENT]==[f'C{i:02}' for i in range(1,25)] and [c['id'] for c in RM]==[f'R{i:02}' for i in (*range(1,21),*range(24,28))]  # R24–R27: build plan 3b
     for c in ALL:
         assert c['type'] in TYPES and c['priority'] in {'must','should'} and set(c['ubs'])<=UBS and c['turns'] and c['check'] and c['must_not']
         assert all(re.fullmatch(r'(CR|RM|F)\d+',s) for s in c['stories']) and all(len(t)==1 and set(t)<={'say','tap','form','upload','confirm_rm_handover'} for t in c['turns'])

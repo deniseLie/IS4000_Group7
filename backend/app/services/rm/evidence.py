@@ -155,8 +155,8 @@ def tickets_bundle(result: dict) -> Bundle:
     return bundle
 
 
-def followups_bundle(result: dict,appointments: dict|None) -> Bundle:
-    bundle=Bundle()
+def followups_bundle(result: dict,appointments: dict|None,bundle: Bundle|None=None) -> Bundle:
+    bundle=bundle or Bundle()
     as_of=str(result.get('as_of'))
     for index,item in enumerate(result['data'],1):
         bundle.add(Evidence(f'followup-{index}',f"{item['client']}: {item['title']}",'record',_strip(item,'customer_id'),as_of,item.get('customer_id')))
@@ -296,6 +296,9 @@ def _in_period(row: dict,period: tuple[date,date,str] | None,today: date) -> dic
     return row
 
 
+def day_words(d: date) -> str:return f'{d.day} {d:%b %Y}'  # '2 Nov 2026' (strftime's %-d does not exist on Windows)
+
+
 def book_bundle(result: dict,question: str='',today: date | None=None) -> Bundle:
     """One evidence item per client in the RM's book (rm_book_facts), for questions across the book. When the question
     names a period, dated facts outside it are removed before the model sees them, so it cannot list them."""
@@ -303,8 +306,8 @@ def book_bundle(result: dict,question: str='',today: date | None=None) -> Bundle
     today=today or datetime.now(SGT).date()
     period=asked_period(question,today)
     if period:
-        bundle.add(Evidence('asked-period','The period you asked about','record',{'today':today.strftime('%-d %b %Y'),
-            'from':period[0].strftime('%-d %b %Y'),'to':period[1].strftime('%-d %b %Y'),'period':period[2],
+        bundle.add(Evidence('asked-period','The period you asked about','record',{'today':day_words(today),
+            'from':day_words(period[0]),'to':day_words(period[1]),'period':period[2],
             'note':'Only maturities and reviews inside this period are listed in the client records below.'},str(result.get('as_of'))))
     for row in result['data'] or []:
         slug=re.sub(r'[^a-z]+','-',row['client'].lower()).strip('-')
@@ -366,3 +369,38 @@ def merge(bundle: Bundle,items: list[Evidence]) -> list[str]:
             item=Evidence(new,item.title,item.kind,item.data,item.as_of,item.customer_id)
         bundle.add(item);ids.append(item.id)
     return ids
+
+
+# Priorities and the day (build plan 3b) ---------------------------------------------------------------------------------
+KIND_IDS={'request':'ticket','meeting_request':'meeting-request','review':'review','meeting':'meeting','task':'task','milestone':'milestone'}
+KIND_WORDS={'request':'client request','meeting_request':'meeting request to answer','review':'compliance review','meeting':'confirmed meeting',
+    'task':'your task','milestone':'milestone'}
+DATE_FIELD={'request':'target','meeting_request':'respond_by','meeting':'when'}  # the rest: due
+
+
+def ranked_ids(items: list[dict]) -> list[str]:
+    """ticket-<reference> for a request; <kind>-<client's first name> for the rest, with -2, -3 for repeats."""
+    seen: dict[str,int]={}
+    out=[]
+    for x in items:
+        base=f"ticket-{x['ref']['reference']}" if x['kind']=='request' else \
+            f"{KIND_IDS[x['kind']]}-"+(re.sub(r'[^a-z]+','-',(x.get('client') or 'client').lower()).strip('-').split('-')[0] or 'client')
+        seen[base]=seen.get(base,0)+1
+        out.append(base if seen[base]==1 else f'{base}-{seen[base]}')
+    return out
+
+
+def ranked_bundle(items: list[dict],confirmed: dict[int,str],as_of: str|None,bundle: Bundle|None=None) -> Bundle:
+    """One record per scored item (services/rm/priority.py) with its rank, score and the reason code wrote for each part,
+    so the model explains the order and never sets it. No customer, request or appointment ids and no client-written
+    text (request summaries, meeting purposes); confirmed_meeting is the client's next confirmed meeting, if any."""
+    bundle=bundle or Bundle()
+    for source_id,x in zip(ranked_ids(items),items):
+        ref={k:v for k,v in x['ref'].items() if k in ('reference','status','urgency','topics')}
+        if x['kind']=='meeting':ref['format']=FORMAT_WORDS.get(x['ref'].get('format'),x['ref'].get('format'))
+        data={'rank':x['rank'],'do_first':x['do_first'],'kind':KIND_WORDS[x['kind']],'client':x['client'],'title':x['title'],
+            DATE_FIELD.get(x['kind'],'due'):x['when'],'priority_score':x['score'],
+            'score_parts':[{'factor':p['code'],'points':p['points'],'reason':p['reason']} for p in x['parts']],**ref,
+            'confirmed_meeting':confirmed.get(x['customer_id'])}
+        bundle.add(Evidence(source_id,f"#{x['rank']} {x['client']}: {x['title']}",'record',data,as_of,x['customer_id']))
+    return bundle

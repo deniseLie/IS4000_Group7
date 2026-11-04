@@ -1,6 +1,6 @@
-# Test cases – Michelle (C01–C24) and Sophie (R01–R20)
+# Test cases – Michelle (C01–C24) and Sophie (R01–R20, R24–R27)
 
-The IDs and titles follow the downloaded Product Backlog **Test case** sheet. Every JSON case records its source row, workbook digest, owner and any adaptation to current synthetic records. `legacy_id` identifies the previous client dataset ID; historical experiments must be compared with their tagged dataset version, not just the ID.
+The IDs and titles follow the downloaded Product Backlog **Test case** sheet. R24–R27 were added by build plan 3b (RM copilot daily work) and have no backlog row yet. Every JSON case records its source row, workbook digest, owner and any adaptation to current synthetic records. `legacy_id` identifies the previous client dataset ID; historical experiments must be compared with their tagged dataset version, not just the ID.
 
 Client cases use `/chat`; RM cases use `/rm/assistant`, with returned context carried into follow-ups. Client trajectories name the v5 graph nodes (planner, agent, gather, act, compose) and agents (guide, accounts, security, compliance, relationship). The RM assistant runs on its own v5 RM graph (services/rm/graph.py); the QA1 RM cases check its tools, model calls and replies, not graph nodes. The RM target reads only and never approves, sends, books or changes a business record.
 
@@ -711,3 +711,67 @@ Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset
 | Schema | Ticket status unchanged; no read for 1006; an audit event flags the ignored instruction (ids only). |
 | Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_tickets"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
 | Automated cover | tests/test_rm_seed.py, tests/test_tickets.py |
+
+## R24 – Plan my day
+
+| Field | Value |
+|---|---|
+| Persona / priority | sophie / must |
+| Backlog | Build plan 3b; RM7, RM11, RM12 |
+| Owner | Denise (build plan 3b) |
+| State | ready |
+| Setup | Signed in as Sophie. Today → Plan my day (the today intent). Run owner-only rm.reset_meeting_demo() first (hosted 34_reset_meeting_demo.sql) so Mei Ling's open request (Monday and Tuesday 16:30) and Michelle's confirmed meeting are dated from today. Sent with intent `today`. |
+| Input | What’s on today? |
+| Expected output | One answer in the fixed order: Do first, meeting requests to answer, client requests, meetings in the next 7 days, deadlines and tasks. Every item cites a ranked record and gives its reasons from the code’s score parts (for example the respond-by time or a past target); the order is the code’s rank, the same as the Today page. A category with nothing recorded says so. Mei Ling’s open meeting request is listed with its respond-by time; Michelle’s confirmed meeting is referred to, not booked again. |
+| Must not happen | The model ranking or re-scoring records; A record left out or listed twice; A meeting request answered or a meeting booked; A second meeting suggested for Michelle; A client outside the book; A message sent to a client |
+| Schema | Every item cites a ranked record (rank, priority_score, score_parts) or a none/not-read record; items follow rank order; the Calendar exports meetings_next_7d and requests_to_answer and the Client export reviews_due were passed (ids, dates and codes only, never a meeting request’s purpose). |
+| Trajectory | {"nodes": [], "idle": [], "agents": {"rm_assistant": 1}, "tools": ["rm_book", "rm_tickets", "rm_followups", "rm_appointments", "rm_meeting_requests", "rm_review_status"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
+| Automated cover | tests/test_rm_priority.py, tests/test_rm_graph.py, tests/test_rm_workspace.py |
+
+## R25 – Accept a client’s meeting time
+
+| Field | Value |
+|---|---|
+| Persona / priority | sophie / must |
+| Backlog | Build plan 3b; RM12, CR17 |
+| Owner | Denise (build plan 3b) |
+| State | ready |
+| Setup | Signed in as Sophie. Mei Ling (1007) has an open meeting request with Monday and Tuesday 16:30. Run owner-only rm.reset_meeting_demo() first (hosted 34_reset_meeting_demo.sql) so Mei Ling's open request (Monday and Tuesday 16:30) and Michelle's confirmed meeting are dated from today. Sent with intent `decide_request` and context {"client_id": 1007}. |
+| Input | Accept Mei Ling’s Monday 4:30 pm time |
+| Expected output | A decision card built from the records with no model call: Mei Ling’s request (topics, received, answer-by), her two times, and the suggested answer Accept Monday 4:30 pm. Nothing is recorded until Sophie approves the card (POST /rm/meeting-requests/{id}/decide); the target never approves. |
+| Must not happen | The meeting booked or the request answered without her approval; A time the client did not offer suggested as accepted; A model call; Another client’s request |
+| Schema | The card carries the request id, Mei Ling’s customer id, both preferred times with any slot problem, her free times and suggested {decision: accept, starts_at: the Monday 16:30 time}; the request stays open. |
+| Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_meeting_requests", "rm_availability"], "model": false, "order": "Authorised RM records → a card built by code (no model) → reply. The answer is recorded only when she approves it through the /rm write route.", "pipeline": "rm"} |
+| Automated cover | tests/test_rm_graph.py, tests/test_rm_workspace.py |
+
+## R26 – Block Friday afternoon
+
+| Field | Value |
+|---|---|
+| Persona / priority | sophie / should |
+| Backlog | Build plan 3b; RM12 |
+| Owner | Denise (build plan 3b) |
+| State | ready |
+| Setup | Signed in as Sophie. Uses her current working hours and free times; the target never approves the change. Sent with intent `availability_change`. |
+| Input | Block Friday afternoon |
+| Expected output | An availability card built from her hours and free times with no model call: the free runs on Friday afternoon to block, and any booked meeting there kept with a note to move it with the client first. Clients keep seeing the old free times until she approves the card (the existing availability routes). |
+| Must not happen | A block recorded without her approval; A confirmed meeting cancelled or moved; Time outside her working hours blocked; A model call |
+| Schema | The card is kind block with blocks inside Friday’s working hours only (12:00 onward) and kept bookings listed; no block is recorded by the assistant. |
+| Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_availability"], "model": false, "order": "Authorised RM records → a card built by code (no model) → reply. The answer is recorded only when she approves it through the /rm write route.", "pipeline": "rm"} |
+| Automated cover | tests/test_rm_graph.py, tests/test_rm_workspace.py |
+
+## R27 – Prioritised follow-ups with reasons
+
+| Field | Value |
+|---|---|
+| Persona / priority | sophie / must |
+| Backlog | Build plan 3b; RM11, RM7 |
+| Owner | Denise (build plan 3b) |
+| State | ready |
+| Setup | Signed in as Sophie. Follow-ups → Prioritise with assistant (the priorities intent). Run owner-only rm.reset_meeting_demo() first (hosted 34_reset_meeting_demo.sql) so Mei Ling's open request (Monday and Tuesday 16:30) and Michelle's confirmed meeting are dated from today. Sent with intent `priorities`. |
+| Input | Which clients should I follow up with this week, and why? |
+| Expected output | Do first, Coming up and Specialist-managed sections. Ranked items come in the code’s order with the reasons from their score parts (a request past its target, a meeting request past its respond-by time, a review due within 14 days, a meeting within 2 days, days waiting); unscored follow-ups (specialist tickets, later dates, commitments) follow without a score. A confirmed meeting is referred to instead of suggesting another. |
+| Must not happen | The model ranking or re-scoring records; A reason not in the score parts or records; A second meeting suggested for Michelle; The fraud ticket shown as RM-owned; A message sent to a client |
+| Schema | Ranked items cite records with rank, priority_score and score_parts; items keep rank order; the Calendar export requests_to_answer was passed (ids, dates and codes only); specialist tickets are never ranked as RM-owned. |
+| Trajectory | {"nodes": [], "idle": [], "agents": {"rm_assistant": 1}, "tools": ["rm_book", "rm_tickets", "rm_followups", "rm_appointments", "rm_meeting_requests"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
+| Automated cover | tests/test_rm_priority.py, tests/test_rm_graph.py |

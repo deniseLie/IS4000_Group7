@@ -5,6 +5,7 @@ import {askAssistant,contextAfter,conversationPayload,display,historyFor,request
 import {redact} from '../../lib/chatTools';
 
 const STARTERS=[
+  {icon:'sun',title:'Plan my day',detail:'What’s on today, in priority order?',message:'What’s on today?',intent:'today'},
   {icon:'clip',title:'Ticket triage',detail:'What needs my attention today?',message:'What needs my attention today?',intent:'ticket_inbox'},
   {icon:'bell',title:'Follow-up priorities',detail:'Who should I follow up with this week?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'},
   {icon:'calendar',title:'Prepare a meeting',detail:'Brief me for my next meeting.',message:'What meetings do I have in the next two weeks?',intent:'schedule'},

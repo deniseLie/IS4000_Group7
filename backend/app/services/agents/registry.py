@@ -152,21 +152,24 @@ RM_CLIENT=AgentSpec(name='rm_client',role='rm',scope='rm_book',prompt='rm_assist
     sort_by={'reviews_due':'due_date','clients_due':'due_date'})
 
 RM_REQUESTS=AgentSpec(name='rm_requests',role='rm',scope='rm_book',prompt='rm_assistant',
-    answers="Requests work in the RM's book: what to do first, the ticket inbox, one ticket, client message drafts (sent "
-        'only on Approve), documenting a meeting and follow-ups from a saved note (tasks and service requests she approves).',
+    answers="Requests work in the RM's book: what to do first, her day in priority order, the ticket inbox, one ticket, client "
+        'message drafts (sent only on Approve), documenting a meeting and follow-ups from a saved note (tasks and service requests she approves).',
     tools={'rm_tickets':TEXT,'rm_ticket':TEXT,'rm_followups':WHOLE,'request_categories':WHOLE,'knowledge_article':WHOLE,
         # BORROWED fixed reads (never in loop_tools, never consent-gated): the client's name, open requests and tasks for a
         # draft or documentation, the notes a recap or follow-ups quote, the free times a draft may offer, meetings to rank.
         'rm_client_profile':TEXT,'rm_meeting_notes':TEXT,'rm_availability':WHOLE,'rm_appointments':WHOLE},
     # knowledge_article: the approved article a ticket's request type names (category_info.kb_article), read by id after rm_ticket.
-    intents={'priorities':(Read(tool='rm_followups'),Read(tool='rm_appointments')),'ticket_inbox':(Read(tool='rm_tickets'),),
+    # priorities and today rank with services/rm/priority.py; the meetings, meeting requests and reviews they rank come from
+    # the Calendar and Client agents' exports (rm/graph.py FEEDS links them; priorities still reads its 30-day meetings).
+    intents={'priorities':(Read(tool='rm_tickets'),Read(tool='rm_followups'),Read(tool='rm_appointments')),
+        'today':(Read(tool='rm_tickets'),Read(tool='rm_followups')),'ticket_inbox':(Read(tool='rm_tickets'),),
         'ticket_summary':(PROFILE,Read(tool='rm_ticket'),Read(tool='knowledge_article')),
         'draft_message':(PROFILE,Read(tool='rm_ticket'),NOTES,Read(tool='rm_availability'),Read(tool='knowledge_article')),
         'document_interaction':(Read(tool='rm_appointments'),PROFILE,Read(tool='request_categories')),
         'actions_from_note':(PROFILE,NOTES,Read(tool='request_categories'))},
     loop_tools=frozenset({'rm_tickets','rm_ticket','rm_followups','request_categories','knowledge_article'}),
     exports={'needs_meeting':'bool','topics':'list[label]'},
-    imports=frozenset({'clients_due','latest_note','client_ref','reviews_due','meetings_next_7d'}))
+    imports=frozenset({'clients_due','latest_note','client_ref','reviews_due','meetings_next_7d','requests_to_answer'}))
 
 RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_assistant',
     answers="The RM's calendar: her appointments, free times and working hours, clients' meeting requests, and cards to "
@@ -176,7 +179,7 @@ RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_as
     intents={'schedule':(Read(tool='rm_appointments'),),'meeting_requests':(Read(tool='rm_meeting_requests'),),
         'decide_request':(Read(tool='rm_meeting_requests'),Read(tool='rm_availability')),'availability_change':(Read(tool='rm_availability'),)},
     loop_tools=frozenset({'rm_appointments','rm_availability','rm_meeting_requests'}),
-    exports={'meetings_next_7d':'list[meeting_ref]'},sort_by={'meetings_next_7d':'starts_at'},
+    exports={'meetings_next_7d':'list[meeting_ref]','requests_to_answer':'list[meeting_ref]'},sort_by={'meetings_next_7d':'starts_at','requests_to_answer':'respond_by'},
     imports=frozenset({'needs_meeting','topics','client_ref'}))
 # No RM agent makes ledger offers: drafts, documentation, proposed tasks or requests and calendar decisions are review
 # cards the RM approves one by one through the /rm write routes (rm.send_client_update, rm.save_interaction,

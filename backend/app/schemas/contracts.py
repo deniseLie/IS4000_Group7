@@ -224,12 +224,16 @@ class PlanTask(Contract):
     depends_on: str | None = None
     condition: str | None = None
     for_each: str | None = None
+    # Build plan 3b: more wave-1 upstreams whose exports this dependant also imports (inputs only: no condition, no fan-out).
+    inputs_from: list[str] = []
     rerouted: bool = False  # handed to another agent once already (question only)
 
     @model_validator(mode='after')
     def _dependency(self):
-        if (self.condition or self.for_each) and not self.depends_on:raise ValueError('condition and for_each need depends_on')
+        if (self.condition or self.for_each or self.inputs_from) and not self.depends_on:raise ValueError('condition, for_each and inputs_from need depends_on')
         if self.depends_on == self.id:raise ValueError('a task cannot depend on itself')
+        if self.id in self.inputs_from or self.depends_on in self.inputs_from or len(set(self.inputs_from)) != len(self.inputs_from):
+            raise ValueError('inputs_from names other upstreams, once each')
         return self
 
 

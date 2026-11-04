@@ -189,9 +189,10 @@ def test_book_facts_carry_no_talking_points():
 def test_rm_exports_and_imports_follow_the_plan():
     rm=registry.RM_SPECS
     assert set(rm['rm_client'].exports)=={'client_ref','latest_note','reviews_due','clients_due','consent_active'}
-    assert rm['rm_calendar'].exports=={'meetings_next_7d':'list[meeting_ref]'}
+    assert rm['rm_calendar'].exports=={'meetings_next_7d':'list[meeting_ref]','requests_to_answer':'list[meeting_ref]'}  # 3b: today and priorities
     assert set(rm['rm_requests'].exports)=={'needs_meeting','topics'}
-    assert {'client_ref','latest_note','reviews_due','meetings_next_7d'}<=rm['rm_requests'].imports
+    assert {'client_ref','latest_note','reviews_due','meetings_next_7d','requests_to_answer'}<=rm['rm_requests'].imports
+    assert registry.INTENT_AGENT['today']=='rm_requests' and not {'rm_meeting_requests','rm_review_status'}&set(rm['rm_requests'].tools)
     assert {'needs_meeting','topics'}<=rm['rm_calendar'].imports
     assert registry.INTENT_AGENT['priorities']=='rm_requests' and registry.INTENT_AGENT['schedule']=='rm_calendar'
     assert {i for i,a in registry.INTENT_AGENT.items() if a=='rm_calendar'}=={'schedule','meeting_requests','decide_request','availability_change'}

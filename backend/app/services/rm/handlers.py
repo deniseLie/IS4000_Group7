@@ -10,7 +10,9 @@ availability cards are built by code from the records (the RM approves each thro
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v5 + the intent's task file) with strict JSON output and cited record ids.
+3. One model call (prompt rm_assistant/v5 + the intent's task file) with strict JSON output and cited record ids. For
+   `today` and `priorities` code has already ranked the records (services/rm/priority.py, build plan 3b): the model
+   explains each record's score parts and code puts the items back in rank order (in_rank_order).
 4. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
    links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
    missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
@@ -28,7 +30,7 @@ from app.services import customer_data,llm_gateway,prompts,tools
 from app.services.agents import registry,runner
 from app.services.authorization import PolicyDenied
 from app.services.privacy import redact
-from app.services.rm import checks
+from app.services.rm import checks,priority
 from app.services.rm import evidence as ev
 from app.services.rm.records import RmDenied
 
@@ -37,7 +39,7 @@ SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
     'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help',
-    'meeting_requests':'meeting_requests','availability_change':'availability','open':'open'}  # decide_request: a card from code, no model
+    'meeting_requests':'meeting_requests','availability_change':'availability','open':'open','today':'today'}  # decide_request: a card from code, no model
 HANDOVER_SECTIONS=['Client overview','Open requests and tickets','Recorded commitments','Pending reviews','Recorded preferences',
     'What the client was previously told','Gaps to clarify','Suggested introductory topics']
 STOP={'the','a','an','to','of','for','and','on','my','me','his','her','their','about','please','request','reply','ticket','client','draft','with','what','is','in'}
@@ -192,6 +194,8 @@ class Turn:
         self.book: list[dict]=book or []
         self.prompt_ids: list[str]=[]
         self.reads: dict[str,dict]={}
+        self.inputs: dict={}  # exports from upstream tasks (orchestrator.gather), set by rm/graph.py
+        self.facts: dict[str,Any]={}  # codes and counts for the agent span (the priority score's factors)
 
     async def read(self,name: str,args: dict) -> dict:
         self.reads[name]=result=await tools.call(name,args,self.ctx)
@@ -264,7 +268,7 @@ def brief_reply(intent: str,data: dict,bundle: ev.Bundle,context: dict,suggestio
         if not checks.safety(q):
             return {**clarify(q,[{'label':o,'message':o} for o in data.get('clarification_options') or [] if o.strip() and not checks.safety(o)],intent,context,'ai'),'origin':'ai'}
     sections=checks.check_sections(data.get('sections') or [],bundle,report,suggestions_need_sources)
-    if intent=='priorities':sections=no_duplicate_meetings(sections,bundle,report)
+    if intent in ('priorities','today'):sections=no_duplicate_meetings(sections,bundle,report)
     if intent=='handover_brief':sections=handover_order(sections)
     summary=checks.check_summary(data.get('summary',''),bundle,report)
     cited=[i for s in sections for item in s['items'] for i in item['source_ids']]
@@ -278,9 +282,10 @@ BOOKING=re.compile(r'\b(?:book|schedule|arrange|set up|propose)\b[^.]{0,40}\b(?:
 
 
 def no_duplicate_meetings(sections: list[dict],bundle: ev.Bundle,report: checks.Report) -> list[dict]:
-    """RM11: never suggest booking a meeting for a client who already has one confirmed (from the follow-up records)."""
-    confirmed={e.customer_id for e in bundle.items if e.id.startswith('followup-') and isinstance(e.data,dict) and e.data.get('confirmed_meeting')}
-    clients={e.customer_id:(e.data.get('client') or '') for e in bundle.items if e.id.startswith('followup-') and isinstance(e.data,dict)}
+    """RM11: never suggest booking a meeting for a client who already has one confirmed (confirmed_meeting on a follow-up
+    or ranked record)."""
+    confirmed={e.customer_id for e in bundle.items if isinstance(e.data,dict) and e.data.get('confirmed_meeting')}
+    clients={e.customer_id:(e.data.get('client') or '') for e in bundle.items if isinstance(e.data,dict) and e.customer_id and e.data.get('client')}
     out=[]
     for s in sections:
         keep=[]
@@ -292,6 +297,32 @@ def no_duplicate_meetings(sections: list[dict],bundle: ev.Bundle,report: checks.
             keep.append(item)
         if keep:out.append({**s,'items':keep})
     return out
+
+
+TODAY_SECTIONS=['Do first','Meeting requests to answer','Client requests','Meetings in the next 7 days','Deadlines and tasks']
+PRIORITY_SECTIONS=['Do first','Coming up','Specialist-managed (for awareness)']
+
+
+def in_rank_order(sections: list[dict],bundle: ev.Bundle,headings: list[str]) -> list[dict]:
+    """Build plan 3b: the order is code's, never the model's. Sections in the task file's order (others after them, as
+    written) and items within a section by the best rank among the records they cite (an item citing no ranked record
+    keeps its place after the ranked ones)."""
+    def rank(item: dict) -> int:
+        ranks=[e.data['rank'] for i in item['source_ids'] if (e:=bundle.get(i)) and isinstance(e.data,dict) and isinstance(e.data.get('rank'),int)]
+        return min(ranks,default=10**6)
+    place={h.lower():n for n,h in enumerate(headings)}
+    return [{**s,'items':sorted(s['items'],key=rank)} for s in sorted(sections,key=lambda s:place.get(s['heading'].strip().lower(),len(headings)))]
+
+
+def confirmed_meetings(followups: list[dict]) -> dict[int,str]:
+    """Each client's next confirmed meeting (rm_followups confirmed_meeting), so a ranked item can refer to it (RM11)."""
+    return {f['customer_id']:f['confirmed_meeting'] for f in followups if f.get('confirmed_meeting')}
+
+
+def fed(t: 'Turn',name: str) -> list[dict]|None:
+    """An upstream's list export passed in by orchestrator.gather (None when it was not passed)."""
+    export=t.inputs.get(name)
+    return export.value if export is not None and isinstance(export.value,list) else None
 
 
 def handover_order(sections: list[dict]) -> list[dict]:
@@ -312,9 +343,49 @@ async def h_inbox(t: Turn,plan,client_id):
 
 
 async def h_priorities(t: Turn,plan,client_id):
+    """Follow-ups across the book (RM11). Code ranks her requests, the meeting requests to answer (the Calendar's
+    requests_to_answer), review deadlines, meetings in the next 7 days, tasks and milestones (services/rm/priority.py);
+    the other follow-ups (specialist tickets, commitments, later dates) stay as unscored follow-up records."""
     await t.say('Reading deadlines, tickets, tasks and meetings across your book…')
-    bundle=ev.followups_bundle(await t.read('rm_followups',{}),await t.read('rm_appointments',{'start':today().isoformat(),'end':(today()+timedelta(days=30)).isoformat()}))
-    return brief_reply('priorities',await t.model('priorities',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
+    tickets,followups=await t.read('rm_tickets',{}),await t.read('rm_followups',{})
+    appointments=await t.read('rm_appointments',{'start':today().isoformat(),'end':(today()+timedelta(days=30)).isoformat()})
+    rows=followups['data']
+    items=priority.rank(today=today(),now=datetime.now(SGT),tickets=tickets['data'],requests=fed(t,'requests_to_answer') or [],
+        reviews=priority.reviews_due([f for f in rows if f.get('kind')=='review_deadline'],today()+timedelta(days=priority.DEADLINE_DAYS)),
+        meetings=priority.meetings_next_7d(appointments['data'],today()),followups=rows)
+    t.facts.update(priority.facts(items))
+    shown={x['key'] for x in items}
+    bundle=ev.ranked_bundle(items,confirmed_meetings(rows),str(followups.get('as_of')))
+    bundle=ev.followups_bundle({**followups,'data':[f for f in rows if priority.key_of(f) not in shown]},appointments,bundle)
+    reply=brief_reply('priorities',await t.model('priorities',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
+    return {**reply,'sections':in_rank_order(reply['sections'],bundle,PRIORITY_SECTIONS)}
+
+
+TODAY_NONE={'meeting_request':('meeting-requests-none','Meeting requests to answer','requests_to_answer'),
+    'request':('requests-none','Client requests waiting for you',None),'meeting':('meetings-none','Meetings in the next 7 days','meetings_next_7d'),
+    'review':('reviews-none','Compliance reviews due within 14 days','reviews_due'),'task':('tasks-none','Your tasks due within 14 days',None)}
+
+
+async def h_today(t: Turn,plan,client_id):
+    """Build plan 3b: her day in one answer. Her requests and tasks are read here; the meetings in the next 7 days and the
+    meeting requests to answer come from the Calendar, the reviews due from the Client (their exports, passed on by
+    orchestrator.gather). Code ranks them all (services/rm/priority.py); the model explains each record's score parts in
+    the task file's sections, and code puts the items back in rank order. A category with nothing in it, or one whose
+    records were not passed on, is a record of its own, so the answer says so instead of leaving it out."""
+    await t.say('Putting your day in order…')
+    tickets,followups=await t.read('rm_tickets',{}),await t.read('rm_followups',{})
+    requests,meetings,reviews=fed(t,'requests_to_answer'),fed(t,'meetings_next_7d'),fed(t,'reviews_due')
+    items=priority.rank(today=today(),now=datetime.now(SGT),tickets=tickets['data'],requests=requests or [],reviews=reviews or [],
+        meetings=meetings or [],followups=followups['data'])
+    t.facts.update(priority.facts(items))
+    as_of=str(tickets.get('as_of'))
+    bundle=ev.ranked_bundle(items,confirmed_meetings(followups['data']),as_of)
+    for kind,(source_id,title,name) in TODAY_NONE.items():
+        if name and fed(t,name) is None:
+            bundle.add(ev.Evidence(source_id.replace('-none','-not-read'),title,'record',{'read':False,'meaning':'Not read for this answer, so say it was not checked.'},as_of))
+        elif not any(x['kind']==kind for x in items):bundle.add(ev.Evidence(source_id,title,'record',{'count':0,'meaning':'None recorded.'},as_of))
+    reply=brief_reply('today',await t.model('today',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
+    return {**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)}
 
 
 async def h_reviews(t: Turn,plan,client_id):
@@ -982,4 +1053,4 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
 HANDLERS={'ticket_inbox':h_inbox,'priorities':h_priorities,'reviews':h_reviews,'schedule':h_schedule,'client_overview':h_overview,
     'meeting_history':h_history,'meeting_brief':h_brief,'ticket_summary':h_ticket,'draft_message':h_draft,'document_interaction':h_document,
     'actions_from_note':h_actions,'handover_brief':h_handover,'shared_note':h_shared,'book_question':h_book,'help':h_help,
-    'meeting_requests':h_meeting_requests,'decide_request':h_decide,'availability_change':h_availability}
+    'meeting_requests':h_meeting_requests,'decide_request':h_decide,'availability_change':h_availability,'today':h_today}

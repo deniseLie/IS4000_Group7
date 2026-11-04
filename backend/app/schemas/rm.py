@@ -11,8 +11,9 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,field_validator,mo
 
 Intent=Literal['ticket_inbox','priorities','reviews','schedule','client_overview','meeting_history','meeting_brief',
     'ticket_summary','draft_message','document_interaction','actions_from_note','handover_brief','book_question','help',
-    'meeting_requests','decide_request','availability_change']  # build plan 3a: the Calendar agent's intents
-BOOK_WIDE: frozenset[str]=frozenset({'ticket_inbox','priorities','reviews','book_question','help','meeting_requests','availability_change'})
+    'meeting_requests','decide_request','availability_change',  # build plan 3a: the Calendar agent's intents
+    'today']  # build plan 3b: her day, ranked by services/rm/priority.py
+BOOK_WIDE: frozenset[str]=frozenset({'ticket_inbox','priorities','reviews','book_question','help','meeting_requests','availability_change','today'})
 NEEDS_CLIENT: frozenset[str]=frozenset({'client_overview','meeting_history','meeting_brief','ticket_summary','draft_message',
     'document_interaction','actions_from_note','handover_brief'})
 TICKET_REF=r'^TCK-[0-9]{6,}$'

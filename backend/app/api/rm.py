@@ -29,7 +29,7 @@ from app.schemas.rm import (Block,ClientMessage,ConversationSave,Dismissal,Inter
 from app.services import audit,customer_data
 from app.services.llm_gateway import LLMError
 from app.services.privacy import redact
-from app.services.rm import graph,records
+from app.services.rm import graph,priority,records
 from app.services.rm.records import RmDenied,RmForbidden,RmSession,rm_scope
 
 SGT=timezone(timedelta(hours=8))
@@ -121,6 +121,22 @@ async def availability(request: Request,caller: Caller=Depends(rm_caller)):
 @router.get('/followups')
 async def followups(request: Request,caller: Caller=Depends(rm_caller)):
     return await run(lambda:records.followups(caller.ctx),request,caller,'rm.followups')
+
+@router.get('/priorities')
+async def priorities(request: Request,caller: Caller=Depends(rm_caller)):
+    """Build plan 3b: the Today page's ranked items with their score parts, scored by services/rm/priority.py (the same
+    score as the assistant's `today` and `priorities`). Reads only, each one book-checked and audited in SQL."""
+    async def read():
+        now=datetime.now(SGT)
+        day=now.date()
+        tickets,followups=await records.tickets(caller.ctx),await records.followups(caller.ctx)
+        requests,reviews=await records.meeting_requests(caller.ctx,'open'),await records.review_status(caller.ctx)
+        appointments=await records.appointments(caller.ctx,day,day+timedelta(days=priority.WEEK))
+        items=priority.rank(today=day,now=now,tickets=tickets['data'],requests=priority.requests_to_answer(requests['data']),
+            reviews=priority.reviews_due(reviews['data'],day+timedelta(days=priority.DEADLINE_DAYS)),
+            meetings=priority.meetings_next_7d(appointments['data'],day),followups=followups['data'])
+        return {'as_of':now.isoformat(),'points':priority.POINTS,'items':items}
+    return await run(read,request,caller,'rm.priorities')
 
 @router.get('/tasks')
 async def tasks(request: Request,customer_id: int|None=Query(None,gt=0),caller: Caller=Depends(rm_caller)):

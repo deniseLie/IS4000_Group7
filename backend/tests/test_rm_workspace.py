@@ -382,3 +382,22 @@ def test_moving_a_meeting_records_once_and_refuses_taken_times_and_other_books(d
     refused=move(later,str(uuid4()),other)
     assert refused.status_code==403 and code(refused)=='rm_not_in_book'
     assert move(later,str(uuid4()),reason='because').status_code==422
+
+
+def test_the_today_page_gets_one_ranked_list_with_its_reasons_from_her_book(database: 'Connection[SqlRow]',sophie: dict) -> None:
+    """Build plan 3b: GET /rm/priorities ranks her own book-checked reads with services/rm/priority.py (the assistant's
+    score), so the page never ranks; a meeting request past its answer-by time scores, and what a client wrote stays out."""
+    from app.services.rm import priority
+    database.execute("update rm.meeting_requests set respond_by=now()-interval '1 hour',created_at=now()-interval '3 days 1 minute' where request_id=%s",
+        (MEI_LING_REQUEST,))
+    got=client.get('/rm/priorities',headers=sophie)
+    assert got.status_code==200
+    body,items=got.json(),got.json()['items']
+    assert body['points']==priority.POINTS and items and [x['rank'] for x in items]==list(range(1,len(items)+1))
+    assert items==sorted(items,key=priority.order) and {x['customer_id'] for x in items}<={1002,1007}  # her book only
+    assert all(x['score']==sum(q['points'] for q in x['parts']) and all(q['reason'] for q in x['parts']) for x in items)
+    mei=next(x for x in items if x['kind']=='meeting_request' and x['ref']['request_id']==MEI_LING_REQUEST)
+    assert [(q['code'],q['points']) for q in mei['parts']]==[('respond_by_passed',30),('waiting',3)] and mei['do_first']
+    assert 'Renewing my fixed deposit' not in got.text and 'purpose' not in got.text
+    customer=client.get('/rm/priorities',headers=bearer(sub=str(uuid5(NAMESPACE_URL,'demobank-test-persona:1002'))))
+    assert customer.status_code==403 and code(customer)=='rm_only'
