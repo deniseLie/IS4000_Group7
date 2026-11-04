@@ -1,4 +1,4 @@
-"""Admin dashboard (AI engineering view): LangSmith evaluation experiments and recent /chat and /rm/assistant traces.
+"""Admin dashboard (AI engineering view): LangSmith evaluation experiments, prompts, failures and recent /chat and /rm/assistant traces.
 Every route needs a verified JWT whose administrator-owned app_metadata.demobank_role is 'admin' (services/quality.py)."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -11,11 +11,11 @@ from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.contracts import RequestContext
-from app.schemas.quality import Case,Experiment,Span,Trace
+from app.schemas.quality import Span,Trace
 from app.services import insights,prompts,quality
 
 WINDOW=Query('7d',pattern='^(24h|7d|30d|90d)$')
-SOURCE=Query('live',pattern='^(live|eval|all)$')
+NAME=r'^demobank-[A-Za-z0-9_.-]{1,120}$'  # an experiment of a synced dataset (quality.DATASET_PREFIX)
 
 router=APIRouter(prefix='/admin')
 
@@ -32,17 +32,6 @@ async def read(load,*args):
     except Exception as error:
         log_event('admin_unavailable',error_type=type(error).__name__)
         raise ApiError(503,'admin_unavailable','LangSmith cannot be read right now. Please retry.') from error
-
-
-@router.get('/experiments',response_model=list[Experiment])
-async def experiments(limit: int=Query(20,ge=1,le=50),ctx: RequestContext=Depends(admin)) -> list[Experiment]:
-    return await read(quality.experiments,limit)
-
-
-@router.get('/experiments/{name}',response_model=list[Case])
-async def experiment(name: str,ctx: RequestContext=Depends(admin)) -> list[Case]:
-    if not name.startswith(quality.DATASET_PREFIX):raise ApiError(404,'not_found','No such experiment.')
-    return await read(quality.experiment,name)
 
 
 @router.get('/traces',response_model=list[Trace])
@@ -91,3 +80,40 @@ async def failures(window: str=WINDOW,source: str=Query('all',pattern='^(live|ev
 @router.get('/failures/{run_id}')
 async def failure(run_id: UUID,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
     return await read(lambda:insights.card(quality.trace_runs(str(run_id))))
+
+
+async def named(name: str) -> dict[str,Any]:
+    found=next((e for e in await read(quality.experiment_runs) if e['name']==name),None)
+    if found is None:raise ApiError(404,'not_found','No such experiment.')
+    return found
+
+
+@router.get('/evaluations')
+async def evaluations(ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    exps,sets=await read(lambda:together((quality.experiment_runs,),(quality.datasets,)))
+    return {'datasets':insights.evaluations(exps,sets,quality.now())}
+
+
+@router.get('/evaluations/compare')
+async def compare(a: str=Query(...,pattern=NAME),b: str=Query(...,pattern=NAME),ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    first,second=await named(a),await named(b)
+    if first['dataset']!=second['dataset']:raise ApiError(422,'different_datasets','Compare two runs of the same dataset.')
+    return insights.compare(first,second)
+
+
+@router.get('/evaluations/{name}')
+async def evaluation(name: str,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    if not name.startswith(quality.DATASET_PREFIX):raise ApiError(404,'not_found','No such experiment.')
+    return insights.experiment_detail(await named(name))
+
+
+def prompts_of(days: int) -> dict[str,Any]:
+    live,evals,exps=together((quality.steps,'live',days),(quality.steps,'eval',days),(quality.experiment_runs,))
+    since=quality.now()-timedelta(days=days)
+    return {'window_days':days,'families':insights.prompt_catalogue(prompts.released(),prompts.in_use(),prompts.notes(),live,evals,
+        [e for e in exps if e['started_at']>=since]),'capped':len(live)>=quality.MAX_STEPS}
+
+
+@router.get('/prompts')
+async def prompt_page(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(prompts_of,quality.WINDOWS[window])

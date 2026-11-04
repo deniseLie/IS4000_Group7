@@ -11,8 +11,10 @@ async function get(path,token,signal) {
   if(!response.ok)throw new Error(body?.error?.message||'LangSmith cannot be read right now. Please retry.');
   return body;
 }
-export const loadExperiments=(token,signal)=>get('/experiments',token,signal);
-export const loadExperiment=(name,token,signal)=>get(`/experiments/${encodeURIComponent(name)}`,token,signal);
+export const loadEvaluations=(token,signal)=>get('/evaluations',token,signal);
+export const loadEvaluation=(name,token,signal)=>get(`/evaluations/${encodeURIComponent(name)}`,token,signal);
+export const loadCompare=(a,b,token,signal)=>get(`/evaluations/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,token,signal);
+export const loadPrompts=(window,token,signal)=>get(`/prompts?window=${encodeURIComponent(window)}`,token,signal);
 export const loadTraces=(token,signal)=>get('/traces',token,signal);
 export const loadTrace=(runId,token,signal)=>get(`/traces/${encodeURIComponent(runId)}`,token,signal);
 
@@ -81,3 +83,26 @@ export function kindCounts(groups) {
 
 // An error's first line (the exception and its message); the traceback stays behind a toggle.
 export function firstLine(text) {return (text||'').split(/\n|Traceback \(most recent call last\)/).find(line=>line.trim())?.trim()||'';}
+
+// ---- Evaluations and prompts ----
+export const LABELS={regressed:'Regressed',fixed:'Fixed',always_failing:'Always failing',flaky:'Flaky',failing:'Failing',passing:'Passing',not_scored:'Not scored'};
+export const COMPARED={regressed:'Regressed',fixed:'Fixed',still_failing:'Still failing',only_a:'Only in A',only_b:'Only in B',skipped:'Skipped',still_passing:'Still passing'};
+export const GROUPS={answer:'Answer (S)',trajectory:'Trajectory (T)',planner:'Planner',judge:'Judge (model-graded)'};
+export const MIN_COMPARE=10;  // below this many runs or cases a comparison says "too few to compare"
+
+// The full runs before and the latest full run of a dataset's timeline: the default pair to compare.
+export function defaultPair(timeline) {
+  const full=timeline.filter(point=>!point.subset);
+  return full.length>=2?[full.at(-2).experiment,full.at(-1).experiment]:timeline.length>=2?[timeline.at(-2).experiment,timeline.at(-1).experiment]:[null,null];
+}
+
+// Side-by-side numbers of two prompt versions; `enough` is false below MIN_COMPARE on either side.
+export function versionPair(a,b) {
+  const row=(label,pick,kind)=>({label,a:pick(a),b:pick(b),kind});
+  const rows=[row('Live calls',v=>v?.live_metrics?.calls??null,'count'),row('Live OK rate',v=>v?.live_metrics?.ok_rate??null,'rate'),
+    row('Live p95',v=>v?.live_metrics?.p95_s??null,'seconds'),row('Input tokens',v=>v?.live_metrics?.input_tokens??null,'count'),
+    row('Output tokens',v=>v?.live_metrics?.output_tokens??null,'count'),row('Eval cases',v=>v?.eval_metrics?.cases??null,'count'),
+    row('Eval pass rate',v=>v?.eval_metrics?.pass_rate??null,'rate'),row('Judge (model-graded)',v=>v?.eval_metrics?.judge??null,'count')];
+  const size=v=>Math.max(v?.live_metrics?.calls||0,v?.eval_metrics?.cases||0);
+  return {rows,enough:size(a)>=MIN_COMPARE&&size(b)>=MIN_COMPARE};
+}

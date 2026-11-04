@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {delta,filterGroups,firstLine,isAdmin,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary} from './admin.js';
+import {MIN_COMPARE,defaultPair,delta,filterGroups,firstLine,isAdmin,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -49,4 +49,22 @@ test('keeps only the first line of an error',()=>{
   assert.equal(firstLine("LLMBudgetExceeded('Per-request token budget is used up')\n\nTraceback (most recent call last):\n  File x"),"LLMBudgetExceeded('Per-request token budget is used up')");
   assert.equal(firstLine("LLMTimeout('Model request timed out')Traceback (most recent call last):"),"LLMTimeout('Model request timed out')");
   assert.equal(firstLine(null),'');
+});
+
+test('the default comparison is the last two full runs, else the last two runs', () => {
+  const point=(experiment,subset=false)=>({experiment,subset});
+  assert.deepEqual(defaultPair([point('a'),point('b'),point('c',true)]),['a','b']);
+  assert.deepEqual(defaultPair([point('a'),point('b',true)]),['a','b']);
+  assert.deepEqual(defaultPair([point('a')]),[null,null]);
+});
+
+test('two prompt versions are compared only with enough calls or cases on both sides', () => {
+  const version=(calls,cases)=>({live_metrics:calls?{calls,ok_rate:.9,p95_s:3,input_tokens:800,output_tokens:120}:null,eval_metrics:cases?{cases,pass_rate:.8,judge:null}:null});
+  const few=versionPair(version(MIN_COMPARE,0),version(3,4));
+  assert.equal(few.enough,false);
+  assert.deepEqual(few.rows.find(row=>row.label==='Live calls'),{label:'Live calls',a:MIN_COMPARE,b:3,kind:'count'});
+  const both=versionPair(version(0,MIN_COMPARE),version(40,0));
+  assert.equal(both.enough,true);
+  assert.equal(both.rows.find(row=>row.label==='Eval pass rate').b,null);
+  assert.equal(versionPair(undefined,version(20,0)).enough,false);
 });

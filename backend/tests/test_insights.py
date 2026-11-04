@@ -151,3 +151,82 @@ def test_agent_failures_come_from_the_request_summary_when_steps_were_not_read()
     assert (g['kind'],g['agent'],g['items'][0]['detail'])==('agent_timeout','fraud','from the request summary')
     stepped=[step('agent','t5',1,agent='fraud',intent='unrecognised_charge',status='ok')]
     assert [g['kind'] for g in insights.failures([row],stepped,[],NOW,1,'eval')['groups']]==['held_back']  # the steps say the agent was fine
+
+
+def test_timeline_marks_what_changed_between_full_runs_and_skips_subsets():
+    a,b,c=full('e1',3,8),full('e2',2,6,total=2),full('e3',1,9)
+    a['prompts'],c['prompts']={'retail':'v10','planner':'v7'},{'retail':'v11','planner':'v7'}
+    c['model']='sonnet'
+    points=insights.timeline([a,b,c])
+    assert [p['subset'] for p in points]==[False,True,False]
+    assert points[1]['changes']==[] and points[2]['changes']==['model haiku → sonnet','retail v10 → v11']
+    assert insights.changes({'answer_prompt':'v7'},{'answer_prompt':'v8'})==['answer v7 → v8']
+
+
+def test_check_trends_are_grouped_by_what_they_check():
+    graph=[exp('e1','demobank-graph',2,[('C23','fail',('nodes',))]),exp('e2','demobank-graph',1,[('C23','pass')])]
+    graph[0]['cases'][0]['checks']['reply_has']={'score':1,'comment':''}
+    rows={r['key']:r for r in insights.check_trends(graph,'demobank-graph')}
+    assert rows['reply_has']['group']=='answer' and rows['nodes']['group']=='trajectory'
+    assert [p['rate'] for p in rows['nodes']['points']]==[0,None] and rows['nodes']['latest']==0
+    assert insights.check_group('agents','demobank-planner')=='planner' and insights.check_group('judge_rubric','demobank-graph')=='judge'
+    assert insights.check_group('ticket_card_verification','demobank-qa1-client')=='answer'
+
+
+def test_cases_are_labelled_from_their_history():
+    label=insights.case_label
+    assert label(['pass','fail'])=='regressed' and label(['fail','pass'])=='fixed' and label(['fail','error','fail'])=='always_failing'
+    assert label(['pass','fail','pass','pass'])=='flaky' and label(['pass','pass'])=='passing' and label(['skipped'])=='not_scored'
+    assert label(['fail','fail','pass','pass'])=='passing' and label(['pass','fail','fail'])=='failing'
+    runs=[exp(f'e{i}','demobank-graph',12-i,[('C23','pass' if i%2 else 'fail'),('C24','pass')]) for i in range(12)]
+    heat=insights.heatmap(runs)
+    assert len(heat['experiments'])==10 and [r['case_id'] for r in heat['rows']]==['C23','C24']
+    assert heat['rows'][0]['label']=='fixed' and heat['labels']=={'fixed':1,'passing':1}
+
+
+def test_compare_two_runs_case_by_case():
+    a=exp('e1','demobank-graph',2,[('C23','pass'),('C24','fail',('nodes',)),('C25','fail',('tools',)),('C26','pass')])
+    b=exp('e2','demobank-graph',1,[('C23','fail',('reply_has',)),('C24','pass'),('C25','fail',('tools',)),('C27','pass')])
+    result=insights.compare(a,b)
+    kinds={r['case_id']:r['kind'] for r in result['rows']}
+    assert kinds=={'C23':'regressed','C24':'fixed','C25':'still_failing','C26':'only_a','C27':'only_b'}
+    assert result['rows'][0]['case_id']=='C23' and result['rows'][0]['b']['comments']=={'reply_has':'reply_has wrong'}
+    assert result['counts']['regressed']==1 and result['counts']['still_passing']==0
+
+
+def test_prompt_catalogue_joins_versions_logs_live_calls_and_eval_cases():
+    runs=[exp('e1','demobank-graph',2,[('C23','pass',(),['retail/v10+aa']),('C24','fail',('nodes',),['retail/v10+aa'])]),
+        exp('e2','demobank-graph',1,[('C23','pass',(),['retail/v11+bb'])])]
+    live=[step('llm','t1',1,agent='retail',prompt_version='v11+bb',outcome='ok',input_tokens=900,output_tokens=100),
+        step('llm','t2',1,agent='retail',prompt_version='v11+bb',outcome='timeout',retries=2)]
+    called=[{**step('llm','e2-C23',1,agent='planner',prompt_version='v7+cc'),'source':'eval'}]  # inside the eval trace of case C23 in e2
+    families={f['family']:f for f in insights.prompt_catalogue([('retail','v10'),('retail','v11'),('planner','v7')],{'retail':'v11','planner':'v7','fraud':'v7'},
+        {('retail','v11'):{'goal':'Shorter answers'}},live,called,runs)}
+    retail=families['retail']
+    assert [v['version'] for v in retail['versions']]==['v11','v10'] and retail['live']=='v11' and retail['latest_eval']=='v11' and not retail['untested']
+    v11,v10=retail['versions']
+    assert v11['log']=={'goal':'Shorter answers'} and v11['live_metrics']['calls']==2 and v11['live_metrics']['ok_rate']==0.5
+    assert v11['live_metrics']['outcomes']=={'ok':1,'timeout':1} and v11['live_metrics']['retries']==2
+    assert v10['eval_metrics']['pass_rate']==0.5 and v10['live_metrics'] is None and v11['eval_metrics']['cases']==1
+    assert families['planner']['versions'][0]['eval_metrics']['cases']==1  # from the case's trace, not its recorded prompt ids
+    assert families['fraud']['latest_eval'] is None and not families['fraud']['untested']
+    runs[1]['cases'][0]['prompt_ids']=['retail/v10+aa']
+    assert insights.prompt_catalogue([],{'retail':'v11'},{},[],[],runs)[0]['untested']
+
+
+def test_evaluation_routes(monkeypatch):
+    a=exp('demobank-graph-v2-a','demobank-graph',2,[('C23','pass')]);b=exp('demobank-graph-v2-b','demobank-graph',1,[('C23','fail',('nodes',))])
+    other=exp('demobank-planner-v2-c','demobank-planner',1,[('P03','pass')])
+    monkeypatch.setattr(quality,'experiment_runs',lambda:[a,b,other])
+    monkeypatch.setattr(quality,'datasets',lambda:[{'name':'demobank-graph','id':'d1','examples':8},{'name':'demobank-planner','id':'d2','examples':20}])
+    monkeypatch.setattr(quality,'steps',lambda source,days:[])
+    graph=client.get('/admin/evaluations',headers=ADMIN).json()['datasets'][0]
+    assert graph['dataset']=='demobank-graph' and graph['heatmap']['rows'][0]['label']=='regressed' and len(graph['timeline'])==2
+    body=client.get('/admin/evaluations/compare?a=demobank-graph-v2-a&b=demobank-graph-v2-b',headers=ADMIN).json()
+    assert body['counts']['regressed']==1
+    assert code(client.get('/admin/evaluations/compare?a=demobank-graph-v2-a&b=demobank-planner-v2-c',headers=ADMIN))=='different_datasets'
+    assert code(client.get('/admin/evaluations/compare?a=demobank-graph-v2-a&b=demobank-graph-v2-z',headers=ADMIN))=='not_found'
+    detail=client.get('/admin/evaluations/demobank-graph-v2-b',headers=ADMIN).json()
+    assert detail['cases'][0]['repro']=='python -m evaluation.langsmith_run --dataset demobank-graph --case C23'
+    body=client.get('/admin/prompts?window=30d',headers=ADMIN).json()
+    assert body['window_days']==30 and any(f['family']=='planner' and f['live'] for f in body['families'])

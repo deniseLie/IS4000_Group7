@@ -309,6 +309,181 @@ def untested_prompts(in_use: dict[str,str],steps: list[dict],experiments: list[d
     return [f'{family} {v}' for family,v in sorted(in_use.items()) if v and (family,v) not in seen] if seen else []
 
 
+# ---- Evaluations ----
+
+ANSWER_CHECKS=frozenset({'reply_has','reply_lacks','cites','record_sources','origin','fixed_route','needs_human','completed','played'})
+PLANNER_DATASET='demobank-planner'
+CHECK_GROUPS=('answer','trajectory','planner','judge')
+HEAT_RUNS=10
+
+
+def check_group(key: str,dataset: str) -> str:
+    if key.startswith('judge'):return 'judge'
+    if dataset==PLANNER_DATASET:return 'planner'
+    return 'answer' if key in ANSWER_CHECKS or key.startswith('ticket') else 'trajectory'
+
+
+def changes(before: dict | None,after: dict) -> list[str]:
+    """What changed between two runs of a dataset: model, pipeline, transport and prompt versions (when both recorded them)."""
+    if before is None:return []
+    found=[f'{k} {before[k]} → {after[k]}' for k in ('model','pipeline','transport') if before.get(k) and after.get(k) and before[k]!=after[k]]
+    a,b=before.get('prompts') or {},after.get('prompts') or {}
+    if a and b:found+=[f'{f} {a.get(f) or "—"} → {b.get(f) or "—"}' for f in sorted(set(a)|set(b)) if a.get(f)!=b.get(f)]
+    elif before.get('answer_prompt') and after.get('answer_prompt') and before['answer_prompt']!=after['answer_prompt']:
+        found.append(f"answer {before['answer_prompt']} → {after['answer_prompt']}")
+    return found
+
+
+def timeline(exps: list[dict]) -> list[dict[str,Any]]:
+    """One point per experiment (oldest first). Subset runs are flagged and compared with nothing; full runs with the full run before."""
+    largest=max((len(e['cases']) for e in exps),default=0);points=[];previous=None
+    for e in exps:
+        part=not e['cases'] or subset(e,largest)
+        points.append({'experiment':e['name'],'started_at':e['started_at'],'url':e['url'],'pass_rate':pass_rate(e['cases']),'counts':counts(e['cases']),
+            'cases':len(e['cases']),'subset':part,'model':e.get('model'),'transport':e.get('transport'),'judge_model':e.get('judge_model'),
+            'pipeline':e.get('pipeline'),'commit':e.get('commit'),'judge':mean(c.get('judge') for c in e['cases']),
+            'changes':[] if part else changes(previous,e)})
+        if not part:previous=e
+    return points
+
+
+def check_trends(exps: list[dict],dataset: str) -> list[dict[str,Any]]:
+    """Each check's pass rate (mean score) per experiment, so a drop shows whether wording, citations, routing or tools broke."""
+    keys=sorted({k for e in exps for c in e['cases'] for k in c['checks']})
+    rows=[]
+    for key in keys:
+        points=[]
+        for e in exps:
+            scores=[c['checks'][key]['score'] for c in e['cases'] if c['checks'].get(key,{}).get('score') is not None]
+            points.append({'experiment':e['name'],'rate':mean(scores),'n':len(scores)})
+        rows.append({'key':key,'group':check_group(key,dataset),'points':points,'latest':next((p['rate'] for p in reversed(points) if p['n']),None)})
+    return sorted(rows,key=lambda r:(CHECK_GROUPS.index(r['group']),r['key']))
+
+
+def case_label(statuses: list[str]) -> str:
+    """regressed / fixed (the last two runs), always_failing, flaky (pass and fail swapped twice or more), else failing or
+    passing by the latest run."""
+    seen=[s for s in statuses if s in ('pass','fail','error')]
+    if not seen:return 'not_scored'
+    bad=[s!='pass' for s in seen]
+    if len(seen)>=2 and bad[-1] and not bad[-2]:return 'regressed'
+    if len(seen)>=2 and not bad[-1] and bad[-2]:return 'fixed'
+    if all(bad):return 'always_failing'
+    if sum(a!=b for a,b in zip(bad,bad[1:]))>=2:return 'flaky'
+    return 'failing' if bad[-1] else 'passing'
+
+
+def heatmap(exps: list[dict],runs: int=HEAT_RUNS) -> dict[str,Any]:
+    """Cases × the last `runs` experiments; each case labelled from its whole history."""
+    last=exps[-runs:];history=case_history(exps)
+    ids=sorted({c['case_id'] for e in last for c in e['cases'] if c['case_id']})
+    rows=[]
+    for case_id in ids:
+        cells={e['name']:c['status'] for e in last for c in e['cases'] if c['case_id']==case_id}
+        rows.append({'case_id':case_id,'statuses':[cells.get(e['name']) for e in last],'label':case_label([c['status'] for _,c in history[case_id]])})
+    return {'experiments':[{'name':e['name'],'started_at':e['started_at']} for e in last],'rows':rows,
+        'labels':dict(Counter(r['label'] for r in rows))}
+
+
+def evaluations(experiments: list[dict],datasets: list[dict],now: datetime) -> list[dict[str,Any]]:
+    grouped=by_dataset(experiments)
+    out=[]
+    for d in datasets:
+        exps=grouped.get(d['name'],[])
+        full=full_runs(exps)
+        out.append({'dataset':d['name'],'examples':d.get('examples'),'runs':len(exps),'full_runs':len(full),
+            'last_run':exps[-1]['started_at'] if exps else None,'stale':bool(exps) and now-exps[-1]['started_at']>timedelta(days=STALE_DAYS),
+            'cases_last_full':len(full[-1]['cases']) if full else 0,'pass_rate':pass_rate(full[-1]['cases']) if full else None,
+            'timeline':timeline(exps),'checks':check_trends(exps,d['name']),'heatmap':heatmap(exps)})
+    return out
+
+
+def compare(a: dict,b: dict) -> dict[str,Any]:
+    """Case by case from run A (before) to run B (after)."""
+    ca={c['case_id']:c for c in a['cases'] if c['case_id']};cb={c['case_id']:c for c in b['cases'] if c['case_id']}
+    rows=[]
+    for case_id in sorted(set(ca)|set(cb)):
+        x,y=ca.get(case_id),cb.get(case_id)
+        if x is None or y is None:kind='only_b' if x is None else 'only_a'
+        else:
+            bx,by=x['status'] in ('fail','error'),y['status'] in ('fail','error')
+            kind='skipped' if 'skipped' in (x['status'],y['status']) else 'regressed' if by and not bx else 'fixed' if bx and not by else 'still_failing' if bx else 'still_passing'
+        side=lambda c:None if c is None else {'status':c['status'],'failed':c['failed'],'comments':{k:c['checks'][k]['comment'] for k in c['failed'] if c['checks'].get(k,{}).get('comment')},
+            'judge':c.get('judge'),'run_id':c['run_id'],'error':c.get('error')}
+        rows.append({'case_id':case_id,'kind':kind,'a':side(x),'b':side(y)})
+    order=('regressed','fixed','still_failing','only_a','only_b','skipped','still_passing')
+    return {'a':{k:a.get(k) for k in ('name','dataset','started_at','model','pipeline','commit')},'b':{k:b.get(k) for k in ('name','dataset','started_at','model','pipeline','commit')},
+        'changes':changes(a,b),'counts':{k:sum(r['kind']==k for r in rows) for k in order},'rows':sorted(rows,key=lambda r:(order.index(r['kind']),r['case_id']))}
+
+
+def experiment_detail(e: dict) -> dict[str,Any]:
+    return {**{k:e.get(k) for k in ('name','dataset','started_at','url','model','pipeline','transport','judge_model','commit','branch','partial','prompts')},
+        'counts':counts(e['cases']),'pass_rate':pass_rate(e['cases']),
+        'cases':[{**c,'repro':f"python -m evaluation.langsmith_run --dataset {e['dataset']} --case {c['case_id']}" if c['case_id'] else None} for c in e['cases']]}
+
+
+# ---- Prompts ----
+
+def prompt_versions(steps: list[dict]) -> dict[tuple,list[dict]]:
+    """(family, version) -> its llm runs."""
+    found=defaultdict(list)
+    for s in model_calls(steps):found[(s['meta'].get('agent'),version(s['meta']['prompt_version']))].append(s)
+    return found
+
+
+def call_metrics(calls: list[dict]) -> dict[str,Any] | None:
+    if not calls:return None
+    outcomes=Counter(c['meta'].get('outcome') or ('error' if c['error'] else 'ok') for c in calls)
+    return {'calls':len(calls),'ok_rate':ratio(outcomes.get('ok',0),len(calls)),'outcomes':dict(outcomes),
+        'retries':sum(c['meta'].get('retries') or 0 for c in calls),'p50_s':pct([c['latency_s'] for c in calls],.5),'p95_s':pct([c['latency_s'] for c in calls],.95),
+        'input_tokens':mean(c['meta'].get('input_tokens') for c in calls),'output_tokens':mean(c['meta'].get('output_tokens') for c in calls)}
+
+
+def cases_by_prompt(experiments: list[dict],eval_steps: list[dict]) -> dict[tuple,list[tuple[dict,dict]]]:
+    """(family, version) -> the eval cases it ran in: from the case's recorded prompt ids, or its trace's llm runs."""
+    by_run={c['run_id']:(e,c) for e in experiments for c in e['cases']}
+    found=defaultdict(dict)
+    for e,c in by_run.values():
+        for p in c.get('prompt_ids') or []:
+            if '/' in p:found[(p.split('/',1)[0],version(p.split('/',1)[1]))][c['run_id']]=(e,c)
+    for (family,v),calls in prompt_versions(eval_steps).items():
+        for s in calls:
+            if hit:=by_run.get(s['trace_id']):found[(family,v)][s['trace_id']]=hit
+    return {k:list(v.values()) for k,v in found.items()}
+
+
+def eval_metrics(runs: list[tuple[dict,dict]]) -> dict[str,Any] | None:
+    if not runs:return None
+    cases=[c for _,c in runs]
+    per=defaultdict(list)
+    for e,c in runs:per[e['dataset']].append(c)
+    return {'cases':len(cases),'pass_rate':pass_rate(cases),'counts':counts(cases),'judge':mean(c.get('judge') for c in cases),
+        'datasets':{d:{'cases':len(cs),'pass_rate':pass_rate(cs)} for d,cs in sorted(per.items())},
+        'last_run':max(e['started_at'] for e,_ in runs)}
+
+
+def vnum(v: str) -> int:
+    return int(v[1:]) if v[1:].isdigit() else 0
+
+
+def prompt_catalogue(released: list[tuple[str,str]],in_use: dict[str,str],notes: dict[tuple,dict],live_steps: list[dict],eval_steps: list[dict],
+        experiments: list[dict]) -> list[dict[str,Any]]:
+    """Every prompt family: its versions on disk (newest first), the live one, the one the latest eval ran, the prompt log, and
+    live (llm runs) and eval (cases it ran in) metrics per version."""
+    live=prompt_versions(live_steps);evals=prompt_versions(eval_steps);cases=cases_by_prompt(experiments,eval_steps)
+    families=sorted({f for f,_ in released}|set(in_use)|{f for f,_ in live if f}|{f for f,_ in cases if f})
+    out=[]
+    for family in families:
+        versions=sorted({v for f,v in released if f==family}|{v for f,v in [*live,*cases] if f==family and v}|({in_use[family]} if family in in_use else set()),key=vnum,reverse=True)
+        latest_eval=max(((m['last_run'],v) for v in versions if (m:=eval_metrics(cases.get((family,v),[])))),default=(None,None))[1]
+        out.append({'family':family,'live':in_use.get(family),'latest_eval':latest_eval,
+            'untested':bool(in_use.get(family)) and latest_eval is not None and latest_eval!=in_use.get(family),
+            'versions':[{'version':v,'on_disk':(family,v) in set(released),'live':in_use.get(family)==v,'log':notes.get((family,v)),
+                'live_metrics':call_metrics(live.get((family,v),[])),'eval_calls':call_metrics(evals.get((family,v),[])),
+                'eval_metrics':eval_metrics(cases.get((family,v),[]))} for v in versions]})
+    return out
+
+
 # ---- Failure card ----
 
 def bad_step(run: dict) -> bool:

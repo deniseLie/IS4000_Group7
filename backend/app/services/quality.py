@@ -15,7 +15,8 @@ from typing import Any
 from langsmith import schemas as ls_schemas
 from langsmith.utils import LangSmithRateLimitError
 from app.core import langsmith_client
-from app.schemas.quality import Case,Check,Experiment,Span,Trace
+from app.services import insights
+from app.schemas.quality import Check,Span,Trace
 
 ADMIN_ROLE='admin'
 DATASET_PREFIX='demobank-'  # every evaluation dataset langsmith_sync uploads (evaluation/langsmith_sync.DATASETS)
@@ -81,40 +82,6 @@ def datasets() -> list[dict[str,Any]]:
         return sorted(({'name':d.name,'id':str(d.id),'examples':d.example_count} for d in client().list_datasets(dataset_name_contains=DATASET_PREFIX)
             if d.name.startswith(DATASET_PREFIX)),key=lambda d:d['name'])
     return cached(('datasets',),load,600)
-
-
-def case_ids(dataset_id: str) -> dict[str,str | None]:
-    """example id -> case id (example metadata)."""
-    return cached(('cases',dataset_id),lambda:{str(e.id):(e.metadata or {}).get('case_id') for e in client().list_examples(dataset_id=dataset_id)},600)
-
-
-def experiments(limit: int=20) -> list[Experiment]:
-    def load():
-        found=[]
-        for dataset in datasets():
-            for p in islice(client().list_projects(reference_dataset_id=dataset['id']),limit):
-                meta=(p.extra or {}).get('metadata',{})
-                found.append(Experiment(name=p.name,dataset=dataset['name'],started_at=p.start_time,pipeline=meta.get('pipeline'),
-                    model=meta.get('model'),answer_prompt=meta.get('answer_prompt'),judge_model=meta.get('judge_model'),url=p.url))
-        return sorted(found,key=lambda e:e.started_at,reverse=True)[:limit]
-    return cached(('experiments',limit),load)
-
-
-def experiment(name: str) -> list[Case]:
-    def load():
-        project=client().read_project(project_name=name)
-        ids=case_ids(str(project.reference_dataset_id))
-        cases=[]
-        for run in client().list_runs(project_name=name,is_root=True):
-            out=run.outputs or {}
-            checks=checks_of(run.feedback_stats)
-            cases.append(Case(case_id=ids.get(str(run.reference_example_id)),status=status(checks,run.error),checks=checks,
-                answer=(out.get('answer') or '')[:2000],agents=out.get('agents') or {},tools=out.get('tools') or [],
-                service_reads=out.get('service_reads') or [],
-                model_calls=out.get('model_calls'),latency_s=run.latency,tokens=run.total_tokens,error=(run.error or '')[:300] or None,
-                run_id=str(run.id)))
-        return sorted(cases,key=lambda c:c.case_id or '')
-    return cached(('experiment',name),load)
 
 
 def project() -> str:
@@ -229,9 +196,14 @@ def dataset_runs(dataset_id: str,sessions: list[str]) -> list:
 
 
 def as_case(run,example) -> dict[str,Any]:
-    checks=checks_of(run.feedback_stats);out=run.outputs or {}
+    """One evaluation case run: status from its rule checks, what it was expected to do (dataset outputs) and what it did."""
+    checks=checks_of(run.feedback_stats);out=run.outputs or {};expected=example.outputs or {}
+    strings=lambda key:[str(x)[:120] for x in out.get(key) or [] if isinstance(x,(str,int))][:30] if isinstance(out.get(key),list) else []
     return {'case_id':(example.metadata or {}).get('case_id'),'run_id':str(run.id),'status':status(checks,run.error),
         'checks':{c.key:{'score':c.score,'comment':c.comment[:300]} for c in checks},
+        'expected':{k:expected[k] for k in insights.EXPECTED_SHOWN if k in expected},
+        'answer':out['answer'][:1500] if isinstance(out.get('answer'),str) else '','tools':strings('tools'),'service_reads':strings('service_reads'),
+        'model_calls':out.get('model_calls') if isinstance(out.get('model_calls'),int) else None,
         'failed':[c.key for c in checks if c.score==0 and not c.key.startswith('judge')],
         'judge':next((c.score for c in checks if c.key=='judge_rubric'),None),'latency_s':run.latency,'tokens':run.total_tokens or None,
         'error':short(run.error),'agents':out.get('agents') if isinstance(out.get('agents'),dict) else {},
@@ -313,7 +285,6 @@ def trace_runs(run_id: str) -> dict[str,Any]:
         runs=sorted(islice(client().list_runs(trace_id=first.trace_id),MAX_TRACE),key=lambda r:r.dotted_order or '')
         top=next((r for r in runs if r.parent_run_id is None),first)
         exp=next((e for e in experiment_runs() if e['id']==str(top.session_id)),None)
-        example=client().read_example(top.reference_example_id) if exp and top.reference_example_id else None
         try:url=client().get_run_url(run=top,project_id=top.session_id)
         except Exception:url=None
         rows=[]
@@ -322,6 +293,6 @@ def trace_runs(run_id: str) -> dict[str,Any]:
             if r.name in ('chat','rm_assistant'):row['request']=as_request(r,'eval' if exp else 'live')
             rows.append(row)
         case=next((c for c in exp['cases'] if c['run_id']==str(top.id)),None) if exp else None
-        return {'root_id':str(top.id),'url':url,'case':case,'asked':asked(top.inputs) if exp else None,'expected':(example.outputs or {}) if example else None,'runs':rows,'capped':len(runs)>=MAX_TRACE,
+        return {'root_id':str(top.id),'url':url,'case':case,'asked':asked(top.inputs) if exp else None,'expected':case.get('expected') if case else None,'runs':rows,'capped':len(runs)>=MAX_TRACE,
             'experiment':{k:exp[k] for k in ('name','dataset','model','pipeline','transport','commit','url')} if exp else None}
     return cached(('trace_runs',run_id),load)

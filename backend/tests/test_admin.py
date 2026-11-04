@@ -3,11 +3,12 @@ mapping from LangSmith feedback stats. LangSmith reads are replaced only in the 
 from datetime import datetime,timezone
 import os
 import pytest
-from app.schemas.quality import Check,Experiment
+from app.schemas.quality import Check
 from app.services import quality
 from tests.test_gateway import bearer,client,code,env  # noqa: F401  (env is the autouse JWKS/database fixture)
 
-EXPERIMENT=Experiment(name='demobank-qa1-client-v2-abc',dataset='demobank-qa1-client',started_at=datetime(2026,10,31,tzinfo=timezone.utc))
+EXPERIMENT={'id':'p1','name':'demobank-qa1-client-v2-abc','dataset':'demobank-qa1-client','started_at':datetime(2026,10,31,tzinfo=timezone.utc),
+    'url':None,'model':'haiku','partial':None,'cases':[]}
 ADMIN={'demobank_role':'admin'}
 
 
@@ -24,14 +25,15 @@ def test_admin_reads_the_actual_langsmith_project() -> None:
 
 
 def test_only_the_admin_role_from_app_metadata_can_read(monkeypatch):
-    monkeypatch.setattr(quality,'experiments',lambda limit:[EXPERIMENT])
-    assert code(client.get('/admin/experiments'))=='auth_required'
-    assert code(client.get('/admin/experiments',headers=bearer()))=='admin_only'
-    assert code(client.get('/admin/experiments',headers=bearer(user_metadata=ADMIN)))=='admin_only'
+    monkeypatch.setattr(quality,'experiment_runs',lambda:[EXPERIMENT])
+    monkeypatch.setattr(quality,'datasets',lambda:[{'name':'demobank-qa1-client','id':'d1','examples':20}])
+    assert code(client.get('/admin/evaluations'))=='auth_required'
+    assert code(client.get('/admin/evaluations',headers=bearer()))=='admin_only'
+    assert code(client.get('/admin/evaluations',headers=bearer(user_metadata=ADMIN)))=='admin_only'
     for role in ('customer','rm','support'):
-        assert code(client.get('/admin/experiments',headers=bearer(app_metadata={'demobank_role':role,'rm_id':'00000000-0000-4000-8000-100200000002'})))=='admin_only'
-    response=client.get('/admin/experiments',headers=bearer(app_metadata=ADMIN))
-    assert response.status_code==200 and response.json()[0]['name']==EXPERIMENT.name
+        assert code(client.get('/admin/evaluations',headers=bearer(app_metadata={'demobank_role':role,'rm_id':'00000000-0000-4000-8000-100200000002'})))=='admin_only'
+    response=client.get('/admin/evaluations',headers=bearer(app_metadata=ADMIN))
+    assert response.status_code==200 and response.json()['datasets'][0]['timeline'][0]['experiment']==EXPERIMENT['name']
 
 
 def test_the_quality_page_routes_are_gone():
@@ -43,13 +45,15 @@ def test_an_admin_is_not_a_relationship_manager():
 
 
 def test_langsmith_failure_is_reported_and_names_are_bounded(monkeypatch):
-    def down(limit):raise ConnectionError('down')
-    monkeypatch.setattr(quality,'experiments',down)
+    def down():raise ConnectionError('down')
+    monkeypatch.setattr(quality,'experiment_runs',down)
     admin=bearer(app_metadata=ADMIN)
-    assert code(client.get('/admin/experiments',headers=admin))=='admin_unavailable'
-    assert code(client.get('/admin/experiments/someone-elses-project',headers=admin))=='not_found'
+    assert code(client.get('/admin/evaluations',headers=admin))=='admin_unavailable'
+    assert code(client.get('/admin/evaluations/someone-elses-project',headers=admin))=='not_found'
+    assert client.get('/admin/evaluations/compare?a=x&b=demobank-a',headers=admin).status_code==422
     assert client.get('/admin/traces/not-a-uuid',headers=admin).status_code==422
-    assert client.get('/admin/experiments?limit=500',headers=admin).status_code==422
+    assert client.get('/admin/traces?limit=500',headers=admin).status_code==422
+    assert client.get('/admin/prompts?window=1y',headers=admin).status_code==422
 
 
 def test_feedback_stats_become_checks_and_a_status():

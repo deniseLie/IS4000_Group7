@@ -6,6 +6,8 @@ import re
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1] / 'prompts'
+LOG = Path(__file__).resolve().parents[3] / 'docs' / 'prompt-log'
+NOTE_FIELDS = {'goal': ('Goal', 'Scope'), 'change': ('Change from previous', 'Behaviour'), 'results': ('Results', 'Validation'), 'decision': ('Decision',)}
 ORDER = ('system', 'format', 'public_only')  # digest order; keeps the ids of released answer prompts unchanged
 
 @lru_cache
@@ -43,3 +45,16 @@ def in_use():
 def released():
     """Every (agent, version) on disk, for the prompt-log and immutability tests."""
     return sorted((d.parent.name, d.name) for d in ROOT.glob('*/v*') if (d / 'system.md').is_file())
+
+@lru_cache
+def notes():
+    """(agent, version) -> date, goal, change, results and decision from docs/prompt-log/<agent>/<version>.md (the log's table rows;
+    older entries name some fields differently). Empty where the docs are not deployed."""
+    found = {}
+    for path in sorted(LOG.glob('*/v*.md')):
+        text = path.read_text(encoding='utf-8')
+        rows = dict(re.findall(r'^\|\s*([^|]+?)\s*\|\s*(.*?)\s*\|\s*$', text, re.M))
+        date = re.search(r'\((\d{4}-\d{2}-\d{2})\)', text.partition('\n')[0])
+        found[(path.parent.name, path.stem)] = {'date': date.group(1) if date else None,
+            **{key: next((rows[f][:400] for f in fields if rows.get(f)), None) for key, fields in NOTE_FIELDS.items()}}
+    return found

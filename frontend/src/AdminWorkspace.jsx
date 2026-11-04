@@ -3,6 +3,7 @@ import Sidebar,{TabBar} from './components/Sidebar';
 import EvaluationsPage from './components/admin/EvaluationsPage';
 import FailuresPage from './components/admin/FailuresPage';
 import OverviewPage from './components/admin/OverviewPage';
+import PromptsPage from './components/admin/PromptsPage';
 import TracesPage from './components/admin/TracesPage';
 import {supabase} from './lib/supabase';
 
@@ -11,6 +12,7 @@ const PAGES=[
   {view:'overview',icon:'chart',label:'Overview',short:'Overview',Page:OverviewPage},
   {view:'failures',icon:'alert',label:'Failures',short:'Failures',Page:FailuresPage},
   {view:'evaluations',icon:'check',label:'Evaluations',short:'Evals',Page:EvaluationsPage},
+  {view:'prompts',icon:'layers',label:'Prompts',short:'Prompts',Page:PromptsPage},
   {view:'traces',icon:'history',label:'Traces',short:'Traces',Page:TracesPage},
 ];
 const VIEWS=PAGES.map(page=>page.view);
