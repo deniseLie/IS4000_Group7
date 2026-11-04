@@ -204,3 +204,17 @@ def test_each_rm_agent_may_call_only_its_own_tools(records):
         insight = desk.model_copy(update={'agent': 'rm_client_insight'})
         with pytest.raises(PolicyDenied):await tools.call('rm_tickets', {}, insight)
     asyncio.run(main())
+
+
+def test_several_tasks_without_names_take_the_one_client_named_in_the_message(records, monkeypatch):
+    calls, data = records
+    plan(monkeypatch, [{**task, 'client_name': ''} for task in R23])
+    monkeypatch.setitem(handlers.HANDLERS, 'handover_brief', sample('handover_brief', ('rm_handover_sources',)))
+    reply = run("I just inherited David. If he's agreed to share his handover note, include it in a brief", None)
+    assert reply['clarification'] is None and any(s['heading'].startswith('Handover note shared by David') for s in reply['sections'])
+    calls.clear()
+    plan(monkeypatch, [{'intent': 'client_overview', 'depends_on': 0}, {'intent': 'ticket_inbox', 'depends_on': 0}])
+    monkeypatch.setitem(handlers.HANDLERS, 'client_overview', sample('client_overview'))
+    monkeypatch.setitem(handlers.HANDLERS, 'ticket_inbox', sample('ticket_inbox'))
+    reply = run('Compare Michelle and David, then show my inbox', None)  # two clients named: the task must name its own
+    assert 'Which client is this about?' in str(reply) and 'client_overview for' not in str(reply)  # the overview asks

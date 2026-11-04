@@ -176,8 +176,10 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
             client_id=e['item'].get('customer_id')
             stop=None if any(c['customer_id']==client_id for c in rt.book) else refusal(turn.context(None))
         else:
-            # The names in the message apply only when the message is one task; otherwise each task has its own name.
-            client_id,stop=await turn.resolve_client(plan,[] if rt.req.intent or e.get('several') else rt.named)
+            # The names in the message apply to a one-task message; with several tasks each task's own name wins, and a task
+            # without one takes the message's client only when exactly one client in her book is named.
+            several=e.get('several') and (e.get('client_name') or len(rt.named)!=1)
+            client_id,stop=await turn.resolve_client(plan,[] if rt.req.intent or several else rt.named)
             if rt.req.intent and rt.req.context.client_id and not client_id:client_id=rt.req.context.client_id
         if 'latest_note' in inputs and client_id:  # R22: follow-ups from the note the brief read
             turn.req=rt.req.model_copy(update={'context':rt.req.context.model_copy(update={'client_id':client_id,'note_id':inputs['latest_note'].value})})
