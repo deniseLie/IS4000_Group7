@@ -2,7 +2,7 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-fraud and login wording, an explicit request for a person, greetings), then one planner/v7 call, then the rule
+fraud and login wording, an explicit request for a person, greetings), then one planner/v8 call, then the rule
 overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent. Agents never
 write: what they propose is saved by compose as one offer group, and only a later confirmation (act) runs it. There is
 no checkpointer: a crash fails the turn and the client retries, which is safe because offers are idempotent.
@@ -28,6 +28,7 @@ from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest, Message
 from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, Export, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
 from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, PlanEvent, PlannedSection, Source
+from app.schemas.meeting_requests import MeetingRequestResult
 from app.schemas.tickets import TicketResult
 from app.services import audit, fraud_reports, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
 from app.services.llm_gateway import LLMError
@@ -38,7 +39,7 @@ from app.services.guardrail import FRAUD
 
 MAX_TASKS = 5
 MAX_ITEMS = 5  # fan-out cap per list export
-PLANNER = 'v7'
+PLANNER = 'v8'  # v8: Relationship meeting_request (RM copilot build plan 2a)
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
 GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
 SECURITY = re.compile(r'\b(?:security|login|log\s*in|sign\s*in|locked\s+out|lockout|password|passcode|phishing|scams?|hacked|compromised|2fa|mfa|otp)\b', re.I)
@@ -83,6 +84,8 @@ CANCELLED = 'Okay, nothing has been sent.'
 STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try again, or use the official app.'
 DONE = 'Done. You can see the receipt in Activity.'
 TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
+MEETING_SENT = ('Sent: your meeting request is with your relationship manager. They will answer by {respond_by} (Singapore time): '
+    'they accept one of your times, suggest another or reply in a message. You can follow it in My requests → Meetings.')  # 0106
 LINKED = ' It is linked to your earlier request {reference}.'
 CHAIN_STOPPED = 'I didn’t do this next step, because the step before it didn’t go through. Nothing was changed for it.'
 # Dependencies (§14.6): fixed wording, never the planner's text.
@@ -142,6 +145,7 @@ def entity_agent(question: str) -> TargetAgent | None:
     if FRAUD.search(question) and not (LOGIN.search(question) and RELATED.search(question)):return 'security'
     if LOGIN.search(question) or PHISHING.search(question) or LOST.search(question):return 'security'
     if RM_REQUEST.search(question):return 'relationship'
+    if meeting_answers.ASK.search(question) and not meeting_answers.EXISTING.search(question):return 'relationship'  # a meeting request, whatever its topic
     found = [agent for agent, pattern in TOPICS.items() if pattern.search(question)]
     return found[0] if len(found) == 1 else None
 
@@ -162,7 +166,9 @@ def intent_for(agent: TargetAgent, question: str) -> str:
     if agent == 'compliance':return 'document_findings' if DOCUMENTS.search(question) else 'review_status'
     if agent == 'relationship':
         if client_intents.request_status(question):return 'request_status'
-        return 'meeting_times' if re.search(r'\b(?:meet|meeting|appointment|slot|book)\b', question, re.I) else OPEN_INTENT
+        if meeting_answers.EXISTING.search(question):return 'appointments'  # the meetings she already has
+        if meeting_answers.ASK.search(question) or re.search(r'\b(?:meet|meeting|appointment|book)\b', question, re.I):return 'meeting_request'
+        return 'meeting_times' if meeting_answers.AVAILABILITY.search(question) else OPEN_INTENT
     return 'general'
 
 
@@ -188,7 +194,8 @@ def critical_task(question: str, language: str) -> PlanTask | None:
     if FRAUD.search(question) or FRAUD.search(probe):return task('security', question, message=question)
     # The typo copy reads "locked" as "blocked", so sign-in words are matched on her own words too.
     if LOGIN.search(question) or LOGIN.search(probe) or LOST.search(probe):return task('security', question)
-    if RM_REQUEST.search(probe) or rm_handover.needs_person(probe):return task('relationship', question, handover='rm')
+    # A meeting she asks the RM to arrange is a meeting request (2a), never a handover (rm_handover.MEETING).
+    if (RM_REQUEST.search(probe) and not rm_handover.MEETING.search(probe)) or rm_handover.needs_person(probe):return task('relationship', question, handover='rm')
     return None
 
 
@@ -216,9 +223,9 @@ def follow_up(question: str, history: list[Message]) -> PlanTask | None:
     # A reply to "which card do you mean?" goes back to the card answer, however short ("the travel one").
     if not MULTIPLE.search(question) and (card_answers.awaiting_card(history) or limit_context.active(history)):
         return PlanTask(id='t1', agent='accounts', intent='card_figures', question=question, entities={'follow_up': True})
-    # Picking or confirming a meeting time we just offered goes back to the meeting flow (CR17).
+    # Changing the meeting request we just drafted (times, format, what it is about) goes back to the draft (2a).
     if meeting_answers.awaiting(history):
-        return PlanTask(id='t1', agent='relationship', intent='meeting_times', question=question, entities={'follow_up': True})
+        return PlanTask(id='t1', agent='relationship', intent='meeting_request', question=question, entities={'follow_up': True})
     return None
 
 
@@ -282,7 +289,7 @@ def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
         if (FRAUD.search(item.question) or FRAUD.search(text)) and not (LOGIN.search(text) and RELATED.search(text)):
             item = item.model_copy(update={'agent': 'security', 'intent': 'unrecognised_charge'})
         elif LOGIN.search(item.question) or LOGIN.search(text):item = item.model_copy(update={'agent': 'security', 'intent': 'login_help'})
-        elif RM_REQUEST.search(text) and not handovers:
+        elif RM_REQUEST.search(text) and not handovers and not rm_handover.MEETING.search(text):
             item = item.model_copy(update={'agent': 'relationship', 'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
         routed.append(item)
     if handovers:  # one handover per part she asked a person about, in her words; a fraud report stays with Security
@@ -555,6 +562,7 @@ async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str
     if isinstance(receipt.result, TicketResult):
         label = getattr(command.target, 'category_label', 'support').lower()
         return TICKET_RAISED.format(label=label, reference=receipt.result.reference) + link
+    if isinstance(receipt.result, MeetingRequestResult):return MEETING_SENT.format(respond_by=receipt.result.respond_by_text) + link
     return DONE + link
 
 
@@ -634,11 +642,21 @@ def validation_offer(rows: list[tuple[PlanTask, AgentOutput]], ctx: RequestConte
         'customer case; no rejected answer is included.'}, summary='Pass the part I couldn’t check to your relationship manager')]
 
 
+async def superseded(proposals: list[OfferProposal], ctx: RequestContext, conversation_id: UUID | None) -> None:
+    """A redrafted meeting request replaces the draft still open in this chat (her new times or format are her answer
+    to it), so a typed yes answers the new one. Only groups holding nothing but a meeting request are cancelled."""
+    if conversation_id is None or not any(p.type == 'meeting.request' for p in proposals):return
+    current = ctx.model_copy(update={'agent': None})
+    for group, items in (await offers.open_groups(current, conversation_id)).items():
+        if group != offers.group_for(ctx.case_id) and all(o.type == 'meeting.request' for o in items):await offers.cancel(group, current)
+
+
 async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     """Sections in plan priority order, then the offers saved as one group; fixed lines (act outcomes, rephrase) last."""
     ctx = runtime.context.request
     rows = ordered(state)
     proposals = offer_order(rows) + validation_offer(rows, ctx)
+    if proposals:await superseded(proposals, ctx, runtime.context.conversation_id)
     saved = await offers.save(proposals, ctx, runtime.context.turn_id) if proposals else []
     by_task: dict[str, list[tuple[OfferProposal, object]]] = {}
     for proposal, offer in zip(proposals, saved, strict=True):by_task.setdefault(proposal.task_id, []).append((proposal, offer))

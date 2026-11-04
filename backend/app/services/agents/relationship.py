@@ -11,12 +11,12 @@ from app.schemas.events import Source
 from app.schemas.relationship_records import RelationshipRecords
 from app.services import llm_gateway,prompts
 from app.core.observability import log_event
-from app.services.agents import relationship_records,meeting_answers
+from app.services.agents import relationship_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.privacy import redact
 from app.services.source_checks import dates,dates_supported
 
-PROMPT='v5'
+PROMPT='v6'
 
 ACTION_CLAIM=re.compile(r"\b(?:I|we)(?:['’]ve)?\s+(?:(?:have|will|just|successfully|already)\s+){0,3}(?:book(?:ed)?|reserv(?:e|ed)|schedul(?:e|ed)|cancel(?:led|ed)?|sent|send|submit(?:ted)?|shar(?:e|ed)|sav(?:e|ed)|grant(?:ed)?|revok(?:e|ed)|contact(?:ed)?)\b",re.I)
 
@@ -79,14 +79,14 @@ def validate_result(task: Task,raw: str,evidence: list[Evidence]) -> AgentResult
     return result
 
 
-async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
+async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence],
+        records: RelationshipRecords | None=None) -> tuple[AgentResult,list[Evidence],str]:
+    """The model answer from her relationship records. Meeting requests are drafted from the records before this
+    (agents/meeting_answers, called by rules.relationship_rules with the same records)."""
     question=task.entities['question']
     if not isinstance(question,str):raise ValueError('Relationship task question must be text')
-    records=await relationship_records.load(ctx)
+    records=records or await relationship_records.load(ctx)
     evidence=[*public_evidence,*evidence_for(records)]
-    # Free times, holding one and confirming it come straight from the records (CR17), never withheld.
-    direct=await meeting_answers.respond(task.task_id,question,history,records,ctx)
-    if direct is not None:return direct,evidence,prompts.load('relationship',PROMPT)['id']
     pv=prompts.load('relationship',PROMPT)
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)

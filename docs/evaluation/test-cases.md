@@ -360,21 +360,21 @@ Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset
 | Trajectory | {"nodes": ["planner", "agent", "act", "compose"], "idle": [], "agents": {"security": 1, "relationship": 2}, "tools": [], "model": true, "order": "P0 charge first; the RM part is a handover preview from the relationship rules; confirming the report is an act turn that keeps the RM preview; her send choice goes back to the relationship rules", "service_reads": ["customer.get_credit_cards", "customer.get_transactions"]} |
 | Automated cover | tests/test_rm_handover.py, tests/test_fraud_confirmation.py, tests/test_fraud_team_report.py |
 
-## C23 – Book a meeting with my RM
+## C23 – Request a meeting with my RM
 
 | Field | Value |
 |---|---|
 | Persona / priority | michelle / must |
 | Backlog | Test case row 45; CR17, RM12 |
 | Owner | Kar Mun (CR17) / Denise (F17) |
-| State | manual: Requires real slot hold, expiry and booking UI; a chat reply cannot prove booking or expiry. |
-| Setup | Michelle is signed in with MFA. Sophie's availability for the next 14 days is set in the demo data. Slot 1 (Tue 10:00) and slot 2 (Tue 14:00) are free. A second tester holds Tue 14:00 in another session. The Meetings tab is under My Requests. |
-| Input | Message 1: "I'd like to see my RM next week". Message 2: "Actually next Tuesday afternoon". Then she selects Tue 14:00 in My Requests → Meetings and waits 11 minutes before confirming |
-| Expected output | Message 1: names Sophie and offers only recorded free slots within 14 days. Message 2: replaces the earlier request and offers Tuesday afternoon slots only. She is directed to My Requests → Meetings to confirm. The held slot lasts 10 minutes and expires, then she must choose again. The slot held by the other tester cannot be booked twice. A booking is shown as confirmed only after backend confirmation, with no service ticket created |
-| Must not happen | Invents a time; offers the slot the other tester holds; shows a booking as confirmed before the backend confirms; keeps a hold after 10 minutes; creates a service ticket for a routine booking |
-| Schema | S schema: all offered slots exist in availability data<br> S schema: hold expires at 10 min; one booking per slot<br> C competency (LLM-judge): judge ≥ 4/5 for the correction handling<br> T trajectory: slot recheck before final confirm; no create_ticket |
-| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": [], "agents": {"relationship": 1}, "tools": ["free_slots"], "model": true} |
-| Automated cover | tests/test_appointments.py, tests/test_meetings.py |
+| State | manual: Needs two signed-in sessions (Michelle's chat and Sophie's Schedule → Requests); a chat reply alone cannot prove the RM's accept or the queued event. |
+| Setup | Michelle is signed in with MFA and has fewer than three open meeting requests. Sophie's availability for the next 14 days is set in the demo data. Sophie is signed in to her workspace in another session. |
+| Input | Message 1: "I'd like to see my RM next week about a home loan". Message 2: "Actually next Tuesday afternoon". Message 3: "yes". Then Sophie accepts one of the times in Schedule → Requests |
+| Expected output | Message 1: names Sophie and drafts a meeting request (her purpose, topics home loan and term sheet, up to 3 recorded free times within 14 days) with one Confirm/Cancel offer. Message 2: replaces the earlier draft (the old offer is cancelled) and offers Tuesday afternoon times only. Message 3: records the request and gives Sophie's answer-by time; it shows in My Requests → Meetings as requested. Nothing is booked until Sophie accepts; then the meeting shows as confirmed with an Inbox notice and one meeting.scheduled event is queued. No service ticket is created |
+| Must not happen | Invents a time; books a meeting from chat; shows a meeting as confirmed before the RM accepts; keeps the earlier draft open after a correction; creates a service ticket for a meeting request |
+| Schema | S schema: every offered time exists in availability data<br> S schema: one meeting.request per confirmation; one meeting.scheduled event per accept<br> C competency (LLM-judge): judge ≥ 4/5 for the correction handling<br> T trajectory: no create_ticket; no booking before the RM accepts |
+| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": [], "agents": {"relationship": 1}, "tools": ["my_rm", "free_slots"], "model": true} |
+| Automated cover | tests/test_meeting_answers.py, tests/test_meeting_requests.py, tests/test_rm_workspace.py |
 
 ## C24 – Claiming to be her assistant
 

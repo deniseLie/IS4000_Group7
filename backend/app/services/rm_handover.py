@@ -63,8 +63,8 @@ TRANSFER_STATUS=re.compile(
     r"|\bwhy\s+(?:is|has|did|hasn['’]?t|isn['’]?t|was)\b",re.I)
 HOW_TO=re.compile(r"^\s*(?:how\s+(?:do|can|should|would|does)\s+(?:i|you|one|it)|what\s+(?:is|are)\s+the\s+(?:fees?|limits?|charges?|steps|process|cut[- ]?off)"
     r"|can\s+i\s+(?:make|send|do)\s+(?:an?\s+)?(?:international|overseas|foreign|telegraphic)?\s*(?:transfers?|payments?)\b)",re.I)
-# Booking a meeting is self-service (CR17: My requests > Meetings), so it is never handed over.
-MEETING=re.compile(r'\b(?:meet|meeting|appointment|book(?:ing)?|schedule|catch up)\b',re.I)
+# Asking for a meeting is self-service (a meeting request since 2a; My requests > Meetings), so it is never handed over.
+MEETING=re.compile(r'\b(?:meet|meeting|appointment|book(?:ing)?|schedule|catch[- ]?up|(?:phone|video)\s+call)\b',re.I)
 # Kept for callers and tests that use the combined rule.
 HANDOVER=re.compile('|'.join(f'(?:{p.pattern})' for p in (ADVICE,FEES,COMPLAINT,CONTACT)),re.I)
 

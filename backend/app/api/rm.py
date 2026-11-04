@@ -24,8 +24,8 @@ from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event,request_facts,start_trace
 from app.schemas.contracts import RequestContext
-from app.schemas.rm import (Block,ClientMessage,ConversationSave,Dismissal,InteractionApproval,RmAssistantRequest,ServiceRequestDraft,ServiceRequestSubmit,
-    TasksApproval,TaskStatus,WorkingHours)
+from app.schemas.rm import (Block,ClientMessage,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
+    ServiceRequestDraft,ServiceRequestSubmit,TasksApproval,TaskStatus,WorkingHours)
 from app.services import audit,customer_data
 from app.services.llm_gateway import LLMError
 from app.services.privacy import redact
@@ -36,6 +36,7 @@ SGT=timezone(timedelta(hours=8))
 router=APIRouter(prefix='/rm')
 BUSINESS={'22023':400,'P1001':409,'23505':409,'P0002':404,'42501':403}
 NOT_IN_BOOK='This client is not in your book. The attempt was recorded.'
+SLOT_REFUSED='that time cannot be booked'  # rm.slot_problem refusals (0106): working hours, blocks, overlap, weekly limit
 
 
 class Caller:
@@ -65,6 +66,7 @@ def failure(error: Exception,tool: str) -> ApiError:
     log_event('rm_request_failed',logging.WARNING,tool=tool,error_type=type(error).__name__,db_code=code)
     if code in BUSINESS:
         message=(getattr(error,'message',None) or '').strip() or 'The request was refused.'
+        if code=='P1001' and message.startswith(SLOT_REFUSED):return ApiError(409,'rm_slot_unavailable',message[:1].upper()+message[1:300])
         return ApiError(BUSINESS[code],'rm_refused' if code!='42501' else 'rm_forbidden',message[:300])
     return ApiError(503,'rm_unavailable','Your records could not be read right now. Nothing was changed. Please retry.')
 
@@ -177,6 +179,21 @@ async def remove_block(block_id: UUID,request: Request,caller: Caller=Depends(rm
 @router.post('/followups/dismiss')
 async def dismiss(body: Dismissal,request: Request,caller: Caller=Depends(rm_caller)):
     return await run(lambda:records.dismiss_followup(caller.ctx,body.item_key),request,caller,'rm.dismiss_followup')
+
+
+# Meeting requests (0106, build plan 2a): she accepts a preferred time, proposes another or declines; moves a meeting.
+# A time SQL refuses is 409 rm_slot_unavailable; a request or meeting outside her book is 403 rm_not_in_book.
+@router.get('/meeting-requests')
+async def meeting_requests(request: Request,status: str=Query('open',pattern='^(open|scheduled|closed)$'),caller: Caller=Depends(rm_caller)):
+    return await run(lambda:records.meeting_requests(caller.ctx,status),request,caller,'rm.meeting_requests')
+
+@router.post('/meeting-requests/{request_id}/decide')
+async def decide_meeting_request(request_id: UUID,body: MeetingDecision,request: Request,caller: Caller=Depends(rm_caller)):
+    return await run(lambda:records.decide_meeting_request(caller.ctx,request_id,body),request,caller,'rm.meeting_request_decide')
+
+@router.post('/appointments/{appointment_id}/reschedule')
+async def reschedule_meeting(appointment_id: UUID,body: MeetingMove,request: Request,caller: Caller=Depends(rm_caller)):
+    return await run(lambda:records.reschedule_meeting(caller.ctx,appointment_id,body),request,caller,'rm.meeting_reschedule')
 
 
 # Saved RM conversations (0091) ------------------------------------------------------------------------------------

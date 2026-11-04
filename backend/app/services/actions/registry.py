@@ -2,7 +2,7 @@
 from collections.abc import Callable
 from app.schemas.actions import CustomerActionType,InputTarget
 from app.schemas.contracts import ActionCommand
-from app.services.actions import appointments,cards,handoffs,records
+from app.services.actions import appointments,cards,handoffs,meetings,records
 
 EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'card.temporary_block': cards.temporary_block,
@@ -24,4 +24,7 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'document.submit': records.submit_document,
     'ticket.create': records.create_ticket,
     'compliance.answer_request': records.answer_request,
+    'meeting.request': meetings.request,
+    'meeting.withdraw': meetings.withdraw,
+    'meeting.counter_reply': meetings.counter_reply,
 }

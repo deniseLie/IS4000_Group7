@@ -122,6 +122,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
                 else:result=await make_answer(req,current_context,ctx)
+                result['care']=risk.care  # both pipelines; the answer text is unchanged (guardrail.CARE)
                 if risk.fixed_response is not None and risk.fixed_response.code=='human_support' and p.kind=='customer' and prepared is not None:
                     # "Talk to a person" in a signed-in saved chat goes straight to the client's RM (migrations 0073, 0082); no model call.
                     # An open RM ticket on the same topic is reused; a failure is explained instead of a generic error (CR9).

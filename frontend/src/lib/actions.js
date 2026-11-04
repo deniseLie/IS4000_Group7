@@ -6,6 +6,7 @@ import {parseChecklistTarget,parseChecklistResult,checklistTargetMatches} from '
 import {parseWorkflow} from './workflows.js';
 import {parseAppointmentResult,parseAppointmentTarget,parseSlotTarget} from './appointmentData.js';
 import {agendaTargetMatches,parseAgendaResult,parseAgendaTarget,parseAgendaShareResult,parseAgendaShareTarget} from './agendaData.js';
+import {MEETING_ACTIONS,parseMeetingResult,parseMeetingTarget} from './meetingRequests.js';
 import {consentTargetMatches,parseConsentGrantResult,parseConsentGrantTarget,parseConsentRequestResult,parseConsentRequestTarget,parseConsentRevokeResult,parseConsentRevokeTarget} from './consentData.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CARD=/^card_[1-9][0-9]{0,14}$/;
@@ -27,7 +28,7 @@ function timestamp(value) {
 
 export function parseAction(value) {
   const command=value?.command,receipt=value?.receipt;
-  if(!command||!['card.temporary_block','card.dispute','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','compliance.answer_request','requests.create','ticket.create','document.register','document.submit',...STAFF,...APPOINTMENTS,...CONSENTS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
+  if(!command||!['card.temporary_block','card.dispute','handoff.create','agenda.save','rm.share_summary','compliance.update_checklist_item','compliance.answer_request','requests.create','ticket.create','document.register','document.submit',...STAFF,...APPOINTMENTS,...CONSENTS,...MEETING_ACTIONS].includes(command.type)||!STATES.includes(command.state)||!Number.isSafeInteger(command.customer_id)||command.customer_id<=0)throw invalid();
   const command_id=id(command.command_id),case_id=id(command.case_id);
   if(typeof command.idempotency_key!=='string'||!command.idempotency_key.startsWith(`${case_id}:`)||!command.idempotency_key.endsWith(`:${command.type}`)||!/^[A-Za-z0-9_-]{1,40}$/.test(command.idempotency_key.split(':')[1])||command.idempotency_key.split(':').length!==3)throw invalid();
   const proposed_at=timestamp(command.proposed_at),expires_at=timestamp(command.expires_at);
@@ -71,6 +72,7 @@ export function parseAction(value) {
   }
   else if(command.type==='agenda.save')canonical=parseAgendaTarget(target);
   else if(command.type==='rm.share_summary')canonical=parseAgendaShareTarget(target);
+  else if(MEETING_ACTIONS.includes(command.type))canonical=parseMeetingTarget(command.type,target);  // 0106
   else canonical={handoff_id:id(target?.handoff_id)};
   if(['succeeded','failed'].includes(command.state)!==(receipt!==null&&receipt!==undefined))throw invalid();
   let saved=null;
@@ -132,6 +134,9 @@ export function parseAction(value) {
       else if(command.type==='consent.grant')result=parseConsentGrantResult(receipt.result);
       else result=parseConsentRevokeResult(receipt.result);
       if(!consentTargetMatches(canonical,result)||command.type!=='consent.request'&&confirmed_at===null)throw invalid();
+    } else if(MEETING_ACTIONS.includes(command.type)) {
+      if(confirmed_at===null)throw invalid();
+      result=parseMeetingResult(command.type,canonical,receipt.result);
     } else {
       const status=command.type==='handoff.claim'?'claimed':'closed';
       if(receipt.result?.handoff_id!==canonical.handoff_id||receipt.result?.status!==status)throw invalid();

@@ -1354,6 +1354,13 @@ small{font-size:max(12px,.83em)}
 .meeting-days{display:grid;gap:12px}
 .meeting-day h3{margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
 .meeting-slots{display:flex;flex-wrap:wrap;gap:6px}.meeting-slots .bank-chat-logout{min-height:32px;padding:5px 12px}
+.meeting-slots .primary-button{min-height:32px;padding:5px 12px}
+/* 2a: the meeting request form (Meetings.jsx) */
+.meeting-request-form{display:grid;gap:12px}.meeting-request-form .meetings-format{margin-bottom:0}.meeting-request-form>[type=submit]{justify-self:start}
+.meeting-purpose{display:grid;gap:6px;font-size:13px}.meeting-purpose textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;resize:vertical}
+.meeting-purpose small,.meeting-times-hint{color:var(--muted);font-size:12.5px;margin:0}
+.meeting-topics{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+.meeting-topics legend{padding:0 4px;font-size:12px;font-weight:700;color:var(--muted)}.meeting-topics label{display:inline-flex;align-items:center;gap:6px}
 
 /* CR15 statements: picker on Overview, a statement sheet over the page, and print that shows only the sheet. */
 .st-pick{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:10px 0 6px}

@@ -91,3 +91,41 @@ def test_explanations_not_mistaken_for_override_or_other_client_data():
     for question in ['What is prompt injection?', 'How does a bank protect other clients?',
         'How do I check my own account balance?']:
         assert assess_request(request(question,'personal')).fixed_response is None
+
+
+@pytest.mark.parametrize('question', [
+    "I lost my job last month and can't pay my loan", 'I was laid off, can I pause my repayments?', "I'm in serious debt",
+    'Debt collectors keep calling me', 'My husband passed away, what happens to his account?', 'my mother just died',
+    "I've been diagnosed with cancer", 'My dad is in hospital', 'My nephew keeps pressuring me to transfer money to him',
+    'Someone is forcing me to send money', 'He told me not to tell the bank', "I can't afford my mortgage anymore",
+    "I'm behind on my payments", 'I was retrenched', "I need my late husband's statements",
+])
+def test_care_wording_sets_the_care_flag_without_changing_the_route(question):
+    risk = assess_request(request(question, 'personal'))
+    assert risk.care is True
+    assert risk.fixed_response is None or risk.fixed_response.code != 'human_support'
+
+
+@pytest.mark.parametrize('question', [
+    'I want to take a home loan', 'How do I refinance my mortgage?', 'Can I pay my loan early?', 'What investments do you offer?',
+    'Should I invest in bond funds or debt funds?', 'How much can I borrow for a condo?', 'Can I make a payment to my credit card?',
+    'How do I repay my loan?', 'Can I meet Sophie next week about a home loan?', 'Does your insurance cover cancer?',
+    'What is critical illness insurance?', 'I want to transfer $50,000 overseas', "What's the fixed deposit rate?",
+    "My card payment didn't go through", 'Can I afford a bigger loan?',
+])
+def test_ordinary_loan_investment_and_payment_questions_do_not_set_care(question):
+    assert assess_request(request(question, 'personal')).care is False
+
+
+def test_care_stays_on_for_later_questions_in_the_same_history():
+    req = ChatRequest(messages=[{'role': 'user', 'content': 'I was retrenched last week'}, {'role': 'assistant', 'content': 'I am sorry to hear that.'},
+        {'role': 'user', 'content': 'What is the fixed deposit rate?'}], mode='personal')
+    assert assess_request(req).care is True
+    assert assess_request(request('What is the fixed deposit rate?', 'personal')).care is False
+
+
+def test_care_is_on_the_answer_event_and_off_by_default():
+    from app.schemas.events import AnswerEvent
+    fields = {'answer': 'x', 'disclaimer': 'd', 'source_check': 'passed', 'response_origin': 'ai'}
+    assert AnswerEvent.model_validate(fields).care is False
+    assert AnswerEvent.model_validate({**fields, 'care': True}).care is True

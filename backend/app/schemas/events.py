@@ -79,6 +79,7 @@ class AnswerEvent(BaseModel):  # today's answer object + optional sections
     response_origin: Origin
     sections: list[AnswerSection] | None = None
     offer: OfferGroupEvent | None = None  # v5: Confirm/Cancel buttons send offer_group (phase 6)
+    care: bool = False  # RiskAssessment.care (2a): the UI shows Talk to a person instead of product or meeting chips
 
 
 class WorkflowStatus(BaseModel):

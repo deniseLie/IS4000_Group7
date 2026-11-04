@@ -65,6 +65,13 @@ async def appointments(request: Request,ctx: RequestContext=Depends(get_ctx)) ->
     return await read_result(lambda:customer_data.get_appointments(ctx),request,ctx,'appointments.list')
 
 
+@router.get('/relationship/meeting-requests',response_model=ToolResult)
+async def meeting_requests(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    """Her meeting requests and their status (0106). Requesting, withdrawing and answering a proposed time are
+    confirm-type actions (POST /commands, then /commands/{id}/confirm), like booking decisions."""
+    return await read_result(lambda:customer_data.get_meeting_requests(ctx),request,ctx,'meeting_requests.list')
+
+
 @router.get('/relationship/introduction',response_model=ToolResult)
 async def introduction(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     return await read_result(lambda:customer_data.get_introduction(ctx),request,ctx,'rm.get_introduction')

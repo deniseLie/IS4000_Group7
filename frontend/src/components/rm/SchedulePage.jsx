@@ -1,24 +1,31 @@
 import {useEffect,useState} from 'react';
 import Icon from '../Icon';
-import {FORMAT_WORDS,WEEKDAY_NAMES,dayCells,groupByDate,meetingsPerWeek,plusMinutes,rmDelete,rmGet,rmPost,rmPut,sgtInstant,weekStart} from '../../lib/rm';
+import {DECLINE_REASONS,FORMAT_WORDS,MOVE_REASONS,WEEKDAY_NAMES,dayCells,decisionBody,decisionNotice,freeTimes,groupByDate,idKeeper,isNewRequest,meetingsPerWeek,
+  moveNotice,needsAnswer,plusMinutes,requestLabel,rmDelete,rmGet,rmPost,rmPut,sgtInput,sgtInstant,slotProblemText,takeScheduleTab,topicLabel,weekStart} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
 
 const HOURS=Array.from({length:29},(_,i)=>`${String(7+Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`);
-const TABS=[['appointments','Appointments'],['availability','Availability and hours']];
+const TABS=[['appointments','Appointments'],['requests','Requests'],['availability','Availability and hours']];
+const REQUEST_VIEWS=[['open','Open'],['scheduled','Scheduled'],['closed','Declined or withdrawn']];
 
 // RM12: confirmed appointments grouped by day, the next 14 days of availability, and weekly working hours.
 // Blocking or opening time changes the free times clients see in My requests → Meetings (CR17) straight away.
 // The weekly meeting limit per client (0092) is enforced when clients book; here it is shown, with any week over it.
+// Requests (build plan 2a, 0106): she accepts one of the client's times, proposes another (held for the client) or
+// declines with a reason, and moves a confirmed meeting. Each is one request she presses; SQL checks the slot again.
 export default function SchedulePage({token,onAsk,today}) {
-  const [tab,setTab]=useState('appointments');
+  const [tab,setTab]=useState(()=>takeScheduleTab()||'appointments');
   const [appointments,setAppointments]=useState(null),[availability,setAvailability]=useState(null);
+  const [requests,setRequests]=useState(null),[shown,setShown]=useState('open'),[toAnswer,setToAnswer]=useState(null);
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
-  async function load() {
+  const [ids]=useState(()=>idKeeper());
+  async function load(view=shown) {
     setError('');
     try {
       const auth=await token();
-      const [a,v]=await Promise.all([rmGet('/appointments',auth),rmGet('/availability',auth)]);
-      setAppointments(a.data);setAvailability(v);
+      const [a,v,r]=await Promise.all([rmGet('/appointments',auth),rmGet('/availability',auth),rmGet(`/meeting-requests?status=${view}`,auth)]);
+      setAppointments(a.data);setAvailability(v);setRequests(r.data);
+      if(view==='open')setToAnswer(r.data.filter(needsAnswer).length);
     } catch(failure) {setError(failure.message);}
   }
   useEffect(()=>{load();},[]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -28,19 +35,35 @@ export default function SchedulePage({token,onAsk,today}) {
     catch(failure) {setError(failure.message);return false;}
     finally {setBusy(false);}
   }
+  // A decision or a move keeps its card's id until SQL records it, so a retry or double click records once. A refusal
+  // re-reads the requests and free times and is shown on the card.
+  async function act(key,operation,message) {
+    setBusy(true);setNotice('');setError('');
+    try {const result=await operation(await token(),ids.get(key));ids.done(key);await load();setNotice(message(result));return '';}
+    catch(failure) {await load();return failure.message;}
+    finally {setBusy(false);}
+  }
+  const decide=(r,decision,options)=>act(r.request_id,(auth,id)=>rmPost(`/meeting-requests/${r.request_id}/decide`,decisionBody(id,decision,options),auth),decisionNotice);
+  const move=(a,startsAt,reason)=>act(a.appointment_id,(auth,id)=>rmPost(`/appointments/${a.appointment_id}/reschedule`,{change_id:id,starts_at:startsAt,reason},auth),
+    result=>moveNotice(result,a.client));
   const limit=availability?.rules?.weekly_meetings_per_client;
   const confirmed=(appointments||[]).filter(a=>a.status==='confirmed');
   return <div className="app-page-body rmw-page" data-testid="rm-schedule">
     <header className="page-header"><div><span className="eyebrow">Relationship manager</span><h1>Schedule</h1>
-      <p>Your meetings, the times clients can book over the next 14 days, and your working hours.</p></div>
-      <div className="page-header-actions"><button className="bank-chat-logout" onClick={load} disabled={busy}><Icon name="refresh"/>Refresh</button></div></header>
-    <div className="rmw-tabs-row"><nav className="page-tabs" role="tablist">{TABS.map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}
-      {key==='appointments'&&appointments&&<span className="count">{confirmed.length}</span>}</button>)}</nav></div>
-    {limit&&<p className="rmw-note"><Icon name="info"/>Booking rule: each client can book up to {limit} meetings with you per week ({availability.rules.week}). Clients cannot book more; meetings booked earlier stay.</p>}
+      <p>Your meetings, clients’ meeting requests, the times clients can book over the next 14 days, and your working hours.</p></div>
+      <div className="page-header-actions"><button className="bank-chat-logout" onClick={()=>load()} disabled={busy}><Icon name="refresh"/>Refresh</button></div></header>
+    <div className="rmw-tabs-row"><nav className="page-tabs" role="tablist">{TABS.map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} data-testid={`rm-schedule-${key}`} onClick={()=>setTab(key)}>{label}
+      {key==='appointments'&&appointments&&<span className="count">{confirmed.length}</span>}
+      {key==='requests'&&toAnswer!==null&&<span className="count">{toAnswer}</span>}</button>)}</nav>
+      {tab==='requests'&&<label className="pill-select rmw-filter" title="Show requests"><Icon name="calendar"/><select aria-label="Show requests" value={shown} disabled={busy}
+        onChange={e=>{setShown(e.target.value);setRequests(null);load(e.target.value);}}>{REQUEST_VIEWS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><Icon name="chevron"/></label>}</div>
+    {limit&&tab!=='requests'&&<p className="rmw-note"><Icon name="info"/>Booking rule: each client can book up to {limit} meetings with you per week ({availability.rules.week}). Clients cannot book more; meetings booked earlier stay.</p>}
     {error&&<p role="alert" className="rm-error">{error}</p>}
     {notice&&<p className="chat-toast" role="status"><Icon name="check"/>{notice}</p>}
     {!appointments&&!error&&<p className="loading" role="status">Loading your schedule…</p>}
-    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk}/>}
+    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move}/>}
+    {appointments&&tab==='requests'&&(!requests?<p className="loading" role="status">Loading meeting requests…</p>
+      :<MeetingRequests requests={requests} shown={shown} availability={availability} busy={busy} onDecide={decide}/>)}
     {availability&&tab==='availability'&&<div className="rmw-avail-layout">
       <Availability availability={availability} busy={busy} change={change}/>
       <WorkingHours key={JSON.stringify(availability.weekly_hours)} availability={availability} busy={busy} change={change}/></div>}
@@ -54,7 +77,8 @@ function dayTitle(date,today) {
 }
 function timeOf(when) {return (when||'').split(', ').at(-1);}
 
-function Appointments({appointments,limit,today,onAsk}) {
+function Appointments({appointments,limit,today,onAsk,availability,busy,onMove}) {
+  const [moving,setMoving]=useState(null);
   if(!appointments.length)return <p className="page-empty">No appointments in the next 14 days.</p>;
   const perWeek=meetingsPerWeek(appointments);
   const over=[...new Map(appointments.filter(a=>limit&&perWeek.get(`${a.customer_id}|${weekStart(a.date)}`)>limit)
@@ -69,12 +93,91 @@ function Appointments({appointments,limit,today,onAsk}) {
         <div className="rmw-appointment-main"><strong>{a.client}</strong>
           <small>{FORMAT_WORDS[a.format]} · {a.purpose||'No purpose recorded'}{a.status==='held'?` · held until ${a.hold_expires}, not confirmed`:''}</small></div>
         <span className={`ticket-status ${a.status==='held'?'waiting_on_client':'resolved'}`}>{a.status==='held'?'Held':'Confirmed'}</span>
-        {a.status==='confirmed'&&<div className="rmw-appointment-actions">
+        {a.status==='confirmed'&&<div className="rmw-appointment-actions" style={{display:'flex',flexWrap:'wrap',gap:8}}>
           <button className="primary-button small" data-testid="rm-brief" onClick={()=>onAsk(`Brief me for my meeting with ${a.client} on ${a.when}`,
-            {intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}})}><Icon name="spark"/>Prepare briefing</button></div>}
+            {intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}})}><Icon name="spark"/>Prepare briefing</button>
+          {!a.past&&<button className="bank-chat-logout" data-testid="rm-move" aria-expanded={moving===a.appointment_id} disabled={busy}
+            onClick={()=>setMoving(moving===a.appointment_id?null:a.appointment_id)}><Icon name="clock"/>Move</button>}</div>}
+        {moving===a.appointment_id&&<MoveForm a={a} free={freeTimes(availability,[a.starts_at])} busy={busy} onMove={onMove} onClose={()=>setMoving(null)}/>}
       </li>)}</ul>
     </section>)}
   </>;
+}
+
+// Move a confirmed meeting to another time she agreed with the client (0106 rm_meeting_reschedule).
+function MoveForm({a,free,busy,onMove,onClose}) {
+  const [at,setAt]=useState(null),[reason,setReason]=useState(MOVE_REASONS[0][0]),[failure,setFailure]=useState('');
+  async function submit() {const error=await onMove(a,at,reason);if(error)setFailure(error);else onClose();}
+  return <div className="rmw-move" style={{gridColumn:'1/-1'}} data-testid="rm-move-form">
+    <div className="rm-form-grid"><TimePicker free={free} onChange={setAt} label="New time"/>
+      <label className="form-field">Reason<select value={reason} onChange={e=>setReason(e.target.value)}>{MOVE_REASONS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label></div>
+    <p className="rm-small">Agree the new time with {a.client} first. The meeting keeps its purpose and topics, and the client gets an Inbox notice.</p>
+    {failure&&<p role="alert" className="rm-error">{failure}</p>}
+    <div className="rmw-card-actions"><button className="bank-chat-logout" disabled={busy} onClick={onClose}>Cancel</button>
+      <button className="primary-button small" data-testid="rm-move-confirm" disabled={busy||!at} onClick={submit}>Move meeting</button></div>
+  </div>;
+}
+
+// A free half hour from her availability, or another time typed as Singapore time. SQL checks the time either way.
+function TimePicker({free,onChange,label}) {
+  const [choice,setChoice]=useState(''),[typed,setTyped]=useState('');
+  const pick=value=>{setChoice(value);onChange(value==='other'?sgtInput(typed):value||null);};
+  return <>
+    <label className="form-field">{label}<select value={choice} onChange={e=>pick(e.target.value)}>
+      <option value="">Choose a free time</option>
+      {groupByDate(free).map(g=><optgroup key={g.date} label={formatDate(g.date,{weekday:'long'})}>
+        {g.items.map(s=><option key={s.starts_at} value={s.starts_at}>{formatDate(g.date,{weekday:'short',year:undefined})}, {s.time}</option>)}</optgroup>)}
+      <option value="other">Another time…</option></select></label>
+    {choice==='other'&&<label className="form-field">Date and time (Singapore)<input type="datetime-local" step={1800} value={typed}
+      onChange={e=>{setTyped(e.target.value);onChange(sgtInput(e.target.value));}}/></label>}
+  </>;
+}
+
+function MeetingRequests({requests,shown,availability,busy,onDecide}) {
+  if(!requests.length)return <p className="page-empty">{shown==='open'?'No meeting requests waiting.':shown==='scheduled'?'No scheduled requests.':'No declined or withdrawn requests.'}</p>;
+  return <ul className="rmw-tickets tab-fade" key={shown}>{requests.map(r=><RequestCard key={r.request_id} r={r} free={freeTimes(availability,r.preferred_times.map(t=>t.starts_at))}
+    busy={busy} onDecide={onDecide}/>)}</ul>;
+}
+
+// One client request. The purpose is the client's own words, shown as text only.
+function RequestCard({r,free,busy,onDecide}) {
+  const [mode,setMode]=useState(null),[at,setAt]=useState(null),[reason,setReason]=useState(DECLINE_REASONS[0][0]),[failure,setFailure]=useState('');
+  async function decide(decision,options) {setFailure('');const error=await onDecide(r,decision,options);setFailure(error);if(!error)setMode(null);}
+  const answer=needsAnswer(r),blocked=r.preferred_times.filter(t=>t.problem);
+  return <li className={`rmw-ticket${r.overdue?' urgency-urgent':''}`} data-testid="rm-meeting-request" data-request={r.request_id}>
+    <div className="rmw-ticket-head"><strong>{r.client}</strong>
+      {isNewRequest(r)&&<span className="rmw-chip info">New</span>}
+      <span className={`rmw-chip${r.overdue||r.proposal_lapsed?' alert':''}`}>{requestLabel(r)}</span></div>
+    <p className="rmw-ticket-meta"><span>{FORMAT_WORDS[r.format]||r.format}</span><span>Received {r.created_text}</span>
+      {r.status==='requested'&&<span className={r.overdue?'rmw-late':''}>{r.overdue?'Overdue · was due':'Respond by'} {r.respond_by_text}</span>}</p>
+    <div className="rm-chips">{r.topics.map(t=><span key={t} className="rmw-chip">{topicLabel(t)}</span>)}</div>
+    <p className="rm-small">In the client’s words</p>
+    <p className="rm-quote" data-testid="rm-request-purpose">{r.purpose}</p>
+    {r.status==='countered'&&r.meeting&&<p className="rmw-ticket-status"><Icon name={r.proposal_lapsed?'alert':'clock'}/>{r.proposal_lapsed
+      ?`The client did not answer the time you proposed (${r.meeting.when}). Accept one of their times, propose another or decline.`
+      :`You proposed ${r.meeting.when}. It is held for the client until ${r.meeting.hold_expires}.`}</p>}
+    {r.status==='scheduled'&&<p className="rmw-ticket-status"><Icon name="check"/>{r.meeting?`Meeting ${r.meeting.status==='confirmed'?'confirmed':r.meeting.status} for ${r.meeting.when}.`:'Meeting no longer in your calendar.'}</p>}
+    {r.status==='declined'&&<p className="rmw-ticket-status"><Icon name="info"/>Declined: {Object.fromEntries(DECLINE_REASONS)[r.decline_reason]||r.decline_reason}.</p>}
+    {answer&&<>
+      <p className="rm-small">The client’s times</p>
+      <div className="rm-slots">{r.preferred_times.map(t=><button key={t.starts_at} className="primary-button small" data-testid="rm-accept" disabled={busy||!!t.problem}
+        title={t.problem?`Cannot be accepted: ${slotProblemText(t.problem)}`:'Accept this time'} onClick={()=>decide('accept',{startsAt:t.starts_at})}><Icon name="check"/>Accept {t.when}</button>)}</div>
+      {blocked.map(t=><p key={t.starts_at} className="rm-small">{t.when} cannot be accepted: {slotProblemText(t.problem)}.</p>)}
+      <div className="rm-ticket-actions">
+        <button className="bank-chat-logout" aria-expanded={mode==='counter'} disabled={busy} onClick={()=>setMode(mode==='counter'?null:'counter')}><Icon name="calendar"/>Propose a time</button>
+        <button className="bank-chat-logout" aria-expanded={mode==='decline'} disabled={busy} onClick={()=>setMode(mode==='decline'?null:'decline')}><Icon name="close"/>Decline</button></div>
+      {mode==='counter'&&<div className="rm-form-grid" data-testid="rm-counter-form"><TimePicker free={free} onChange={setAt} label="Time to propose"/>
+        <p className="rm-small rm-span">The time is held for the client for up to two business days; they accept or decline it in My requests.</p>
+        <div className="rmw-card-actions rm-span"><button className="primary-button small" data-testid="rm-counter-confirm" disabled={busy||!at}
+          onClick={()=>decide('counter',{startsAt:at})}>Propose this time</button></div></div>}
+      {mode==='decline'&&<div className="rm-form-grid" data-testid="rm-decline-form">
+        <label className="form-field">Reason<select value={reason} onChange={e=>setReason(e.target.value)}>{DECLINE_REASONS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+        <p className="rm-small rm-span">The client gets an Inbox notice with this reason. No meeting is booked.</p>
+        <div className="rmw-card-actions rm-span"><button className="primary-button small" data-testid="rm-decline-confirm" disabled={busy}
+          onClick={()=>decide('decline',{reason})}>Decline request</button></div></div>}
+    </>}
+    {failure&&<p role="alert" className="rm-error">{failure}</p>}
+  </li>;
 }
 
 // One week at a time as a calendar grid: days across, half hours down. Free times can be blocked, blocked times opened.

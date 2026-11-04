@@ -7,7 +7,7 @@ requests, client messages) are separate requests the RM sends only after approvi
 from datetime import date,datetime
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel,ConfigDict,Field,field_validator
+from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,field_validator,model_validator
 
 Intent=Literal['ticket_inbox','priorities','reviews','schedule','client_overview','meeting_history','meeting_brief',
     'ticket_summary','draft_message','document_interaction','actions_from_note','handover_brief','book_question','help']
@@ -137,6 +137,29 @@ class Block(Model):
     starts_at: datetime
     ends_at: datetime
     reason: str=Field(default='',max_length=80)
+
+
+class MeetingDecision(Model):
+    """Her answer to a client's meeting request (0106 rm_meeting_request_decide). The page makes decision_id once per open
+    request card, so a double click or a retry records one decision."""
+    decision_id: UUID
+    decision: Literal['accept','counter','decline']
+    starts_at: AwareDatetime|None=None  # accept: one of the client's preferred times; counter: another free time
+    reason: Literal['answered_by_message','redirected','not_needed']|None=None  # decline only
+
+    @model_validator(mode='after')
+    def _fits(self):
+        decline=self.decision=='decline'
+        if decline and (self.reason is None or self.starts_at) or not decline and (self.starts_at is None or self.reason):
+            raise ValueError('accept and counter need starts_at; decline needs a reason and no time')
+        return self
+
+
+class MeetingMove(Model):
+    """Move an upcoming confirmed meeting (0106 rm_meeting_reschedule); change_id makes a retry record once."""
+    change_id: UUID
+    starts_at: AwareDatetime
+    reason: Literal['client_asked','rm_unavailable','other']
 
 
 class ConversationSave(Model):

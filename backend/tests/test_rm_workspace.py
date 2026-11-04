@@ -1,14 +1,22 @@
 """Persona 2 RM workspace (F12, F14, migrations 0089-0090) over real temporary PostgreSQL: book-based access, audited
-refusals, consent-checked handover notes, restricted specialist detail, RM-approved writes and availability.
+refusals, consent-checked handover notes, restricted specialist detail, RM-approved writes and availability. The meeting
+request routes (build plan 2a, SQL 0106) run through the real gateway and JWT check with the Data API answered by the
+same database (NativeDataApi).
 
 Run from backend/: TEST_DATABASE_LOCAL=1 ../.venv/bin/python -m pytest tests/test_rm_workspace.py -q
 """
 import json
 import os
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL,uuid4,uuid5
+import jwt
 import pytest
+from postgrest.exceptions import APIError
+from app.core import data_api
 from tests.database_support import SOPHIE_LOGIN,SqlRow,set_customer
+from tests.test_gateway import bearer,client,code,env  # noqa: F401  (env is the autouse JWKS/database fixture)
+from tests.test_meeting_requests import MEI_LING_REQUEST,MICHELLE_REQUEST,free_times
 
 if TYPE_CHECKING:
     from psycopg import Connection
@@ -273,3 +281,104 @@ def test_rm_insights_link_meetings_and_stay_in_the_book(database: 'Connection[Sq
     cash=call(database,'rm_cash_events(1002)')['data']
     assert any(c['amount']==120000 and c['direction']=='incoming' and not c['recurring'] for c in cash)
     assert call(database,'rm_cash_events(1004)')['denied'] is True
+
+
+# Meeting request routes (build plan 2a) ------------------------------------------------------------------------------
+class NativeDataApi:
+    """The Data API over the test database: an RPC runs in a savepoint under the caller's own JWT claims as authenticated
+    (as PostgREST does), and a database error comes back as the SDK's APIError with its SQLSTATE."""
+    def __init__(self,db: 'Connection[SqlRow]',ctx) -> None:
+        self.db,self.claims=db,jwt.decode(ctx.principal.jwt.get_secret_value(),options={'verify_signature':False})
+    def __enter__(self):return self
+    def __exit__(self,*_) -> None:return None
+    def rpc(self,name: str,params: dict):
+        self.sql,self.args=f"select public.{name}({','.join(f'{k}=>%s' for k in params)})",tuple(params.values())
+        return self
+    def execute(self) -> SimpleNamespace:
+        import psycopg
+        try:
+            with self.db.transaction():
+                self.db.execute("select set_config('request.jwt.claims',%s,true)",(json.dumps(self.claims),))
+                self.db.execute('set local role authenticated')
+                return SimpleNamespace(data=self.db.execute(self.sql,self.args).fetchone()[0])
+        except psycopg.Error as error:
+            raise APIError({'code':error.sqlstate,'message':error.diag.message_primary,'details':None,'hint':None}) from error
+        finally:self.db.execute('reset role')
+
+
+@pytest.fixture
+def sophie(database: 'Connection[SqlRow]',monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Sophie's bearer header; RM routes run through the gateway, rm_caller and records with RPCs answered by the database."""
+    monkeypatch.setattr(data_api,'connect',lambda ctx:NativeDataApi(database,ctx))
+    return bearer(sub=str(SOPHIE_LOGIN),app_metadata={'demobank_role':'rm','rm_id':SOPHIE})
+
+
+def decide(request: str,headers: dict,**body):
+    return client.post(f'/rm/meeting-requests/{request}/decide',json={'decision_id':str(uuid4()),**body},headers=headers)
+
+
+def test_a_double_clicked_accept_records_once_and_requests_outside_the_book_are_refused(database: 'Connection[SqlRow]',sophie: dict) -> None:
+    listed=client.get('/rm/meeting-requests',headers=sophie)
+    assert listed.status_code==200
+    mei=next(r for r in listed.json()['data'] if r['request_id']==MEI_LING_REQUEST)
+    assert mei['purpose'].startswith('Renewing my fixed deposit') and mei['topics']==['fixed_deposit'] and mei['status']=='requested'
+    assert client.get('/rm/meeting-requests?status=all',headers=sophie).status_code==422
+    body={'decision_id':str(uuid4()),'decision':'accept','starts_at':mei['preferred_times'][0]['starts_at']}
+    first=client.post(f'/rm/meeting-requests/{MEI_LING_REQUEST}/decide',json=body,headers=sophie)
+    again=client.post(f'/rm/meeting-requests/{MEI_LING_REQUEST}/decide',json=body,headers=sophie)
+    assert first.status_code==again.status_code==200 and (first.json()['replayed'],again.json()['replayed'])==(False,True)
+    meeting=first.json()['request']['appointment_id']
+    assert first.json()['request']['status']=='scheduled' and again.json()['request']['appointment_id']==meeting
+    assert database.execute('select count(*) from meetings.events where meeting_id=%s',(meeting,)).fetchone()==(1,)
+    assert MEI_LING_REQUEST in {r['request_id'] for r in client.get('/rm/meeting-requests?status=scheduled',headers=sophie).json()['data']}
+    # Alex is Priya's client: refused and audited, never decided. An unknown request is 404.
+    [at]=free_times(database,1001,n=1)
+    alex=database.execute("""insert into rm.meeting_requests(customer_id,advisor_id,purpose,topics,format,preferred_times,respond_by)
+        values(1001,%s,'Investments','{investments}','video',%s,now()+interval '1 day') returning request_id::text""",(PRIYA,[at])).fetchone()[0]
+    refused=decide(alex,sophie,decision='decline',reason='not_needed')
+    assert refused.status_code==403 and code(refused)=='rm_not_in_book'
+    assert database.execute("select count(*) from audit.events where action='policy.rm_client_denied' and details->>'tool'='rm.meeting_request_decide'").fetchone()==(1,)
+    assert database.execute('select status from rm.meeting_requests where request_id=%s',(alex,)).fetchone()==('requested',)
+    assert code(decide(str(uuid4()),sophie,decision='decline',reason='not_needed'))=='rm_refused'
+    # A body that does not fit its decision never reaches the database.
+    for bad in [{'decision':'decline'},{'decision':'accept'},{'decision':'decline','reason':'not_needed','starts_at':at.isoformat()},
+            {'decision':'counter','starts_at':'2026-12-01T10:00:00'},{'decision':'decline','reason':'too_busy'}]:
+        assert decide(alex,sophie,**bad).status_code==422
+
+
+def test_a_refused_time_has_a_stable_code_and_the_same_decision_id_can_retry(database: 'Connection[SqlRow]',sophie: dict) -> None:
+    preferred=database.execute('select preferred_times from rm.meeting_requests where request_id=%s',(MEI_LING_REQUEST,)).fetchone()[0]
+    free=next(t for t in free_times(database,1007,n=8) if t not in preferred)
+    night=database.execute("select ((%s::timestamptz at time zone 'Asia/Singapore')::date+time '03:00') at time zone 'Asia/Singapore'",(free,)).fetchone()[0]
+    decision=str(uuid4())
+    def counter(at):return decide(MEI_LING_REQUEST,sophie,decision_id=decision,decision='counter',starts_at=at.isoformat())
+    refused=counter(night)
+    assert refused.status_code==409 and code(refused)=='rm_slot_unavailable'
+    assert refused.json()['error']['message']=="That time cannot be booked: it is outside the relationship manager's working hours"
+    database.execute("insert into rm.advisor_blocks(advisor_id,starts_at,ends_at) values(%s,%s,%s::timestamptz+interval '30 minutes')",(SOPHIE,free,free))
+    assert code(counter(free))=='rm_slot_unavailable'
+    database.execute('delete from rm.advisor_blocks where advisor_id=%s and starts_at=%s',(SOPHIE,free))
+    proposed=counter(free)  # nothing was recorded for the refused attempts, so the card's id still works
+    assert proposed.status_code==200 and proposed.json()['request']['status']=='countered' and proposed.json()['request']['meeting']['status']=='held'
+    late=decide(MEI_LING_REQUEST,sophie,decision='decline',reason='not_needed')
+    assert late.status_code==409 and code(late)=='rm_refused'  # already answered: not a slot problem
+
+
+def test_moving_a_meeting_records_once_and_refuses_taken_times_and_other_books(database: 'Connection[SqlRow]',sophie: dict) -> None:
+    meeting=str(database.execute('select appointment_id from rm.meeting_requests where request_id=%s',(MICHELLE_REQUEST,)).fetchone()[0])
+    later,taken=free_times(database,1002,n=2,exclude=meeting,skip=2)
+    def move(at,change: str,appointment: str=meeting,**extra):
+        return client.post(f'/rm/appointments/{appointment}/reschedule',json={'change_id':change,'starts_at':at.isoformat(),'reason':'client_asked',**extra},headers=sophie)
+    change=str(uuid4())
+    first,again=move(later,change),move(later,change)
+    assert first.status_code==again.status_code==200 and (first.json()['replayed'],again.json()['replayed'])==(False,True)
+    assert database.execute("select dedupe_key from meetings.events where meeting_id=%s and event_type='meeting.rescheduled'",(meeting,)).fetchall()==[(f'change:{change}',)]
+    database.execute("""insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status)
+        values(1007,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed')""",(SOPHIE,taken,taken))
+    clash=move(taken,str(uuid4()))
+    assert clash.status_code==409 and code(clash)=='rm_slot_unavailable' and clash.json()['error']['message'].endswith('that time is already booked')
+    other=database.execute("""insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status)
+        values(1001,%s,%s,%s::timestamptz+interval '30 minutes','video','cancelled') returning appointment_id::text""",(PRIYA,later,later)).fetchone()[0]
+    refused=move(later,str(uuid4()),other)
+    assert refused.status_code==403 and code(refused)=='rm_not_in_book'
+    assert move(later,str(uuid4()),reason='because').status_code==422

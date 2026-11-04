@@ -111,18 +111,6 @@ def test_charge_and_transaction_questions_route_to_records_not_fraud(question: s
     assert simple_task('i dont recognise this $25 charge','English').agent=='security'
 
 
-def test_a_meeting_reply_is_only_kept_in_the_booking_when_it_is_about_the_times() -> None:
-    from app.services.agents import meeting_answers
-    listed='Here are free 30-minute times…\n• Mon 2 Nov, 9:30 am\nTap a time below, or type a day and time, and I’ll hold it for you.'
-    for reply in ['in person','Book Mon 2 Nov, 9:30 am','more times','tue 3 nov 2pm','by phone pls']:
-        assert meeting_answers.awaiting([Message(role='assistant',content=listed),Message(role='user',content=reply)]),reply
-    for reply in ['whats my card balance','show my recent transactions']:
-        assert not meeting_answers.awaiting([Message(role='assistant',content=listed),Message(role='user',content=reply)]),reply
-    history=[Message(role='user',content='in person'),Message(role='assistant',content=listed+' It will be an in-person meeting.'),
-        Message(role='user',content='Book Mon 2 Nov, 9:30 am')]
-    assert meeting_answers.asked_format(history)=='in_person'
-
-
 def test_a_follow_up_stays_on_the_card_just_discussed() -> None:
     """CR14: "what about the due date?" after a Travel Card answer is about the Travel Card; a new topic is not."""
     answered=ask('whats my travel card balance').text

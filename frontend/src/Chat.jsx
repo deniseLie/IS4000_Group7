@@ -18,7 +18,7 @@ import RecordsPanel from './components/RecordsPanel';
 import OfferBlock from './components/OfferBlock';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
 import {loadIntroduction,relationshipIntent} from './lib/relationshipWorkflow';
-import {CONFIRM_REPORT,followUps} from './lib/followUps';
+import {CARE_CHIP,CONFIRM_REPORT,followUps} from './lib/followUps';
 import {pageLink} from './lib/pageLinks';
 import {canStartFraudReport} from './lib/fraudEntry';
 import {prepareComplianceSupport} from './lib/compliance';
@@ -469,8 +469,8 @@ export default function Chat({session,onSignIn}) {
     if(intent==='statements')return <button className="primary-button rm-handoff" data-testid="statement-handoff" onClick={()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});}}>Go to Statements<Icon name="arrow"/></button>;
     if(intent==='personal_details_update'&&message.response_origin!=='validation')return <button className="primary-button rm-handoff" data-testid="personal-details-entry" onClick={()=>openInlineRequest({category:'personal_details_update',summary:redact(asked).slice(0,500)},index)}>Prepare details update<Icon name="arrow"/></button>;
     if(intent==='statement_request')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>requestStatement(redact(asked).slice(0,500),index)}>Request a statement copy<Icon name="arrow"/></button>;
-    // CR17: a meeting question ends with a button to the Meetings tab, where she picks a free time.
-    if(relationshipIntent(asked)==='meeting')return <button className="primary-button rm-handoff" data-testid="meeting-handoff" onClick={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}>Book a time with your RM<Icon name="arrow"/></button>;
+    // 2a: a meeting question ends with a way to the Meetings tab, where she follows her meeting requests (or makes one there).
+    if(relationshipIntent(asked)==='meeting')return <button className="primary-button rm-handoff" data-testid="meeting-handoff" onClick={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}>Go to Meetings<Icon name="arrow"/></button>;
     // A question handed to the relationship manager: its reference is in the reply; follow it in My requests.
     if(message.needs_human&&/My requests/.test(message.content))
       return <button className="bank-chat-logout rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button>;
@@ -491,7 +491,7 @@ export default function Chat({session,onSignIn}) {
     const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
     const list=followUps({question:messages[index-1]?.role==='user'?messages[index-1].content:'',message,signedIn:!!session&&mode==='personal',asked});
     if(!list.length)return null;
-    return <div className="follow-ups" data-testid="follow-ups"><span>{list[0]===CONFIRM_REPORT?'Are these the charges?':list.includes('Both cards')?'Which card?':list[0]==='Confirm booking'||list[0].startsWith('Book ')?'Book a time':list.includes('Cancel')?'Send it?':'You could also ask'}</span>
+    return <div className="follow-ups" data-testid="follow-ups"><span>{list[0]===CONFIRM_REPORT?'Are these the charges?':list.includes('Both cards')?'Which card?':list[0]===CARE_CHIP?'We’re here to help':/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d/.test(list[0])?'Times that suit you':list.includes('Cancel')?'Send it?':'You could also ask'}</span>
       {list.map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text}</button>)}</div>;
   }
   function complianceStep(message,index) {

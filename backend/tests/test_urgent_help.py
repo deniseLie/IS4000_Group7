@@ -159,7 +159,7 @@ def test_one_case_summary_tells_staff_the_whole_story_from_records_and_decisions
 def test_personal_agents_use_the_v5_runner_and_the_moved_v4_prompts() -> None:
     from app.services import orchestrator
     from app.services.agents import retail,runner
-    assert runner.PROMPTS=={'guide':'v1','accounts':'v1','security':'v1'} and orchestrator.PLANNER=='v7'
+    assert runner.PROMPTS=={'guide':'v1','accounts':'v1','security':'v1'} and orchestrator.PLANNER=='v8'
     assert retail.PROMPT=='v11' and fraud.PROMPT=='v7'  # the computed-checks path and the charge review keep their released prompts
     assert set(runner.RULES)=={'guide','accounts','security','compliance','relationship'}
 

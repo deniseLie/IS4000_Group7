@@ -2,7 +2,7 @@
 import pytest
 from app.schemas.contracts import PlanTask,RiskAssessment
 from app.services import rm_handover
-from app.services.orchestrator import overridden,simple_task
+from app.services.orchestrator import critical_task,overridden,simple_task
 
 
 @pytest.mark.parametrize('question',['Should I invest in the new bond fund?','Can you recommend a good fund for my retirement?',
@@ -24,6 +24,18 @@ def test_questions_for_a_person_go_to_the_rm(question: str) -> None:
     'What are the fees for overseas transfers?','Is my large transfer still pending?'])
 def test_ordinary_questions_stay_with_the_assistant(question: str) -> None:
     assert not rm_handover.needs_person(question)
+
+
+@pytest.mark.parametrize('question',['Can I meet Sophie next week about a home loan?','Request a meeting with my RM about investments',
+    'Can we set up a catch-up to discuss investment advice?','I would like a video call with my RM about which funds to buy',
+    'Request a meeting with your RM','Can I have a phone call with my relationship manager about refinancing?',
+    'Could my RM arrange a meeting next week?'])
+def test_meeting_requests_stay_with_the_assistant_whatever_the_topic(question: str) -> None:
+    # 2a: asking to meet is a meeting request (Relationship meeting_request), never an RM handover, even about advice.
+    assert not rm_handover.needs_person(question)
+    planned=simple_task(question,'English')
+    assert (planned.agent,planned.intent,planned.entities)==('relationship','meeting_request',{})
+    assert critical_task(question,'English') is None and not rm_handover.requested_questions(question)
 
 
 def test_handover_is_marked_on_the_task_but_never_on_fraud() -> None:

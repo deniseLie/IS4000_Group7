@@ -16,7 +16,8 @@ AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_c
 # Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
 CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
-    'requests.create','rm.share_summary','consent.grant','consent.revoke','ticket.create'}) | CUSTOMER_CARD_CHANGES
+    'requests.create','rm.share_summary','consent.grant','consent.revoke','ticket.create',
+    'meeting.request','meeting.withdraw','meeting.counter_reply'}) | CUSTOMER_CARD_CHANGES  # meeting.*: 0106
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
 # 0096 (CR19): the client freezes and unfreezes her own card again (card.temporary_block, card.unblock; SQL refuses an
 # unfreeze of a card the bank froze). Cancelling and the fraud dispute draft stay the bank's. No agent proposes any of them.
@@ -25,9 +26,9 @@ CLIENT_ONLY_CARD_ACTIONS = frozenset({'card.temporary_block','card.unblock'})
 AGENT_ACTIONS = {
     'fraud':frozenset({'card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
-        'rm.share_summary','consent.grant','consent.revoke'}),
+        'rm.share_summary','consent.grant','consent.revoke','meeting.request'}),  # the chat offers a meeting request (2a)
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list'}
 
 
 class PolicyResource(BaseModel):

@@ -34,12 +34,13 @@ def two_offers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner,'run_agent',run)
 
 
-@pytest.mark.parametrize('case',['button confirm','typed yes','cancel','expired','two in one reply'])
+@pytest.mark.parametrize('case',['button confirm','typed yes','cancel','expired','two in one reply','meeting request'])
 def test_offers_ui(local_data_api: NativeAPI,native_api_client: TestClient,monkeypatch: pytest.MonkeyPatch,tmp_path: Path,case: str) -> None:
     import psycopg
     monkeypatch.setenv('CHECKPOINT_SIGNING_KEY',secrets.token_urlsafe(32))
     monkeypatch.setattr(settings,'pipeline','v2');monkeypatch.setattr(settings,'conversation_store','database')
     if case=='two in one reply':two_offers(monkeypatch)
+    if case=='meeting request':monkeypatch.setattr(settings,'client_intent_routing','rules')  # 2a: rules route the ask, no planner call
     ctx=context(local_data_api,1001)
     session=NativeBrowserSession(data_api_url=local_data_api.url,access_token=ctx.principal.jwt.get_secret_value(),user_id=ctx.principal.user_id)
     run_browser(native_api_client,session,f'offer {case}',tmp_path,timeout=300)
@@ -47,6 +48,7 @@ def test_offers_ui(local_data_api: NativeAPI,native_api_client: TestClient,monke
         reasons=[row[0] for row in db.execute('select reason from support.handoffs where customer_id=1001 order by priority').fetchall()]
         states=sorted(row[0] for row in db.execute("select state from actions.commands where customer_id=1001 and type='handoff.create'").fetchall())
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
+        meetings=[row[0] for row in db.execute('select r.status from rm.meeting_requests r join actions.commands c using(command_id) where c.customer_id=1001').fetchall()]
     expected={'button confirm':(['card_lost'],['succeeded']),'typed yes':(['card_lost'],['succeeded']),'cancel':([],['rejected']),
-        'expired':([],['proposed']),'two in one reply':(['card_verification','general_support'],['succeeded','succeeded'])}[case]
-    assert (reasons,states)==expected
+        'expired':([],['proposed']),'two in one reply':(['card_verification','general_support'],['succeeded','succeeded']),'meeting request':([],[])}[case]
+    assert (reasons,states)==expected and meetings==(['requested'] if case=='meeting request' else [])

@@ -21,6 +21,7 @@ from app.schemas.documents import DocumentRecord
 from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
 from app.schemas.document_inspection import DocumentObject
 from app.schemas.tickets import CustomerTicket,RequestCategory
+from app.schemas.meeting_requests import MeetingRequestRecord
 from app.services.authorization import require_permission
 
 STUB=False
@@ -39,6 +40,7 @@ CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
 AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
 INTRODUCTION=TypeAdapter(CustomerEnvelope[Introduction])
 MEETING_OPTIONS=TypeAdapter(CustomerEnvelope[Annotated[list[MeetingOption],Field(max_length=3)]])
+MEETING_REQUESTS=TypeAdapter(CustomerEnvelope[Annotated[list[MeetingRequestRecord],Field(max_length=50)]])
 DOCUMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[DocumentRecord],Field(max_length=200)]])
 DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
 DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
@@ -170,6 +172,15 @@ async def get_requests(ctx: RequestContext) -> ToolResult:
 
 async def get_appointments(ctx: RequestContext) -> ToolResult:
     return _result(await _read('appointments.list','customer_read_appointments',{},APPOINTMENTS,ctx))
+
+
+async def get_meeting_request_records(ctx: RequestContext) -> CustomerEnvelope[list[MeetingRequestRecord]]:
+    """Her own meeting requests, newest first (0106; at most 50). The purpose is her own words."""
+    return await _read('meeting_requests.list','customer_read_meeting_requests',{},MEETING_REQUESTS,ctx)
+
+
+async def get_meeting_requests(ctx: RequestContext) -> ToolResult:
+    return _result(await get_meeting_request_records(ctx))
 
 
 async def get_consent_records(ctx: RequestContext) -> ToolResult:

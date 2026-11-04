@@ -1,6 +1,7 @@
 import {parseAction} from './actions.js';
 import {parseAppointments} from './appointmentData.js';
 import {parseAgendas} from './agendaData.js';
+import {parseMeetingRequests} from './meetingRequests.js';
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,6 +59,11 @@ export async function loadSlots(token,query,signal) {
 
 export async function loadAppointments(token,signal) {
   return parseAppointments(await body(await fetch(`${API_URL}/relationship/appointments`,{headers:{Authorization:`Bearer ${token}`},signal})));
+}
+
+// 2a: her meeting requests (0106), newest first; a countered one names the held time in loadAppointments.
+export async function loadMeetingRequests(token,signal) {
+  return parseMeetingRequests(await body(await fetch(`${API_URL}/relationship/meeting-requests`,{headers:{Authorization:`Bearer ${token}`},signal})));
 }
 
 export async function loadAgendas(token,signal) {

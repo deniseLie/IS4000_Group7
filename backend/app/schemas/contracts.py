@@ -66,6 +66,7 @@ class RiskAssessment(Contract):
     risk_flags: list[RiskFlag] = []
     priority: Priority = 'P3'
     fixed_response: FixedResponse | None = None
+    care: bool = False  # guardrail.CARE: the UI offers a person, not product or meeting chips (2a); never logged
 
 
 # TaskPlan: Orchestrator, saved in the Conversation Store

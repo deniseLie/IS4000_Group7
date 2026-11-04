@@ -15,9 +15,10 @@ from app.schemas.contracts import AgentOutput, AgentResult, AgentSpec, OfferProp
 from app.schemas.customer_data import CustomerTransaction
 from app.schemas.disputes import DisputeItem
 from app.schemas.fraud import DisputeProposal, FraudProposal
-from app.services import case_summary, client_intents, compliance_selection, customer_data, fraud_reports, rm_handover
+from app.services import case_summary, client_intents, compliance_selection, customer_data, fraud_reports, prompts, rm_handover
 from app.services.agents import (account_answers, card_answers, client_guidance, compliance, document, fraud, fraud_records,
-    relationship, request_status_answers, retail, retail_checks, retail_records, runner, transaction_answers)
+    meeting_answers, relationship, relationship_records, request_status_answers, retail, retail_checks, retail_records, runner,
+    transaction_answers)
 from app.services.agents.answer import WITHHELD
 
 SGT = ZoneInfo('Asia/Singapore')
@@ -155,7 +156,8 @@ async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext,
 # ---- Relationship & Service ----
 
 async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput:
-    """RM handovers (preview, then her choice), request status from her tickets, then the released relationship v5 answer."""
+    """RM handovers (preview, then her choice), request status from her tickets, a meeting request drafted from the records
+    (one meeting.request offer, 2a), then the released relationship v6 answer."""
     question = task.question
     if task.entities.get('handover') == 'rm':
         current = ctx.model_copy(update={'agent': None})
@@ -180,8 +182,13 @@ async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContex
         if found is not None:
             result, evidence = found
             return out(spec, task, result, evidence, None)
-    result, evidence, prompt_id = await relationship.respond(shim(task, 'relationship'), history, language, as_v4(ctx, 'relationship'),
-        await knowledge(task, ctx))
+    public, current = await knowledge(task, ctx), as_v4(ctx, 'relationship')
+    records = await relationship_records.load(current)
+    if (meeting := await meeting_answers.respond(task.id, question, history, records, current, task.intent)) is not None:
+        evidence = [*public, *relationship.evidence_for(records)]
+        return out(spec, task, meeting.result, evidence, prompts.load('relationship', relationship.PROMPT)['id'],
+            proposals=[meeting.proposal] if meeting.proposal else [])
+    result, evidence, prompt_id = await relationship.respond(shim(task, 'relationship'), history, language, current, public, records)
     return out(spec, task, result, evidence, prompt_id)
 
 

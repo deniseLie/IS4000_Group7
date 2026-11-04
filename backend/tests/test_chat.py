@@ -32,6 +32,12 @@ def test_lost_card_works_without_model(monkeypatch):
     assert 'Freeze card' in r['answer'] and r['response_origin']=='safety'
     assert r['sources'][0]['id']=='kb:lost-card@v4#main'
 
+def test_care_flag_rides_on_the_answer_without_changing_it(monkeypatch):
+    monkeypatch.delenv('LLM_MODEL',raising=False)
+    cared=result(client.post('/chat',json=payload('I was retrenched and I lost my card, please block it')))
+    plain=result(client.post('/chat',json=payload('I lost my card, please block it')))
+    assert cared['care'] is True and plain['care'] is False and cared['answer']==plain['answer'] and cared['response_origin']=='safety'
+
 @pytest.mark.parametrize('question',['What is my balance?','whats my balance'])
 def test_public_balance_needs_sign_in(question,monkeypatch):
     monkeypatch.delenv('LLM_MODEL',raising=False)

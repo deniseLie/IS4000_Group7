@@ -1,21 +1,22 @@
 import {useEffect,useState} from 'react';
 import Icon from '../Icon';
-import {FORMAT_WORDS,display,receivedText,rmGet,todayView} from '../../lib/rm';
+import {FORMAT_WORDS,display,openSchedule,receivedText,requestsToAnswer,rmGet,todayView,topicLabel} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
 
 const BOOK_QUESTIONS=['Which clients have a maturity or review in the next 30 days?','Who haven’t I met in the last 90 days?','Which clients have requests waiting for me?'];
 function timeOf(when) {return (when||'').split(', ').at(-1);}
 
 // The RM's start page: what needs her now, read straight from her records (no model call, nothing sent). Every item has
-// one obvious next step that opens the assistant with the right client, meeting or request already selected.
+// one obvious next step that opens the assistant with the right client, meeting or request already selected. Meeting
+// requests to answer (overdue first, new ones marked; 3b ranks them) open Schedule → Requests, where she decides.
 export default function TodayPage({token,onAsk,advisor,today}) {
   const [data,setData]=useState(null),[error,setError]=useState(''),[question,setQuestion]=useState('');
   async function load() {
     setError('');
     try {
       const auth=await token();
-      const [a,t,f]=await Promise.all([rmGet('/appointments?past_days=30',auth),rmGet('/tickets',auth),rmGet('/followups',auth)]);
-      setData({appointments:a.data,tickets:t.data,followups:f.data});
+      const [a,t,f,m]=await Promise.all([rmGet('/appointments?past_days=30',auth),rmGet('/tickets',auth),rmGet('/followups',auth),rmGet('/meeting-requests',auth)]);
+      setData({appointments:a.data,tickets:t.data,followups:f.data,meetingRequests:requestsToAnswer(m.data)});
     } catch(failure) {setError(failure.message);}
   }
   useEffect(()=>{load();},[]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -51,6 +52,12 @@ export default function TodayPage({token,onAsk,advisor,today}) {
       <div className="rmw-today-grid">
         <section className="rmw-card">
           <div className="rmw-card-head"><h3><Icon name="calendar"/>Meetings</h3></div>
+          {data.meetingRequests.length>0&&<><h4 className="rmw-subhead">Meeting requests to answer</h4>
+            <ul className="rmw-list" data-testid="rm-today-meeting-requests">{data.meetingRequests.map(r=><li key={r.request_id}><div><strong>{r.client}</strong>
+              <small>{r.topics.map(topicLabel).join(', ')}{r.overdue?<span className="rmw-late"> · overdue, was due {r.respond_by_text}</span>
+                :r.proposal_lapsed?' · your proposed time lapsed':` · respond by ${r.respond_by_text}`}{r.isNew&&<span className="rmw-chip info rmw-new">New</span>}</small></div>
+              <div className="rmw-list-actions"><button className="rmw-mini" data-testid="rm-today-answer" onClick={()=>openSchedule('requests')}><Icon name="calendar"/>Answer</button></div></li>)}</ul>
+            {v.upcoming.length>0&&<h4 className="rmw-subhead">Next 7 days</h4>}</>}
           {!v.upcoming.length?<p className="rm-none">No confirmed meetings in the next 7 days.</p>:
           <ul className="rmw-list">{v.upcoming.map(a=><li key={a.appointment_id}><div><strong>{a.client}</strong>
             <small>{a.date===day?'Today':formatDate(a.date,{weekday:'short',year:undefined})} · {timeOf(a.when)} · {FORMAT_WORDS[a.format]}{a.purpose?` · ${a.purpose}`:''}</small></div>

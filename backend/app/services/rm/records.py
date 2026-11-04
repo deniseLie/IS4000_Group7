@@ -123,6 +123,16 @@ async def add_block(ctx,starts: datetime,ends: datetime,reason: str):
     return await rpc('rm_add_block',{'p_starts':starts.isoformat(),'p_ends':ends.isoformat(),'p_reason':reason or None},ctx,'rm.add_block')
 
 async def remove_block(ctx,block_id: UUID):return await rpc('rm_remove_block',{'p_block_id':str(block_id)},ctx,'rm.remove_block')
+
+# Meeting requests (0106): SQL checks the book and the slot, records once per decision or change id and queues the event.
+async def decide_meeting_request(ctx,request_id: UUID,body):
+    return await rpc('rm_meeting_request_decide',{'p_decision_id':str(body.decision_id),'p_request_id':str(request_id),'p_outcome':body.decision,
+        'p_starts_at':body.starts_at.isoformat() if body.starts_at else None,'p_reason':body.reason},ctx,'rm.meeting_request_decide')
+
+async def reschedule_meeting(ctx,appointment_id: UUID,body):
+    return await rpc('rm_meeting_reschedule',{'p_change_id':str(body.change_id),'p_appointment_id':str(appointment_id),
+        'p_starts_at':body.starts_at.isoformat(),'p_reason':body.reason},ctx,'rm.meeting_reschedule')
+
 async def conversations(ctx):return await rpc('rm_conversations',{},ctx,'rm.conversations')
 async def conversation(ctx,conversation_id: UUID):return await rpc('rm_conversation',{'p_conversation_id':str(conversation_id)},ctx,'rm.conversation')
 async def save_conversation(ctx,conversation_id: UUID,title: str,messages: list,context: dict):

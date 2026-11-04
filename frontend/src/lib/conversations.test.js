@@ -37,3 +37,8 @@ test('saved replies keep the recorded card-block decision on its section',()=>{
   assert.equal(parsed.sections[1].decision,null);
   assert.throws(()=>parseSavedAnswer({...saved,sections:[{...section,decision:42}]}));
 });
+test('a saved answer keeps care only when it is true (2a)',()=>{
+  assert.equal(parseSavedAnswer({...answer(),care:true}).care,true);
+  assert.equal('care' in parseSavedAnswer({...answer(),care:false}),false);
+  assert.equal('care' in parseSavedAnswer(answer()),false);
+});

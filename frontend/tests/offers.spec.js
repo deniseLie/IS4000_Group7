@@ -70,3 +70,22 @@ test('offer two in one reply confirm together by button',async({page})=>{
   await expect(latest(page)).toContainText(/TCK-\d+/);
   await expect(page.getByTestId('offer-block')).toHaveCount(0);
 });
+
+// 2a: a meeting ask is drafted as one meeting.request offer (rules-routed in the native driver, so no planner call);
+// confirming sends it to her RM and the Meetings tab lists it as waiting for an answer. Nothing is booked from the chat.
+test('offer meeting request confirm sends it to the RM',async({page})=>{
+  await seedSession(page);
+  await page.goto('/');
+  await ask(page,'Can I book a meeting with my RM next week?');
+  const offer=page.getByTestId('offer-block');
+  await expect(offer.getByTestId('offer-item')).toHaveCount(1);
+  await expect(latest(page)).toContainText('this meeting request');
+  await expect(latest(page)).not.toContainText(/booked/i);
+  await offer.getByTestId('offer-confirm').click();
+  await expect(latest(page)).toContainText('Sent: your meeting request is with your relationship manager');
+  await expect(latest(page)).toContainText('My requests → Meetings');
+  await expect(page.getByTestId('offer-block')).toHaveCount(0);
+  await page.getByTestId('meeting-handoff').first().click();
+  await expect(page.getByTestId('meeting-request').first()).toHaveAttribute('data-status','requested');
+  await expect(page.getByTestId('withdraw-request').first()).toBeEnabled();
+});

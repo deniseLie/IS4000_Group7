@@ -1,36 +1,77 @@
-"""Booking a meeting with the relationship manager inside the chat (CR17).
+"""Meeting requests in the chat (RM copilot build plan 2a; decision 1: requests only, the chat never books directly).
 
-1. "can i book a meeting with my rm next week" lists the RM's free 30-minute times from the records, with one-tap
-   "Book <day>, <time>" replies (typing a day and time works too).
-2. Choosing a time holds it for 10 minutes, exactly as the Meetings tab does (appointment_hold).
-3. "Confirm booking" books the held time through the same confirm-type action the Meetings tab uses
-   (appointment.confirm): her own tap is the confirmation. The meeting then shows in My requests > Meetings.
-Times come only from the records, never from the model, so the answer is never withheld.
+1. "can I meet Sophie next week about a home loan?" drafts a meeting request from the records: the purpose is her own
+   redacted words (at most 200 characters), the topics come from a fixed word list (TOPIC_WORDS, never model text;
+   `other` when nothing matches), the format is video unless she says phone or in person, and up to 3 preferred times
+   are her RM's free slots: the time she named when it is free, otherwise spread-out free times in the window she named
+   (a day, "next week", "afternoon"), otherwise the next free days.
+2. The reply shows the draft and ends with one meeting.request offer (services/offers.py): nothing is sent until she
+   confirms by button or a typed yes (orchestrator.act). Her RM then accepts a time, proposes another or declines.
+3. A reply to the draft ("Thursday afternoon", "by phone", "it's about my fixed deposit", "other times") redrafts it;
+   an availability question ("when is my RM free?") lists free times first and asks what the meeting is about.
+Times come only from the records, never from the model, so the answer is never withheld. Confirmed meetings show in
+My requests > Meetings.
 """
 import re
 from datetime import date,datetime,timedelta
-from uuid import uuid4
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
-from app.core import data_api
 from app.schemas.chat import Message
-from app.schemas.contracts import ActionCommand,AgentResult,Citation,Receipt,RequestContext
-from app.services import actions
-from app.services.authorization import require_permission
+from app.schemas.contracts import AgentResult,Citation,OfferProposal,RequestContext
+from app.schemas.meeting_requests import FORMAT_LABEL,TOPIC_LABEL
+from app.services import customer_data
+from app.services.privacy import redact
 from app.services.typos import normalise
 
 SGT=ZoneInfo('Asia/Singapore')
-ASK=re.compile(r'\b(?:book|schedule|set up|setup|arrange|make|fix|get)\b[^.?!]{0,40}\b(?:meeting|appointment|call|catch up|time)\b'
-    r'|\b(?:meet|meeting|appointment)\b[^.?!]{0,40}\b(?:rm|relationship manager|advisor|adviser|banker|manager)\b'
-    r'|\b(?:free|available)\s+(?:times?|slots?)\b|\bwhen\b[^.?!]{0,30}\b(?:rm|relationship manager|manager)\b[^.?!]{0,20}\b(?:free|available)\b',re.I)
-LISTED='Tap a time below, or type a day and time, and I’ll hold it for you.'
-HELD='Tap “Confirm booking” to book it.'
-CONFIRM=re.compile(r'^\s*(?:yes[, ]*)?(?:confirm|book it|yes book|ok confirm)',re.I)
+MAX_OPEN=3  # open requests per client (actions.execute_meeting_request, 0106)
+LEAD=timedelta(hours=2)  # SQL refuses times within an hour (rm.slot_problem); the offer may wait 30 minutes for her yes
+MEET=(r'\bmeet(?:\s+up)?\s+(?:with\s+)?(?!(?:the|your|all|these|those|this|that|it|its|our|any|requirements?|criteria|deadlines?'
+    r'|targets?|conditions?|minimum|expectations?)\b)[a-z]+')
+ASK=re.compile(r'\b(?:book|schedule|set up|setup|arrange|make|fix|get|request|want|like|need)\b[^.?!]{0,40}\b(?:meeting|appointment|(?:a|phone|video)\s+call|catch[- ]up)\b'
+    r'|\b(?:meet|meeting|appointment|(?:a|phone|video)\s+call|catch[- ]?up)\b[^.?!]{0,40}\b(?:rm|relationship manager|advisor|adviser|banker|manager)\b|'+MEET,re.I)
+AVAILABILITY=re.compile(r'\b(?:free|available)\s+(?:times?|slots?)\b|\bavailability\b'
+    r'|\bwhen\b[^.?!]{0,30}\b(?:rm|relationship manager|manager|advisor|adviser|banker)\b[^.?!]{0,20}\b(?:free|available)\b',re.I)
+# Questions about meetings she already has stay with her appointment records (intent `appointments`), never a new request.
+EXISTING=re.compile(r'\b(?:my|the)\s+(?:next|upcoming|current|existing|booked|confirmed|scheduled)\s+(?:meeting|appointment)s?\b'
+    r'|\bwhen\s+is\s+my\s+(?:meeting|appointment)\b|\b(?:do|did)\s+i\s+have\s+(?:a|any)\s+(?:meeting|appointment)s?\b|\bwhen\s+am\s+i\s+meeting\b|\b(?:cancel|move|reschedule|rearrange|postpone)\b[^.?!]{0,30}\b(?:meeting|appointment)s?\b'
+    r'|\b(?:meeting|appointment)\b[^.?!]{0,20}\b(?:cancel(?:led)?|moved?|rescheduled?|postponed?)\b',re.I)
+# Fixed topic codes (rm.meeting_topics(), 0106) from her words, in display order. A loan question adds term_sheet.
+TOPIC_WORDS: tuple[tuple[str,re.Pattern[str]],...]=(
+    ('home_loan',re.compile(r'\b(?:home|housing|hdb|condo|house|flat|apartment)\s+(?:loans?|financing)\b|\bmortgages?\b|\brefinanc\w*'
+        r'|\bproperty\b|\b(?:buy(?:ing)?|purchas\w+)\s+(?:a\s+|an\s+|my\s+)?(?:new\s+)?(?:home|house|flat|condo|apartment|hdb)\b',re.I)),
+    ('term_sheet',re.compile(r'\b(?:loans?|mortgages?|borrow(?:ing)?|refinanc\w*|term\s+sheets?)\b',re.I)),
+    ('investments',re.compile(r'\binvest\w*|\bunit\s+trusts?\b|\b(?:mutual|bond|index|equity)\s+funds?\b|\bstocks?\b|\bshares\b|\bbonds?\b'
+        r'|\bportfolio\b|\bwealth\b|\bretirement\b|\betfs?\b',re.I)),
+    ('fixed_deposit',re.compile(r'\b(?:fixed|time)\s+deposits?\b|\bFDs?\b',re.I)),
+    ('insurance',re.compile(r'\b(?:insurance|insure[ds]?|life\s+cover|coverage)\b',re.I)),
+    ('compliance_review',re.compile(r'\b(?:compliance|kyc)\b|\bmy\s+review\b|\breview\s+(?:documents?|deadline)\b|\btax\s+residency\b',re.I)),
+    ('card_review',re.compile(r'\b(?:credit\s+)?cards?\b|\bcredit\s+limit\b',re.I)),
+    ('account_review',re.compile(r'\baccounts?\b|\bsavings\b|\bstatements?\b',re.I)))
+FORMAT={'video':'video','zoom':'video','teams':'video','in person':'in_person','in-person':'in_person','face to face':'in_person',
+    'branch':'in_person','office':'in_person','phone':'phone','call me':'phone'}  # checked in order: "video call" is video
 MONTH=r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*'
 DAY=re.compile(r'\b(\d{1,2})\s*'+MONTH+r'\b|\b'+MONTH+r'\s+(\d{1,2})\b',re.I)
-TIME=re.compile(r'\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b',re.I)
-# Checked in order: "video call" must be video, not a phone call.
-FORMAT={'video':'video','zoom':'video','in person':'in_person','in-person':'in_person','face to face':'in_person','branch':'in_person','phone':'phone','call me':'phone'}
-LABEL={'video':'video call','phone':'phone call','in_person':'in person'}
+TIME=re.compile(r'\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b([01]?\d|2[0-3]):([0-5]\d)\b',re.I)
+WEEKDAY=re.compile(r'\b(monday|tuesday|wednesday|thursday|friday|mon|tues?|wed|thur?s?|fri)\b',re.I)
+PART=re.compile(r'\b(morning|afternoon|evening|lunch(?:time)?)\b',re.I)
+MORE=re.compile(r'\b(?:other|another|more|different|later|earlier)\b[^.?!]{0,20}\b(?:times?|slots?|days?|dates?)\b|\bnone of (?:these|those|them)\b',re.I)
+ABOUT=re.compile(r'^\s*(?:it[’\']?s\s+|it\s+is\s+|this\s+is\s+)?(?:about|regarding|re|for|to discuss)\b',re.I)
+# Fixed wording; the markers let a reply to it come back here (awaiting) and let a redraft read the draft it changes.
+DRAFTED='To change anything, just tell me'
+LISTED='Tell me which times suit you and what you’d like to discuss'
+SUMMARY='Send this meeting request to your relationship manager'
+NO_RM=('You don’t have a relationship manager recorded right now, so I can’t send a meeting request. '
+    'Use Talk to a person and someone will help you.')
+NO_TIMES=('Your relationship manager has no free times in the next two weeks, so I can’t suggest times for a meeting request. '
+    'Please ask again in a few days, or use Talk to a person.')
+TOO_MANY=('You already have {count} open meeting requests with your relationship manager, which is the most at one time. '
+    'You can follow or withdraw them in My requests → Meetings.')
+
+
+class Reply(NamedTuple):
+    result: AgentResult
+    proposal: OfferProposal | None=None
 
 
 def slot_label(start: datetime) -> str:
@@ -38,133 +79,174 @@ def slot_label(start: datetime) -> str:
     return f'{local:%a} {local.day} {local:%b}, {local.hour%12 or 12}:{local:%M} {"am" if local.hour<12 else "pm"}'
 
 
+def local(slot) -> datetime:return slot.starts_at.astimezone(SGT)
+
+
 def next_week(today: date) -> tuple[date,date]:
     monday=today+timedelta(days=7-today.weekday())
     return monday,monday+timedelta(days=4)
 
 
-def chosen_format(text: str) -> str:
-    return next((value for key,value in FORMAT.items() if key in text),'video')
+def chosen_format(text: str) -> str | None:
+    return next((value for key,value in FORMAT.items() if re.search(rf'\b{re.escape(key)}\b',text,re.I)),None)
+
+
+def topics_for(text: str) -> list[str]:
+    """The fixed topic codes her words name, in display order (at most 5); `other` when none does."""
+    found=[code for code,pattern in TOPIC_WORDS if pattern.search(text)]
+    return found[:5] or ['other']
+
+
+def clock(text: str) -> tuple[int,int] | None:
+    found=TIME.search(text)
+    if not found:return None
+    if found.group(3):return int(found.group(1))%12+(12 if found.group(3).lower()=='pm' else 0),int(found.group(2) or 0)
+    return int(found.group(4)),int(found.group(5))
 
 
 def matching_slot(text: str,slots):
-    day=DAY.search(text); time=TIME.search(text)
-    if not day or not time:return None
-    number=int(day.group(1) or day.group(4)); month=(day.group(2) or day.group(3))[:3].lower()
-    hour=int(time.group(1))%12+(12 if time.group(3).lower()=='pm' else 0); minute=int(time.group(2) or 0)
-    return next((slot for slot in slots if (local:=slot.starts_at.astimezone(SGT)).day==number and f'{local:%b}'.lower()==month
-        and local.hour==hour and local.minute==minute),None)
+    """The free slot at the day and time she typed ("Mon 2 Nov, 10:00 am", "2 nov 10am"), or None."""
+    day=DAY.search(text);at=clock(text)
+    if not day or not at:return None
+    number=int(day.group(1) or day.group(4));month=(day.group(2) or day.group(3))[:3].lower()
+    return next((slot for slot in slots if (when:=local(slot)).day==number and f'{when:%b}'.lower()==month
+        and (when.hour,when.minute)==at),None)
 
 
-def spread(slots,limit: int=6,per_day: int=2) -> list:
-    """Up to six times across several days (two a day: one morning, one afternoon where possible), in time order."""
+def spread(slots,limit: int=3,per_day: int=1) -> list:
+    """Up to `limit` times across days (mornings and afternoons in turn), in time order."""
     days: dict[date,list]={}
-    for slot in sorted(slots,key=lambda item:item.starts_at):days.setdefault(slot.starts_at.astimezone(SGT).date(),[]).append(slot)
+    for slot in sorted(slots,key=lambda item:item.starts_at):days.setdefault(local(slot).date(),[]).append(slot)
     chosen=[]
-    for day_slots in days.values():
-        morning=[slot for slot in day_slots if slot.starts_at.astimezone(SGT).hour<12]
-        afternoon=[slot for slot in day_slots if slot.starts_at.astimezone(SGT).hour>=12]
-        picks=[*(morning[:1]),*(afternoon[:1])] or day_slots[:1]
-        chosen+=[*picks,*[slot for slot in day_slots if slot not in picks]][:per_day]
-    if len(chosen)<limit:chosen+=[slot for slot in sorted(slots,key=lambda item:item.starts_at) if slot not in chosen][:limit-len(chosen)]
+    for i,day_slots in enumerate(days.values()):
+        morning=[s for s in day_slots if local(s).hour<12];afternoon=[s for s in day_slots if local(s).hour>=12]
+        first=(afternoon+morning) if i%2 else (morning+afternoon)
+        chosen+=first[:per_day] if per_day==1 else [*morning[:1],*afternoon[:1],*[s for s in day_slots if s not in morning[:1]+afternoon[:1]]][:per_day]
+    chosen+=[s for s in sorted(slots,key=lambda item:item.starts_at) if s not in chosen][:max(0,limit-len(chosen))]
     return sorted(chosen[:limit],key=lambda item:item.starts_at)
 
 
-NEXT_DAY = re.compile(r"\b(?:next|this)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",re.I)
-WEEKDAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
-MORE=re.compile(r'\b(?:other|another|more|different|later|earlier)\b[^.?!]{0,20}\b(?:times?|slots?|days?|dates?)\b|\bnone of (?:these|those|them)\b',re.I)
+def window(text: str,slots,today: date) -> tuple[list,bool]:
+    """The free slots in the day, week, part of day and time she named, and whether she named any of them."""
+    pool,named=list(slots),False
+    def keep(test) -> None:
+        nonlocal pool,named
+        named=True;pool=[s for s in pool if test(local(s))]
+    if found:=DAY.search(text):
+        number=int(found.group(1) or found.group(4));month=(found.group(2) or found.group(3))[:3].lower()
+        keep(lambda when:when.day==number and f'{when:%b}'.lower()==month)
+    elif found:=WEEKDAY.search(text):
+        wanted=['mon','tue','wed','thu','fri'].index(found.group(1)[:3].lower())
+        target=today+timedelta(days=(wanted-today.weekday())%7 or 7)
+        if re.search(r'\bnext\s+week\b',text,re.I) and target<next_week(today)[0]:target+=timedelta(days=7)
+        keep(lambda when:when.date()==target)
+    elif re.search(r'\btomorrow\b',text,re.I):keep(lambda when:when.date()==today+timedelta(days=1))
+    elif re.search(r'\bnext\s+week\b',text,re.I):
+        start,end=next_week(today);keep(lambda when:start<=when.date()<=end)
+    elif re.search(r'\bthis\s+week\b',text,re.I):keep(lambda when:when.date()<=today+timedelta(days=6-today.weekday()))
+    if found:=PART.search(text):
+        part=found.group(1).lower()
+        keep(lambda when:when.hour<12 if part=='morning' else 12<=when.hour<14 if part.startswith('lunch') else when.hour>=12 if part=='afternoon' else when.hour>=17)
+    if (at:=clock(text)) is not None:keep(lambda when:(when.hour,when.minute)==at)
+    return pool,named
 
 
-def replying(text: str) -> bool:
-    """Her message is about the times we offered: a day or time, a meeting format, a confirmation or other times."""
-    return bool(DAY.search(text) or TIME.search(text) or NEXT_DAY.search(text) or CONFIRM.search(text) or MORE.search(text)
-        or any(key in text for key in FORMAT))
+def times_for(text: str,slots,today: date,shown: list[str]) -> tuple[list,str]:
+    """Up to 3 preferred times from the free slots, and a note when what she named is not free."""
+    if exact:=matching_slot(text,slots):return [exact],''
+    usable=[s for s in slots if slot_label(s.starts_at) not in shown] if MORE.search(text) and shown else slots
+    if shown and not MORE.search(text) and not (DAY.search(text) or WEEKDAY.search(text) or TIME.search(text) or PART.search(text)
+            or re.search(r'\b(?:tomorrow|next week|this week)\b',text,re.I)):
+        kept=[s for s in slots if slot_label(s.starts_at) in shown]  # only the format or the purpose changed
+        if kept:return kept[:3],''
+    pool,named=window(text,usable,today)
+    if pool:return ([pool[0]] if clock(text) is not None and len(pool)==1 else spread(pool)),''
+    return spread(usable or slots),'That time isn’t free with your relationship manager, so I’ve picked other free times.' if named else ''
+
+
+def awaiting_reply(text: str) -> bool:
+    """Her message is about the draft or the times we listed: a day or time, a format, other times or what it is about
+    ("it's about my fixed deposit"). A topic word alone ("whats my card balance") is a new question, not a reply."""
+    return bool(DAY.search(text) or TIME.search(text) or WEEKDAY.search(text) or PART.search(text) or MORE.search(text) or ABOUT.search(text)
+        or re.search(r'\b(?:tomorrow|next week|this week)\b',text,re.I) or chosen_format(text))
+
+
+def ours(message: Message) -> bool:
+    return message.role=='assistant' and (DRAFTED in message.content or LISTED in message.content)
 
 
 def awaiting(history: list[Message]) -> bool:
-    """Only replies about the offered times come back here; any other question goes to its usual place."""
-    return (len(history)>=2 and history[-1].role=='user' and history[-2].role=='assistant'
-        and (LISTED in history[-2].content or HELD in history[-2].content) and replying(normalise(history[-1].content)))
+    """Only replies about our draft or listed times come back here; any other question goes to its usual place."""
+    return (len(history)>=2 and history[-1].role=='user' and ours(history[-2]) and not EXISTING.search(history[-1].content)
+        and awaiting_reply(normalise(history[-1].content)))
 
 
-def asked_format(history: list[Message]) -> str | None:
-    """The format she chose earlier in this booking ("in person"), carried into the hold."""
-    for item in reversed(history[-6:]):
-        found=next((value for key,value in FORMAT.items() if key in normalise(item.content)),None) if item.role=='user' else None
-        if found:return found
-        if item.role=='assistant' and (match:=re.search(r'It will be an? (in-person|phone|video) meeting',item.content)):
-            return {'in-person':'in_person','phone':'phone','video':'video'}[match.group(1)]
-    return None
+def thread_start(history: list[Message]) -> str:
+    """The question that started this meeting conversation (the user message before our first meeting reply)."""
+    i=len(history)-1
+    while i>=2 and ours(history[i-1]) and history[i-2].role=='user':i-=2
+    return history[i].content if 0<=i<len(history) else ''
 
 
-def result(task_id: str,text: str,source: str='relationship-slots') -> AgentResult:
-    return AgentResult(task_id=task_id,agent='relationship',status='ok',answer_kind='banking',text=text,
-        citations=[Citation(source_id=source)])
+def draft_of(text: str) -> dict:
+    """What our previous draft said (our own fixed wording): purpose, format and times."""
+    purpose=re.search(r'^• What it’s about: “(.*)”$',text,re.M)
+    shown=re.search(r'^• Times that suit you \(Singapore time\): (.*)$',text,re.M)
+    fmt=re.search(r'^• Format: (.*)$',text,re.M)
+    return {'purpose':purpose.group(1) if purpose else None,'times':shown.group(1).split('; ') if shown else re.findall(r'^• (\w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} [ap]m)$',text,re.M),
+        'format':next((key for key,label in FORMAT_LABEL.items() if fmt and fmt.group(1)==label),None)}
 
 
-async def hold(slot,meeting_format: str,ctx: RequestContext) -> None:
-    current=ctx.model_copy(update={'agent':None})
-    require_permission(current.principal,'appointment.hold',{'customer_id':current.principal.customer_id},current)
-    target={'advisor_id':str(slot.advisor_id),'starts_at':slot.starts_at.isoformat(),'ends_at':slot.ends_at.isoformat(),'format':meeting_format}
-    with data_api.connect(current) as db:
-        await data_api.execute(lambda:db.rpc('appointment_hold',{'p_command_id':str(uuid4()),'p_session_id':str(uuid4()),
-            'p_case_id':str(uuid4()),'p_target':target}).execute(),'appointment.hold')
+def purpose_text(text: str) -> str:
+    cleaned=' '.join(redact(text)[0].split())
+    return cleaned if len(cleaned)<=200 else cleaned[:199].rsplit(' ',1)[0].rstrip(' ,.;:')+'…'
 
 
-async def confirm(appointment,ctx: RequestContext) -> bool:
-    current=ctx.model_copy(update={'agent':None,'case_id':appointment.case_id})
-    task=f'chat_{uuid4().hex[:12]}'
-    command=ActionCommand(command_id=uuid4(),type='appointment.confirm',target={'appointment_id':str(appointment.appointment_id)},
-        idempotency_key=f'{appointment.case_id}:{task}:appointment.confirm')
-    await actions.run_action(command,current,False)
-    receipt=await actions.run_action(command,current,True)
-    return isinstance(receipt,Receipt) and receipt.outcome=='succeeded'
+def result(task_id: str,text: str,sources: tuple[str,...]=('relationship-slots',)) -> AgentResult:
+    return AgentResult(task_id=task_id,agent='relationship',status='ok',answer_kind='banking' if sources else 'conversation',text=text,
+        citations=[Citation(source_id=s) for s in sources])
 
 
-async def respond(task_id: str,question: str,history: list[Message],records,ctx: RequestContext) -> AgentResult | None:
+def display(name: str) -> str:return re.sub(r'\s*\(DEMO\)\s*$','',name)
+
+
+async def open_requests(ctx: RequestContext) -> int:
+    envelope=await customer_data.get_meeting_request_records(ctx)
+    return sum(row.status in ('requested','countered') for row in envelope.data)
+
+
+async def respond(task_id: str,question: str,history: list[Message],records,ctx: RequestContext,intent: str | None=None) -> Reply | None:
     latest=history[-1].content if history and history[-1].role=='user' else question
     text=normalise(latest)
-    now=ctx.received_at
-    slots=[slot for slot in records.slots.data if slot.starts_at>now]
     previous=history[-2].content if awaiting(history) else ''
-    if HELD in previous and CONFIRM.search(text):
-        held=[item for item in records.appointments.data if item.status=='held' and item.case_id is not None and item.starts_at>now]
-        if not held:return result(task_id,'That hold has expired, so nothing was booked. Ask me for free times and pick one again.')
-        item=max(held,key=lambda row:row.hold_expires_at)
-        if not await confirm(item,ctx):return result(task_id,'That time was taken before I could book it. Ask me for free times and pick another.')
-        return result(task_id,f'Booked: {slot_label(item.starts_at)} with your relationship manager ({LABEL[item.format]}). '
-            'You can see or cancel it in My requests > Meetings.','relationship-appointments')
-    if previous or ASK.search(text):
-        slot=matching_slot(text,slots)
-        meeting_format=next((value for key,value in FORMAT.items() if key in text),None) or asked_format(history) or 'video'
-        if slot is not None:
-            await hold(slot,meeting_format,ctx)
-            return result(task_id,f'I’ve held {slot_label(slot.starts_at)} ({LABEL[meeting_format]}) with your relationship manager '
-                f'for 10 minutes. {HELD} You can also confirm it in My requests > Meetings.')
-        shown=slots
-        if previous and MORE.search(text):shown=[slot for slot in slots if slot_label(slot.starts_at) not in previous] or slots
-        day_match=NEXT_DAY.search(text)
-        if day_match:
-            today=now.astimezone(SGT).date()
-            delta=(WEEKDAYS.index(day_match.group(1).lower())-today.weekday())%7 or 7
-            target=today+timedelta(days=delta)
-            shown=[s for s in slots if s.starts_at.astimezone(SGT).date()==target]
-            if not shown:
-                return result(task_id,f'I cannot find a free RM meeting slot for {target:%d %B %Y} in the available schedule. You can ask for other available times.')
-        if 'next week' in text:
-            start,end=next_week(now.astimezone(SGT).date())
-            shown=[slot for slot in slots if start<=slot.starts_at.astimezone(SGT).date()<=end] or slots
-        if not shown:return result(task_id,'Your relationship manager has no free times in the next two weeks. '
-            'You can ask them to call you instead: say “ask my relationship manager to call me”.')
-        lines='\n'.join(f'• {slot_label(slot.starts_at)}' for slot in spread(shown))
-        lead='Here are free 30-minute times with your relationship manager (Singapore time):'
-        if previous and (DAY.search(text) or TIME.search(text)):lead='That time isn’t free. '+lead
-        elif previous and MORE.search(text):lead='Here are more free times with your relationship manager (Singapore time):'
-        if meeting_format=='video':
-            tail='Meetings are by video call unless you say “phone” or “in person”.'
-        else:
-            noun={'in_person':'an in-person','phone':'a phone'}[meeting_format]
-            lead=f'Sure, {LABEL[meeting_format]}. '+lead if previous and not (DAY.search(text) or TIME.search(text)) else lead
-            tail=f'It will be {noun} meeting.'
-        return result(task_id,f'{lead}\n{lines}\n{LISTED} {tail}')
-    return None
+    if EXISTING.search(text) and not previous:return None  # her booked meetings: the relationship answer from records
+    asked=intent=='meeting_request' or bool(ASK.search(text) or ASK.search(latest))
+    if not (previous or asked or AVAILABILITY.search(text)):return None
+    current=records.assignment.data.current if records.assignment.data else None
+    if current is None:return Reply(result(task_id,NO_RM,('relationship-assignment',)))
+    today=ctx.received_at.astimezone(SGT).date()
+    slots=sorted((s for s in records.slots.data if s.advisor_id==current.rm_id and s.starts_at>ctx.received_at+LEAD),key=lambda s:s.starts_at)
+    if not slots:return Reply(result(task_id,NO_TIMES))
+    before=draft_of(previous) if previous else {'purpose':None,'times':[],'format':None}
+    if not previous and not asked:  # "when is my RM free?": the free times first, then what it is about
+        pool,_=window(text,slots,today)
+        lines='\n'.join(f'• {slot_label(s.starts_at)}' for s in spread(pool or slots,limit=6,per_day=2))
+        return Reply(result(task_id,f'Here are free 30-minute times with your relationship manager (Singapore time):\n{lines}\n'
+            f'{LISTED}, and I’ll prepare a meeting request for you to confirm.'))
+    if (count:=await open_requests(ctx))>=MAX_OPEN:return Reply(result(task_id,TOO_MANY.format(count=count),()))
+    own=latest if not previous or topics_for(latest)!=['other'] else before['purpose'] or thread_start(history)
+    purpose=purpose_text(own or question)
+    chosen,note=times_for(text,slots,today,before['times'])
+    meeting_format=chosen_format(text) or before['format'] or 'video'
+    topics=topics_for(purpose)
+    times='; '.join(slot_label(s.starts_at) for s in chosen)
+    lead=f'{note} ' if note else ''
+    text=(f'{lead}I can send your relationship manager, {display(current.name)}, this meeting request:\n'
+        f'• What it’s about: “{purpose}”\n• Topics: {", ".join(TOPIC_LABEL[t] for t in topics)}\n'
+        f'• Format: {FORMAT_LABEL[meeting_format]}\n• Times that suit you (Singapore time): {times}\n'
+        f'They accept one of these times, suggest another or reply in a message, usually within one business day. '
+        f'{DRAFTED} (for example “Thursday afternoon”, “by phone” or “other times”).')
+    target={'advisor_id':str(current.rm_id),'purpose':purpose,'topics':topics,'format':meeting_format,
+        'preferred_times':[s.starts_at.isoformat() for s in chosen]}
+    return Reply(result(task_id,text,('relationship-slots','relationship-assignment')),
+        OfferProposal(task_id=task_id,agent='relationship',type='meeting.request',target=target,summary=SUMMARY))

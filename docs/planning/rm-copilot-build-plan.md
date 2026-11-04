@@ -20,7 +20,7 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | # | Phase | Size | Waits on | The meeting side waits on it? |
 |---|---|---|---|---|
 | 1 | ~~Seam for the meeting side (`0106`, `0107`)~~ **Done 5 Nov 2026**, on hosted | L | – | Delivered |
-| 2a | Meeting requests end to end: client request, RM accept / propose / decline, `care` flag | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
+| 2a | ~~Meeting requests end to end: client request, RM accept / propose / decline, `care` flag~~ **Done 5 Nov 2026** | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
 | 2b | Remove the Security agent | S–M | 1 | No |
 | 3 | RM copilot: three agents, tracing, daily work | L | 2a | No |
 | 4 | Talking-point pipeline, on seeded consent (`0108`) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
@@ -62,6 +62,8 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 ## Phase 2: Client side
 
 ### 2a. Meeting requests end to end
+
+**Status:** built 5 Nov 2026 (no migration; `relationship/v6`, `planner/v8`). Differences from the plan: `meeting.request` creates no ticket in 0106, so the confirmation quotes the RM's answer-by time and points to My requests → Meetings instead of a `TCK-` reference; a refused time on the RM routes is 409 `rm_slot_unavailable`; a reschedule needs a reason (SQL requires one). QA1 C23 and planner P06 now describe the request flow.
 
 **Goal:** Michelle requests a meeting from chat or from My requests → Meetings and follows its status. Sophie accepts, proposes another time or declines it from her workspace; acceptance creates the confirmed meeting and its `meeting.scheduled` event.
 

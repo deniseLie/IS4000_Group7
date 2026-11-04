@@ -36,6 +36,7 @@ export function parseSavedAnswer(value) {
   }
   const offer=parseOffer(value.offer);
   if(offer)result.offer=offer;
+  if(value.care===true)result.care=true;  // 2a: Talk to a person instead of product or meeting chips (lib/followUps.js)
   return result;
 }
 export function parseSession(value) {

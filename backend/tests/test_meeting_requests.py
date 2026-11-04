@@ -273,3 +273,29 @@ def test_slot_problems_name_the_reason(database: 'Connection[SqlRow]') -> None:
         database.execute("""insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status)
             values(1007,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed')""",(SOPHIE,at,at))
     assert problem(third)=='weekly_limit'
+
+
+def test_the_chat_draft_is_what_sql_stores_and_the_python_ledger_reads_it_back(database: 'Connection[SqlRow]',monkeypatch: pytest.MonkeyPatch) -> None:
+    """2a: the meeting.request offer the chat drafts (agents/meeting_answers) passes the SQL normaliser and validator as is,
+    and the recorded command and receipt parse with the Python ledger models (what /commands and the offer outcome read)."""
+    import asyncio
+    from types import SimpleNamespace
+    from app.schemas.actions import ActionOutcome
+    from app.schemas.chat import Message
+    from app.schemas.contracts import Principal,RequestContext
+    from app.schemas.meeting_requests import MeetingRequestResult,MeetingWithdrawResult
+    from app.services.agents import meeting_answers
+    async def none(ctx):return 0
+    monkeypatch.setattr(meeting_answers,'open_requests',none)
+    slots=[SimpleNamespace(advisor_id=UUID(SOPHIE),starts_at=t) for t in free_times(database,n=8)]
+    records=SimpleNamespace(assignment=SimpleNamespace(data=SimpleNamespace(current=SimpleNamespace(rm_id=UUID(SOPHIE),name='Sophie Lim (DEMO)'))),
+        slots=SimpleNamespace(data=slots))
+    question='Can I meet Sophie about refinancing my home loan? My card is 4111 1111 1111 1111'
+    reply=asyncio.run(meeting_answers.respond('t1',question,[Message(role='user',content=question)],records,
+        RequestContext(session_id=uuid4(),principal=Principal(kind='guest')),'meeting_request'))
+    sent=ActionOutcome.model_validate(act(database,'meeting.request',reply.proposal.target))
+    assert sent.command.state=='succeeded' and isinstance(sent.receipt.result,MeetingRequestResult)
+    assert sent.command.target.topics==['card_review','home_loan','term_sheet'] and '4111' not in sent.command.target.purpose
+    assert [t for t in sent.command.target.preferred_times]==sorted(datetime.fromisoformat(t) for t in reply.proposal.target['preferred_times'])
+    withdrawn=ActionOutcome.model_validate(act(database,'meeting.withdraw',{'request_id':str(sent.receipt.result.request_id)}))
+    assert isinstance(withdrawn.receipt.result,MeetingWithdrawResult) and withdrawn.command.target.advisor_id==UUID(SOPHIE)

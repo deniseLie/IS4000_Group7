@@ -144,3 +144,56 @@ test('Today page lists upcoming meetings, meetings to document, waiting requests
   const body=interactionPayload({customer_id:1002,source_notes:'n',appointment_id:'a1',draft:{gaps:[],actions:[]}},{met_on:'2026-10-30',format:'phone',summary:'S',items:[]},'k');
   assert.equal(body.structured.appointment_id,'a1');
 });
+
+test('meeting requests to answer: overdue first, new ones marked, waiting on the client left out (2a)',async()=>{
+  const {requestsToAnswer,needsAnswer,requestLabel,topicLabel,slotProblemText}=await import('./rm.js');
+  const now=Date.parse('2026-11-05T10:00:00Z');
+  const list=[{request_id:'fresh',status:'requested',overdue:false,created_at:'2026-11-05T08:00:00Z',respond_by:'2026-11-06T08:00:00Z'},
+    {request_id:'late',status:'requested',overdue:true,created_at:'2026-11-03T08:00:00Z',respond_by:'2026-11-04T08:00:00Z'},
+    {request_id:'held',status:'countered',proposal_lapsed:false,created_at:'2026-11-01T08:00:00Z',respond_by:'2026-11-02T08:00:00Z'},
+    {request_id:'lapsed',status:'countered',proposal_lapsed:true,created_at:'2026-10-28T08:00:00Z',respond_by:'2026-10-29T08:00:00Z'},
+    {request_id:'done',status:'scheduled',created_at:'2026-10-20T08:00:00Z',respond_by:'2026-10-21T08:00:00Z'}];
+  const due=requestsToAnswer(list,now);
+  assert.deepEqual(due.map(r=>r.request_id),['late','lapsed','fresh']);
+  assert.deepEqual(due.map(r=>r.isNew),[false,false,true]);
+  assert.deepEqual(list.map(needsAnswer),[true,true,false,true,false]);
+  assert.deepEqual(list.map(requestLabel),['Waiting for you','Overdue','Waiting for the client','Proposal lapsed','Scheduled']);
+  assert.equal(topicLabel('term_sheet'),'Term sheet');assert.equal(topicLabel('new_code'),'new code');
+  assert.equal(slotProblemText('weekly_limit'),'the client already has the most meetings allowed that week');assert.equal(slotProblemText(null),'');
+});
+
+test('a decision body fits its outcome and the card id survives a retry until it is recorded',async()=>{
+  const {decisionBody,idKeeper,decisionNotice,moveNotice}=await import('./rm.js');
+  assert.deepEqual(decisionBody('d1','accept',{startsAt:'2026-11-09T08:30:00.000Z'}),{decision_id:'d1',decision:'accept',starts_at:'2026-11-09T08:30:00.000Z'});
+  assert.deepEqual(decisionBody('d1','decline',{reason:'not_needed',startsAt:'x'}),{decision_id:'d1',decision:'decline',reason:'not_needed'});
+  let n=0;const ids=idKeeper(()=>`id${++n}`);
+  assert.equal(ids.get('r1'),'id1');assert.equal(ids.get('r1'),'id1');  // double click or retry after a refusal
+  assert.equal(ids.get('r2'),'id2');
+  ids.done('r1');assert.equal(ids.get('r1'),'id3');  // recorded: a later decision (a lapsed proposal) is a new one
+  const meeting={when:'Mon 9 Nov 2026, 4:30 pm',hold_expires:'Tue 10 Nov 2026, 5:00 pm'};
+  assert.equal(decisionNotice({replayed:false,request:{client:'Tan Mei Ling',status:'scheduled',meeting}}),
+    'Tan Mei Ling’s meeting is confirmed for Mon 9 Nov 2026, 4:30 pm. The client gets an Inbox notice.');
+  assert.match(decisionNotice({replayed:true,request:{client:'Tan Mei Ling',status:'countered',meeting}}),/^Already recorded\. You proposed .* until Tue 10 Nov 2026, 5:00 pm\.$/);
+  assert.match(decisionNotice({request:{client:'X',status:'declined',decline_reason:'redirected'}}),/\(Passed to the team that handles it\)/);
+  assert.equal(decisionNotice(null),'');
+  assert.equal(moveNotice({replayed:false,when:'Thu 12 Nov 2026, 3:00 pm'},'Michelle Ng'),'Michelle Ng’s meeting moved to Thu 12 Nov 2026, 3:00 pm. The client gets an Inbox notice.');
+});
+
+test('times to propose or move to come from her free half hours, read as Singapore time',async()=>{
+  const {freeTimes,sgtInput}=await import('./rm.js');
+  const availability={days:[{date:'2026-11-09',free:['16:00','16:30']},{date:'2026-11-10',free:[]},{date:'2026-11-11',free:['09:00']}]};
+  const times=freeTimes(availability,['2026-11-09T08:30:00Z']);  // 16:30 SGT is one of the client's own times
+  assert.deepEqual(times.map(t=>[t.date,t.time]),[['2026-11-09','16:00'],['2026-11-11','09:00']]);
+  assert.equal(times[0].starts_at,'2026-11-09T08:00:00.000Z');
+  assert.deepEqual(freeTimes(null),[]);
+  assert.equal(sgtInput('2026-11-12T15:00'),'2026-11-12T07:00:00.000Z');
+  assert.equal(sgtInput(''),null);assert.equal(sgtInput('12/11/2026 3pm'),null);
+});
+
+test('Today hands the Requests tab to Schedule once',async()=>{
+  const {openSchedule,takeScheduleTab}=await import('./rm.js');
+  globalThis.location??={hash:''};
+  openSchedule('requests');
+  assert.equal(location.hash,'rm-schedule');
+  assert.equal(takeScheduleTab(),'requests');assert.equal(takeScheduleTab(),null);
+});

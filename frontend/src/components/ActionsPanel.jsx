@@ -3,6 +3,7 @@ import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
 import {appointmentTime} from '../lib/appointmentData';
+import {TOPICS} from '../lib/meetingRequests';
 import {consentCategoryText} from '../lib/consentData';
 import {displayName,formatDate,formatDateTime,formatMoney,formatTime} from '../lib/format';
 import {POSSESSION,possessionLabel} from '../lib/disputeData';
@@ -30,6 +31,9 @@ function commandTitle(command) {
   if(command.type==='ticket.create')return `Raise a request: ${command.target.category_label}`;
   if(command.type==='agenda.save')return 'Save a private agenda draft';
   if(command.type==='rm.share_summary')return 'Share a saved agenda snapshot';
+  if(command.type==='meeting.request')return 'Send a meeting request to your relationship manager';
+  if(command.type==='meeting.withdraw')return 'Withdraw a meeting request';
+  if(command.type==='meeting.counter_reply')return command.target.reply==='accept'?'Accept the time your relationship manager suggested':'Decline the time your relationship manager suggested';
   throw new Error('This action type has no review title. Reload its recorded status.');
 }
 
@@ -57,12 +61,15 @@ function receiptText(item) {
   if(item.command.type==='requests.create')return 'This command recorded the reviewed request with status sent. This does not mean the service is fulfilled or a real advisor was contacted. Check Requests for its current status.';
   if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
   if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
+  if(item.command.type==='meeting.request')return `Your meeting request was sent. Your relationship manager answers by ${item.receipt.result.respond_by_text} (Singapore time). Follow it in My requests → Meetings.`;
+  if(item.command.type==='meeting.withdraw')return 'You withdrew this meeting request. No meeting was booked.';
+  if(item.command.type==='meeting.counter_reply')return item.receipt.result.reply==='accept'?`Your meeting is booked${item.receipt.result.when?` for ${item.receipt.result.when}`:''}. You can see it in My requests → Meetings.`:'You declined the suggested time and the request was closed. No meeting was booked.';
   throw new Error('This action type has no verified receipt description.');
 }
 
 function groupOf(command) {
   const kind=command.type.split('.')[0];
-  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm'].includes(kind)?'Data sharing':kind==='appointment'?'Appointments':['requests','ticket'].includes(kind)?'Requests':'Support';
+  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm'].includes(kind)?'Data sharing':['appointment','meeting'].includes(kind)?'Appointments':['requests','ticket'].includes(kind)?'Requests':'Support';
 }
 // Plain-language card heading and summary; the exact recorded fields stay one click away under "Full details".
 function plainTitle(command) {
@@ -83,6 +90,7 @@ function plainTitle(command) {
     case 'consent.request':case 'consent.grant':return 'Relationship manager data sharing';
     case 'consent.revoke':return 'Withdraw data-sharing consent';
     case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `Meeting on ${appointmentTime(t.starts_at)}`;
+    case 'meeting.request':return 'Meeting request to your relationship manager';
     default:return command.type.startsWith('handoff.')?'Support handoff':commandTitle(command);
   }
 }
@@ -105,6 +113,7 @@ function plainSummary(command) {
     case 'consent.grant':return `Lets ${who} see ${consentCategoryText(t.categories)}${t.expires_at?` until ${formatDate(t.expires_at)}`:''}. Other records stay restricted.`;
     case 'consent.revoke':return `Stops ${who} seeing ${consentCategoryText(t.categories)} from now on.`;
     case 'appointment.hold':case 'appointment.confirm':case 'appointment.cancel':return `${appointmentTime(t.starts_at)} – ${formatTime(t.ends_at)} (Singapore time) · ${mark(t.format)}.`;
+    case 'meeting.request':return `“${t.purpose}” · ${t.topics.map(topic=>TOPICS[topic]).join(', ')} · ${mark(t.format)} · times that suit you: ${t.preferred_times.map(time=>appointmentTime(time)).join('; ')} (Singapore time).`;
     case 'handoff.create':return t.summary;
     default:return '';
   }
@@ -122,7 +131,8 @@ const REVIEW={'card.temporary_block':['Confirming freezes this card: new payment
   'consent.grant':['Confirming grants only the recipient, purpose, categories and expiry displayed above. This does not share data.','data-sharing scope','Confirm consent grant'],
   'consent.revoke':['Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.','data-sharing scope','Confirm revocation'],
   'appointment.confirm':['Confirming books this time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.','appointment','Confirm booking'],
-  'appointment.cancel':['Confirming cancels this appointment and releases its time.','appointment','Confirm cancellation']};
+  'appointment.cancel':['Confirming cancels this appointment and releases its time.','appointment','Confirm cancellation'],
+  'meeting.request':['Confirming sends this meeting request to your relationship manager, who accepts a time, suggests another or replies in a message. Nothing is booked until then. Rejecting sends nothing.','meeting request','Send request']};
 const review=type=>REVIEW[type]||['Confirming records the change shown above. Rejecting leaves it unchanged.','action','Confirm'];
 // Exports only what this panel already loaded: one row per recorded action and its receipt.
 function exportCsv(items) {
@@ -155,6 +165,9 @@ function activity(command) {
     case 'handoff.close':return ['people','The bank closed your case',''];
     case 'ticket.create':return ['clip',`Raised a request: ${t.category_label}`,t.summary];
     case 'requests.create':return ['people',`Sent a request to ${displayName(t.recipient_name)}`,t.what];
+    case 'meeting.request':return ['calendar','Asked your relationship manager for a meeting',`“${t.purpose}”`];
+    case 'meeting.withdraw':return ['calendar','Withdrew a meeting request',''];
+    case 'meeting.counter_reply':return ['calendar',t.reply==='accept'?'Accepted the time your relationship manager suggested':'Declined the time your relationship manager suggested',''];
     case 'card.temporary_block':return ['card',`Freeze card ending ${t.last4}`,'Stops new payments on this card until it is checked.'];
     case 'card.dispute':return ['card',`Dispute ${t.items.length} charges on card ending ${t.last4}`,t.items.map(charge).join('; ')];
     case 'card.unblock':return ['card',command.staff?`The bank reactivated card ending ${t.last4}`:`Unfreeze card ending ${t.last4}`,''];
@@ -282,7 +295,7 @@ export default function ActionsPanel() {
               {command.type==='ticket.create'&&<div data-testid="command-ticket">{Object.keys(command.target.details).length>0&&<ul>{Object.entries(command.target.details).map(([name,value])=><li key={name}>{name.replaceAll('_',' ')}: {value}</li>)}</ul>}<p>Decided by: {command.target.decided_by}</p></div>}
               {command.type==='document.register'&&<p data-testid="command-document">{command.target.file_name} · {(command.target.size_bytes/1024).toFixed(0)} KB · {command.target.case_title}</p>}
               {['card.unblock','card.cancel_permanently'].includes(command.type)&&!command.staff&&<p data-testid="command-card-change">{plainSummary(command)}</p>}
-              {(command.type.startsWith('consent.')||command.type.startsWith('appointment.')||['agenda.save','rm.share_summary','requests.create'].includes(command.type))&&<p>{plainSummary(command)}</p>}
+              {(command.type.startsWith('consent.')||command.type.startsWith('appointment.')||['agenda.save','rm.share_summary','requests.create','meeting.request'].includes(command.type))&&<p>{plainSummary(command)}</p>}
               <p className="act-meta">{formatDateTime(receipt?.created_at||command.proposed_at)} · status <span data-testid="command-state">{command.state}</span></p>
               {receipt&&<p data-testid="command-receipt" className="act-meta">Reference <code title={receipt.receipt_id}>{receipt.receipt_id}</code></p>}
             </div>

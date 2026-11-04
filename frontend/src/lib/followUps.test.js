@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {followUps,topicOf} from './followUps.js';
+import {CARE_CHIP,MEETING_CHIP,followUps,topicOf} from './followUps.js';
 
 const answer=(extra={})=>({role:'assistant',content:'Here is what I found.',...extra});
 
@@ -52,13 +52,34 @@ test('a which-card question offers one tap per card and both', () => {
   assert.deepEqual(followUps({question:'whats my card balance',message,signedIn:true}),['Signature Card ending 7310','Travel Card ending 5592','Both cards']);
 });
 
-test('free meeting times offer one tap each, and a held time offers Confirm booking (CR17)', () => {
-  const listed={role:'assistant',content:'Here are free 30-minute times with your relationship manager (Singapore time):\n• Mon 2 Nov, 10:00 am\n• Tue 3 Nov, 2:30 pm\nTap a time below, or type a day and time, and I’ll hold it for you.'};
-  assert.deepEqual(followUps({question:'book a meeting',message:listed,signedIn:true}),['Book Mon 2 Nov, 10:00 am','Book Tue 3 Nov, 2:30 pm']);
-  const six={...listed,content:listed.content.replace('• Tue','• Mon 2 Nov, 10:30 am\n• Mon 2 Nov, 11:00 am\n• Mon 2 Nov, 11:30 am\n• Mon 2 Nov, 12:00 pm\n• Tue')};
-  assert.equal(followUps({question:'book a meeting',message:six,signedIn:true}).length,6);
-  const held={role:'assistant',content:'I’ve held Mon 2 Nov, 10:00 am (video call) with your relationship manager for 10 minutes. Tap “Confirm booking” to book it.'};
-  assert.deepEqual(followUps({question:'Book Mon 2 Nov, 10:00 am',message:held,signedIn:true}),['Confirm booking']);
+test('free times listed for a meeting request offer one tap each; a drafted request has only its offer buttons (2a)', () => {
+  const listed={role:'assistant',content:'Here are free 30-minute times with your relationship manager (Singapore time):\n• Mon 9 Nov, 10:00 am\n• Tue 10 Nov, 2:30 pm\nTell me which times suit you and what you’d like to discuss, and I’ll prepare a meeting request for you to confirm.'};
+  assert.deepEqual(followUps({question:'when is my RM free?',message:listed,signedIn:true}),['Mon 9 Nov, 10:00 am','Tue 10 Nov, 2:30 pm']);
+  const six={...listed,content:listed.content.replace('• Tue','• Mon 9 Nov, 10:30 am\n• Mon 9 Nov, 11:00 am\n• Mon 9 Nov, 11:30 am\n• Mon 9 Nov, 12:00 pm\n• Tue')};
+  assert.equal(followUps({question:'when is my RM free?',message:six,signedIn:true}).length,6);
+  assert.notDeepEqual(followUps({question:'when is my RM free?',message:listed,signedIn:false}),['Mon 9 Nov, 10:00 am','Tue 10 Nov, 2:30 pm']);
+  const offer={offer_group:'12345678-1234-1234-1234-123456789011',expires_at:'2026-11-04T12:30:00Z',offers:[]};
+  assert.deepEqual(followUps({question:'Can I meet Sophie next week?',message:answer({offer}),signedIn:true}),[]);
+});
+
+test('loan, property, investment and large-transfer answers offer a meeting request when signed in (2a)', () => {
+  for(const question of ['What is the interest rate on a home loan?','Can I refinance my condo?','What is a unit trust?','I need to transfer 500,000 SGD to Hong Kong']) {
+    const chips=followUps({question,message:answer(),signedIn:true});
+    assert.ok(chips.length<=3&&chips.at(-1)===MEETING_CHIP,`${question}: ${chips}`);
+    assert.ok(!followUps({question,message:answer(),signedIn:false}).includes(MEETING_CHIP),question);
+  }
+  for(const question of ['What is my account balance?','When is my card payment due?','Can I meet my RM next week?'])
+    assert.ok(!followUps({question,message:answer(),signedIn:true}).includes(MEETING_CHIP),question);
+  assert.ok(!followUps({question:'What is a home loan?',message:answer(),signedIn:true,asked:[MEETING_CHIP]}).includes(MEETING_CHIP));
+});
+
+test('a reply with care offers a person, never product or meeting chips (2a)', () => {
+  for(const signedIn of [true,false])for(const needs_human of [false,true]) {
+    const chips=followUps({question:'I lost my job, can I pause my home loan?',message:answer({care:true,needs_human}),signedIn});
+    assert.deepEqual(chips,[CARE_CHIP]);
+  }
+  assert.deepEqual(followUps({question:'x',message:answer({care:true}),signedIn:true,asked:[CARE_CHIP]}),[]);
+  assert.deepEqual(followUps({question:'x',message:answer({care:true,error:true}),signedIn:true}),[]);
 });
 
 test('a handover preview offers send/cancel, or add/new/cancel when a request is open (CR8)', () => {

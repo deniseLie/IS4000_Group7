@@ -44,6 +44,29 @@ FRAUD = re.compile(
     # An alibi after a charge ("why is there a $2,400 charge?? i was in singapore the whole night") disowns it too.
     r"|\b(?:charge|transaction|payment)s?\b.{0,80}\bi\s+(?:was\s+(?:in|at)\b[^.!?]{0,40}\b(?:whole|all)\s+(?:night|day|evening|weekend)"
     r"|wasn['’]?t\s+(?:even\s+)?(?:there|overseas|abroad))\b", re.I)
+# Signs she may need extra care (RM copilot build plan 2a): job loss, debt trouble, bereavement, serious illness, or
+# someone pressuring her about money. It only changes the UI's suggestions (a person instead of product or meeting
+# chips); the answer, routing and priority stay the same. Ordinary loan, investment and payment questions do not match.
+CARE = re.compile(
+    r"\b(?:lost|losing)\s+(?:my|our)\s+(?:job|income|livelihood)\b|\b(?:laid\s+off|retrenched|retrenchment|made\s+redundant|unemployed|out\s+of\s+(?:a\s+)?(?:work|job))\b"
+    r"|\b(?:got|been|was|were)\s+(?:fired|sacked|let\s+go)\b"
+    r"|\b(?:can['’]?t|cannot|unable\s+to|struggling\s+to|could\s+not|couldn['’]?t)\s+(?:afford|repay|make\s+ends\s+meet"
+    r"|keep\s+up\s+with\s+(?:(?:my|our|the)\s+)?(?:payments?|repayments?|bills|loans?|mortgage|debts?|instal?ments?))\b"
+    r"|\b(?:can['’]?t|cannot|unable\s+to|struggling\s+to)\s+pay\s+(?:(?:my|our|the)\s+)?(?:bills|rent|debts?|loans?|mortgage|instal?ments?|repayments?)\b"
+    r"|\b(?:in|into|drowning\s+in|deep\s+in|over\s+my\s+head\s+in)\s+(?:serious\s+|a\s+lot\s+of\s+)?debts?\b(?!\s+(?:funds?|securities|instruments?|markets?|etfs?))|\bdebt\s+collectors?\b|\bloan\s+sharks?\b|\bbankrupt\w*"
+    r"|\bbehind\s+(?:on|with)\s+(?:(?:my|our|the)\s+)?(?:payments?|repayments?|bills|rent|mortgage|loan|instal?ments?)\b|\bfinancial\s+(?:hardship|difficult(?:y|ies)|trouble)\b"
+    r"|\bpassed\s+away\b|\bbereave\w*|\bfuneral\b|\bwidow(?:ed|er)?\b"
+    r"|\b(?:my|our)\s+late\s+(?:husband|wife|partner|father|mother|dad|mum|mom|son|daughter|parents?|brother|sister|grand\w+)\b"
+    r"|\b(?:husband|wife|partner|father|mother|dad|mum|mom|son|daughter|parents?|brother|sister|grand\w+)\s+(?:has\s+|had\s+|just\s+)*died\b"
+    r"|\b(?:diagnosed\s+with|(?:have|has|got|with)\s+cancer|chemo\w*|terminal(?:ly)?\s+ill|(?:seriously|critically|very)\s+ill|in\s+(?:the\s+)?hospital|hospitali[sz]ed|dementia|had\s+a\s+stroke)\b"
+    r"|\b(?:pressur\w*|forc\w*|push\w*|threaten\w*|blackmail\w*|scar\w*)\s+me\s+(?:in)?to\s+(?:send|transfer|give|pay|lend|withdraw|sign|take\s+out|borrow|hand\s+over)\b"
+    r"|\b(?:pressur\w*|threaten\w*|blackmail\w*)\s+me\b.{0,40}\b(?:money|cash|savings|account|loan|transfer|pay)\w*"
+    r"|\btold\s+me\s+not\s+to\s+tell\s+(?:the\s+bank|anyone|anybody)\b|\b(?:won['’]?t|doesn['’]?t|does\s+not|will\s+not)\s+let\s+me\s+(?:access|see|use|touch)\s+my\s+(?:own\s+)?(?:money|account|savings|card)\b", re.I)
+
+
+def needs_care(messages) -> bool:
+    """Any of her messages in this (bounded) history: once she has said it, later suggestions stay careful too."""
+    return any(CARE.search(text) or CARE.search(normalise(text)) for text in (redact_details(m.content)[0] for m in messages if m.role=='user'))
 
 
 def assess_request(req: ChatRequest) -> RiskAssessment:
@@ -75,4 +98,4 @@ def assess_request(req: ChatRequest) -> RiskAssessment:
         fixed = FixedResponse(code='guest_balance', needs_human=False)
     return RiskAssessment(redacted_message=question,
         redactions=[Redaction(type=kind, count=count) for kind, count in counts.items()],
-        risk_flags=flags, priority='P0' if lost or fraud else 'P1' if counts else 'P3', fixed_response=fixed)
+        risk_flags=flags, priority='P0' if lost or fraud else 'P1' if counts else 'P3', fixed_response=fixed, care=needs_care(req.messages))

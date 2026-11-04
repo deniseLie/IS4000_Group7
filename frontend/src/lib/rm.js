@@ -179,6 +179,67 @@ export function sgtInstant(date,time) {return new Date(`${date}T${time}:00+08:00
 export function plusMinutes(iso,minutes) {return new Date(new Date(iso).getTime()+minutes*60000).toISOString();}
 export const WEEKDAY_NAMES=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 
+// Meeting requests (build plan 2a, SQL 0106). Topics are the fixed codes of rm.meeting_topics(); the purpose is the
+// client's own words and is only ever rendered as text. Every decision and move is a separate request she presses.
+export const TOPIC_LABELS={home_loan:'Home loan',investments:'Investments',fixed_deposit:'Fixed deposit',insurance:'Insurance',term_sheet:'Term sheet',
+  compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Other'};
+export function topicLabel(code) {return TOPIC_LABELS[code]||String(code||'').replace(/_/g,' ');}
+export const DECLINE_REASONS=[['answered_by_message','I will answer in a message'],['redirected','Passed to the team that handles it'],['not_needed','No meeting needed']];
+export const MOVE_REASONS=[['client_asked','The client asked'],['rm_unavailable','I am unavailable then'],['other','Other reason']];
+// Why one of the client's preferred times cannot be accepted (rm.slot_problem codes).
+export const SLOT_PROBLEMS={advisor_unavailable:'you are not available',too_soon:'less than an hour away or past',too_far:'more than 60 days away',
+  outside_hours:'outside your working hours',blocked:'you blocked this time',taken:'already booked',weekly_limit:'the client already has the most meetings allowed that week'};
+export function slotProblemText(code) {return code?SLOT_PROBLEMS[code]||code.replace(/_/g,' '):'';}
+
+// An open request needs her when it waits for her answer, or when the client let a proposed time lapse (decide again).
+export function needsAnswer(r) {return r?.status==='requested'||r?.status==='countered'&&!!r.proposal_lapsed;}
+export function isNewRequest(r,now=Date.now()) {return r?.status==='requested'&&now-Date.parse(r.created_at)<86400000;}
+export function requestLabel(r) {
+  if(r.status==='requested')return r.overdue?'Overdue':'Waiting for you';
+  if(r.status==='countered')return r.proposal_lapsed?'Proposal lapsed':'Waiting for the client';
+  return {scheduled:'Scheduled',declined:'Declined',withdrawn:'Withdrawn by the client'}[r.status]||r.status;
+}
+// Today: the requests to answer, overdue first, then by respond-by (3b ranks them properly).
+export function requestsToAnswer(requests,now=Date.now()) {
+  return (requests||[]).filter(needsAnswer).map(r=>({...r,isNew:isNewRequest(r,now)}))
+    .sort((x,y)=>(Number(!!y.overdue)-Number(!!x.overdue))||Date.parse(x.respond_by)-Date.parse(y.respond_by));
+}
+// Free half hours from her availability (next 14 days) to propose or move to, without the times in skip.
+export function freeTimes(availability,skip=[]) {
+  const skipped=new Set(skip.map(t=>Date.parse(t)));
+  return (availability?.days||[]).flatMap(d=>(d.free||[]).map(time=>({starts_at:sgtInstant(d.date,time),date:d.date,time})))
+    .filter(s=>!skipped.has(Date.parse(s.starts_at)));
+}
+// A datetime-local value read as Singapore time (her working hours are Singapore hours), or null.
+export function sgtInput(value) {const m=/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d)$/.exec(value||'');return m?sgtInstant(m[1],m[2]):null;}
+export function decisionBody(decisionId,decision,{startsAt=null,reason=null}={}) {
+  return decision==='decline'?{decision_id:decisionId,decision,reason}:{decision_id:decisionId,decision,starts_at:startsAt};
+}
+// One id per open card: a retry or double click reuses it (SQL records once); a recorded decision or move clears it, so a
+// later one on the same request (a lapsed proposal) or meeting gets a new id.
+export function idKeeper(make=newId) {
+  const ids=new Map();
+  return {get:key=>{if(!ids.has(key))ids.set(key,make());return ids.get(key);},done:key=>{ids.delete(key);}};
+}
+// What happened, from the recorded request (a replay shows what was recorded the first time, not what was pressed).
+export function decisionNotice(result) {
+  const r=result?.request;
+  if(!r)return '';
+  const again=result.replayed?'Already recorded. ':'';
+  const reason=Object.fromEntries(DECLINE_REASONS)[r.decline_reason];
+  if(r.status==='scheduled')return `${again}${r.client}’s meeting is confirmed for ${r.meeting?.when}. The client gets an Inbox notice.`;
+  if(r.status==='countered')return `${again}You proposed ${r.meeting?.when} to ${r.client}. The time is held for the client until ${r.meeting?.hold_expires}.`;
+  if(r.status==='declined')return `${again}You declined ${r.client}’s request${reason?` (${reason})`:''}. The client gets an Inbox notice.`;
+  return `${again}${r.client}’s request: ${requestLabel(r)}.`;
+}
+export function moveNotice(result,client) {
+  return `${result?.replayed?'Already recorded. ':''}${client}’s meeting moved to ${result?.when}. The client gets an Inbox notice.`;
+}
+// Today → Schedule → Requests: the tab to open is handed over once, then forgotten.
+let scheduleTab=null;
+export function openSchedule(tab) {scheduleTab=tab;location.hash='rm-schedule';}
+export function takeScheduleTab() {const tab=scheduleTab;scheduleTab=null;return tab;}
+
 // RM5/RM6/RM10: an approved documentation draft becomes the interaction note; actions become requests or tasks.
 export function interactionPayload(doc,edits,requestKey) {
   const items=(edits.items||doc.draft.items||[]).filter(i=>!i.removed);

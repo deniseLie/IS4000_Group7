@@ -20,7 +20,8 @@ TOOLS: dict[AgentName, tuple[str, ...]] = {
     'compliance': ('compliance.get_case','compliance.workspace','compliance.update_checklist_item','kb.search','handoff.create'),
     'document': ('documents.precheck','compliance.workspace'),
     'relationship': ('kb.search','customer.get_profile','rm.get_assignment','rm.get_introduction','requests.list',
-        'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create'),
+        'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create',
+        'meeting_requests.list'),  # agents/meeting_answers counts her open meeting requests before offering another (0106 allows 3)
 }
 
 # Model-facing tool -> the permissions its service read checks. document_templates is fixed public configuration.
@@ -103,7 +104,7 @@ COMPLIANCE=AgentSpec(name='compliance',role='client',scope='own_customer',prompt
     hands_to=frozenset({'relationship'}),imports=frozenset({'account_refs'}))  # C24: account type, currency, last 4; no balances
 
 RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',prompt='relationship',
-    answers='Everything about a person at the bank: the client\'s RM, meetings and free times, consent to share, '
+    answers='Everything about a person at the bank: the client\'s RM, meeting requests and free times, consent to share, '
         'and the status of her own requests and tickets. RM handovers.',
     tools={'my_rm':ToolView(fields=frozenset({'current.name','current.role','current.team','current.contact.phone',
             'current.timezone','current.started_on','previous.name','previous.ended_on'})),
@@ -117,13 +118,15 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
         'request_categories':ToolView(),'knowledge_search':KB},
     intents={'my_rm':(Read(tool='my_rm'),),
         'meeting_times':(Read(tool='my_rm'),Read(tool='free_slots',entities={'from_date':'from_date','to_date':'to_date'})),
+        # 2a: a meeting is a request (purpose, topics, up to 3 free times) she confirms; the chat never books directly.
+        'meeting_request':(Read(tool='my_rm'),Read(tool='free_slots',entities={'from_date':'from_date','to_date':'to_date'})),
         'appointments':(Read(tool='my_appointments'),),
         'request_status':(Read(tool='my_tickets'),),
         'consent':(Read(tool='my_consents'),ASK),
         'service_options':(Read(tool='request_categories'),ASK)},
     loop_tools=frozenset({'my_rm','my_appointments','free_slots','my_consents','request_categories','knowledge_search'}),
     external=frozenset({'public_holidays'}),imports=frozenset({'due_dates'}),
-    offers=frozenset({'appointment.hold','appointment.confirm','appointment.cancel','handoff.create','tickets.follow_up',
+    offers=frozenset({'meeting.request','appointment.cancel','handoff.create','tickets.follow_up',
         'consent.grant','consent.revoke','rm.share_summary'}))
 
 # RM agents (architecture §5.6.1): row scope is the RM's own book. Each intent's reads are the ones its handler in
