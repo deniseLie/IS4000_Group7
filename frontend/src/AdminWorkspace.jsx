@@ -1,7 +1,9 @@
 import {useEffect,useState} from 'react';
 import Sidebar,{TabBar} from './components/Sidebar';
+import AgentsPage from './components/admin/AgentsPage';
 import EvaluationsPage from './components/admin/EvaluationsPage';
 import FailuresPage from './components/admin/FailuresPage';
+import LatencyPage from './components/admin/LatencyPage';
 import OverviewPage from './components/admin/OverviewPage';
 import PromptsPage from './components/admin/PromptsPage';
 import TracesPage from './components/admin/TracesPage';
@@ -12,7 +14,9 @@ const PAGES=[
   {view:'overview',icon:'chart',label:'Overview',short:'Overview',Page:OverviewPage},
   {view:'failures',icon:'alert',label:'Failures',short:'Failures',Page:FailuresPage},
   {view:'evaluations',icon:'check',label:'Evaluations',short:'Evals',Page:EvaluationsPage},
+  {view:'agents',icon:'people',label:'Agents',short:'Agents',Page:AgentsPage},
   {view:'prompts',icon:'layers',label:'Prompts',short:'Prompts',Page:PromptsPage},
+  {view:'latency',icon:'clock',label:'Latency and cost',short:'Latency',Page:LatencyPage},
   {view:'traces',icon:'history',label:'Traces',short:'Traces',Page:TracesPage},
 ];
 const VIEWS=PAGES.map(page=>page.view);

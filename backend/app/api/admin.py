@@ -13,8 +13,10 @@ from app.core.observability import log_event
 from app.schemas.contracts import RequestContext
 from app.schemas.quality import Span,Trace
 from app.services import insights,prompts,quality
+from app.services.agents import registry
 
 WINDOW=Query('7d',pattern='^(24h|7d|30d|90d)$')
+SOURCE=Query('all',pattern='^(live|eval|all)$')
 NAME=r'^demobank-[A-Za-z0-9_.-]{1,120}$'  # an experiment of a synced dataset (quality.DATASET_PREFIX)
 
 router=APIRouter(prefix='/admin')
@@ -73,7 +75,7 @@ async def overview(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> dic
 
 
 @router.get('/failures')
-async def failures(window: str=WINDOW,source: str=Query('all',pattern='^(live|eval|all)$'),ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+async def failures(window: str=WINDOW,source: str=SOURCE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
     return await read(failures_of,quality.WINDOWS[window],source)
 
 
@@ -117,3 +119,25 @@ def prompts_of(days: int) -> dict[str,Any]:
 @router.get('/prompts')
 async def prompt_page(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
     return await read(prompts_of,quality.WINDOWS[window])
+
+
+def agents_of(days: int,source: str) -> dict[str,Any]:
+    rows,steps,exps=together((quality.requests,source,days),(quality.steps,source,days),(quality.experiment_runs,))
+    since=quality.now()-timedelta(days=days)
+    return {**insights.agents(rows,steps,[e for e in exps if e['started_at']>=since],{n:s.prompt for n,s in registry.SPECS.items()},prompts.in_use()),
+        'window_days':days,'source':source,'capped':capped(rows,steps)}
+
+
+def latency_of(days: int,source: str) -> dict[str,Any]:
+    rows,steps=together((quality.requests,source,days),(quality.steps,source,days))
+    return {**insights.latency(rows,steps,days),'window_days':days,'source':source,'capped':capped(rows,steps)}
+
+
+@router.get('/agents')
+async def agent_page(window: str=WINDOW,source: str=SOURCE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(agents_of,quality.WINDOWS[window],source)
+
+
+@router.get('/latency')
+async def latency_page(window: str=WINDOW,source: str=SOURCE,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
+    return await read(latency_of,quality.WINDOWS[window],source)

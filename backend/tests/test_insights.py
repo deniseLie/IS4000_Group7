@@ -230,3 +230,82 @@ def test_evaluation_routes(monkeypatch):
     assert detail['cases'][0]['repro']=='python -m evaluation.langsmith_run --dataset demobank-graph --case C23'
     body=client.get('/admin/prompts?window=30d',headers=ADMIN).json()
     assert body['window_days']==30 and any(f['family']=='planner' and f['live'] for f in body['families'])
+
+
+def timed(row: dict,latency: float) -> dict:
+    return {**row,'latency_s':latency}
+
+
+def test_agent_scorecards_and_orchestration_panels():
+    rows=[req(1,trace='t1'),req(2,trace='t2',route='lost_card'),req(3,trace='t3',offered=2),req(4,trace='t4',offered=0)]
+    steps=[step('agent','t1',agent='accounts',intent='card_limit',path='rule',status='ok',evidence_count=2,exports=1),
+        step('agent','t3',agent='accounts',intent='open',path='loop',status='withheld',tool_calls=3,refused=1),
+        step('agent','t3',agent='rm_client_insight',intent='client_brief'),
+        step('agent','t3'),step('planner','t1'),  # LangGraph node runs of the same names
+        step('planner','t1',route='model',tasks=2,dependent=1),step('planner','t3',route='act'),
+        step('planner','t4',route='expired'),step('planner','t5',side='rm',route='button',tasks=1,dependent=0),
+        step('gather','t1',sends=1,skipped={'relationship':'condition_false'},rerouted={},exports=['accounts>relationship:due_dates']),
+        step('act','t3',decision='confirm',offers=2,chained=1,failed=1),
+        step('tool_call','t1',tool='my_cards'),step('tool_call','t1',error="ToolError('down')",tool='my_cards'),
+        step('tool_call','t3',tool='kb_search'),
+        step('kb.search','t3',mode='hybrid',count=0,embed_ms=120,sql_ms=200),
+        step('kb.search','t1',mode='keyword_only',count=3,embedding_error='not_configured')]
+    client_run=exp('e1','demobank-qa1-client',1,[('C01','pass'),('C02','fail',('reply_has',))])
+    client_run['cases'][0]['agents']={'accounts':1}
+    planner_run=exp('p1','demobank-planner',1,[('P01','pass'),('P02','fail',('agents',))])
+    planner_run['cases'][0]['checks']['agents']={'score':1,'comment':''}
+    out=insights.agents(rows,steps,[client_run,planner_run],{'accounts':'accounts','rm_client_insight':'rm_assistant'},{'accounts':'v1','rm_assistant':'v4'})
+    cards={c['agent']:c for c in out['agents']}
+    assert list(cards)==['accounts','rm_client_insight']
+    acc=cards['accounts']
+    assert acc['runs']==2 and acc['share']==0.5 and acc['outcomes']=={'ok':1,'withheld':1} and acc['bad_rate']==0.5
+    assert acc['paths']=={'rule':1,'loop':1} and acc['tool_calls_per_loop']==3 and acc['refused']==1 and acc['exports']==1
+    assert acc['live_prompt']=='v1' and acc['eval_cases']==1 and acc['eval_pass_rate']==1.0
+    assert cards['rm_client_insight']['paths']=={'handler':1} and cards['rm_client_insight']['side']=='rm' and cards['rm_client_insight']['live_prompt']=='v4'
+    assert out['fixed_routes']=={'requests':1,'share':0.25,'routes':{'lost_card':1}}
+    plan=out['planner']
+    assert plan['client']['routes']=={'model':1,'act':1,'expired':1} and plan['client']['tasks_per_plan']==2 and plan['client']['multi_agent']==1.0
+    assert plan['rm']['routes']=={'button':1} and plan['rm']['multi_agent']==0.0 and plan['accuracy']['pass_rate']==0.5
+    assert plan['accuracy']['checks']['agents']==0.5
+    assert out['gather']=={'gathers':1,'second_wave':1,'sends':1,'skipped':{'condition_false':1},'rerouted':{},'exports':{'accounts>relationship:due_dates':1}}
+    assert out['offers']=={'offered':1,'offers':2,'confirmed':1,'cancelled':0,'expired':1,'ask_which':0,'chained':1,'failed':1}
+    assert out['tools'][0]['tool']=='my_cards' and out['tools'][0]['errors']==1 and out['tools'][0]['error_types']=={'ToolError':1}
+    know=out['knowledge']
+    assert know['searches']==2 and know['hybrid_share']==0.5 and know['empty_rate']==0.5 and know['embedding_errors']=={'not_configured':1}
+    assert know['embed_ms_p50']==120 and know['sql_ms_p50']==200
+    assert insights.offers_panel([req(1)],[])['offered'] is None  # older requests did not record offers: not zero
+
+
+def test_latency_percentiles_breakdown_fan_out_and_slowest():
+    rows=[timed(req(1,trace='a',surface='public',first_section_ms=1500,agents=['guide']),4),
+        timed(req(2,trace='b',agents=['accounts','relationship'],tokens=3000),12),
+        timed(req(3,trace='c',surface='rm',error="LLMBudgetExceeded('used up')",status='error',question='Brief me on all my clients'),70)]
+    steps=[timed(step('llm','b',agent='accounts',model='haiku',prompt_version='v1+aa',outcome='ok',input_tokens=900,output_tokens=100,retries=1),3),
+        timed(step('tool_call','b',tool='my_cards'),2),timed(step('tool_call','b',tool='kb_search'),0.8),
+        timed(step('kb.search','b',mode='hybrid',count=2),0.5),step('planner','b'),
+        *[step('agent','c',agent=a,intent='client_brief') for a in ('rm_client_insight','rm_service_desk','rm_service_desk')],
+        step('gather','c',sends=1),node:=step('gather','c'),{**step('gather','c'),'parent_id':node['run_id']}]  # a node run and the span inside it
+    out=insights.latency(rows,steps,7)
+    assert out['surfaces']['all']['n']==3 and out['surfaces']['rm']['p50_s']==70 and out['surfaces']['public']['first_section_p50_s']==1.5
+    assert [h['count'] for h in out['histogram']]==[0,1,0,1,0,0,1] and out['histogram'][-1]['label']=='60 s or more'
+    parts={p['part']:p['seconds'] for p in out['breakdown']['parts']}
+    assert out['breakdown']['requests']==3 and out['breakdown']['traced']==1 and parts['Model calls']==1.0
+    assert abs(parts['Knowledge search']-0.5/3)<1e-3 and abs(parts['Record and other tools']-2.3/3)<1e-3  # the search ran inside its tool call
+    assert [f['agents'] for f in out['fan_out']]==['1','2','3+'] and out['second_wave']==1
+    assert next(n for n in out['nodes'] if n['name']=='planner')['n']==1 and next(n for n in out['nodes'] if n['name']=='gather')['n']==1
+    assert out['models'][0]['name']=='haiku' and out['models'][0]['retries']==1 and out['prompts'][0]['name']=='accounts/v1'
+    assert out['tokens']['budget_hits']==1 and out['tokens']['by_family']==[{'family':'accounts','calls':1,'input':900,'output':100}]
+    slow=out['slowest'][0]
+    assert slow['latency_s']==70 and slow['agents']==['rm_client_insight','rm_service_desk','rm_service_desk'] and slow['question']=='Brief me on all my clients'
+    assert out['throughput']['peak_requests']==1 and out['throughput']['per_hour']==round(3/168,4)
+
+
+def test_agent_and_latency_routes(monkeypatch):
+    monkeypatch.setattr(quality,'requests',lambda source,days:[req(1,trace='t1')])
+    monkeypatch.setattr(quality,'steps',lambda source,days:[step('agent','t1',agent='guide',intent='faq',path='reads',status='ok')])
+    monkeypatch.setattr(quality,'experiment_runs',lambda:[])
+    body=client.get('/admin/agents?window=7d&source=live',headers=ADMIN).json()
+    assert body['agents'][0]['agent']=='guide' and body['agents'][0]['prompt']=='guide' and body['source']=='live' and not body['capped']
+    body=client.get('/admin/latency?window=24h',headers=ADMIN).json()
+    assert body['surfaces']['all']['n']==1 and body['window_days']==1 and body['source']=='all'
+    assert client.get('/admin/latency?source=prod',headers=ADMIN).status_code==422

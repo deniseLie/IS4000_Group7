@@ -40,7 +40,7 @@ STEP_FIELDS=['id','name','run_type','trace_id','session_id','parent_run_id','sta
 # Step metadata the dashboard reads (names, statuses, counts and ms; never text).
 STEP_KEYS=('agent','intent','path','status','outcome','tool_calls','steps','refused','evidence_count','exports','wave','prompt_version','model','transport',
     'input_tokens','output_tokens','retries','cause','error_type','tool','mode','count','embedding_error','embed_ms','sql_ms','route','tasks','dependent','side',
-    'sends','skipped','rerouted','decision','offers','chained','langgraph_node')
+    'sends','skipped','rerouted','decision','offers','chained','failed','langgraph_node')
 
 
 def is_admin(claims: dict[str,Any]) -> bool:
@@ -98,9 +98,10 @@ def traces(limit: int=30) -> list[Trace]:
 
 def trace(run_id: str) -> list[Span]:
     def load():
-        root=client().read_run(run_id)
-        kids=sorted(islice(client().list_runs(trace_id=root.trace_id),500),key=lambda r:(r.dotted_order or ''))
-        return [Span(name=r.name,run_type=r.run_type,depth=(r.dotted_order or '').count('.'),latency_s=r.latency,status=r.status,
+        root=client().read_run(run_id);top=root.dotted_order or ''
+        kids=sorted((r for r in islice(client().list_runs(trace_id=root.trace_id),MAX_TRACE) if (r.dotted_order or '').startswith(top)),key=lambda r:(r.dotted_order or ''))
+        return [Span(name=r.name,run_type=r.run_type,depth=(r.dotted_order or '').count('.')-top.count('.'),latency_s=r.latency,status=r.status,
+            start_s=round((r.start_time-root.start_time).total_seconds(),3) if r.start_time and root.start_time else None,
             tokens=r.total_tokens,agent=(r.extra or {}).get('metadata',{}).get('agent'),tool=(r.extra or {}).get('metadata',{}).get('tool'),
             error=(r.error or '')[:300] or None) for r in kids]
     return cached(('trace',run_id),load)
@@ -138,6 +139,7 @@ def as_request(run,source: str) -> dict[str,Any]:
         'reject_reason':m.get('reject_reason'),'prompt_version':m.get('prompt_version') or out.get('prompt_version'),'pipeline':m.get('pipeline'),
         'model_calls':m.get('model_calls'),'agents':m.get('agents'),'agent_status':m.get('agent_status'),'prompt_ids':m.get('prompt_ids'),'model':m.get('model'),
         'first_section_ms':m.get('first_section_ms'),'app_version':m.get('app_version'),'error_type':m.get('error_type'),
+        'offered':m.get('offered'),'llm_ms':m.get('llm_ms'),
         'question':question(run.inputs),'answer':next((out[k][:600] for k in ('answer','summary') if isinstance(out.get(k),str) and out[k]),''),  # RM replies carry a summary
         'sources':[s['id'] for s in out.get('sources') or [] if isinstance(s,dict) and isinstance(s.get('id'),str)][:20]}
 

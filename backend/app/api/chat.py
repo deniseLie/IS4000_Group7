@@ -115,7 +115,9 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                         if kind in ('plan','section'):yield {'event':kind,'data':item.model_dump_json()}
                         else:reply=item
                     if reply is None:raise ValueError('The turn ended without an answer')
-                    if reply.offer is not None:yield {'event':'offer','data':reply.offer.model_dump_json()}
+                    if reply.offer is not None:
+                        trace.attrs['offered']=len(reply.offer.offers)  # the admin dashboard's offer acceptance
+                        yield {'event':'offer','data':reply.offer.model_dump_json()}
                     result=reply.model_dump(mode='json')
                     trace.attrs.update(route='llm',source_check=result['source_check'],needs_human=result['needs_human'],
                         privacy_warning=False,prompt_version=result['prompt_version'],history_trimmed=result['history_trimmed'])
@@ -135,7 +137,9 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     # CR12: the safety steps come first; an urgent report is offered, and her yes on the next turn sends it (act).
                     text,group=await orchestrator.lost_card_offer(risk.redacted_message,ctx,turn.turn.turn_id)
                     result.update(answer=result['answer']+'\n\n'+text,needs_human=True,offer=group.model_dump(mode='json') if group else None)
-                    if group is not None:yield {'event':'offer','data':group.model_dump_json()}
+                    if group is not None:
+                        trace.attrs['offered']=len(group.offers)
+                        yield {'event':'offer','data':group.model_dump_json()}
                 if prepared is not None:
                     turn=await chat_store.finish(prepared,turn,AnswerEvent.model_validate(result),ctx)
                     yield {'event':'conversation','data':json.dumps(chat_store.metadata(prepared,turn))}

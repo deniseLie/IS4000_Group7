@@ -530,3 +530,226 @@ def card(detail: dict) -> dict[str,Any]:
             'expected':{k:expected[k] for k in EXPECTED_SHOWN if k in expected},
             'repro':f"python -m evaluation.langsmith_run --dataset {exp['dataset']} --case {case['case_id']}" if case and case.get('case_id') else None} if exp else None,
         'repro':None if exp else (last.get('question') or None)}
+
+
+# ---- Agents (§2.3) ----
+
+AGENT_ORDER=('guide','accounts','security','compliance','relationship','rm_client_insight','rm_service_desk')
+LAT_EDGES=(2,5,10,20,30,60)  # seconds; histogram buckets of request latency
+
+
+SPAN_KEY={'planner':'route','agent':'intent','gather':'sends','act':'decision'}  # what the app's own span of a node's name records
+
+
+def ours(s: dict,names: dict[str,str]) -> bool:
+    """The app's span, not the LangGraph node run of the same name: it runs inside that node (its parent has its name) or
+    records its own facts. Node runs inherit their ancestors' metadata, so metadata alone cannot tell them apart."""
+    return s['name'] not in NODES or names.get(s['parent_id'])==s['name'] or SPAN_KEY.get(s['name']) in s['meta']
+
+
+def own_spans(steps: list[dict],name: str) -> list[dict]:
+    names={s['run_id']:s['name'] for s in steps}
+    return [s for s in steps if s['name']==name and ours(s,names)]
+
+
+def node_runs(steps: list[dict],name: str) -> list[dict]:
+    names={s['run_id']:s['name'] for s in steps}
+    return [s for s in steps if s['name']==name and not ours(s,names)]
+
+
+def timing(values) -> dict[str,Any]:
+    xs=[v for v in values if v is not None]
+    return {'n':len(xs),'p50_s':pct(xs,.5),'p95_s':pct(xs,.95)}
+
+
+def scorecard(agent: str,runs: list[dict],total: int,cases: list[dict],family: str | None,live: str | None) -> dict[str,Any]:
+    loops=[s for s in runs if s['meta'].get('path')=='loop']
+    statuses=Counter(agent_status(s) for s in runs)
+    return {'agent':agent,'side':'rm' if agent.startswith('rm_') else 'client','runs':len(runs),
+        'share':ratio(min(len({s['trace_id'] for s in runs}),total),total),'outcomes':dict(statuses),
+        'bad_rate':ratio(sum(statuses.get(k,0) for k in BAD_AGENT),len(runs)),
+        'paths':dict(Counter(s['meta'].get('path') or 'handler' for s in runs)),  # RM agents run one handler per intent
+        'tool_calls_per_loop':mean(s['meta'].get('tool_calls') for s in loops),'refused':sum(s['meta'].get('refused') or 0 for s in loops),
+        'evidence_per_answer':mean(s['meta'].get('evidence_count') for s in runs),
+        'exports':sum(s['meta']['exports'] for s in runs if isinstance(s['meta'].get('exports'),int)),
+        **timing(s['latency_s'] for s in runs),'prompt':family,'live_prompt':live,'eval_cases':len(cases),'eval_pass_rate':pass_rate(cases)}
+
+
+def planner_panel(steps: list[dict],experiments: list[dict]) -> dict[str,Any]:
+    plans=[s for s in own_spans(steps,'planner') if s['meta'].get('route')]
+    out={}
+    for side in ('client','rm'):
+        mine=[s for s in plans if (s['meta'].get('side') or 'client')==side]
+        planned=[s for s in mine if s['meta'].get('tasks') is not None]
+        out[side]={'plans':len(mine),'routes':dict(Counter(s['meta']['route'] for s in mine)),'tasks_per_plan':mean(s['meta']['tasks'] for s in planned),
+            'multi_agent':ratio(sum(s['meta']['tasks']>1 for s in planned),len(planned)),
+            'dependent':ratio(sum((s['meta'].get('dependent') or 0)>0 for s in planned),len(planned)),**timing(s['latency_s'] for s in mine)}
+    runs=full_runs(by_dataset(experiments).get(PLANNER_DATASET,[]))
+    out['accuracy']=None
+    if runs:
+        last=runs[-1]
+        out['accuracy']={'experiment':last['name'],'started_at':last['started_at'],'cases':len(last['cases']),'pass_rate':pass_rate(last['cases']),
+            'checks':{r['key']:r['latest'] for r in check_trends([last],PLANNER_DATASET)}}
+    return out
+
+
+def gather_panel(steps: list[dict]) -> dict[str,Any]:
+    found=[s for s in own_spans(steps,'gather') if 'sends' in s['meta']]
+    skipped=Counter(reason for s in found for reason in (s['meta'].get('skipped') or {}).values())
+    rerouted=Counter(f"{r['from']} → {r['to']}" for s in found if isinstance(r:=s['meta'].get('rerouted'),dict) and r.get('from'))
+    exports=Counter(name for s in found for name in s['meta'].get('exports') or [] if isinstance(name,str))
+    return {'gathers':len(found),'second_wave':sum((s['meta'].get('sends') or 0)>0 for s in found),'sends':sum(s['meta'].get('sends') or 0 for s in found),
+        'skipped':dict(skipped),'rerouted':dict(rerouted),'exports':dict(exports.most_common(20))}
+
+
+def offers_panel(rows: list[dict],steps: list[dict]) -> dict[str,Any]:
+    """Offered (recorded on the request since this slice; older requests say 'not recorded') → confirmed, cancelled, expired, failed."""
+    recorded=[r for r in rows if r.get('offered') is not None]
+    acts=own_spans(steps,'act')
+    routes=Counter(s['meta'].get('route') for s in own_spans(steps,'planner'))
+    failed=[s['meta']['failed'] for s in acts if s['meta'].get('failed') is not None]
+    return {'offered':sum(bool(r['offered']) for r in recorded) if recorded else None,'offers':sum(r['offered'] for r in recorded) if recorded else None,
+        'confirmed':sum(s['meta'].get('decision')=='confirm' for s in acts),'cancelled':sum(s['meta'].get('decision')=='cancel' for s in acts),
+        'expired':routes.get('expired',0),'ask_which':routes.get('ask_which',0),'chained':sum(s['meta'].get('chained') or 0 for s in acts),
+        'failed':sum(failed) if failed else None}
+
+
+def bad_run(s: dict) -> bool:
+    return bool(s['error']) or s.get('run_status')=='error'
+
+
+def tool_rows(steps: list[dict]) -> list[dict[str,Any]]:
+    found=defaultdict(list)
+    for s in own_spans(steps,'tool_call'):found[s['meta'].get('tool') or '—'].append(s)
+    out=[]
+    for tool,calls in found.items():
+        errors=Counter(s['meta'].get('error_type') or error_type(s['error']) or 'error' for s in calls if bad_run(s))
+        out.append({'tool':tool,'calls':len(calls),'errors':sum(errors.values()),'error_rate':ratio(sum(errors.values()),len(calls)),
+            'error_types':dict(errors),**timing(s['latency_s'] for s in calls)})
+    return sorted(out,key=lambda r:(-r['calls'],r['tool']))
+
+
+def knowledge_panel(steps: list[dict]) -> dict[str,Any]:
+    found=own_spans(steps,'kb.search')
+    modes=Counter(s['meta'].get('mode') or 'not recorded' for s in found)
+    counted=[s for s in found if s['meta'].get('count') is not None]
+    return {'searches':len(found),'modes':dict(modes),'hybrid_share':ratio(modes.get('hybrid',0),len(found)),
+        'embedding_errors':dict(Counter(s['meta']['embedding_error'] for s in found if s['meta'].get('embedding_error'))),
+        'empty_rate':ratio(sum(s['meta']['count']==0 for s in counted),len(counted)),**timing(s['latency_s'] for s in found),
+        'embed_ms_p50':pct([s['meta'].get('embed_ms') for s in found],.5),'sql_ms_p50':pct([s['meta'].get('sql_ms') for s in found],.5)}
+
+
+def agents(rows: list[dict],steps: list[dict],experiments: list[dict],prompt_of: dict[str,str],in_use: dict[str,str]) -> dict[str,Any]:
+    """One scorecard per agent, the fixed safety routes, and the planner, gather, offers, tools and knowledge-search panels."""
+    runs=defaultdict(list)
+    for s in agent_runs(steps):runs[s['meta']['agent']].append(s)
+    total=len({r['trace_id'] for r in rows}) or len({s['trace_id'] for s in steps})
+    cases=[c for e in experiments for c in e['cases']]
+    names=[a for a in AGENT_ORDER if a in runs]+sorted(a for a in runs if a not in AGENT_ORDER)
+    fixed=Counter(r['route'] for r in rows if r.get('route') in FIXED_ROUTES)
+    return {'requests':len(rows),
+        'agents':[scorecard(a,runs[a],total,[c for c in cases if a in (c.get('agents') or {})],prompt_of.get(a),in_use.get(prompt_of.get(a))) for a in names],
+        'fixed_routes':{'requests':sum(fixed.values()),'share':ratio(sum(fixed.values()),len(rows)),'routes':dict(fixed)},
+        'planner':planner_panel(steps,experiments),'gather':gather_panel(steps),'offers':offers_panel(rows,steps),
+        'tools':tool_rows(steps),'knowledge':knowledge_panel(steps)}
+
+
+# ---- Latency and cost (§2.5) ----
+
+def histogram(values: list[float]) -> list[dict[str,Any]]:
+    edges=(0,*LAT_EDGES,None)
+    return [{'label':f'{lo}–{hi} s' if hi else f'{lo} s or more','count':sum(v>=lo and (hi is None or v<hi) for v in values)} for lo,hi in zip(edges,edges[1:])]
+
+
+def surface_latency(rows: list[dict]) -> dict[str,Any]:
+    lat=[r['latency_s'] for r in rows if r['latency_s'] is not None]
+    first=[r['first_section_ms']/1000 for r in rows if r.get('first_section_ms') is not None]
+    return {'n':len(lat),**{f'p{q}_s':pct(lat,q/100) for q in (50,90,95,99)},
+        'first_section_n':len(first),'first_section_p50_s':pct(first,.5),'first_section_p95_s':pct(first,.95)}
+
+
+def breakdown(rows: list[dict],steps: list[dict]) -> dict[str,Any]:
+    """Per request on average: time in model calls, knowledge search, other tools (record reads), and the rest. Parallel agents
+    overlap, so the parts can add up to more than the wall time; shares are of the parts' sum."""
+    wall=defaultdict(float);turns=Counter()
+    for r in rows:
+        if r['latency_s'] is not None:wall[r['trace_id']]+=r['latency_s'];turns[r['trace_id']]+=1
+    parts=defaultdict(lambda:defaultdict(float))
+    for s in steps:
+        if s['trace_id'] in wall and s['latency_s'] is not None and s['name'] in ('llm','kb.search','tool_call'):
+            parts[s['trace_id']][s['name']]+=s['latency_s']
+    n=sum(turns.values())
+    if not n:return {'requests':0,'traced':0,'wall_s':None,'overlap':False,'parts':[]}
+    model=sum(p['llm'] for p in parts.values())/n;knowledge=sum(p['kb.search'] for p in parts.values())/n
+    tools=max(sum(p['tool_call'] for p in parts.values())/n-knowledge,0)  # knowledge search runs inside its tool call
+    total=sum(wall.values())/n;other=max(total-model-tools-knowledge,0);summed=model+tools+knowledge+other
+    return {'requests':n,'traced':sum(turns[t] for t in parts),'wall_s':round(total,3),'overlap':model+tools+knowledge>total,
+        'parts':[{'part':k,'seconds':round(v,3),'share':ratio(v,summed)} for k,v in
+            (('Model calls',model),('Knowledge search',knowledge),('Record and other tools',tools),('Everything else',other))]}
+
+
+def fan_out(rows: list[dict],steps: list[dict]) -> list[dict[str,Any]]:
+    """Latency by the number of agents a request ran (recorded on the request, else counted from its trace's agent spans)."""
+    spans=Counter(s['trace_id'] for s in agent_runs(steps));turns=Counter(r['trace_id'] for r in rows)
+    buckets=defaultdict(list)
+    for r in rows:
+        n=len(r['agents']) if r.get('agents') is not None else round(spans.get(r['trace_id'],0)/turns[r['trace_id']])
+        buckets['3+' if n>=3 else str(n)].append(r['latency_s'])
+    return [{'agents':k,**timing(buckets[k])} for k in ('0','1','2','3+') if buckets.get(k)]
+
+
+def throughput(rows: list[dict],days: int) -> dict[str,Any]:
+    hours=Counter(r['started_at'].replace(minute=0,second=0,microsecond=0) for r in rows)
+    peak=max(hours.items(),key=lambda kv:(kv[1],kv[0]),default=(None,0))
+    return {'per_hour':ratio(len(rows),days*24),'peak_hour':peak[0],'peak_requests':peak[1],'active_hours':len(hours)}
+
+
+def budget_hit(s: dict) -> bool:
+    return any('Budget' in str(v or '') for v in (s.get('error'),s['meta'].get('error_type'),s['meta'].get('cause'),s['meta'].get('outcome')))
+
+
+def token_panel(rows: list[dict],steps: list[dict]) -> dict[str,Any]:
+    calls=[s for s in steps if s['name']=='llm']
+    per=defaultdict(list)
+    for s in calls:per[s['meta'].get('agent') or '—'].append(s)
+    hit={s['trace_id'] for s in steps if budget_hit(s)}|{r['trace_id'] for r in rows if 'Budget' in str(r.get('error') or '')+str(r.get('error_type') or '')}
+    return {'per_request':mean(r.get('tokens') for r in rows),'p95_per_request':pct([r.get('tokens') for r in rows],.95),
+        'budget_hits':len(hit),'retries':sum(s['meta'].get('retries') or 0 for s in calls),
+        'by_family':sorted(({'family':f,'calls':len(cs),'input':mean(c['meta'].get('input_tokens') for c in cs),
+            'output':mean(c['meta'].get('output_tokens') for c in cs)} for f,cs in per.items()),key=lambda r:(-r['calls'],r['family']))}
+
+
+def by_key(runs: list[dict],key) -> list[dict[str,Any]]:
+    found=defaultdict(list)
+    for s in runs:
+        if k:=key(s):found[k].append(s)
+    return sorted(({'name':k,**timing(s['latency_s'] for s in v),'errors':sum(map(bad_run,v))} for k,v in found.items()),key=lambda r:(-(r['p95_s'] or 0),r['name']))
+
+
+def latency(rows: list[dict],steps: list[dict],days: int,slowest: int=10) -> dict[str,Any]:
+    """End-to-end percentiles per surface, where the time goes, per node/agent/tool/model/prompt, fan-out, throughput, tokens
+    and the slowest requests."""
+    calls=Counter(s['trace_id'] for s in model_calls(steps));agents_in=defaultdict(list)
+    for s in agent_runs(steps):agents_in[s['trace_id']].append(s['meta']['agent'])
+    models=[s for s in steps if s['name']=='llm']
+    top=sorted((r for r in rows if r['latency_s'] is not None),key=lambda r:-r['latency_s'])[:slowest]
+    model_rows=by_key(models,lambda s:s['meta'].get('model'))
+    for row in model_rows:
+        mine=[s for s in models if s['meta'].get('model')==row['name']]
+        row.update(retries=sum(s['meta'].get('retries') or 0 for s in mine),not_ok=sum(s['meta'].get('outcome') not in (None,'ok') for s in mine))
+    return {'requests':len(rows),
+        'surfaces':{k:surface_latency([r for r in rows if k=='all' or r['surface']==k]) for k in ('all','public','personal','rm')},
+        'histogram':histogram([r['latency_s'] for r in rows if r['latency_s'] is not None]),
+        'breakdown':breakdown(rows,steps),
+        'nodes':[{'name':n,**timing(s['latency_s'] for s in node_runs(steps,n))} for n in NODES],
+        'agents':by_key(agent_runs(steps),lambda s:s['meta']['agent']),
+        'tools':by_key(own_spans(steps,'tool_call'),lambda s:s['meta'].get('tool')),
+        'models':model_rows,
+        'prompts':by_key([s for s in models if s['meta'].get('prompt_version')],lambda s:f"{s['meta'].get('agent')}/{version(s['meta']['prompt_version'])}")[:15],
+        'fan_out':fan_out(rows,steps),'second_wave':sum((s['meta'].get('sends') or 0)>0 for s in own_spans(steps,'gather')),
+        'throughput':throughput(rows,days),'tokens':token_panel(rows,steps),
+        'slowest':[{'run_id':r['run_id'],'trace_id':r['trace_id'],'started_at':r['started_at'],'source':r['source'],'surface':r['surface'],
+            'latency_s':r['latency_s'],'first_section_s':r['first_section_ms']/1000 if r.get('first_section_ms') is not None else None,
+            'model_calls':r['model_calls'] if r.get('model_calls') is not None else calls.get(r['trace_id']),
+            'agents':r['agents'] if r.get('agents') is not None else agents_in.get(r['trace_id'],[]),'question':(r.get('question') or '')[:160],
+            'case_id':r.get('case_id'),'dataset':r.get('dataset')} for r in top]}

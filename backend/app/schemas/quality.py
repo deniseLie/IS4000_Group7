@@ -24,6 +24,7 @@ class Span(BaseModel):
     run_type: str
     depth: int
     latency_s: float | None=None
+    start_s: float | None=None  # seconds after the requested run started (a waterfall)
     status: str | None=None
     tokens: int | None=None
     agent: str | None=None

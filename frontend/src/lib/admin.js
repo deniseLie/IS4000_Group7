@@ -106,3 +106,29 @@ export function versionPair(a,b) {
   const size=v=>Math.max(v?.live_metrics?.calls||0,v?.eval_metrics?.cases||0);
   return {rows,enough:size(a)>=MIN_COMPARE&&size(b)>=MIN_COMPARE};
 }
+
+// ---- Agents and latency ----
+export const loadAgents=(window,source,token,signal)=>get(`/agents${query({window,source})}`,token,signal);
+export const loadLatency=(window,source,token,signal)=>get(`/latency${query({window,source})}`,token,signal);
+export const SURFACES={all:'All requests',public:'Public chat',personal:'Signed-in chat',rm:'RM assistant'};
+
+// A count map as rows, largest first, each with its share of the total.
+export function mix(counts) {
+  const entries=Object.entries(counts||{}).filter(([,count])=>count>0);
+  const total=entries.reduce((sum,[,count])=>sum+count,0);
+  return entries.sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([key,count])=>({key,count,share:total?count/total:0}));
+}
+
+// Bars of a waterfall: each traced step's offset and length as a share of the request's time (steps without a start are left out).
+export function waterfall(spans,limit=60) {
+  const timed=(spans||[]).filter(span=>span.start_s!==null&&span.start_s!==undefined&&span.latency_s!==null&&span.latency_s!==undefined);
+  const total=Math.max(...timed.map(span=>span.start_s+span.latency_s),0);
+  if(!total)return {total:0,rows:[]};
+  return {total,rows:timed.slice(0,limit).map(span=>({...span,left:Math.max(span.start_s,0)/total,width:Math.max(span.latency_s/total,0.004)}))};
+}
+
+// ['a','b','a'] -> 'a ×2, b' (agents a request ran, in first-seen order).
+export function counted(names) {
+  const found=new Map();for(const name of names||[])found.set(name,(found.get(name)||0)+1);
+  return [...found].map(([name,count])=>count>1?`${name} ×${count}`:name).join(', ');
+}

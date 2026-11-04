@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MIN_COMPARE,defaultPair,delta,filterGroups,firstLine,isAdmin,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
+import {MIN_COMPARE,counted,defaultPair,delta,filterGroups,firstLine,isAdmin,mix,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -67,4 +67,21 @@ test('two prompt versions are compared only with enough calls or cases on both s
   assert.equal(both.enough,true);
   assert.equal(both.rows.find(row=>row.label==='Eval pass rate').b,null);
   assert.equal(versionPair(undefined,version(20,0)).enough,false);
+});
+
+test('a count map becomes rows, largest first, with shares', () => {
+  assert.deepEqual(mix({ok:3,withheld:1,error:0}),[{key:'ok',count:3,share:.75},{key:'withheld',count:1,share:.25}]);
+  assert.deepEqual(mix(null),[]);
+});
+
+test('a waterfall places each step on the request time axis', () => {
+  const fall=waterfall([{name:'chat',start_s:0,latency_s:10},{name:'llm',start_s:2,latency_s:3},{name:'old',start_s:null,latency_s:1}]);
+  assert.equal(fall.total,10);
+  assert.deepEqual(fall.rows.map(row=>[row.name,row.left,row.width]),[['chat',0,1],['llm',.2,.3]]);
+  assert.deepEqual(waterfall([]),{total:0,rows:[]});
+});
+
+test('repeated agent names are counted', () => {
+  assert.equal(counted(['rm_client_insight','rm_service_desk','rm_client_insight']),'rm_client_insight ×2, rm_service_desk');
+  assert.equal(counted([]),'');
 });

@@ -44,3 +44,29 @@ export function Heatmap({columns,rows,highlight,labels}) {
       <td className="admin-heat-label"><span className={`admin-status admin-${row.label}`}>{labels[row.label]||row.label}</span></td>
     </tr>)}</tbody></table></div>;
 }
+
+// Horizontal bars with their numbers as text (counts or seconds); `value` is drawn against the largest.
+export function Bars({rows,format=value=>value,label}) {
+  const top=Math.max(...rows.map(row=>row.value||0),0);
+  return <ul className="admin-bars" aria-label={label}>{rows.map(row=><li key={row.label} title={row.title||''}>
+    <span className="admin-bar-label">{row.label}</span>
+    <span className="admin-bar-track"><i style={{width:`${top?(row.value||0)/top*100:0}%`}}/></span>
+    <span className="admin-bar-value">{format(row.value)}</span></li>)}</ul>;
+}
+
+// One bar split into parts (shares of 1), with a legend that carries the numbers.
+export function Stack({parts,label}) {
+  return <div className="admin-stack-wrap">
+    <div className="admin-stack" role="img" aria-label={label}>{parts.map((part,index)=><i key={part.label} className={`tone-${index}`} style={{width:`${(part.share||0)*100}%`}} title={part.label}/>)}</div>
+    <ul className="admin-stack-legend">{parts.map((part,index)=><li key={part.label}><i className={`tone-${index}`}/>{part.label} <b>{part.text}</b></li>)}</ul>
+  </div>;
+}
+
+// Steps of one request on a shared time axis.
+export function Waterfall({rows,total,format}) {
+  return <ol className="admin-waterfall">{rows.map((row,index)=><li key={index} title={`${row.name} · ${format(row.latency_s)}`}>
+    <span className="admin-wf-name" style={{paddingLeft:`${Math.min(row.depth,6)*10}px`}}>{row.name}{row.agent?` · ${row.agent}`:''}{row.tool&&row.tool!==row.name?` · ${row.tool}`:''}</span>
+    <span className="admin-wf-track"><i className={row.error?'bad':row.run_type==='llm'?'llm':''} style={{left:`${row.left*100}%`,width:`${row.width*100}%`}}/></span>
+    <span className="admin-bar-value">{format(row.latency_s)}</span></li>)}
+    <li className="admin-wf-axis"><span/><span className="admin-wf-track"><em>0 s</em><em>{format(total)}</em></span><span/></li></ol>;
+}
