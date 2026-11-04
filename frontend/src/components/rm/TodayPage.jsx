@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import Icon from '../Icon';
 import {FORMAT_WORDS,byRank,display,firstThings,keyOf,nextStep,openSchedule,rankIndex,reasonText,receivedText,requestsToAnswer,rmGet,todayView,topicLabel} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
+import SharedTopics from './SharedTopics';
 
 const BOOK_QUESTIONS=['Which clients have a maturity or review in the next 30 days?','Who haven’t I met in the last 90 days?','Which clients have requests waiting for me?'];
 function timeOf(when) {return (when||'').split(', ').at(-1);}
@@ -98,6 +99,8 @@ export default function TodayPage({token,onAsk,advisor,today}) {
             <small className={f.overdue?'rmw-late':''}>{f.overdue?'Overdue · was due ':'Due '}{f.due_text}</small>{why('followup',f)}</div>
             <div className="rmw-list-actions"><button className="rmw-mini" onClick={()=>onAsk(`What do I need to know about ${f.client}'s ${f.title.replace(/^Your task: /,'')} (due ${f.due_text})?`,{intent:'client_overview',context:{client_id:f.customer_id}})}><Icon name="spark"/>Ask</button></div></li>)}</ul>}
         </section>
+
+        <SharedTopics token={token} onAsk={onAsk}/>
       </div>
     </>}
   </div>;

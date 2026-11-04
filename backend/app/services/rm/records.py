@@ -82,6 +82,16 @@ async def transaction_insights(ctx,customer_id: int,purpose: str,days: int=90):
     return await rpc('rm_transaction_insights',{'p_customer_id':customer_id,'p_purpose':purpose,'p_days':days},ctx,'rm.transaction_insights')
 async def talking_points(ctx,customer_id: int,purpose: str):
     return await rpc('rm_talking_points',{'p_customer_id':customer_id,'p_purpose':purpose},ctx,'rm.talking_points')
+async def shared_topics(ctx):
+    """Today (0108): topics clients in her book shared with her (confirmed only), each with the line TalkingPoint.line
+    renders; a row that fails the contract is left out, never shown."""
+    from app.schemas.meetings import TalkingPoint
+    result=await rpc('rm_shared_topics',{},ctx,'rm.shared_topics')
+    rows=[]
+    for row in result.get('data') or []:
+        try:rows.append({**row,'line':TalkingPoint.model_validate(row['point']).line()})
+        except (KeyError,TypeError,ValueError):continue
+    return {**result,'data':rows}
 async def meeting_requests(ctx,status: str='open'):return await rpc('rm_meeting_requests',{'p_status':status},ctx,'rm.meeting_requests')
 async def book_facts(ctx):return await rpc('rm_book_facts',{},ctx,'rm.book_facts')
 async def handover_sources(ctx,customer_id: int):return await rpc('rm_handover_sources',{'p_customer_id':customer_id},ctx,'rm.handover_brief')

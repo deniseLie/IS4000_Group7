@@ -73,6 +73,13 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Prioritise with assistant** (`priorities`) uses the same score: *Do first*, *Coming up* (ranked items, then later follow-ups and recorded commitments) and *Specialist-managed*.
 - Spans carry only codes and counts (`scored`, `scored_kinds`, `factors`, `top_score`, `feeds`). QA1 R24–R27 (`docs/evaluation/test-cases.md`) cover Plan my day, accepting a client's time, blocking Friday afternoon and the prioritised list.
 
+## Topics from her clients' chats (build plan phase 4, 0108)
+
+- **What she gets**: topic lines only, for example *Home loan · planning · within 12 months*. Each is labelled *Inferred from chat* (AI suggestion) or *Shared by the client*. She never sees the client's words, and no RM role or `rm_*` function can read the quotes table.
+- **Client overview and meeting brief** read `rm_talking_points` as a fixed read (purpose `client_view` or `meeting_prep`, set by code). Inferred topics come back only while the client's grant covers `chat_topics`, after a 24-hour hold, and outside a 60-day care pause. A topic still on hold or paused becomes a gap ("some topics are not available yet"), never which topic or why. Topics the client shared herself always come back; without the grant the read is audited with `basis: client_shared`.
+- **Today → Topics clients shared with you**: confirmed topics from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
+- Reassigning the client ends access at once (book check first); one client per call.
+
 ## Layout (Nov 2026 redesign)
 
 - **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.

@@ -27,6 +27,11 @@ export function offerState(messages,index,now=Date.now()) {
   return Date.parse(message.offer.expires_at)<=now?'expired':'open';
 }
 
+// Button words: a Let-your-RM-know offer (talking points lane 2, 0108) reads "Let her know" / "Not now"; the reply sent is the same.
+export function offerLabels(offer) {
+  return offer?.offers?.length&&offer.offers.every(o=>o.type==='insight.share')?{confirm:'Let her know',cancel:'Not now'}:{confirm:'Confirm',cancel:'Cancel'};
+}
+
 export function expiresIn(offer,now=Date.now()) {
   const minutes=Math.ceil((Date.parse(offer.expires_at)-now)/60000);
   return minutes<=0?'Expired':minutes===1?'Expires in 1 minute':`Expires in ${minutes} minutes`;

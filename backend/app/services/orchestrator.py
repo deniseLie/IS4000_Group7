@@ -31,8 +31,9 @@ from app.schemas.chat import ChatRequest, Message
 from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, Export, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
 from app.schemas.events import ActionRequiredEvent, AnswerEvent, AnswerSection, OfferGroupEvent, PlanEvent, PlannedSection, Source
 from app.schemas.meeting_requests import MeetingRequestResult
+from app.schemas.talking_points import InsightShareResult
 from app.schemas.tickets import TicketResult
-from app.services import audit, limit_context, llm_gateway, offers, prompts, rm_handover, typos, client_intents
+from app.services import audit, limit_context, llm_gateway, offers, prompts, rm_handover, talking_points, typos, client_intents
 from app.services.llm_gateway import LLMError
 from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, request_status_answers, runner, rules  # noqa: F401 (rules registers)
 from app.services.agents.answer import WITHHELD
@@ -81,6 +82,8 @@ DONE = 'Done. You can see the receipt in Activity.'
 TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
 MEETING_SENT = ('Sent: your meeting request is with your relationship manager. They will answer by {respond_by} (Singapore time): '
     'they accept one of your times, suggest another or reply in a message. You can follow it in My requests → Meetings.')  # 0106
+SHARED = ('Done: your relationship manager can now see “{line}”, and nothing else from this chat. You can remove it at any time '
+    'under Data sharing.')  # 0108, lane 2
 LINKED = ' It is linked to your earlier request {reference}.'
 CHAIN_STOPPED = 'I didn’t do this next step, because the step before it didn’t go through. Nothing was changed for it.'
 # Dependencies (§14.6): fixed wording, never the planner's text.
@@ -626,6 +629,8 @@ async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str
         label = getattr(command.target, 'category_label', 'support').lower()
         return TICKET_RAISED.format(label=label, reference=receipt.result.reference) + link
     if isinstance(receipt.result, MeetingRequestResult):return MEETING_SENT.format(respond_by=receipt.result.respond_by_text) + link
+    if isinstance(receipt.result, InsightShareResult):
+        return SHARED.format(line=talking_points.shared_line(receipt.result)) + link
     return DONE + link
 
 
@@ -714,13 +719,31 @@ async def superseded(proposals: list[OfferProposal], ctx: RequestContext, conver
         if group != offers.group_for(ctx.case_id) and all(o.type == 'meeting.request' for o in items):await offers.cancel(group, current)
 
 
+async def share_offer(state: Turn, runtime: Runtime[TurnContext]) -> tuple[OfferProposal, str] | None:
+    """Talking points lane 2 (0108): a rule, never the model. Only for a signed-in saved chat whose reply has no other
+    offer and is not a confirmation; talking_points.share_offer checks her words and what rules the prompt out."""
+    ctx = runtime.context.request
+    if state.get('confirm') or runtime.context.conversation_id is None or runtime.context.turn_id is None or not state['request'].messages:return None
+    with span('share_offer', 'decision') as attrs:
+        risk = state.get('risk')
+        found = await talking_points.share_offer(risk.redacted_message if risk else '', risk, ctx)
+        attrs['offered'] = found is not None
+    return found
+
+
 async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     """Sections in plan priority order, then the offers saved as one group; fixed lines (act outcomes, rephrase) last."""
     ctx = runtime.context.request
     rows = ordered(state)
     proposals = offer_order(rows) + validation_offer(rows, ctx)
     if proposals:await superseded(proposals, ctx, runtime.context.conversation_id)
-    saved = await offers.save(proposals, ctx, runtime.context.turn_id) if proposals else []
+    share = None if proposals else await share_offer(state, runtime)
+    if share:proposals = [share[0]]
+    try:saved = await offers.save(proposals, ctx, runtime.context.turn_id) if proposals else []
+    except Exception as error:
+        if share is None:raise
+        log_event('share_offer_failed', error_type=type(error).__name__)  # the answer stands without the offer
+        proposals, saved, share = [], [], None
     by_task: dict[str, list[tuple[OfferProposal, object]]] = {}
     for proposal, offer in zip(proposals, saved, strict=True):by_task.setdefault(proposal.task_id, []).append((proposal, offer))
     line = CONFIRM_LINE + (' Your answer covers every offer in this reply.' if len(saved) > 1 else '')
@@ -731,7 +754,8 @@ async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
         if mine:decision = (decision or 'Would you like me to: ' + '; '.join(p.summary for p, _ in mine) + '?') + ' ' + line
         sections.append(section_for(item, output, decision))
     for proposal, _ in (pair for pairs in by_task.values() for pair in pairs):
-        sections.append(fixed_section(proposal.task_id, f'Would you like me to: {proposal.summary}? {line}', domain='relationship', needs_human=True))
+        if share:sections.append(fixed_section(proposal.task_id, share[1], domain='relationship'))
+        else:sections.append(fixed_section(proposal.task_id, f'Would you like me to: {proposal.summary}? {line}', domain='relationship', needs_human=True))
     sections += state.get('lines') or []
     return {'answer': answer_for(sections, state, offer_event(saved, ctx))}
 

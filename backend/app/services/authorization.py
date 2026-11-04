@@ -11,13 +11,14 @@ from app.services.agents import registry
 from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','tickets.categories'})
-AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit','compliance.answer_request'})
+AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit','compliance.answer_request',
+    'insight.delete','insight.mute','insight.resume'})  # 0108: her own talking-point controls (Data sharing)
 # The customer's own card changes: confirmed by the signed-in customer only; agents are refused (customer_only_action).
 # Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
 CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
     'requests.create','rm.share_summary','consent.grant','consent.revoke','ticket.create',
-    'meeting.request','meeting.withdraw','meeting.counter_reply'}) | CUSTOMER_CARD_CHANGES  # meeting.*: 0106
+    'meeting.request','meeting.withdraw','meeting.counter_reply','insight.share'}) | CUSTOMER_CARD_CHANGES  # meeting.*: 0106; insight.share: 0108
 STAFF_TYPES = frozenset({'card.unblock','card.cancel_permanently','handoff.claim','handoff.close'})
 # 0096 (CR19): the client freezes and unfreezes her own card again (card.temporary_block, card.unblock; SQL refuses an
 # unfreeze of a card the bank froze). Cancelling and the fraud dispute draft stay the bank's. No agent proposes any of them.
@@ -26,9 +27,10 @@ CLIENT_ONLY_CARD_ACTIONS = frozenset({'card.temporary_block','card.unblock'})
 AGENT_ACTIONS = {
     'fraud':frozenset({'card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
-        'rm.share_summary','consent.grant','consent.revoke','meeting.request'}),  # the chat offers a meeting request (2a)
+        'rm.share_summary','consent.grant','consent.revoke','meeting.request',
+        'insight.share'}),  # the chat offers a meeting request (2a) and Let-Sophie-know (0108, lane 2)
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list','insights.read','insights.status','insights.record'}
 
 
 class PolicyResource(BaseModel):

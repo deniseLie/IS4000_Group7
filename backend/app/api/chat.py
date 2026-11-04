@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from fastapi import APIRouter, Depends, Request
 from starlette.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
+from starlette.background import BackgroundTask
 from app.api import chat_store
 from app.api.conversations import response_for
 from app.core.auth import get_customer_context
@@ -24,7 +25,7 @@ from app.services.answers import make_answer
 from app.services.conversations import ConversationIntegrityError
 from app.services.guardrail import assess_request
 from app.services.audit import AuditWriteError, start_batch
-from app.services import orchestrator,rm_handover
+from app.services import orchestrator,rm_handover,talking_points
 
 router=APIRouter()
 FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance','other_customer_data','instruction_override'}
@@ -93,6 +94,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     except BaseException as error:
         root.__exit__(type(error),error,error.__traceback__)
         raise
+    after={}  # lane 1 of talking points (0108): runs once the answer has been sent, for a new reply in a signed-in saved chat
     async def events():
         failure=None
         turn=prepared.turn if prepared is not None else None
@@ -149,6 +151,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
             if prepared is not None:result['history_trimmed']=result['history_trimmed'] or prepared.history_trimmed
             audit_reply(batch,trace,result)
             await batch.flush()
+            if prepared is not None and p.kind=='customer' and trace.attrs.get('route')!='conversation_replay':after['turn']=turn.turn.turn_id
             trace.attrs['outcome']='ok'
             run.add_outputs(result)
             yield {'event':'answer','data':json.dumps(result,ensure_ascii=False)}
@@ -177,4 +180,6 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
             trace.attrs.update(request_facts(trace))
             run.add_metadata(trace.attrs)
             root.__exit__(*((type(failure),failure,failure.__traceback__) if failure else (None,None,None)))
-    return EventSourceResponse(events())
+    async def topics_after_reply():
+        if 'turn' in after:await talking_points.after_reply(ctx,after['turn'],req.messages,risk,req.offer is not None)
+    return EventSourceResponse(events(),background=BackgroundTask(topics_after_reply))

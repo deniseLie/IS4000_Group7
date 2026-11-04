@@ -118,7 +118,7 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
     loop_tools=frozenset({'my_rm','my_appointments','free_slots','my_consents','request_categories','knowledge_search'}),
     external=frozenset({'public_holidays'}),imports=frozenset({'due_dates'}),
     offers=frozenset({'meeting.request','appointment.cancel','handoff.create','tickets.follow_up',
-        'consent.grant','consent.revoke','rm.share_summary'}))
+        'consent.grant','consent.revoke','rm.share_summary','insight.share'}))  # insight.share: a compose rule, never the model (0108)
 
 # RM agents (architecture §5.6.1; build plan 3a): row scope is the RM's own book. Each owns one data class (RM_OWNER) and is
 # the only proposer of one kind of change. A known intent runs the reads its handler in services/rm/handlers.py makes

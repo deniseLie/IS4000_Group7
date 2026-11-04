@@ -4,6 +4,7 @@ import {supabase} from '../lib/supabase';
 import {confirmAction,loadActions,rejectAction} from '../lib/actions';
 import {appointmentTime} from '../lib/appointmentData';
 import {TOPICS} from '../lib/meetingRequests';
+import {INSIGHT_ACTIONS,insightSentence,line} from '../lib/talkingPoints';
 import {consentCategoryText} from '../lib/consentData';
 import {displayName,formatDate,formatDateTime,formatMoney,formatTime} from '../lib/format';
 import {POSSESSION,possessionLabel} from '../lib/disputeData';
@@ -34,6 +35,7 @@ function commandTitle(command) {
   if(command.type==='meeting.request')return 'Send a meeting request to your relationship manager';
   if(command.type==='meeting.withdraw')return 'Withdraw a meeting request';
   if(command.type==='meeting.counter_reply')return command.target.reply==='accept'?'Accept the time your relationship manager suggested':'Decline the time your relationship manager suggested';
+  if(INSIGHT_ACTIONS.includes(command.type))return insightSentence(command.type,command.target);
   throw new Error('This action type has no review title. Reload its recorded status.');
 }
 
@@ -64,12 +66,16 @@ function receiptText(item) {
   if(item.command.type==='meeting.request')return `Your meeting request was sent. Your relationship manager answers by ${item.receipt.result.respond_by_text} (Singapore time). Follow it in My requests → Meetings.`;
   if(item.command.type==='meeting.withdraw')return 'You withdrew this meeting request. No meeting was booked.';
   if(item.command.type==='meeting.counter_reply')return item.receipt.result.reply==='accept'?`Your meeting is booked${item.receipt.result.when?` for ${item.receipt.result.when}`:''}. You can see it in My requests → Meetings.`:'You declined the suggested time and the request was closed. No meeting was booked.';
+  if(item.command.type==='insight.share')return `Your relationship manager can now see “${line(item.receipt.result)}”${item.receipt.result.notified?' and has a notice in their workspace':''}. You can remove it under Data sharing.`;
+  if(item.command.type==='insight.delete')return 'This topic and the words it came from were deleted. Your relationship manager no longer sees it.';
+  if(item.command.type==='insight.mute')return 'This topic will not be suggested again from your chats. You can resume it under Data sharing.';
+  if(item.command.type==='insight.resume')return item.receipt.result.topic?'This topic can be suggested again from your chats.':'Topic suggestions from your chats are on again.';
   throw new Error('This action type has no verified receipt description.');
 }
 
 function groupOf(command) {
   const kind=command.type.split('.')[0];
-  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm'].includes(kind)?'Data sharing':['appointment','meeting'].includes(kind)?'Appointments':['requests','ticket'].includes(kind)?'Requests':'Support';
+  return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm','insight'].includes(kind)?'Data sharing':['appointment','meeting'].includes(kind)?'Appointments':['requests','ticket'].includes(kind)?'Requests':'Support';
 }
 // Plain-language card heading and summary; the exact recorded fields stay one click away under "Full details".
 function plainTitle(command) {
@@ -132,7 +138,8 @@ const REVIEW={'card.temporary_block':['Confirming freezes this card: new payment
   'consent.revoke':['Confirming revokes this specific grant. Other grants continue until separately revoked or expired, and earlier sharing is not erased.','data-sharing scope','Confirm revocation'],
   'appointment.confirm':['Confirming books this time only while its hold remains active. Review the date, time and format above. No real meeting or joining link is connected.','appointment','Confirm booking'],
   'appointment.cancel':['Confirming cancels this appointment and releases its time.','appointment','Confirm cancellation'],
-  'meeting.request':['Confirming sends this meeting request to your relationship manager, who accepts a time, suggests another or replies in a message. Nothing is booked until then. Rejecting sends nothing.','meeting request','Send request']};
+  'meeting.request':['Confirming sends this meeting request to your relationship manager, who accepts a time, suggests another or replies in a message. Nothing is booked until then. Rejecting sends nothing.','meeting request','Send request'],
+  'insight.share':['Confirming lets your relationship manager see only the topic line above, never your messages. You can remove it at any time under Data sharing. Rejecting shares nothing.','topic','Let her know']};
 const review=type=>REVIEW[type]||['Confirming records the change shown above. Rejecting leaves it unchanged.','action','Confirm'];
 // Exports only what this panel already loaded: one row per recorded action and its receipt.
 function exportCsv(items) {
@@ -167,6 +174,7 @@ function activity(command) {
     case 'requests.create':return ['people',`Sent a request to ${displayName(t.recipient_name)}`,t.what];
     case 'meeting.request':return ['calendar','Asked your relationship manager for a meeting',`“${t.purpose}”`];
     case 'meeting.withdraw':return ['calendar','Withdrew a meeting request',''];
+    case 'insight.share':case 'insight.delete':case 'insight.mute':case 'insight.resume':return ['shield',insightSentence(command.type,t),''];
     case 'meeting.counter_reply':return ['calendar',t.reply==='accept'?'Accepted the time your relationship manager suggested':'Declined the time your relationship manager suggested',''];
     case 'card.temporary_block':return ['card',`Freeze card ending ${t.last4}`,'Stops new payments on this card until it is checked.'];
     case 'card.dispute':return ['card',`Dispute ${t.items.length} charges on card ending ${t.last4}`,t.items.map(charge).join('; ')];

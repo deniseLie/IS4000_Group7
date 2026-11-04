@@ -22,6 +22,8 @@ flowchart LR
 
 The guardrail runs first and never calls the model. Lost card and pasted secrets get fixed safety wording (signed in, a lost card also offers one urgent request to her RM); "talk to a person" shows the RM preview. Urgent words are matched on a typo-tolerant copy (`services/typos.py`), so "i lsot my crad" is still a lost card.
 
+After the `answer` event of a new reply in a signed-in saved chat, `/chat` runs one background step with her JWT: talking points lane 1 (`services/talking_points.after_reply`, 0108). It never changes the reply. A care signal pauses topic suggestions; otherwise, only while her consent covers chat topics and a code pre-filter passes, one `talking_points/v1` call classifies her redacted message, and code keeps list values plus her exact quote (hers only) for her RM's meeting topics.
+
 ## 2. The orchestrator graph (`services/orchestrator.py`)
 
 ```mermaid
@@ -40,7 +42,7 @@ There is no checkpointer and no paused turn: an offer is saved on the Action Ser
 | 2 | `agent` | `runner.run_agent` for one task, in parallel with the others, within `AGENT_TIMEOUT_S`. History is the client's last 3 redacted messages (the task's own question when one message held several issues); assistant text only for a reply to our own question. An urgent card task is answered in the node by `urgent_output` (no runner, no model) | Inside agents |
 | 3 | `gather` | After wave 1, once: the dependent tasks with only the exports they import (computed by code, `agents/derived.py`), skipped with a fixed line when their condition is false or unknown; at most 5 per list export ("first 5 of N"); an `out_of_scope` task handed once to an agent in its spec's `hands_to`, question only. After wave 2 it goes to `compose` | No |
 | 4 | `act` | Confirm or cancel the open offer group in order (`offers.confirm` / `cancel`); SQL checks owner, expiry and order, and a double confirm records once; a chained step receives the earlier receipt, and is not run when the earlier one fails. Fixed outcome lines quote the receipt or ticket reference | No |
-| 5 | `compose` | Sections in priority order (P0 urgent card, P2 compliance deadline or RM handover, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. `/chat` streams a `plan` event after the planner (task ids, domains, priorities: the UI shows a placeholder per task), a `section` event as each agent finishes (filling its placeholder), then the `answer` (with `offer`: the UI shows one Confirm and one Cancel) | No |
+| 5 | `compose` | Sections in priority order (P0 urgent card, P2 compliance deadline or RM handover, P3 the rest), the agents' offers saved as one group with "Reply yes to confirm", fixed lines last. With no other offer in a saved chat, a rule may add one *Let your RM know* (`insight.share`) offer (talking points lane 2, 0108). `/chat` streams a `plan` event after the planner (task ids, domains, priorities: the UI shows a placeholder per task), a `section` event as each agent finishes (filling its placeholder), then the `answer` (with `offer`: the UI shows one Confirm and one Cancel) | No |
 
 ## 3. Who answers what
 
@@ -85,6 +87,7 @@ Reads use the caller's JWT and RLS through `services/tools.py`, shaped to the sp
 | Unrecognised charge | Confirm, or a typed yes | Urgent `rm_handover` ticket to her RM (P0 `general_support` handoff, topic *Urgent card*), from the saved offer |
 | Lost card | Confirm, or a typed yes | The same urgent RM ticket; an open urgent lost-card request is quoted instead |
 | Meeting | Confirm the drafted request | `meeting.request` (her RM accepts a time, proposes another or declines in the workspace); no ticket |
+| Let her RM know (0108) | *Let her know* / *Not now*, or a typed yes | `insight.share`: a confirmed topic line (list values only) on her RM's Today, with a notice that names no topic. `compose` adds it by rule (`talking_points.share_offer`) only when the reply has no other offer and her message names a topic and a plan in her own words; no model, no care flag, mute, pause, 30-day repeat or open meeting request on that topic |
 | Card limit | Raise a card limit request (form) | `card_limit_change` ticket for the cards and credit team |
 
 What the RM receives: topic, her question, up to three earlier messages (redacted, never the assistant's replies), her open requests with status, and the selected document as an attachment (0082). If sending fails, she's told nothing was sent and offered Talk to a person. For an urgent card request: the topic, what happened, her cards (last 4 and status) and her own redacted words.

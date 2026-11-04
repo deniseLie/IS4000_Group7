@@ -16,6 +16,8 @@ import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
 import RecordsPanel from './components/RecordsPanel';
 import OfferBlock from './components/OfferBlock';
+import SharingPage from './components/SharingPage';
+import {chatTopicsNote,loadTalkingPoints} from './lib/talkingPoints';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
 import {loadIntroduction,relationshipIntent} from './lib/relationshipWorkflow';
 import {CARE_CHIP,CONFIRM_REPORT,followUps} from './lib/followUps';
@@ -43,7 +45,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable right now. Please retry later.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat','overview','inbox','compliance','requests','actions'];  // one client view (the RM and admin pages are not shown)
+const PAGES=['chat','overview','inbox','compliance','requests','actions','sharing'];  // one client view (the RM and admin pages are not shown)
 // CR8 routing for "Talk to a person". Michelle is a private-banking client, so her relationship manager is her person for
 // general, account and compliance questions (the RM coordinates with the compliance team). Fraud and lost cards go
 // to the chat's urgent card request to the RM (build plan 2b); card limit changes go to the cards and credit team's request form.
@@ -99,6 +101,7 @@ export default function Chat({session,onSignIn}) {
   const [rmMessage,setRmMessage]=useState(''),rmEdited=useRef(false);
   const [helpTopic,setHelpTopic]=useState('relationship'),[attachSummary,setAttachSummary]=useState(true);
   const [unread,setUnread]=useState(0),[chatCount,setChatCount]=useState(null);
+  const [chatTopics,setChatTopics]=useState(null);  // {on, rm}: the line under the chat while chat topics are shared (0108)
   const [view,setView]=useState(()=>pageFromHash(session));
   const [pageKey,setPageKey]=useState(0);
   const [ticketPrefill,setTicketPrefill]=useState(null);  // manual My Requests workflow
@@ -168,6 +171,14 @@ export default function Chat({session,onSignIn}) {
       catch(failure){if(failure.name!=='AbortError'&&!controller.signal.aborted)setRmIntro(null);}})();
     return ()=>controller.abort();
   },[session?.user.id]);
+
+  useEffect(()=>{  // whether topics from her saved chats may reach her RM (her chat_topics grant); read again after Data sharing
+    if(!session||store!=='database'||view==='sharing'){if(!session)setChatTopics(null);return;}
+    const controller=new AbortController();
+    (async()=>{try{const headers=await sessionHeaders();const topics=await loadTalkingPoints(headers.Authorization.replace(/^Bearer /,''),controller.signal);
+      if(!controller.signal.aborted)setChatTopics({on:topics.chat_topics,rm:topics.rm_first_name});}catch{if(!controller.signal.aborted)setChatTopics(null);}})();
+    return ()=>controller.abort();
+  },[session?.user.id,store,view==='sharing']);
 
   useEffect(()=>{  // the signed-in customer's own name labels the account area
     if(!session){setProfileName('');return;}
@@ -509,6 +520,7 @@ export default function Chat({session,onSignIn}) {
     {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
     ...(store==='database'?[{testid:'open-saved-chats',desktop:true,ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
     {testid:'open-actions',desktop:true,ariaLabel:'Open actions',icon:'history',label:'Actions',onSelect:openActions},
+    {testid:'open-data-sharing',ariaLabel:'Open data sharing',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
   // The sidebar and the mobile tab bar list the same pages; for guests every page but the assistant is a sign-in prompt.
@@ -568,6 +580,7 @@ export default function Chat({session,onSignIn}) {
               onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}else recallSent(e);}}/>
             <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
           </form><div className="composer-note"><span><Icon name="shield"/>{DISCLAIMER}</span>
+            {session&&chatTopics?.on&&<span data-testid="chat-topics-note">{chatTopicsNote(chatTopics.rm)} <a href="#sharing" onClick={event=>{event.preventDefault();navigate('sharing');}}>Manage</a></span>}
             <details className="chat-about"><summary>How chats are saved</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile; reopen them from Recent chats. Starting a new chat keeps earlier ones.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears that access.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be left out of long chats.</p></details></div></div>
         </section>
         {footer}
@@ -578,6 +591,7 @@ export default function Chat({session,onSignIn}) {
         {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
         {session&&view==='actions'&&<ActionsPanel key={pageKey}/>}
+        {session&&view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions}/>}
         {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary} rmName={rmIntro?.current?.name} initialTab={ticketPrefill?.tab||'open'}/>}
         {session&&view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
         {footer}

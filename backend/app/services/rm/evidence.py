@@ -229,9 +229,10 @@ def _words(d: date) -> str:return f'{d.day} {d:%b %Y}'  # 12 Nov 2026, as rm.day
 
 
 def talking_points_evidence(result: dict,customer_id: int) -> Evidence:
-    """Topics from the client's chats (0107 contract; build plan phase 4 fills them), each rendered by code
-    (TalkingPoint.line) with its brief label; a row that fails the contract is dropped and counted, never shown. Without
-    her chat_topics grant the inferred topics are a gap, and the topics she shared herself still come with it."""
+    """Topics from the client's chats (0107 contract, filled by 0108), each rendered by code (TalkingPoint.line) with its
+    brief label; a row that fails the contract is dropped and counted, never shown. Without her chat_topics grant the
+    inferred topics are a gap, and the topics she shared herself still come with it; with it, a topic still on its
+    24-hour hold or paused is a gap too (`pending`: never which topic, never why)."""
     title='Topics from the client\'s chats'
     rows,dropped=[],0
     for row in result.get('data') or []:
@@ -245,8 +246,11 @@ def talking_points_evidence(result: dict,customer_id: int) -> Evidence:
         gap.data.update(shared_by_client=rows,**withheld,meaning='The client has not shared topics from their chats with you: say so as a gap '
             'and do not guess them. Only the topics under shared_by_client, which she shared with you herself, may be used.')
         return gap
-    return Evidence('talking-points',title,'record',{'points':rows,**withheld} if rows else
-        {'points':0,**withheld,'meaning':'No topics from the client\'s chats are recorded.'},str(result.get('as_of')),customer_id)
+    pending={'pending':True,'gap':'Some topics from the client\'s chats are not available yet: say so as a gap, and do not '
+        'guess which topics or why.'} if result.get('pending') else {}
+    return Evidence('talking-points',title,'record',{'points':rows,**withheld,**pending} if rows else
+        {'points':0,**withheld,**pending,'meaning':'No topics from the client\'s chats are available yet.' if pending else
+            'No topics from the client\'s chats are recorded.'},str(result.get('as_of')),customer_id)
 
 
 PERIOD=re.compile(r'\b(?:next|coming|within(?: the next)?|in the next)\s+(\d{1,3})\s+(day|week|month)s?\b',re.I)

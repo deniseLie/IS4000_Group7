@@ -32,13 +32,13 @@ def current(agent='answer'):
 def in_use():
     """{family: version} for every prompt the running code is configured to load: settings for the v1 answer and the
     shared domain prompt, module constants for the rest. The admin dashboard compares it with what actually ran (llm runs)."""
-    from app.services import notice_checks, orchestrator
+    from app.services import notice_checks, orchestrator, talking_points
     from app.services.agents import compliance, document, registry, relationship, retail, runner
     from app.services.rm import graph, handlers
     found = {'answer': settings.prompt_version, 'domain_common': settings.prompt_versions.get('domain_common'), 'planner': orchestrator.PLANNER,
         'retail': retail.PROMPT, 'compliance': compliance.PROMPT, 'relationship': relationship.PROMPT, 'document': document.PROMPT,
         'runner_common': runner.COMMON, 'rm_planner': graph.PLANNER_VERSION, 'rm_assistant': handlers.ASSISTANT_VERSION,
-        'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT,
+        'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT, 'talking_points': talking_points.PROMPT,
         **{registry.SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()}}
     return {family: version for family, version in sorted(found.items()) if version}
 

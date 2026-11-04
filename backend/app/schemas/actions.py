@@ -14,6 +14,8 @@ from app.schemas.tickets import StoredTicketTarget,TicketResult,TicketTarget
 from app.schemas.request_answers import RequestAnswerResult,RequestAnswerTarget,StoredRequestAnswerTarget
 from app.schemas.meeting_requests import (CounterReplyResult,CounterReplyTarget,MeetingRefTarget,MeetingRequestResult,MeetingRequestTarget,
     MeetingWithdrawResult,StoredCounterReplyTarget,StoredMeetingRefTarget,StoredMeetingRequestTarget)
+from app.schemas.talking_points import (InsightDeleteResult,InsightMuteResult,InsightPointTarget,InsightResumeResult,InsightResumeTarget,
+    InsightShareResult,InsightShareTarget,InsightTopicTarget,StoredInsightPointTarget,StoredInsightShareTarget)
 from app.schemas.document_uploads import DocumentUploadResult,DocumentUploadTarget,StoredDocumentUploadTarget
 from app.schemas.disputes import DisputeInput,DisputeResult,DisputeTarget,StoredDisputeTarget
 from app.schemas.prechecks import SubmitDocumentTarget,StoredSubmission,SubmissionResult
@@ -22,7 +24,9 @@ from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,C
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
     'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute','card.unblock','card.cancel_permanently','ticket.create','compliance.answer_request',
-    'meeting.request','meeting.withdraw','meeting.counter_reply']
+    'meeting.request','meeting.withdraw','meeting.counter_reply','insight.delete','insight.mute','insight.resume','insight.share']
+# Talking points (0108): her own controls run at once with a receipt; insight.share is offered in chat and needs her yes.
+INSIGHT_ACTIONS=('insight.delete','insight.mute','insight.resume','insight.share')
 # Meeting requests (0106): her own requests to her RM, each confirmed by her (offered in chat or from My requests > Meetings).
 MEETING_ACTIONS=('meeting.request','meeting.withdraw','meeting.counter_reply')
 # The two card changes are also staff operations (0030); a target naming a handoff_id is the staff one.
@@ -119,10 +123,12 @@ class ActionFailure(BaseModel):
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
     | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget | StoredTicketTarget | StoredRequestAnswerTarget
-    | StoredMeetingRequestTarget | StoredMeetingRefTarget | StoredCounterReplyTarget)
+    | StoredMeetingRequestTarget | StoredMeetingRefTarget | StoredCounterReplyTarget
+    | StoredInsightPointTarget | InsightTopicTarget | InsightResumeTarget | StoredInsightShareTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
     | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget | TicketTarget | RequestAnswerTarget
-    | MeetingRequestTarget | MeetingRefTarget | CounterReplyTarget)
+    | MeetingRequestTarget | MeetingRefTarget | CounterReplyTarget
+    | InsightPointTarget | InsightTopicTarget | InsightResumeTarget | InsightShareTarget)
 
 
 class ActionRecord(BaseModel):
@@ -165,6 +171,10 @@ class ActionRecord(BaseModel):
         if action_type=='meeting.request':return StoredMeetingRequestTarget.model_validate(value)
         if action_type=='meeting.withdraw':return StoredMeetingRefTarget.model_validate(value)
         if action_type=='meeting.counter_reply':return StoredCounterReplyTarget.model_validate(value)
+        if action_type=='insight.delete':return StoredInsightPointTarget.model_validate(value)
+        if action_type=='insight.mute':return InsightTopicTarget.model_validate(value)
+        if action_type=='insight.resume':return InsightResumeTarget.model_validate(value)
+        if action_type=='insight.share':return StoredInsightShareTarget.model_validate(value)
         raise ValueError('A registered operation must identify its stored target')
 
     @model_validator(mode='after')
@@ -182,6 +192,8 @@ class ActionRecord(BaseModel):
             raise ValueError('Request intake requires recorded customer confirmation')
         if self.state=='succeeded' and self.type=='ticket.create' and self.confirmed_at is None:
             raise ValueError('A ticket requires recorded customer confirmation')
+        if self.state=='succeeded' and self.type=='insight.share' and self.confirmed_at is None:
+            raise ValueError('Sharing a topic with the relationship manager requires recorded customer confirmation')
         if self.state=='succeeded' and self.type in MEETING_ACTIONS and self.confirmed_at is None:
             raise ValueError('A meeting request change requires recorded customer confirmation')
         if self.confirmation_input is not None and (self.type!='card.dispute' or self.state=='proposed'):
@@ -204,7 +216,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult | MeetingRequestResult | MeetingWithdrawResult | CounterReplyResult
+    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult | MeetingRequestResult | MeetingWithdrawResult | CounterReplyResult | InsightDeleteResult | InsightMuteResult | InsightResumeResult | InsightShareResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -269,6 +281,12 @@ class ActionOutcome(BaseModel):
                     if (not isinstance(receipt.result,expected) or (command.type!='meeting.request' and receipt.result.request_id!=command.target.request_id)
                             or (command.type=='meeting.counter_reply' and receipt.result.reply!=command.target.reply)):
                         raise ValueError('Meeting request receipt disagrees with the reviewed request or reply')
+                if command.type in INSIGHT_ACTIONS:
+                    expected={'insight.delete':InsightDeleteResult,'insight.mute':InsightMuteResult,'insight.resume':InsightResumeResult,
+                        'insight.share':InsightShareResult}[command.type]
+                    if not isinstance(receipt.result,expected) or any(getattr(receipt.result,key)!=value for key,value in command.target.model_dump().items()
+                            if key in type(receipt.result).model_fields and key not in ('stage','timeframe')):
+                        raise ValueError('Talking point receipt disagrees with the reviewed topic or point')
                 if command.type=='requests.create':
                     if not isinstance(receipt.result,RequestResult) or any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
                         raise ValueError('Request receipt disagrees with the reviewed intake')
@@ -327,6 +345,10 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='meeting.request':return MeetingRequestTarget.model_validate(value)
         if info.data.get('type')=='meeting.withdraw':return MeetingRefTarget.model_validate(value)
         if info.data.get('type')=='meeting.counter_reply':return CounterReplyTarget.model_validate(value)
+        if info.data.get('type')=='insight.delete':return InsightPointTarget.model_validate(value)
+        if info.data.get('type')=='insight.mute':return InsightTopicTarget.model_validate(value)
+        if info.data.get('type')=='insight.resume':return InsightResumeTarget.model_validate(value)
+        if info.data.get('type')=='insight.share':return InsightShareTarget.model_validate(value)
         raise ValueError('A registered action type is required before its target')
 
     @model_validator(mode='after')

@@ -68,6 +68,7 @@ RELEASED[('planner','v6')]='v6+e8bc7007'
 RELEASED[('planner','v7')]='v7+0590901b'
 RELEASED[('planner','v8')]='v8+2710b2ab'
 RELEASED[('relationship','v6')]='v6+eb7307b9'
+RELEASED[('talking_points','v1')]='v1+254803bd'  # build plan 4 (0108): lane 1 classifier
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

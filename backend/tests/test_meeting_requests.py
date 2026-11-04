@@ -203,11 +203,12 @@ def test_gated_readers_return_data_only_under_consent_and_audit_the_grant_and_pu
     assert set(shared['data'])>={'monthly','card_spending','overseas','large_movements','recurring'} and 'description' not in json.dumps(shared['data'])
     gap=database.execute("select public.rm_transaction_insights(1007,'client_view')").fetchone()[0]
     assert gap['shared'] is False and gap['data'] is None and gap['denied'] is False
-    # 0107: talking points are always a list, so topics a client shared herself can come back without chat_topics (phase 4)
+    # 0107: talking points are always a list, so topics a client shared herself come back without chat_topics (0108 seeds
+    # Michelle's inferred home loan point past its hold and Mei Ling's confirmed investments point)
     points=database.execute("select public.rm_talking_points(1002,'meeting_prep')").fetchone()[0]
-    assert points['shared'] is True and points['data']==[]
+    assert points['shared'] is True and [(p['topic'],p['origin']) for p in points['data']]==[('home_loan','inferred')]
     topics=database.execute("select public.rm_talking_points(1007,'client_view')").fetchone()[0]
-    assert topics['shared'] is False and topics['data']==[]
+    assert topics['shared'] is False and [(p['topic'],p['origin']) for p in topics['data']]==[('investments','confirmed')]
     cash=database.execute('select public.rm_cash_events(1007)').fetchone()[0]
     assert cash['shared'] is False and cash['data'] is None
     assert isinstance(database.execute('select public.rm_cash_events(1002)').fetchone()[0]['data'],list)
@@ -224,8 +225,10 @@ def test_gated_readers_return_data_only_under_consent_and_audit_the_grant_and_pu
     assert details('policy.rm_consent_gap',gap['call_id'])==('denied',{'tool':'rm.transaction_insights','category':'transaction_insights',
         'purpose':'client_view','reason':'no_active_consent'})
     assert details('policy.rm_consent_gap',topics['call_id'])[1]['purpose']=='client_view'
-    assert details('data.read',points['call_id'])[1]=={'tool':'rm.talking_points','result_count':0,'category':'chat_topics','grant_id':MICHELLE_GRANT,
+    assert details('data.read',points['call_id'])[1]=={'tool':'rm.talking_points','result_count':1,'category':'chat_topics','grant_id':MICHELLE_GRANT,
         'purpose':'meeting_prep'}
+    assert details('data.read',topics['call_id'])[1]=={'tool':'rm.talking_points','result_count':1,'basis':'client_shared','command_ids':[],
+        'purpose':'client_view'}  # the seeded share has no ledger command
 
 
 def test_the_demo_reset_seeds_the_meetings_again_from_today(database: 'Connection[SqlRow]') -> None:
@@ -235,6 +238,7 @@ def test_the_demo_reset_seeds_the_meetings_again_from_today(database: 'Connectio
     accepted=decide(database,MEI_LING_REQUEST,'accept',at)['request']['appointment_id']
     database.execute('reset role')
     database.execute('update consent.grants set revoked_at=now() where grant_id=%s',(MICHELLE_GRANT,))
+    assert database.execute('select count(*) from insights.talking_points where customer_id=1002').fetchone()==(0,)  # 0108: withdrawal
     seeded=database.execute('select appointment_id from rm.meeting_requests where request_id=%s',(MICHELLE_REQUEST,)).fetchone()[0]
     others=database.execute('select count(*) from rm.appointments where customer_id=1002 and appointment_id<>%s',(seeded,)).fetchone()[0]
     first=database.execute('select rm.reset_meeting_demo()').fetchone()[0]
@@ -251,6 +255,12 @@ def test_the_demo_reset_seeds_the_meetings_again_from_today(database: 'Connectio
     assert database.execute("select count(*) from notify.inbox where customer_id=1007 and template_key like 'meeting.%%'").fetchone()==(0,)
     assert database.execute('select bool_and(t>now()) from rm.meeting_requests r,unnest(r.preferred_times) t where customer_id=1007').fetchone()==(True,)
     assert database.execute('select revoked_at is null and expires_at>now() from consent.grants where grant_id=%s',(MICHELLE_GRANT,)).fetchone()==(True,)
+    # 0108: the two demo talking points again (Michelle's inferred home loan past its hold, Mei Ling's shared investments)
+    assert (first['talking_points'],again['talking_points'])==(2,2)
+    assert database.execute('select customer_id,topic,origin,visible_from<now() from insights.talking_points order by customer_id').fetchall()==[
+        (1002,'home_loan','inferred',True),(1007,'investments','confirmed',True)]
+    assert database.execute('select count(*) from insights.talking_point_evidence').fetchone()==(1,)
+    assert database.execute('select count(*) from rm.topic_shares').fetchone()==(1,)
     assert sqlstate(database,'select rm.reset_meeting_demo(array[1001]::bigint[])',())=='22023'
     set_customer(database,1002)
     assert sqlstate(database,'select rm.reset_meeting_demo()',())=='42501'  # owner only

@@ -3,6 +3,7 @@ import Icon from './Icon';
 import ConsentControls from './ConsentControls';
 import ConsentScope from './ConsentScope';
 import AgendaDrafts from './AgendaDrafts';
+import TalkingPoints from './TalkingPoints';
 import {supabase} from '../lib/supabase';
 import {loadConsentRecords,loadSharingStatus} from '../lib/consent';
 import {consentCategoryText} from '../lib/consentData';
@@ -11,7 +12,8 @@ import {cacheOwner,cached,remember} from '../lib/cache';
 
 export function initials(name) {return name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('');}
 
-export default function SharingPage({embedded=false,onReviewActions,onRelationship}) {
+// Agenda drafts and the relationship page show only when their handlers are passed (those client pages were removed on 28 Oct).
+export default function SharingPage({embedded=false,onReviewActions,onRelationship,onAgendas}) {
   // The last loaded status shows at once; consent controls stay disabled (busy) until the fresh read arrives.
   const [status,setStatus]=useState(()=>cached('sharing-status'));
   const [registry,setRegistry]=useState(()=>cached('consent-records'));
@@ -48,19 +50,20 @@ export default function SharingPage({embedded=false,onReviewActions,onRelationsh
           {status.consent.expires_at&&<p>Consent expires: <time dateTime={status.consent.expires_at}>{formatDateTime(status.consent.expires_at)}</time></p>}
         </div></div>
         <div className="panel-actions"><button className="bank-chat-logout" onClick={()=>manage.current?.scrollIntoView({behavior:'smooth',block:'start'})}>Manage sharing</button>
-          <button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare for meeting</button></div>
+          {onAgendas&&<button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare for meeting</button>}</div>
       </div>}
       {status&&!recipient&&<p className="page-empty" role="status" data-testid="sharing-no-manager">No relationship manager is currently assigned to your demo profile.</p>}
-      {!recipient&&<button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>}
+      {!recipient&&onAgendas&&<button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>}
     </section>
     {agendas&&<AgendaDrafts recipient={recipient} consentRegistry={registry} consentBusy={busy} onReviewActions={onReviewActions}/>}
-    {registry&&<section className="page-section"><h2 className="section-label">What {recipient?firstName(recipient.name):'your manager'} can see</h2><ConsentScope registry={registry} recipient={recipient}/></section>}
+    {recipient&&<TalkingPoints rmName={firstName(recipient.name)} onReviewActions={onReviewActions}/>}
+    {registry&&<section className="page-section"><h2 className="section-label">Records {recipient?firstName(recipient.name):'your manager'} can see</h2><ConsentScope registry={registry} recipient={recipient}/></section>}
     {registry&&<section className="page-section"><h2 className="section-label">Your consent history</h2>
       {history.length?<div className="table-frame"><table className="history-table"><thead><tr><th>Granted</th><th>Data and recipient</th><th>Status</th></tr></thead>
         <tbody>{history.map(item=>{const state=item.revoked_at?'revoked':item.active?'active':'inactive';return <tr key={item.grant_id}><td><time dateTime={item.granted_at}>{formatDate(item.granted_at)}</time></td><td>{consentCategoryText(item.categories)}<small>{item.recipient_name?displayName(item.recipient_name):item.recipient}</small></td><td><span className={`status-badge ${state}`}>{state[0].toUpperCase()+state.slice(1)}</span></td></tr>;})}</tbody></table></div>
         :<p className="page-empty">No grants are recorded yet.</p>}
       <p className="page-note">You can change or withdraw your consent at any time.</p></section>}
     <section className="page-section consent-card" ref={manage}><ConsentControls registry={registry} recipient={recipient} busy={busy} onRefresh={refresh} onReviewActions={onReviewActions}/></section>
-    <button className="bank-chat-logout" data-testid="open-relationship-details" onClick={onRelationship}><Icon name="calendar"/>View requests and appointment times</button>
+    {onRelationship&&<button className="bank-chat-logout" data-testid="open-relationship-details" onClick={onRelationship}><Icon name="calendar"/>View requests and appointment times</button>}
   </section>;
 }

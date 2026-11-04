@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     agent_tool_calls: int = Field(default=4,ge=1,le=8)
     turn_budget_s: float = Field(default=60,gt=0,le=300)
     planner_model: str | None = None  # v5 planner (phase 5); unset uses LLM_MODEL
+    # Talking points (0108, lane 1): the classifier's model; unset uses the agent model (LLM_MODEL), so a small or
+    # self-hosted model can be chosen. Same provider, key and base URL.
+    talking_points_model: str | None = None  # an empty value also means LLM_MODEL
 
     # API Gateway Layer (core/gateway.py)
     jwt_audience: str = "authenticated"

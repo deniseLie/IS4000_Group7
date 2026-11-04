@@ -40,22 +40,23 @@ def transport():
     if name not in ('api','codex','claude'):raise LLMNotConfigured('Unknown CHAT_TRANSPORT; choose api, codex or claude')
     return name
 
-def build_model(max_tokens=None):
-    """LLM_PROVIDER picks the LangChain provider (default 'openai', which also covers OpenRouter via LLM_BASE_URL)."""
+def build_model(max_tokens=None,model=None):
+    """LLM_PROVIDER picks the LangChain provider (default 'openai', which also covers OpenRouter via LLM_BASE_URL).
+    model overrides LLM_MODEL for one caller (TALKING_POINTS_MODEL); same provider, key and base URL."""
     provider = os.getenv('LLM_PROVIDER') or 'openai'
     kwargs = {'timeout':settings.llm_timeout_s,'max_retries':0,'max_tokens':max_tokens or settings.max_tokens}  # retries happen in call()
     if provider == 'openai':
         kwargs.update(api_key=os.environ['LLM_API_KEY'],base_url=os.environ['LLM_BASE_URL'])
         if urlsplit(kwargs['base_url']).hostname == 'openrouter.ai':
             kwargs['extra_body'] = {'provider':{'require_parameters':True}}
-    return init_chat_model(os.environ['LLM_MODEL'],model_provider=provider,**kwargs)
+    return init_chat_model(model or os.environ['LLM_MODEL'],model_provider=provider,**kwargs)
 
-def model_name():
+def model_name(override=None):
     if transport()=='codex':return os.getenv('CODEX_MODEL','gpt-5.6-luna')
     if transport()=='claude':return os.getenv('CLAUDE_MODEL','haiku')
     needed = ('LLM_MODEL',) + (('LLM_API_KEY','LLM_BASE_URL') if (os.getenv('LLM_PROVIDER') or 'openai') == 'openai' else ())
     if not all(os.getenv(k) for k in needed):raise LLMNotConfigured('Model is not configured')
-    return os.environ['LLM_MODEL']
+    return override or os.environ['LLM_MODEL']
 
 def remaining_budget():
     """Tokens left for this request (the current trace). Outside a request only the per-call cap applies."""
@@ -78,26 +79,28 @@ def check(value,schema,path='$'):
     if kind=='array':
         for i,v in enumerate(value):check(v,schema.get('items',{}),f'{path}[{i}]')
 
-async def _invoke_api(system,messages,schema,max_tokens,a):
-    model=build_model(max_tokens).with_structured_output(schema,method='json_schema',strict=True)
+async def _invoke_api(system,messages,schema,max_tokens,a,name=None,retries=None):
+    model=build_model(max_tokens,name).with_structured_output(schema,method='json_schema',strict=True)
+    retries=settings.llm_max_retries if retries is None else retries
     with get_usage_metadata_callback() as usage:
-        for attempt in range(settings.llm_max_retries+1):
+        for attempt in range(retries+1):
             try:
                 data=await asyncio.wait_for(model.ainvoke([('system',system),*messages]),settings.llm_timeout_s)
                 break
             except Exception as e:
-                if attempt==settings.llm_max_retries or not transient(e):raise
+                if attempt==retries or not transient(e):raise
                 a['retries']=attempt+1
                 await asyncio.sleep(0.5*2**attempt)
         used=list(usage.usage_metadata.values())  # counts every attempt
     tokens=(sum(u.get('input_tokens',0) for u in used),sum(u.get('output_tokens',0) for u in used)) if used else (None,None)
     return data,tokens
 
-async def call(prompt,system,messages,schema):
+async def call(prompt,system,messages,schema,model=None,retries=None):
     """prompt: a prompts.load() dict (agent, version, id). system: the full system text built from it.
-    messages: (role, content) pairs. schema: strict JSON schema for the reply. Returns LLMResult or raises LLMError."""
+    messages: (role, content) pairs. schema: strict JSON schema for the reply. Returns LLMResult or raises LLMError.
+    model and retries override LLM_MODEL and LLM_MAX_RETRIES for one caller (API transport; the CLIs never retry)."""
     name=transport()
-    model=model_name()
+    model=model_name(model if name=='api' else None)
     left=remaining_budget()
     if left<=0:raise LLMBudgetExceeded('Per-request token budget is used up')
     max_tokens=min(settings.max_tokens,left)
@@ -116,7 +119,7 @@ async def call(prompt,system,messages,schema):
                     from app.services import claude_cli  # own timeout; no retries, each run is a subscription turn
                     data,usage=await claude_cli.answer(system,schema,messages)
                     tokens=(usage.get('input_tokens'),usage.get('output_tokens'))
-                else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a)
+                else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a,model,retries)
             except TimeoutError as e:
                 raise LLMTimeout('Model request timed out') from e
             except LLMError:raise

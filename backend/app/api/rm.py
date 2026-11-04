@@ -203,6 +203,11 @@ async def dismiss(body: Dismissal,request: Request,caller: Caller=Depends(rm_cal
 async def meeting_requests(request: Request,status: str=Query('open',pattern='^(open|scheduled|closed)$'),caller: Caller=Depends(rm_caller)):
     return await run(lambda:records.meeting_requests(caller.ctx,status),request,caller,'rm.meeting_requests')
 
+@router.get('/shared-topics')
+async def shared_topics(request: Request,caller: Caller=Depends(rm_caller)):
+    """Today: topics clients shared with her themselves (0108, lane 2); never an inferred point, which stays per client."""
+    return await run(lambda:records.shared_topics(caller.ctx),request,caller,'rm.shared_topics')
+
 @router.post('/meeting-requests/{request_id}/decide')
 async def decide_meeting_request(request_id: UUID,body: MeetingDecision,request: Request,caller: Caller=Depends(rm_caller)):
     return await run(lambda:records.decide_meeting_request(caller.ctx,request_id,body),request,caller,'rm.meeting_request_decide')

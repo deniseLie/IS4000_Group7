@@ -9,6 +9,8 @@
 -- * her accepted request "Home loan options": a confirmed video meeting at 15:00 on the first free Thursday of a week in
 --   which she has no other meeting, with its meeting.scheduled event;
 -- * Mei Ling's open fixed deposit request for the first free Monday and Tuesday at 16:30.
+-- Since 0108 (batch 35) it also resets their talking points: Michelle's inferred home loan topic already past its 24-hour
+-- hold, with her quote, and Mei Ling's investments topic she shared herself (no grant), with its Today notice.
 -- Other meetings, records, chats and the audit log stay (the deletions are themselves audited). Safe to run more than once.
 begin;
 

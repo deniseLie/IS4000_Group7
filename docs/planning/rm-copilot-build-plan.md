@@ -23,7 +23,7 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | 2a | ~~Meeting requests end to end: client request, RM accept / propose / decline, `care` flag~~ **Done 5 Nov 2026** | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
 | 2b | ~~Remove the Security agent~~ **Done 5 Nov 2026** | S–M | 1 | No |
 | 3 | ~~RM copilot: three agents, tracing, daily work~~ 3a **done 5 Nov 2026**; 3b **built 5 Nov 2026** (R24–R27 not yet run on hosted) | L | 2a | No |
-| 4 | Talking-point pipeline, on seeded consent (`0108`) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
+| 4 | ~~Talking-point pipeline, on seeded consent (`0108`)~~ **Built 5 Nov 2026** (0108 not yet on hosted) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
 | 5 | Connect to the meeting graph, evaluate, demo, document | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
 | 6 | Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log (`0109`–`0113`) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
 
@@ -223,6 +223,14 @@ Run `34_reset_meeting_demo.sql` first. Then run the story up to the meeting on t
 ---
 
 ## Phase 4: Talking-point pipeline (`0108`)
+
+**Status:** built 5 Nov 2026 (`0108_talking_points.sql`, hosted batch `35_apply_0108_hosted.sql` prepared but **not applied**; prompt `talking_points/v1`). Checked natively (SQL, API and unit tests) and with one live run of the labelled set: 61 messages, precision 1.000, recall 0.969 (31 of 32), stage agreement 0.903, nothing stored for the negative, sensitive, care and injection groups (`docs/prompt-log/talking_points/v1.md`). The done-when steps have not been run on the hosted project. Differences from the plan:
+- Extra objects: `customer_topic_status`, `rm_shared_topics` (Today: confirmed shares only, 30 days, at most 20), `insights.share_prompts`, `rm.topic_shares`; `customer_read_talking_points` takes `p_customer_id` like the other customer readers.
+- The Data sharing page is back in the client view (removed on 28 Oct) with *What Sophie sees*; agenda and relationship buttons stay hidden.
+- Mute deletes the inferred point; Resume ends a pause and un-mutes a topic. Grant expiry is tidied on her next read; revocation and narrowing act at once through `forget_chat_topics`.
+- The pre-filter also skips messages with no topic word; lane 2 needs a first-person plan and skips someone else's ("my son is buying…"); critical-illness cover counts as sensitive.
+- `llm_gateway.call` takes a per-call `model` and `retries` (for `TALKING_POINTS_MODEL`, no retry); the eval found that strict structured output needs a schema `title`.
+- Phase 6 note: `insight.delete` is a hard delete here; 0110's soft delete with `insight.restore` replaces that executor.
 
 Runs under Michelle's seeded `chat_topics` grant. Lane 2 does not need that grant. Fills the 1d contract (`TalkingPoint`, `TalkingTopic`, `line()`); `rm_talking_points` changes its data, never its shape. Uses the 2a `care` flag and the 3a Client agent's fixed reads.
 

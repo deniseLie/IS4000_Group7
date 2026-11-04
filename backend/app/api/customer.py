@@ -11,7 +11,7 @@ from app.core.gateway import get_ctx
 from app.core.observability import log_event
 from app.schemas.contracts import RequestContext,ToolResult
 from app.schemas.customer_data import TransactionQuery
-from app.services import audit,customer_data
+from app.services import audit,customer_data,talking_points
 from app.services.authorization import PolicyDenied
 
 router=APIRouter(prefix='/customer')
@@ -39,6 +39,17 @@ async def read_result(operation: Callable[[],Awaitable[ToolResult]],request: Req
 @router.get('/profile',response_model=ToolResult)
 async def profile(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     return await read_result(lambda:customer_data.get_profile(ctx),request,ctx,'customer.get_profile')
+
+
+@router.get('/talking-points',response_model=ToolResult)
+async def talking_point_list(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    """Data sharing > What your RM sees (0108): her talking points, each with the exact line her RM reads
+    (TalkingPoint.line) and pending during the 24-hour hold, her own quotes (never sent to the RM side), her muted topics
+    and any pause. Delete, mute and resume are automatic actions (POST /commands)."""
+    async def read() -> ToolResult:
+        envelope=await talking_points.mine(ctx)
+        return ToolResult(data=talking_points.points_with_lines(envelope)['data'],call_id=envelope.call_id,as_of=envelope.as_of)
+    return await read_result(read,request,ctx,'insights.read')
 
 
 @router.get('/accounts',response_model=ToolResult)
