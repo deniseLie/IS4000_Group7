@@ -9,3 +9,8 @@ tests/test_rm_assistant.py::test_a_question_across_the_book_only_sees_dates_insi
 # Phase 1 (0106) with TEST_DATABASE_LOCAL=1: 2 failed, 1066 passed, 390 skipped. The baseline id above, plus
 # tests/test_compliance_formats.py::test_exact_image_and_pdf_limits_use_real_bytes, which times out in the parser
 # child under full-suite load and passes on its own (no database; not a 0106 change).
+#
+# Phase 1d (0107, 5 Nov 2026), same flags: the baseline id above, plus parser-timeout failures in
+# tests/test_document_parsers.py and tests/test_precheck_rules.py under full-suite load. They pass on their own: the
+# parser child has a 5-second limit (app/services/document_parser_process.py) and reports limits_exceeded when the CPU
+# is busy. Not a 0107 change. Rerun any parser failure on its own before counting it as new.
