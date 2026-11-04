@@ -27,6 +27,19 @@ def version_for(agent):
 def current(agent='answer'):
     return load(agent, version_for(agent))
 
+def in_use():
+    """{family: version} for every prompt the running code is configured to load: settings for the v1 answer and the
+    shared domain prompt, module constants for the rest. The admin dashboard compares it with what actually ran (llm runs)."""
+    from app.services import notice_checks, orchestrator
+    from app.services.agents import compliance, document, fraud, registry, relationship, retail, runner
+    from app.services.rm import graph, handlers
+    found = {'answer': settings.prompt_version, 'domain_common': settings.prompt_versions.get('domain_common'), 'planner': orchestrator.PLANNER,
+        'retail': retail.PROMPT, 'fraud': fraud.PROMPT, 'compliance': compliance.PROMPT, 'relationship': relationship.PROMPT, 'document': document.PROMPT,
+        'runner_common': runner.COMMON, 'rm_planner': graph.PLANNER_VERSION, 'rm_assistant': handlers.ASSISTANT_VERSION,
+        'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT,
+        **{registry.SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()}}
+    return {family: version for family, version in sorted(found.items()) if version}
+
 def released():
     """Every (agent, version) on disk, for the prompt-log and immutability tests."""
     return sorted((d.parent.name, d.name) for d in ROOT.glob('*/v*') if (d / 'system.md').is_file())

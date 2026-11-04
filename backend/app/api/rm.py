@@ -22,7 +22,7 @@ from app.core import auth
 from app.core.data_api import database_code
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
-from app.core.observability import log_event,start_trace
+from app.core.observability import log_event,request_facts,start_trace
 from app.schemas.contracts import RequestContext
 from app.schemas.rm import (Block,ClientMessage,ConversationSave,Dismissal,InteractionApproval,RmAssistantRequest,ServiceRequestDraft,ServiceRequestSubmit,
     TasksApproval,TaskStatus,WorkingHours)
@@ -231,6 +231,7 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
                 except Exception as error:await queue.put(('error',error))
         task=asyncio.create_task(work())
         failure_=None
+        answered=False
         try:
             yield {'event':'status','data':'Reading your records…'}
             while True:
@@ -243,6 +244,7 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
                     batch.add('chat','chat.rm_reply_sent',details=reply_details(value))
                     await batch.flush()
                     run_tree.add_outputs(value)
+                    answered=True
                     yield {'event':'answer','data':json.dumps(value,ensure_ascii=False,default=str)}
                     yield {'event':'done','data':''}
                 else:
@@ -263,5 +265,7 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
                 break
         finally:
             if not task.done():task.cancel()
+            run_tree.add_metadata({**trace.attrs,**request_facts(trace),'outcome':'ok' if answered else 'error',
+                'error_type':type(failure_).__name__[:64] if failure_ else None})
             root.__exit__(*((type(failure_),failure_,failure_.__traceback__) if failure_ else (None,None,None)))
     return EventSourceResponse(events())

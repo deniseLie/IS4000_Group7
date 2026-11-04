@@ -1,8 +1,12 @@
 import json
 import logging
+import os
+import subprocess
 import sys
 import time
 import uuid
+from collections import Counter
+from functools import lru_cache
 from typing import TYPE_CHECKING
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -45,7 +49,35 @@ class Trace:
     def __init__(self):
         self.attrs={}  # route, outcome and other request facts; the audit reads them and the root run carries them as metadata
         self.llm_calls=[]  # one dict per model call, for agent.llm_call audit events
+        self.agents=[]  # one dict per agent run (names, statuses, counts and ms only), for the root run's summary
         self.tokens=0  # LLM tokens used so far; the gateway enforces the per-request budget
+
+AGENT_FACTS=('agent','intent','path','status','outcome','tool_calls','wave')
+WORST=('ok','needs_clarification','needs_human','withheld','timeout','error')  # an agent that ran twice keeps its worst status
+
+@lru_cache
+def app_version():
+    """APP_VERSION when the deployment sets it, else the checkout's short git sha, else None (never fails a request)."""
+    if version:=os.getenv('APP_VERSION'):return version[:40]
+    try:
+        out=subprocess.run(['git','rev-parse','--short','HEAD'],capture_output=True,text=True,timeout=2,cwd=os.path.dirname(__file__))
+        return (out.stdout.strip()[:40] or None) if out.returncode==0 else None
+    except (OSError,subprocess.SubprocessError):return None
+
+def request_facts(trace):
+    """The per-request summary the root run carries as metadata (ids, names, counts and ms only, never text), so the admin
+    dashboard reads one run per request instead of every step."""
+    status={}
+    for a in trace.agents:
+        s=a.get('status') or ('timeout' if a.get('outcome')=='timeout' else a.get('outcome')) or 'error'
+        old=status.get(a['agent'])
+        status[a['agent']]=s if old is None or WORST.index(s if s in WORST else 'error')>WORST.index(old if old in WORST else 'error') else old
+    calls=trace.llm_calls
+    tokens=[(c.get('input_tokens') or 0)+(c.get('output_tokens') or 0) for c in calls if c.get('input_tokens') is not None]
+    models=Counter(c['model'] for c in calls)
+    return {'agents':[a['agent'] for a in trace.agents],'agent_status':status,'model_calls':len(calls),'model_failures':sum(not c['ok'] for c in calls),
+        'llm_ms':sum(c.get('ms') or 0 for c in calls),'llm_tokens':sum(tokens) if tokens else None,'model':models.most_common(1)[0][0] if models else None,
+        'prompt_ids':sorted({f"{c['agent']}/{c['prompt_version']}" for c in calls if c.get('agent')}),'app_version':app_version()}
 
 def start_trace():
     trace=Trace()
@@ -60,6 +92,7 @@ def span(name,kind,**attrs):
     Yields the attrs dict so callers can add results; they become the run's metadata."""
     codex=kind=='llm' and attrs.get('transport')=='codex'
     inputs=attrs.pop('model_inputs',None)
+    start=time.perf_counter()
     with langsmith.trace(name,'llm' if codex else RUN_TYPES[kind],inputs=inputs,metadata={'kind':kind}) as run:
         try:
             yield attrs
@@ -76,6 +109,10 @@ def span(name,kind,**attrs):
                     run.set(usage_metadata={'input_tokens':attrs['input_tokens'],'output_tokens':attrs['output_tokens'],
                         'total_tokens':attrs['input_tokens']+attrs['output_tokens']})
             if (sink:=span_sink.get()) is not None:sink.append((name,dict(attrs)))
+            if kind=='agent' and (trace:=current_trace.get()) is not None:
+                if name=='agent' and attrs.get('agent'):
+                    trace.agents.append({**{k:attrs[k] for k in AGENT_FACTS if attrs.get(k) is not None},'ms':round((time.perf_counter()-start)*1000)})
+                elif name=='planner' and attrs.get('route'):trace.attrs.update(plan_route=attrs['route'],tasks=attrs.get('tasks'))
 
 def add_span(name,kind,**attrs):
     with span(name,kind,**attrs):pass

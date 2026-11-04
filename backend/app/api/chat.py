@@ -1,4 +1,5 @@
 import json
+import time
 import httpx
 import langsmith
 from postgrest.exceptions import APIError
@@ -14,7 +15,7 @@ from app.core import data_api
 from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.gateway import get_ctx
-from app.core.observability import log_event, start_trace, span
+from app.core.observability import log_event, request_facts, start_trace, span
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import RequestContext
 from app.schemas.conversations import StoredFailure
@@ -74,6 +75,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
     if settings.pipeline=='v2' and req.mode=='personal' and risk.fixed_response is None and prepared is None:
         raise ApiError(503,'personal_unavailable','Personal workflows require saved conversations to be enabled.')
     trace=start_trace()
+    started=time.perf_counter()
     trace.attrs.update(mode=req.mode,language=req.language[:32],authenticated=p.kind=='customer',history_len=len(req.messages))
     # Root LangSmith run: opened here and closed in the stream's finally, so pre-stream reads nest under it too.
     root=langsmith.trace('chat','chain',inputs={'messages':[m.model_dump() for m in req.messages],'mode':req.mode,'language':req.language},
@@ -109,6 +111,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                     reply=None
                     async for kind,item in orchestrator.stream(req,risk,tctx):
                         # A section as each agent finishes; the saved answer below stays the reply of record.
+                        if kind=='section':trace.attrs.setdefault('first_section_ms',round((time.perf_counter()-started)*1000))
                         if kind in ('plan','section'):yield {'event':kind,'data':item.model_dump_json()}
                         else:reply=item
                     if reply is None:raise ValueError('The turn ended without an answer')
@@ -166,6 +169,7 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
         finally:
             trace.attrs.setdefault('outcome','error')
             trace.attrs.setdefault('route','error')
+            trace.attrs.update(request_facts(trace))
             run.add_metadata(trace.attrs)
             root.__exit__(*((type(failure),failure,failure.__traceback__) if failure else (None,None,None)))
     return EventSourceResponse(events())
