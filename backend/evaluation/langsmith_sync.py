@@ -38,12 +38,12 @@ NODES=('planner','agent','gather','act','compose')
 AGENTS=get_args(TargetAgent)
 # Graph cases keep the v4 expectation they were written against (architecture §14.12), checked against the v4 names.
 V4_NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
-V4_AGENTS=('retail','fraud','compliance','document','relationship','answer')
+V4_AGENTS=('retail','fraud','compliance','document','relationship','answer','rm_assistant')  # rm_assistant: services/rm/assistant.py until phase 9
 PLANNED_AGENTS=('rm_assistant',)
 PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
-# v5 (architecture §14, §5.6.1): graph cases also name the agents and tools still to build (the RM agents come in phase 9).
+# v5 (architecture §14, §5.6.1): graph cases also name the tools still to build; the RM agents are built (phase 9).
 V5_NODES=NODES
-V5_AGENTS=(*AGENTS,'rm_client_insight','rm_service_desk')
+V5_AGENTS=AGENTS
 V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')
 FAULTS=('external_down','upstream_withheld','receipt_failed','consent_revoked')
 

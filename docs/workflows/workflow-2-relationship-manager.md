@@ -11,13 +11,14 @@ Sophie Lim (DEMO), Senior Relationship Manager, Private Clients Team A. Her book
 ```mermaid
 flowchart LR
   UI[RM workspace<br/>RmWorkspace.jsx] -->|/rm/*, JWT| API[api/rm.py<br/>app_metadata role=rm]
-  UI -->|POST /rm/assistant SSE| AS[services/rm/assistant.py]
+  UI -->|POST /rm/assistant SSE| AS[services/rm/graph.py<br/>v5 RM graph, phase 9]
   AS --> BC[Book check: rm_match_clients<br/>outside book = refused + audited, no model]
-  AS --> PL[Planner model<br/>rm_planner/v1]
-  AS --> RS[Deterministic resolution<br/>client, ticket, meeting, note]
-  AS --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
+  AS --> PL[Planner model<br/>rm_planner/v3: up to 5 tasks]
+  AS --> RS[Per agent: deterministic resolution<br/>client, ticket, meeting, note]
+  RS --> AG[RM Client Insight / RM Service Desk<br/>handlers.py, own spec's tools only]
+  AG --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
   TL --> DB[(SQL: rm.current_advisor + rm.in_book<br/>audit every read and refusal)]
-  AS --> LLM[Answer model<br/>rm_assistant/v1 + task file]
+  AG --> LLM[Answer model<br/>rm_assistant/v2 + task file]
   LLM --> CK[Item-level checks<br/>services/rm/checks.py]
   CK --> UI
   UI -->|approve| W[Write RPCs: documentation, tasks,<br/>service requests, client messages, availability]

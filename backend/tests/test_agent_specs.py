@@ -27,7 +27,8 @@ def ctx(agent=None,kind='customer') -> RequestContext:
 
 
 def test_every_spec_tool_is_a_registered_tool_with_known_permissions():
-    assert set(SPECS)=={'guide','accounts','security','compliance','relationship'}
+    assert set(SPECS)=={'guide','accounts','security','compliance','relationship','rm_client_insight','rm_service_desk'}
+    assert set(registry.CLIENT_SPECS)=={'guide','accounts','security','compliance','relationship'}
     for spec in SPECS.values():
         for tool in spec.tools:
             assert tool in tools.TOOLS and tool in TOOL_PERMISSION, (spec.name,tool)
@@ -46,7 +47,7 @@ def test_default_reads_name_real_tool_arguments_and_entities():
     for spec in SPECS.values():
         assert spec.intents, spec.name
         for intent,reads in spec.intents.items():
-            assert reads, (spec.name,intent)
+            assert reads or (spec.role,intent)==('rm','help'), (spec.name,intent)  # RM help reads nothing
             for read in reads:
                 params=inspect.signature(tools.TOOLS[read.tool]).parameters
                 assert set(read.entities)|set(read.fixed)<=set(params), (spec.name,intent,read.tool)
@@ -114,7 +115,7 @@ def test_policy_reads_the_spec_for_new_agents():
 
 
 def test_v4_agents_keep_their_allow_lists_until_the_switch_over():
-    assert registry.ENFORCED=={'guide','accounts','security'}
+    assert registry.ENFORCED=={'guide','accounts','security','rm_client_insight','rm_service_desk'}
     for agent in ('compliance','relationship','retail'):assert registry.spec_for(agent) is None
     c=ctx('compliance')
     assert decide(c.principal,'compliance.update_checklist_item',{'customer_id':1001},c).allow

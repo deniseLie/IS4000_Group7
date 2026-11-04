@@ -39,7 +39,7 @@ def test_coverage_rules():
     assert set().union(*(c['ubs'] for c in CLIENT))==UBS
     assert MUST_CLIENT<=set().union(*(c['stories'] for c in CLIENT))
     assert set().union(*(c['trajectory']['nodes'] for c in ALL))==set(sync.NODES)-{'gather'}  # gather acts only in wave 2 (phase 7)
-    assert set().union(*(c['trajectory']['agents'] for c in CLIENT))==set(get_args(TargetAgent))
+    assert set().union(*(c['trajectory']['agents'] for c in CLIENT))=={a for a in get_args(TargetAgent) if not a.startswith('rm_')}
     assert {'rm_assistant'}<=set().union(*(c['trajectory']['agents'] for c in RM))
 
 def test_trajectories_name_the_real_graph():

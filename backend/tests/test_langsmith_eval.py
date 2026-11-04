@@ -86,7 +86,27 @@ def test_the_external_fault_fails_the_public_call(monkeypatch):
     with targets.inject('external_down') as applied:
         assert applied
         with pytest.raises(external.ExternalError):asyncio.run(external.public_holidays('JP',None))
-    assert targets.FAULTS['consent_revoked'] is None  # RM reads arrive in phase 9
+
+
+def test_the_consent_fault_reads_the_grant_as_revoked(monkeypatch):
+    async def rpc(name,params,ctx,tool):
+        shared={'consent_active':True,'shared':[{'content':'note'}]}
+        return {'data':shared if name=='rm_shared_summary' else {'eligible':True,'shared':shared} if name=='rm_handover_sources' else {'x':1}}
+    monkeypatch.setattr(targets,'_RM_RPC',rpc)
+    async def main():
+        with targets.inject('consent_revoked') as applied:
+            from app.services.rm import records
+            assert applied
+            assert (await records.rpc('rm_shared_summary',{},None,'t'))['data']['shared']==[]
+            assert (await records.rpc('rm_handover_sources',{},None,'t'))['data']['shared']['consent_active'] is False
+            assert (await records.rpc('rm_tickets',{},None,'t'))['data']=={'x':1}
+    asyncio.run(main())
+
+
+def test_agent_counts_may_be_a_range():
+    assert evaluators.counts_match({'rm_client_insight':1,'rm_service_desk':3},{'rm_client_insight':1,'rm_service_desk':'1-5'})
+    assert not evaluators.counts_match({'rm_client_insight':1,'rm_service_desk':6},{'rm_client_insight':1,'rm_service_desk':'1-5'})
+    assert not evaluators.counts_match({'accounts':1,'relationship':1},{'accounts':1})
 
 def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
     from app.services import orchestrator
@@ -99,7 +119,18 @@ def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
     assert scores(evaluators.checks(status,examples['P09']['outputs']))=={'route':1,'agents':1}
     confirm=asyncio.run(targets.plan_only(examples['P10']['inputs']))
     assert confirm['plan']['route']=='act' and scores(evaluators.checks(confirm,examples['P10']['outputs']))=={'route':1}
-    assert asyncio.run(targets.plan_only(examples['P13']['inputs']))['plan'] is None  # RM planner: phase 9
+    # Sophie: the RM planner (rm_planner/v3) without book reads; here the model's rows are a fixed sample.
+    from app.services.rm import graph
+    async def rows(rt,message):return [{'intent':'reviews','depends_on':0},{'intent':'draft_message','depends_on':1,'for_each':'clients_due'}]
+    monkeypatch.setattr(graph,'model_plan',rows)
+    rm=asyncio.run(targets.plan_only(examples['P13']['inputs']))
+    assert [t['agent'] for t in rm['plan']['tasks']]==['rm_client_insight','rm_service_desk'] and rm['plan']['unlinked']==0
+    assert set(scores(evaluators.checks(rm,examples['P13']['outputs'])).values())=={1}
+
+
+def test_an_rm_reply_reads_as_the_workspace_shows_it():
+    reply={'summary':'S','sections':[{'heading':'H','items':[{'text':'a'}]}],'drafts':[{'client':'Michelle','text':'Hi'}]}
+    assert targets.rm_text(reply).splitlines()==['S','H','- a','Draft to Michelle: Hi']
 
 def test_plan_checks_score_dependencies():
     ref={'tasks':[{'id':'a','agent':'accounts'},{'agent':'relationship','depends_on':'a','condition':'due_in_window','priority':'P3'}]}

@@ -89,13 +89,15 @@ CHAIN_STOPPED = 'I didn’t do this next step, because the step before it didn�
 UNLINKED = 'I couldn’t link one part of your message to the rest, so I haven’t done it. Could you ask it on its own?'
 UPSTREAM_UNKNOWN = 'I couldn’t check what this part depends on, so I haven’t gone ahead with it. Ask again on its own if you still want it.'
 CONDITION_FALSE: dict[str, str] = {
-    'due_in_window': 'None of your card or loan payments falls due during your trip, so I haven’t gone ahead with that part.'}
+    'due_in_window': 'None of your card or loan payments falls due during your trip, so I haven’t gone ahead with that part.',
+    'consent_active': 'The client hasn’t shared a handover note with you under an active consent, so nothing from one is included.'}  # RM (R23)
 CONDITION_FALSE_ANY = 'What you asked this to depend on isn’t the case, so I haven’t gone ahead with that part.'
 MORE_ITEMS = 'I’ve shown the first {shown} of {total}. Ask about the others if you need them.'
 OUT_OF_SCOPE = 'I can’t help with that part here. Say “talk to a person” and I’ll show you what I would send to your relationship manager.'
 # Our own fixed asks a short yes or no answers; with no open offer left, the reply says so instead of guessing.
 OFFER_MARKS = (CONFIRM_LINE, fraud_reports.CONFIRM_REPLY, fraud_reports.LOST_REPLY)
-DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship'}
+DOMAIN: dict[TargetAgent, Domain] = {'guide': 'retail', 'accounts': 'retail', 'security': 'fraud', 'compliance': 'compliance', 'relationship': 'relationship',
+    'rm_client_insight': 'relationship', 'rm_service_desk': 'relationship'}
 
 
 class TurnContext(BaseModel):
@@ -233,7 +235,7 @@ def rule_plan(req: ChatRequest, risk: RiskAssessment, history: list[Message]) ->
 
 def catalogue() -> str:
     lines = ['Agents (name: what it answers; intents):']
-    for spec in registry.SPECS.values():
+    for spec in registry.CLIENT_SPECS.values():
         intents = [*spec.intents, *([OPEN_INTENT] if spec.loop_tools else [])]
         exports = f' Exports: {", ".join(f"{n} ({t})" for n, t in spec.exports.items())}.' if spec.exports else ''
         lines.append(f'- {spec.name}: {spec.answers} Intents: {", ".join(intents)}.{exports}')
@@ -243,7 +245,7 @@ def catalogue() -> str:
 def plan_schema() -> dict:
     return {'title': 'task_plan', 'type': 'object', 'additionalProperties': False, 'properties': {
         'tasks': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False, 'properties': {
-            'agent': {'type': 'string', 'enum': sorted(registry.SPECS)}, 'intent': {'type': 'string'}, 'question': {'type': 'string'},
+            'agent': {'type': 'string', 'enum': sorted(registry.CLIENT_SPECS)}, 'intent': {'type': 'string'}, 'question': {'type': 'string'},
             'entities': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
                 'properties': {'name': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['name', 'value']}},
             'depends_on': {'type': 'integer', 'minimum': 0, 'maximum': MAX_TASKS}, 'condition': {'type': 'string'}, 'for_each': {'type': 'string'}},
@@ -328,7 +330,7 @@ def linked(tasks: list[PlanTask], req: ChatRequest) -> tuple[list[PlanTask], lis
     cycles and at most 2 waves), both agents are on the same side (client or RM), and the condition is a bool export
     and for_each a list export of the upstream's spec. Guests get no dependent tasks. A task that fails is dropped with
     a fixed line; nothing runs on a link the specs do not declare."""
-    if req.mode != 'personal':
+    if getattr(req, 'mode', 'personal') != 'personal':  # the RM request (rm/graph.py) has no mode: an RM is always signed in
         return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None}) for t in tasks], []
     by_id = {t.id: t for t in tasks}
     kept, lines = [], []
@@ -402,12 +404,16 @@ def agent_history(history: list[Message], item: PlanTask, several: bool) -> list
     return [*earlier, latest]
 
 
+def language_of(state: Turn) -> str:
+    return getattr(state['request'], 'language', 'English')  # the RM request has no language field (English only)
+
+
 def after_planner(state: Turn) -> list[Send] | str:
     if state.get('confirm') is not None:return 'act'
     tasks = state.get('tasks') or []
     first = [item for item in tasks if item.depends_on is None]
     if not first:return 'compose'
-    return [Send('agent', AgentInput(task=item, history=agent_history(state['history'], item, len(tasks) > 1), language=state['request'].language,
+    return [Send('agent', AgentInput(task=item, history=agent_history(state['history'], item, len(tasks) > 1), language=language_of(state),
         inputs={})) for item in first]
 
 
@@ -459,7 +465,7 @@ def gather(state: Turn) -> dict:
 
 def next_wave(state: Turn, facts: dict) -> dict:
     outputs = {o.task_id: o for o in state.get('outputs') or []}
-    language, history = state['request'].language, state['history']
+    language, history = language_of(state), state['history']
     tasks, sends, extra, lines = [], [], [], list(state.get('lines') or [])
     for item in state.get('tasks') or []:
         up = outputs.get(item.depends_on) if item.depends_on else None

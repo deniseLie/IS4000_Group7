@@ -71,9 +71,22 @@ async def _external_down(tool,*args,**kw):
     raise ExternalError(tool,'unavailable')
 
 
-# fault -> (patch target, replacement); None means the piece is not built yet (consent-gated RM reads, phase 9).
+from app.services.rm import records as _rm_records
+_RM_RPC=_rm_records.rpc
+
+
+async def _consent_revoked(name,params,ctx,tool):
+    """R23a: the client's rm_brief grant reads as revoked; every other RM read is the real one."""
+    result=await _RM_RPC(name,params,ctx,tool)
+    revoked={'consent_active':False,'shared':[],'excluded_revoked':1,'excluded_expired':0}
+    if name=='rm_shared_summary':result={**result,'data':{**result['data'],**revoked}}
+    if name=='rm_handover_sources' and result['data'].get('eligible'):result={**result,'data':{**result['data'],'shared':revoked}}
+    return result
+
+
+# fault -> (patch target, replacement); None would mean the piece is not built yet.
 FAULTS={'external_down':('app.services.external.fetch',_external_down),'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
-    'receipt_failed':('app.services.offers.confirm',_receipt_failed),'consent_revoked':None}
+    'receipt_failed':('app.services.offers.confirm',_receipt_failed),'consent_revoked':('app.services.rm.records.rpc',_consent_revoked)}
 
 
 @contextmanager
@@ -110,19 +123,21 @@ def source_id(value: str) -> str:
 
 
 def turns_of(inputs: dict[str,Any]) -> list[dict[str,str]]:
-    """QA1 examples carry turns; the public datasets carry a question with earlier user messages as history."""
+    """QA1 examples carry turns; the public datasets carry a question (the planner-only one a `say`) with earlier user
+    messages as history."""
     if 'turns' in inputs:return inputs['turns']
-    return [*({'say':m['content']} for m in inputs.get('history',[]) if m['role']=='user'),{'say':inputs['question']}]
+    return [*({'say':m['content']} for m in inputs.get('history',[]) if m['role']=='user'),{'say':inputs.get('question',inputs.get('say'))}]
 
 
 async def plan_only(inputs: dict[str,Any]) -> dict[str,Any]:
     """The planner-only dataset: the planner node alone (rules, one planner call, overrides and the plan checks), with no
     agents, no database writes and no saved chat. `open_offers` stands in for the client's open offer groups in this chat.
-    RM personas wait for phase 9 (the RM graph)."""
+    An RM persona gets the RM planner (one rm_planner call, the intent-to-agent map and the plan check) without the book
+    reads, so the planner sees no client names."""
     from types import SimpleNamespace
     from app.schemas.contracts import Principal,RequestContext
     from app.services import offers,orchestrator
-    if inputs['persona']=='sophie':return {'played':False,'skipped':[{'say':inputs['say'],'reason':'RM planner is phase 9'}],'plan':None}
+    if inputs['persona']=='sophie':return await plan_only_rm(inputs)
     mode='public' if inputs['persona']=='guest' else 'personal'
     req=ChatRequest(messages=[*inputs.get('history',[]),{'role':'user','content':inputs['say']}],mode=mode)
     risk=assess_request(req)
@@ -137,11 +152,74 @@ async def plan_only(inputs: dict[str,Any]) -> dict[str,Any]:
             update=await orchestrator.planner(orchestrator.start(req,risk),SimpleNamespace(context=tctx))
     finally:span_sink.reset(token)
     route='act' if update.get('confirm') else 'plan' if update.get('tasks') else 'rephrase' if update.get('lines') else 'none'
-    by_id={t.id:t for t in update.get('tasks') or []}
-    tasks=[{'agent':t.agent,'intent':t.intent,'priority':t.priority,'depends_on':by_id[t.depends_on].agent if t.depends_on in by_id else None,
-        'condition':t.condition,'for_each':t.for_each,'entities':sorted(t.entities)} for t in update.get('tasks') or []]
+    tasks=plan_rows(update.get('tasks') or [])
     return {'played':True,'plan':{'route':route,'tasks':tasks,'unlinked':len(update.get('lines') or []) if route=='plan' else 0},
         'model_calls':sum(name=='llm' for name,_ in spans)}
+
+
+def plan_rows(tasks: list) -> list[dict[str,Any]]:
+    by_id={t.id:t for t in tasks}
+    return [{'agent':t.agent,'intent':t.intent,'priority':t.priority,'depends_on':by_id[t.depends_on].agent if t.depends_on in by_id else None,
+        'condition':t.condition,'for_each':t.for_each,'entities':sorted(t.entities)} for t in tasks]
+
+
+async def plan_only_rm(inputs: dict[str,Any]) -> dict[str,Any]:
+    from app.schemas.contracts import Principal,RequestContext
+    from app.schemas.rm import RmAssistantRequest
+    from app.services import orchestrator
+    from app.services.rm import graph
+    async def say(text):pass
+    req=RmAssistantRequest(message=inputs['say'])
+    rt=graph.RmRuntime(req=req,ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),jwt='evaluation-planner-only')),say=say)
+    spans: list[tuple[str,dict[str,Any]]]=[];token=span_sink.set(spans)
+    try:tasks,lines=orchestrator.linked(graph.tasks_from(await graph.model_plan(rt,req.message),req.message),req)
+    finally:span_sink.reset(token)
+    return {'played':True,'plan':{'route':'plan','tasks':plan_rows(tasks),'unlinked':len(lines)},'model_calls':sum(name=='llm' for name,_ in spans)}
+
+
+def rm_text(reply: dict[str,Any]) -> str:
+    """An RM reply as one text, as the workspace shows it (frontend lib/rm.js replyText, unbounded)."""
+    drafts=reply.get('drafts') or ([reply['draft']] if reply.get('draft') else [])
+    return '\n'.join(filter(None,[reply.get('summary') or '',*(x for s in reply.get('sections') or [] for x in [s['heading'],*(f"- {i['text']}" for i in s['items'])]),
+        *(f"Draft{' to '+d['client'] if d.get('client') else ''}: {d['text']}" for d in drafts)]))
+
+
+async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
+    """An RM conversation on POST /rm/assistant (the v5 RM graph), with the workspace context carried between turns."""
+    log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[]
+    replies: list[dict[str,Any]]=[];skipped: list[dict[str,str]]=[];history: list[dict[str,Any]]=[];context: dict[str,Any]={}
+    keep=('client_id','ticket_ref','appointment_id','note_id','draft','documentation')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://evaluation',timeout=300) as http:
+        for step in turns_of(inputs):
+            if not step.get('say'):
+                skipped.append(step);continue
+            body={'message':step['say'],'history':history[-40:],'context':{k:context.get(k) for k in keep if context.get(k) is not None}}
+            tokens=(node_log.set(log),span_sink.set(spans));start=len(spans)
+            try:
+                with inject(inputs.get('fault')):response=await http.post('/rm/assistant',headers={'Authorization':f'Bearer {token}'},json=body)
+            finally:span_sink.reset(tokens[1]);node_log.reset(tokens[0])
+            reply: dict[str,Any]={'say':step['say'],'status':response.status_code,'agents':[a.get('agent') for n,a in spans[start:] if n=='agent'],
+                'model_calls':sum(n=='llm' for n,_ in spans[start:])}
+            if response.status_code!=200:reply['error']=response.json().get('error',{}).get('code','http_error')
+            for event,data in sse(response.text) if response.status_code==200 else []:
+                if event=='answer':
+                    answer=json.loads(data)
+                    context={**(answer.get('context') or {})}
+                    reply.update(answer=rm_text(answer),origin=answer.get('origin'),needs_human=answer.get('status')!='ok',status_text=answer.get('status'),
+                        sources=sorted({s.get('id') for s in answer.get('sources') or []}),drafts=len(answer.get('drafts') or [])+bool(answer.get('draft')))
+                elif event=='error':reply['error']=data
+            replies.append(reply)
+            client=context.get('client_id')
+            history+=[{'role':'user','content':step['say'][:6000],'client_id':client},{'role':'assistant','content':(reply.get('answer') or '-')[:6000],'client_id':client}]
+            if 'error' in reply:break
+    waves=[attrs for name,attrs in spans if name=='gather']
+    return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':[None]*len(replies),'skipped':skipped,'not_offered':[],
+        'played':bool(replies),'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},
+        'agents':dict(Counter(attrs.get('agent') for name,attrs in spans if name=='agent')),
+        'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),'model_calls':sum(name=='llm' for name,_ in spans),
+        'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),'exports':sorted({e for w in waves for e in w.get('exports',[])}),
+            'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},'rerouted':next((w['rerouted'] for w in waves if w.get('rerouted')),{})},
+        'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,'tickets':{'opened':[],'all':[]}}
 
 
 async def tickets(http: httpx.AsyncClient,headers: dict[str,str]) -> list[dict[str,Any]]:
@@ -151,7 +229,9 @@ async def tickets(http: httpx.AsyncClient,headers: dict[str,str]) -> list[dict[s
 
 
 async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
-    """Run every playable turn in one new saved chat and return the replies plus what ran."""
+    """Run every playable turn in one new saved chat and return the replies plus what ran. An RM persona plays on the
+    RM assistant instead (play_rm)."""
+    if inputs.get('persona')=='sophie' and token:return await play_rm(inputs,app,token)
     mode,language=inputs.get('mode','public'),inputs.get('language','English')
     headers={'Authorization':f'Bearer {token}'} if token else {'X-Conversation-Token':secrets.token_urlsafe(32)}
     log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[]

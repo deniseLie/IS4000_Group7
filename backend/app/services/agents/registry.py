@@ -5,6 +5,8 @@ one AgentSpec per target agent is the single source for its tools, field views, 
 loop tools and offers. authorization.decide and tools.call both read it. All five specs run on /chat since phase 5, but
 the rules in agents/rules.py still call the v4 responders under their v4 names (retail, fraud, compliance, document,
 relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from SPECS (ENFORCED).
+The two RM specs (phase 9) run on the RM graph (services/rm/graph.py) for a verified `rm` login; the client planner
+never sees them (CLIENT_SPECS).
 """
 from types import MappingProxyType
 from app.schemas.contracts import QUESTION, AgentName, AgentSpec, Domain, Read, TargetAgent, ToolView
@@ -30,6 +32,9 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
     'my_compliance_case':('compliance.get_case',),'my_document_checks':('compliance.workspace',),
     'my_rm':('rm.get_assignment',),'my_appointments':('appointments.list',),'free_slots':('appointments.find_slots',),
     'my_consents':('consent.records',),
+    # RM reads: SQL checks the verified rm login and the book (rm.current_advisor, rm.in_book; 0089) and audits each read.
+    **{name:() for name in ('rm_book','rm_match_clients','rm_client_profile','rm_meeting_notes','rm_shared_summary','rm_tickets',
+        'rm_ticket','rm_review_status','rm_appointments','rm_availability','rm_followups','rm_handover_sources','rm_cash_events','rm_book_facts')},
 })
 
 EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
@@ -120,8 +125,44 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
     offers=frozenset({'appointment.hold','appointment.confirm','appointment.cancel','handoff.create','tickets.follow_up',
         'consent.grant','consent.revoke','rm.share_summary'}))
 
-SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,SECURITY,COMPLIANCE,RELATIONSHIP)})
-ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts, security; the rest once the v4 responders move into specs
+# RM agents (architecture §5.6.1): row scope is the RM's own book. Each intent's reads are the ones its handler in
+# services/rm/handlers.py makes; the client, ticket or meeting is resolved before the agent runs (rm/graph.py).
+WHOLE=ToolView()
+TEXT=ToolView(free_text=True)  # notes, ticket messages and what clients wrote: untrusted data, default reads only
+PROFILE=Read(tool='rm_client_profile')
+NOTES=Read(tool='rm_meeting_notes')
+
+RM_INSIGHT=AgentSpec(name='rm_client_insight',role='rm',scope='rm_book',prompt='rm_assistant',
+    answers="One client in the RM's book (360 overview, meeting history, meeting briefs, handover briefs, the client's "
+        'shared handover note under consent) and questions across the book (reviews due, follow-ups, book facts).',
+    tools={'rm_client_profile':TEXT,'rm_meeting_notes':TEXT,'rm_shared_summary':TEXT,'rm_handover_sources':TEXT,
+        'rm_cash_events':WHOLE,'rm_book_facts':WHOLE,'rm_followups':WHOLE,'rm_review_status':WHOLE,'rm_appointments':WHOLE},
+    intents={'client_overview':(PROFILE,Read(tool='rm_cash_events')),'meeting_history':(PROFILE,NOTES),
+        'meeting_brief':(PROFILE,NOTES,Read(tool='rm_shared_summary'),Read(tool='rm_cash_events')),
+        'handover_brief':(Read(tool='rm_handover_sources'),),'shared_note':(Read(tool='rm_shared_summary'),),
+        'reviews':(Read(tool='rm_review_status'),),'priorities':(Read(tool='rm_followups'),Read(tool='rm_appointments')),
+        'book_question':(Read(tool='rm_book_facts'),),'help':()},
+    exports={'clients_due':'list[client_ref]','latest_note':'reference','consent_active':'bool'},sort_by={'clients_due':'due_date'})
+
+RM_DESK=AgentSpec(name='rm_service_desk',role='rm',scope='rm_book',prompt='rm_assistant',
+    answers="Ticket work in the RM's book: the inbox, one ticket, client message drafts (sent only on Approve), "
+        'documenting a meeting, follow-ups from a saved note, her calendar.',
+    tools={'rm_tickets':TEXT,'rm_ticket':TEXT,'rm_client_profile':TEXT,'rm_meeting_notes':TEXT,'rm_appointments':WHOLE,
+        'rm_availability':WHOLE,'request_categories':WHOLE},
+    intents={'ticket_inbox':(Read(tool='rm_tickets'),),'schedule':(Read(tool='rm_appointments'),),
+        'ticket_summary':(PROFILE,Read(tool='rm_ticket')),
+        'draft_message':(PROFILE,Read(tool='rm_ticket'),NOTES,Read(tool='rm_availability')),
+        'document_interaction':(Read(tool='rm_appointments'),PROFILE,Read(tool='request_categories')),
+        'actions_from_note':(PROFILE,NOTES,Read(tool='request_categories'))},
+    imports=frozenset({'clients_due','latest_note'}))
+# Neither RM agent makes ledger offers: drafts, documentation and proposed tasks or requests are review cards the RM
+# approves one by one through the /rm write routes (rm.send_client_update, rm.save_interaction, rm.create_tasks, ...).
+
+SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,SECURITY,COMPLIANCE,RELATIONSHIP,RM_INSIGHT,RM_DESK)})
+CLIENT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in SPECS.items() if s.role!='rm'})
+RM_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in SPECS.items() if s.role=='rm'})
+INTENT_AGENT: MappingProxyType[str, TargetAgent] = MappingProxyType({i:s.name for s in RM_SPECS.values() for i in s.intents})  # RM intents are unique
+ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts, security and the RM agents; the rest once the v4 responders move into specs
 
 
 def spec_for(agent: str | None) -> AgentSpec | None:

@@ -31,6 +31,14 @@ def ticket_check(expected: str | None,out: dict[str,Any]) -> dict[str,Any]:
     return result('ticket',bool(match),', '.join(t['reference'] for t in match) or f'no {expected} ticket opened or quoted')
 
 
+def counts_match(got: dict[str,int],want: dict[str,int|str]) -> bool:
+    """Agent run counts: exact, or a range "a-b" (a fan-out whose size depends on the records, R21)."""
+    def fits(n: int,w: int|str) -> bool:
+        if isinstance(w,str) and re.fullmatch(r'\d+-\d+',w):lo,hi=map(int,w.split('-'));return lo<=n<=hi
+        return n==w
+    return all(fits(got.get(a,0),want.get(a,0)) for a in {*got,*want})
+
+
 def trajectory_checks(t: dict[str,Any],out: dict[str,Any]) -> list[dict[str,Any]]:
     found=[]
     if t.get('graph') is False:found.append(result('nodes',not out['nodes']['ran'],'graph must not run; ran: '+', '.join(out['nodes']['ran'])))
@@ -39,7 +47,7 @@ def trajectory_checks(t: dict[str,Any],out: dict[str,Any]) -> list[dict[str,Any]
         missing,extra=[n for n in t['nodes'] if n not in acted],[n for n in t['idle'] if n in acted]
         found.append(result('nodes',not missing and not extra,'; '.join(filter(None,[missing and 'did not act: '+', '.join(missing),extra and 'should be idle: '+', '.join(extra)]))))
     if t.get('agents') or t.get('graph') is False:
-        found.append(result('agents',Counter(out['agents'])==Counter(t['agents']),f"ran {out['agents']}, expected {t['agents']}"))
+        found.append(result('agents',counts_match(out['agents'],t['agents']),f"ran {out['agents']}, expected {t['agents']}"))
     called=out['tools']
     if t.get('tools') or t.get('no_tools') or t.get('graph') is False:
         missing=[x for x in t.get('tools',[]) if x not in called]

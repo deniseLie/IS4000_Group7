@@ -9,9 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, model_v
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 fraud > P1 security > P2 regulatory deadline > P3 everything else
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
 AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
-# v5 client agents (architecture §5.6.1). `compliance` and `relationship` keep their v4 names; the v4 agents use
-# registry.TOOLS; agents/rules.py still calls the v4 responders under these names.
-TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship']
+# v5 agents (architecture §5.6.1): five client agents and two RM agents (phase 9). `compliance` and `relationship` keep
+# their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still calls the v4 responders under these names.
+TargetAgent = Literal['guide', 'accounts', 'security', 'compliance', 'relationship', 'rm_client_insight', 'rm_service_desk']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
 AnswerKind = Literal['banking', 'conversation']  # same values as the LLM output contract in services/llm.py
@@ -156,7 +156,7 @@ OPEN_INTENT = 'open'  # the planner found no listed intent: the agent chooses it
 QUESTION = 'question'  # pseudo-entity: the task's own question, e.g. as a knowledge_search query
 ToolName = str  # a model-facing tool in services/tools.TOOLS
 # Export types (§14.6, phase 7): small values computed by code, never raw rows, balances or free text.
-EXPORT_TYPES = frozenset({'bool', 'date', 'reference', 'label', 'list[date]', 'list[account_ref]'})
+EXPORT_TYPES = frozenset({'bool', 'date', 'reference', 'label', 'list[date]', 'list[account_ref]', 'list[client_ref]'})  # client_ref: RM side, code only
 
 
 class ToolView(Contract):
@@ -267,6 +267,7 @@ class AgentOutput(Contract):
     origin: Literal['ai', 'safety', 'validation'] = 'ai'
     prompt_id: str | None = None
     suggested: TargetAgent | None = None  # out_of_scope only: the agent to hand the question to
+    reply: dict[str, JsonValue] | None = None  # RM agents (phase 9): the structured RM workspace reply, composed by services/rm/graph.py
 
     @model_validator(mode='after')
     def _handoff(self):

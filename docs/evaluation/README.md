@@ -39,8 +39,8 @@ New `backend/evaluation/langsmith_sync.py`: idempotent upload of local case file
 | `demobank-safety` (new) | new `safety_cases.json` | lost card, secrets, human support, guest "my balance": must route to fixed responses with no model call |
 | `demobank-qa1-client` | `qa1_client_cases.json` | QA1 C01–C22: whole conversations (`turns`, `persona`, `mode` personal or public) with `reply_has`/`reply_lacks`, `ticket`, `schema`, `check` and `trajectory` (nodes, agents, tools, model) |
 | `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20, `state: spec` until F12/F14 and the RM assistant exist; may name the planned RM tools. Client cases marked `state: manual` (C20) are skipped by the runner |
-| `demobank-graph` | `graph_cases.json` | v5 agent interactions C23–C28 (trip window, tax self-certification, affordability, failed document check, fraud report then RM note, fee-waiver handoff) and R21–R23. Each case has a failure variant through `fault`: `external_down` (the public-holiday call fails), `upstream_withheld` (the upstream agent's answer is withheld) , `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b and C28 are ready) |
-| `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases wait for phase 9 |
+| `demobank-graph` | `graph_cases.json` | v5 agent interactions C23–C28 (trip window, tax self-certification, affordability, failed document check, fraud report then RM note, fee-waiver handoff) and R21–R23. Each case has a failure variant through `fault`: `external_down` (the public-holiday call fails), `upstream_withheld` (the upstream agent's answer is withheld) , `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b, C28 and R21–R23a are ready). Sophie's cases play on `POST /rm/assistant` (`targets.play_rm`, workspace context carried between turns); `consent_revoked` reads her rm_brief grant as revoked |
+| `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases run the RM planner (`rm_planner/v3`) without book reads |
 
 Each example: `inputs={question, history, language, mode:'public'}`, `outputs={check, expected_sources?, expected_origin?, expect_needs_human?}`, `metadata={case_id}`. Example ids are `uuid5(dataset, case_id)` so re-syncing updates rather than duplicates. After each sync, tag the dataset version with the file's sha256 so every experiment points to an exact dataset version.
 
@@ -67,7 +67,7 @@ It returns the joined reply and each turn's reply, origin, `needs_human` and cit
 | `fixed_route` | the guard chose `expected_route` on the first turn |
 | `ticket` | a new or quoted (reused) ticket of the expected category; `null` means no new ticket |
 | `nodes` | every listed node acted and no `idle` node did; `graph: false` means no node ran |
-| `agents` | agent run counts equal the case's exactly |
+| `agents` | agent run counts equal the case's exactly, or fall in a range `"a-b"` (a fan-out whose size depends on the records) |
 | `tools` | every listed tool was called and none matching `no_tools` (globs) |
 | `model` | a model was or was not called, as the case says |
 | `waves`, `exports`, `skipped`, `rerouted` | v5 only, from the `gather` span: the number of agent waves; every `from>to:name` export was passed (names, never values); the skipped dependants and their reasons; the one out-of-scope handoff |
