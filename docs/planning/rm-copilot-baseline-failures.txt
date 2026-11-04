@@ -1,0 +1,11 @@
+# RM copilot baseline on 175def5 (5 Nov 2026)
+#
+# Backend tests: clean checkout of 175def5, PYTHONUTF8=1, repo-root .venv, `pytest -q` from backend/
+# (Windows, no opt-in flags). Result: 1 failed, 836 passed, 601 skipped.
+# A later phase may only remove ids from this list, never add new ones.
+
+tests/test_rm_assistant.py::test_a_question_across_the_book_only_sees_dates_inside_the_period_it_asks_about
+
+# Phase 1 (0106) with TEST_DATABASE_LOCAL=1: 2 failed, 1066 passed, 390 skipped. The baseline id above, plus
+# tests/test_compliance_formats.py::test_exact_image_and_pdf_limits_use_real_bytes, which times out in the parser
+# child under full-suite load and passes on its own (no database; not a 0106 change).
