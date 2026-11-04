@@ -37,7 +37,7 @@ def transient(e):
 
 def transport():
     name=os.getenv('CHAT_TRANSPORT','api')
-    if name not in ('api','codex'):raise LLMNotConfigured('Unknown CHAT_TRANSPORT; choose api or codex')
+    if name not in ('api','codex','claude'):raise LLMNotConfigured('Unknown CHAT_TRANSPORT; choose api, codex or claude')
     return name
 
 def build_model(max_tokens=None):
@@ -52,6 +52,7 @@ def build_model(max_tokens=None):
 
 def model_name():
     if transport()=='codex':return os.getenv('CODEX_MODEL','gpt-5.6-luna')
+    if transport()=='claude':return os.getenv('CLAUDE_MODEL','haiku')
     needed = ('LLM_MODEL',) + (('LLM_API_KEY','LLM_BASE_URL') if (os.getenv('LLM_PROVIDER') or 'openai') == 'openai' else ())
     if not all(os.getenv(k) for k in needed):raise LLMNotConfigured('Model is not configured')
     return os.environ['LLM_MODEL']
@@ -109,6 +110,10 @@ async def call(prompt,system,messages,schema):
                     from app.services import codex_cli  # own timeout; no retries, each run is a subscription turn
                     data,usage=await codex_cli.answer(system,schema,messages)
                     tokens=(usage.get('input_tokens'),usage.get('output_tokens'))
+                elif name=='claude':
+                    from app.services import claude_cli  # own timeout; no retries, each run is a subscription turn
+                    data,usage=await claude_cli.answer(system,schema,messages)
+                    tokens=(usage.get('input_tokens'),usage.get('output_tokens'))
                 else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a)
             except TimeoutError as e:
                 raise LLMTimeout('Model request timed out') from e
@@ -116,7 +121,7 @@ async def call(prompt,system,messages,schema):
             except Exception as e:
                 a['cause']=type(e).__name__[:64]
                 if type(e).__name__=='OutputParserException':raise LLMBadOutput('Model output was not valid JSON') from e
-                raise LLMError(str(e) if name=='codex' else f'Model request failed ({type(e).__name__})') from e
+                raise LLMError(str(e) if name in ('codex','claude') else f'Model request failed ({type(e).__name__})') from e
             tin,tout=tokens
             trace=current_trace.get()
             # Unknown usage is charged at the output cap so the budget still holds.
