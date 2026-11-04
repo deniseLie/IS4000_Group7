@@ -25,7 +25,7 @@ TOOLS: dict[AgentName, tuple[str, ...]] = {
 
 # Model-facing tool -> the permissions its service read checks. document_templates is fixed public configuration.
 TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
-    'knowledge_search':('kb.search',),'request_categories':('tickets.categories',),'document_templates':(),
+    'knowledge_search':('kb.search',),'knowledge_article':('kb.search',),'request_categories':('tickets.categories',),'document_templates':(),
     'my_profile':('customer.get_profile',),'my_accounts':('customer.get_accounts',),'my_cards':('customer.get_credit_cards',),
     'my_loans':('customer.get_loans',),'my_transactions':('customer.get_transactions',),
     'travel_flags':('customer.get_credit_cards','customer.get_transactions'),'my_tickets':('tickets.list',),
@@ -148,10 +148,11 @@ RM_DESK=AgentSpec(name='rm_service_desk',role='rm',scope='rm_book',prompt='rm_as
     answers="Ticket work in the RM's book: the inbox, one ticket, client message drafts (sent only on Approve), "
         'documenting a meeting, follow-ups from a saved note, her calendar.',
     tools={'rm_tickets':TEXT,'rm_ticket':TEXT,'rm_client_profile':TEXT,'rm_meeting_notes':TEXT,'rm_appointments':WHOLE,
-        'rm_availability':WHOLE,'request_categories':WHOLE},
+        'rm_availability':WHOLE,'request_categories':WHOLE,'knowledge_article':WHOLE},
+    # knowledge_article: the approved article a ticket's request type names (category_info.kb_article), read by id after rm_ticket.
     intents={'ticket_inbox':(Read(tool='rm_tickets'),),'schedule':(Read(tool='rm_appointments'),),
-        'ticket_summary':(PROFILE,Read(tool='rm_ticket')),
-        'draft_message':(PROFILE,Read(tool='rm_ticket'),NOTES,Read(tool='rm_availability')),
+        'ticket_summary':(PROFILE,Read(tool='rm_ticket'),Read(tool='knowledge_article')),
+        'draft_message':(PROFILE,Read(tool='rm_ticket'),NOTES,Read(tool='rm_availability'),Read(tool='knowledge_article')),
         'document_interaction':(Read(tool='rm_appointments'),PROFILE,Read(tool='request_categories')),
         'actions_from_note':(PROFILE,NOTES,Read(tool='request_categories'))},
     imports=frozenset({'clients_due','latest_note'}))

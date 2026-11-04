@@ -9,11 +9,10 @@ import json
 import re
 from dataclasses import dataclass,field
 from datetime import date,datetime,timedelta,timezone
+from collections.abc import Awaitable,Callable
 from typing import Any
-from app.core import data_api
-from app.schemas.contracts import RequestContext
+from pydantic import TypeAdapter
 from app.schemas.knowledge import KnowledgeSection
-from app.services import kb
 
 
 @dataclass
@@ -116,11 +115,12 @@ def shared_evidence(result: dict|None,customer_id: int) -> Evidence:
         'meaning':'The client has not shared a handover note with you under active consent; nothing from such a note may be used.'},as_of,customer_id)
 
 
-async def category_guidance(result: dict,ctx: RequestContext) -> list[KnowledgeSection]:
-    """The approved article a ticket's request type points to (category_info.kb_article), read from the database."""
+async def category_guidance(result: dict,read: Callable[[str,dict],Awaitable[dict]]) -> list[KnowledgeSection]:
+    """The approved article a ticket's request type points to (category_info.kb_article), read with the agent's own
+    tool call (`knowledge_article`, Turn.read), so the Service Desk spec's allow-list and audit apply."""
     article_id=(result['data'].get('category_info') or {}).get('kb_article')
     if not article_id:return []
-    with data_api.connect(ctx) as db:return await kb.get_article(article_id,ctx,db)
+    return TypeAdapter(list[KnowledgeSection]).validate_python((await read('knowledge_article',{'article_id':article_id}))['items'])
 
 
 def ticket_detail_bundle(result: dict,guidance: list[KnowledgeSection] | None=None) -> Bundle:

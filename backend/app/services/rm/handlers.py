@@ -411,7 +411,7 @@ async def h_ticket(t: Turn,plan,client_id):
         return brief_reply('ticket_summary',await t.model('ticket_summary',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
     await t.say(f'Reading {ref} and what the client was told…')
     detail=await t.read('rm_ticket',{'reference':ref})
-    bundle=ev.ticket_detail_bundle(detail,await ev.category_guidance(detail,t.ctx))
+    bundle=ev.ticket_detail_bundle(detail,await ev.category_guidance(detail,t.read))
     return brief_reply('ticket_summary',await t.model('ticket_summary',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id,ticket_ref=ref))
 
 
@@ -428,7 +428,7 @@ async def h_draft(t: Turn,plan,client_id):
     if ref:
         await t.say(f'Drafting a reply about {ref}…')
         detail=await t.read('rm_ticket',{'reference':ref})
-        bundle=ev.ticket_detail_bundle(detail,await ev.category_guidance(detail,t.ctx))
+        bundle=ev.ticket_detail_bundle(detail,await ev.category_guidance(detail,t.read))
         internal=[n.get('note','') for n in detail['data'].get('internal_notes') or []]
         bundle.add(ev.client_bundle(profile).get('profile'))
     else:

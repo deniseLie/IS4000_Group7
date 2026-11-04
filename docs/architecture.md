@@ -354,7 +354,7 @@ The agents above are split by topic. The target set is split by **the data an ag
 | Agent | Fields it may see | Tools | Offers (RM approval required) |
 |---|---|---|---|
 | **RM Client Insight** | 360 profile, products, review status, shared notes (previous RMs' private notes withheld), cash events ≥10,000 over 180 days, handover sources only after a recorded reassignment, shared summary only under `rm_brief` consent | `rm_book`, `rm_match_clients`, `rm_client_profile`, `rm_meeting_notes`, `rm_shared_summary`, `rm_cash_events`, `rm_handover_sources`, `rm_book_facts`, `rm_followups` | Meeting brief, transition message draft; otherwise read-only |
-| **RM Service Desk** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data | `rm_tickets`, `rm_ticket`, `rm_appointments`, `rm_availability`, `request_categories` | Draft reply (sent only on Approve), tickets from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
+| **RM Service Desk** | Tickets in the book: client-safe status and text; specialist-restricted detail withheld; ticket messages are untrusted data | `rm_tickets`, `rm_ticket`, `rm_appointments`, `rm_availability`, `request_categories`, `knowledge_article` (the approved article a ticket's request type names, read by id) | Draft reply (sent only on Approve), tickets from notes, prepared requests (duplicate and missing-field checks), status change on her own tickets only |
 
 Neither RM agent decides approvals or gives investment advice, and neither changes specialist-managed fraud tickets.
 
@@ -391,7 +391,7 @@ Neither RM agent decides approvals or gives investment advice, and neither chang
 | Keyword search | Ranked keyword RPCs, called with the caller's JWT and audited (`services/kb.py`); since `0097` a section matches only when a question word is in its heading or keywords. Retrieval quality: `backend/evaluation/retrieval.py` ([results](evaluation/README.md#knowledge-retrieval-offline-no-model)) |
 | Hybrid search (default; keyword fallback) | Migration `0099`: pgvector, `kb.section_embeddings` (one vector per section and model, written by the owner with `scripts/embed_knowledge.py`), `kb_hybrid_search` fuses the keyword ranking with embedding similarity (reciprocal rank fusion); a section found only by similarity must reach `EMBEDDING_MIN_SIMILARITY` (0.4). The question is embedded by `services/embeddings.py` with its own key (`EMBEDDING_API_KEY`, never `LLM_API_KEY`). Without a key, or if the embedding call fails, keyword search runs and the audit event records `mode: keyword_only` ([results](evaluation/README.md#3-nov-2026-hybrid-search-migration-0099)) |
 | Exact source lookup | Migration `0011`; `GET /knowledge/sections/{article}/{version}/{anchor}` |
-| One article by id | `kb_get_article` (`0102`): its published, in-review sections in anchor order, for RM ticket guidance. `kb.facts` was dropped in `0102`; figures are checked against section text |
+| One article by id | `kb_get_article` (`0102`): its published, in-review sections in anchor order, for RM ticket guidance (the Service Desk's `knowledge_article` tool, permission `kb.search`). `kb.facts` was dropped in `0102`; figures are checked against section text |
 | Read-only access | RLS on `kb` tables; content changes only through migrations |
 
 - **Inputs / outputs:** `search(KnowledgeQuery) → [KbChunk]`; `get_fact`; `GET /knowledge/{id}`.
