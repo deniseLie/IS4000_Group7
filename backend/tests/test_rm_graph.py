@@ -162,6 +162,40 @@ def test_a_workspace_button_skips_the_planner_and_one_reply_keeps_its_shape(reco
     assert reply['intent'] == 'ticket_inbox' and reply['summary'] == 'ticket_inbox for None' and 'drafts' not in reply
 
 
+SECTION = {'article_id': 'card-limit-change', 'version': 1, 'anchor': 'main', 'cite': 'kb:card-limit-change@v1#main',
+    'title': 'Changing a card limit', 'heading': 'Changing a card limit', 'body': 'Card limit changes are decided by the cards team.',
+    'publisher': 'DemoBank', 'scope': 'Demo guidance', 'reference_url': None, 'checked_on': None, 'review_due': None, 'score': 0.0}
+
+
+def test_ticket_guidance_is_read_with_the_service_desk_permission(records, monkeypatch):
+    """Regression: the article a ticket's request type names is read by the Service Desk through its own spec. The real
+    tool, kb.get_article and policy run; only the database client and RPC response are synthetic."""
+    from contextlib import nullcontext
+    from app.services import audit, kb
+    from app.services.rm import evidence as ev
+    rpcs = []
+    async def rpc(call, name):
+        rpcs.append(name)
+        return type('Response', (), {'data': [SECTION]})()
+    monkeypatch.setattr(tools.data_api, 'connect', lambda ctx: nullcontext(None))
+    monkeypatch.setattr(kb, 'execute', rpc)
+    detail = {'data': {'reference': 'TCK-1001', 'customer_id': 1002, 'category': 'card_limit',
+        'category_info': {'label': 'Card limit change', 'kb_article': 'card-limit-change'}}, 'as_of': 'now'}
+    async def main():
+        desk = rm_ctx().model_copy(update={'agent': 'rm_service_desk'})
+        batch = audit.start_batch(session_id=desk.session_id)
+        try:
+            guidance = await ev.category_guidance(detail, lambda name, args: tools.call(name, args, desk))
+            assert [e.outcome for e in batch.events if e.action == 'policy.decided'] == ['success']
+        finally:audit.current_batch.set(None)
+        bundle = ev.ticket_detail_bundle(detail, guidance)
+        assert 'kb-card-limit-change' in bundle.ids() and rpcs == ['kb.search']
+        assert await ev.category_guidance({'data': {'category_info': {}}}, None) == []  # no article named: nothing read
+        insight = desk.model_copy(update={'agent': 'rm_client_insight'})
+        with pytest.raises(PolicyDenied):await ev.category_guidance(detail, lambda name, args: tools.call(name, args, insight))
+    asyncio.run(main())
+
+
 def test_each_rm_agent_may_call_only_its_own_tools(records):
     async def main():
         desk = rm_ctx().model_copy(update={'agent': 'rm_service_desk'})

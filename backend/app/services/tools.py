@@ -53,6 +53,13 @@ async def knowledge_search(query: str,k: int=4) -> dict[str,Any]:
     return {'items':[item.model_dump(mode='json') for item in sections]}
 
 
+async def knowledge_article(article_id: str) -> dict[str,Any]:
+    """One approved DemoBank article by id (published, in-review sections in anchor order); empty when retired or unknown."""
+    ctx=_ctx()
+    with data_api.connect(ctx) as db:sections=await kb.get_article(article_id,ctx,db)
+    return {'items':[item.model_dump(mode='json') for item in sections]}
+
+
 async def request_categories() -> dict[str,Any]:
     """List the request categories, what each needs and which team decides."""
     return {'items':[item.model_dump(mode='json') for item in await customer_data.get_categories(_ctx())]}
@@ -215,7 +222,8 @@ async def rm_book_facts() -> dict[str,Any]:
     return await rm_records.book_facts(_ctx())
 
 
-TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'request_categories':request_categories,
+TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'knowledge_article':knowledge_article,
+    'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
     'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'travel_flags':travel_flags,

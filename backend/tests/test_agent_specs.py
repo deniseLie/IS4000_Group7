@@ -106,6 +106,8 @@ def test_policy_reads_the_spec_for_new_agents():
         c=ctx(agent)
         assert decide(c.principal,allowed,{'customer_id':1001},c).allow, (agent,allowed)
         assert decide(c.principal,forbidden,None,c).reasons==['agent_tool_forbidden'], (agent,forbidden)
+    # Ticket guidance (knowledge_article) is the Service Desk's only knowledge read; Client Insight has none.
+    assert 'kb.search' in registry.permissions(SPECS['rm_service_desk']) and 'kb.search' not in registry.permissions(SPECS['rm_client_insight'])
     c=ctx('security')
     assert decide(c.principal,'card.temporary_block',{'customer_id':1001},c).reasons==['customer_only_action']
     assert decide(c.principal,'card.dispute',{'customer_id':1001},c).reasons==['bank_only_action']
