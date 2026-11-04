@@ -139,5 +139,5 @@ async def call(prompt,system,messages,schema):
         finally:
             a['outcome']=outcome
             if trace:=current_trace.get():
-                trace.llm_calls.append({'ok':outcome=='ok','model':model,'prompt_version':prompt['id'],'transport':name,
+                trace.llm_calls.append({'ok':outcome=='ok','agent':prompt['agent'],'model':model,'prompt_version':prompt['id'],'transport':name,
                     'input_tokens':a.get('input_tokens'),'output_tokens':a.get('output_tokens'),'ms':round((time.perf_counter()-start)*1000)})

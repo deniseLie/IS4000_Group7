@@ -171,7 +171,7 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
     plan={'intent':task.intent,'client_name':e.get('client_name') or '','uses_active_client':bool(e.get('uses_active_client')),
         'ticket_ref':e.get('ticket_ref') or '','draft_scope':e.get('draft_scope') or 'client','appointment_hint':e.get('appointment_hint') or '',
         'is_new_notes':bool(e.get('is_new_notes')),'shared':e.get('shared',True),'fan_out':isinstance(e.get('item'),dict)}
-    with span('agent','agent',agent=spec.name,intent=task.intent,wave=2 if task.depends_on else 1):
+    with span('agent','agent',agent=spec.name,intent=task.intent,wave=2 if task.depends_on else 1) as facts:
         if plan['fan_out']:  # one client from the upstream's list; checked against the book again
             client_id=e['item'].get('customer_id')
             stop=None if any(c['customer_id']==client_id for c in rt.book) else refusal(turn.context(None))
@@ -184,6 +184,7 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
         if 'latest_note' in inputs and client_id:  # R22: follow-ups from the note the brief read
             turn.req=rt.req.model_copy(update={'context':rt.req.context.model_copy(update={'client_id':client_id,'note_id':inputs['latest_note'].value})})
         reply=stop or await handlers.HANDLERS[task.intent](turn,plan,client_id)
+        facts['status']=status_of(reply)
     rt.prompt_ids+=turn.prompt_ids
     reply=json.loads(json.dumps(reply,ensure_ascii=False,default=str))
     if plan['fan_out']:reply['client']=e['item'].get('name')

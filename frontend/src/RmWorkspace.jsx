@@ -8,12 +8,11 @@ import RmTicketsPage from './components/rm/RmTicketsPage';
 import SchedulePage from './components/rm/SchedulePage';
 import FollowUpsPage from './components/rm/FollowUpsPage';
 import TodayPage from './components/rm/TodayPage';
-import QualityPage from './components/QualityPage';
 import {supabase} from './lib/supabase';
 import {display,newId,restoreConversation,rmGet} from './lib/rm';
 
 const API_URL=import.meta.env.VITE_API_URL||'/api';
-const PAGES=['today','assistant','clients','tickets','schedule','followups','quality'];
+const PAGES=['today','assistant','clients','tickets','schedule','followups'];
 // Today is the start page (no hash); every other page has its own #rm-… address.
 function pageFromHash() {const page=location.hash.replace(/^#rm-?/,'').replace(/^#/,'');return PAGES.includes(page)?page:'today';}
 const EMPTY={client_id:null,ticket_ref:null,appointment_id:null,note_id:null,draft:null,documentation:null};
@@ -83,7 +82,6 @@ export default function RmWorkspace({session}) {
     {view:'tickets',testid:'rm-open-tickets',icon:'clip',label:'Ticket inbox',short:'Tickets',badge:ticketCount,badgeLabel:'need your action'},
     {view:'schedule',testid:'rm-open-schedule',icon:'calendar',label:'Schedule',short:'Schedule'},
     {view:'followups',testid:'rm-open-followups',icon:'bell',label:'Follow-ups',short:'Follow-ups'},
-    {view:'quality',testid:'rm-open-quality',icon:'shield',label:'Quality',short:'Quality'},
   ].map(page=>({...page,onSelect:()=>navigate(page.view)}));
   const menu=[{testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut}];
   const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · Synthetic data · No real banking services</span></footer>;
@@ -116,7 +114,6 @@ export default function RmWorkspace({session}) {
         {view==='schedule'&&<SchedulePage {...shared}/>}
         {view==='followups'&&<FollowUpsPage {...shared}/>}
         {view==='today'&&<TodayPage {...shared} advisor={profile?.advisor}/>}
-        {view==='quality'&&<QualityPage/>}
         {footer}
       </main>}
     </div>

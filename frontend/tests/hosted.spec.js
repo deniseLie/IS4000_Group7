@@ -358,3 +358,23 @@ test('hosted upload acknowledgement loss can record the same real object without
  await page.keyboard.press('Escape');await openMenuItem(page,'sign-out');
  await expect(page.getByTestId('sign-in')).toBeVisible();
 });
+
+test('hosted admin dashboard reads LangSmith for the admin login only',async({page})=>{
+ const admin=personas.find(item=>item.email==='demo.admin@example.com');
+ test.skip(!admin,'Requires the demo.admin login (hosted 32_admin_login_hosted.sql) in the git-ignored fixture');
+ await page.goto('/');
+ await page.getByTestId('sign-in').click();
+ await page.locator('#email').fill(admin.email);await page.locator('#password').fill(admin.password);
+ await page.getByTestId('submit-login').click();
+ await expect(page.getByTestId('admin-shell')).toBeVisible({timeout:30000});
+ await expect(page.getByTestId('admin-tiles')).toBeVisible({timeout:120000});  // real LangSmith reads; a failure shows an alert instead
+ for(const [view,ready] of [['agents','admin-scorecards'],['latency','admin-surfaces'],['evaluations','admin-datasets'],['prompts','admin-prompt-families']]) {
+  await page.getByTestId(`admin-open-${view}`).click();
+  await expect(page.getByTestId(`admin-${view}`)).toBeVisible();
+  await expect(page.getByTestId(ready).or(page.locator('.admin-empty').first())).toBeVisible({timeout:120000});
+  await expect(page.getByRole('alert')).toHaveCount(0);
+ }
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await openMenuItem(page,'sign-out');await expect(page.getByTestId('sign-in')).toBeVisible({timeout:30000});
+});
