@@ -30,6 +30,7 @@ class OfferReply(BaseModel):
     model_config=ConfigDict(extra='forbid')
     offer_group: UUID
     decision: Literal['confirm','cancel']
+    include: list[UUID]=Field(default=[],max_length=9)  # 0114: the optional steps (switches) she turned on; others stay off
 
 
 class ChatRequest(BaseModel):

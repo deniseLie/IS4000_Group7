@@ -80,6 +80,13 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Today → Topics clients shared with you**: confirmed topics from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
 - Reassigning the client ends access at once (book check first); one client per call.
 
+## Consent v2: what clients share and asking for more (build plan phase 6, 0109–0113)
+
+- Each grant now has a scope and an end: transaction insights for all accounts or the ones the client picked, over 3, 6 or 12 months; chat topics for the topic areas the client picked; until a date, the end of a meeting, or until her meeting request is answered (then the meeting it becomes). Readers return only what the scope covers; reassignment ends every grant to the previous RM at once.
+- **Ask the client to share**: a brief or overview that hits a consent gap carries an *Ask the client to share* card per missing category, with a fixed reason (`meeting_prep` with the meeting, else `review`); Sophie approves it through `POST /rm/consent-requests` (`rm_ask_consent`, book check first, one open ask per client and category). The client gets an Inbox notice and an `rm_consent_request` ticket; the ask closes when she shares (any grant of that category), says *Not now*, or after 14 days. Sophie never writes the wording.
+- The client sees every read of her shared data in an access log built from the audit trail (ids, codes and dates only).
+- A client's *Delete all my data* opens a `data_deletion` ticket for the data protection team (10 business days); it is not routed to the RM.
+
 ## Layout (Nov 2026 redesign)
 
 - **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.
@@ -107,6 +114,32 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 7. **Client message**: Ticket inbox → Michelle's statement request → *Draft a reply* → "make it warmer" → edit → tick → *Approve and send*. Sign in as Michelle: My requests shows *Latest update* and an Inbox notice.
 8. **Handover**: My clients → Tan Mei Ling → *Handover brief* (eight sections; the revoked and expired notes are excluded; Rachel's private note is counted, not shown).
 9. **Availability**: Schedule → block a free half hour → Michelle's *Meetings* tab no longer offers it.
+
+## Copilot demo (build plan 5b, 12 steps)
+
+Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project through the API (evaluation README §8). The rest have not been run end to end in the browser. Step 9 waits for build plan 5a.
+
+1. **Reset** (owner, SQL editor): run `backend/supabase/hosted/34_reset_meeting_demo.sql`. This seeds:
+   - Michelle's grant to Sophie and her confirmed home loan meeting on the first free Thursday;
+   - Mei Ling's open request (Monday and Tuesday 16:30);
+   - Michelle's inferred home loan topic, already past its 24-hour hold.
+2. **Michelle shares a topic**: in chat, "I'm thinking of buying a condo next year". The reply offers *Let her know* / *Not now*. *Let her know* makes the topic confirmed, and Sophie gets a notice that names no topic.
+3. **Michelle asks for a meeting**: "I'd like to see my RM next week about an investment review". The chat drafts a request (purpose, topics, up to 3 free times) and she taps *Confirm*. My requests → Meetings shows it open.
+4. **Sophie's Today**: sign in as `demo.sophie@example.com`. Today shows:
+   - *Do first*, with each item's score reasons;
+   - the requests to answer (Mei Ling's and Michelle's);
+   - *Topics clients shared with you* (Michelle's home loan).
+5. **Plan my day**: one cited answer in the code's rank order (R24).
+6. **Answer a request**: in the copilot, "Accept Mei Ling's Monday 4:30 pm time". Sophie approves the card (R25). Then she accepts Michelle's request in Schedule → Requests. Michelle's Meetings shows it confirmed, with an Inbox notice.
+7. **Availability**: "Block Friday afternoon" gives a card, which Sophie approves (R26). Michelle's free times no longer include it.
+8. **Overview**: My clients → Michelle → *Ask for an overview*. The overview shows transaction insights and her topics (home loan, confirmed), and every line is cited.
+9. **Brief** (needs 5a): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available.
+10. **Reply**: Ticket inbox → one of Michelle's requests → *Draft a reply* → edit → tick → *Approve and send*.
+11. **Consent change**: as Michelle, open Data sharing → *What Sophie sees* and withdraw the grant. Once batches `36`–`40` (consent v2) are on hosted, she switches off the transaction insights and chat topics cards instead.
+12. **The gap**: as Sophie, open Michelle's overview again.
+    - Transaction insights and chat topics are listed as not shared.
+    - Inferred topics are deleted; the topic she shared herself stays.
+    - Owner: run `34` again to restore the grant.
 
 ## Set up on the hosted project
 

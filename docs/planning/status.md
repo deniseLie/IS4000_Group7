@@ -45,6 +45,24 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Run the 10 test cases** and record the results (F22 evidence).
 - **Assign owners** in the backlog and in `test-cases.md`.
 
+## Done on 5 Nov (RM copilot build plan 2a–4 and 5b; migrations 0106–0108 on hosted)
+
+- **Meeting requests (2a):** the client requests a meeting, withdraws it or answers a counter, in chat or on Meetings. Sophie accepts, proposes a time or declines from Schedule or the copilot. The `care` flag is set from her messages.
+- **No Security agent (2b):** urgent card cases get fixed steps, plus one urgent request to the RM when she confirms.
+- **RM copilot (3a, 3b):** three RM agents split by data (Client, Requests, Calendar) with one bounded loop and full tracing. A priority score in code (`services/rm/priority.py`) ranks Today, *Plan my day* and `priorities`.
+- **Talking points (4, 0108):** topics are inferred from her chats only under her `chat_topics` grant, or come from her through *Let her know*. Data sharing is back in the client view.
+- **Consent v2 (6a, 6b, 6d–6f):** each category can have a scope and an end, and topics can be deleted with Undo. Also built: an access log, RM asks to share, *Delete all my data*, and share switches on the meeting request card (0109, 0110, 0112–0114, `relationship/v7`). Checked natively only. Hosted batches `36`–`40` were applied on 5 Nov 2026. On hosted, only the two-argument `offer_group_confirm` has been exercised so far, by C11 and C11b.
+- **Evaluation (5b):** on the hosted project, safety 8/8, planner 11/16, RM QA1 16/17 (R24–R27 all pass), graph 3/5 and client QA1 10/16. The consent step was rehearsed twice. Results, transport and failures: [evaluation README §8](../evaluation/README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
+- **Still open:**
+  - 5a: waits for the meeting side's `prepare`/`status`;
+  - the planner links for C24–C26;
+  - C28's fee-waiver handoff;
+  - RM usefulness ratings from teammates;
+  - phase 4's done-when steps in the browser on hosted;
+  - the full copilot demo twice in a row (needs 5a);
+  - 6c transcript revoke (with the meeting side);
+  - applying batches `36`–`40` on hosted, then re-running the consent cases and the demo's consent step on v2.
+
 ## Done on 4 Nov (v5 orchestrator, build plan phases 1–9; migrations 0100–0101)
 
 - **Agents and graph:** one `AgentSpec` per agent with default reads per intent and a bounded tool loop only for open questions; planner → agents in parallel → gather → compose, or planner → act → compose for a Confirm/Cancel turn. Confirmations are chat turns; there is no pause.

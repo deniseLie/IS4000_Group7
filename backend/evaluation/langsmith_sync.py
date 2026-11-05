@@ -40,7 +40,7 @@ DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
 EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
-          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','plan')
+          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','plan','offer')
 OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','backlog','owner','manual_reason','legacy_id','pattern','variant_of')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
 NODES=('planner','agent','gather','act','compose')
@@ -90,7 +90,7 @@ def to_example(dataset,case):
     name=f'{dataset}/{case["id"]}'
     if 'turns' in case:  # QA1: a persona's whole conversation (typed messages, taps, forms, uploads)
         inputs={'turns':case['turns'],'persona':case['persona'],'mode':'public' if case['persona']=='guest' else 'personal'}
-        inputs.update({k:case[k] for k in ('context','intent','ticket_selection') if k in case})
+        inputs.update({k:case[k] for k in ('context','intent','ticket_selection','setup_turns') if k in case})  # setup_turns: played first, not scored (C11b)
         if 'trajectory_v5' in case:check_trajectory(name,case,V4_NODES,V4_AGENTS);check_v5(name,case)
         else:check_trajectory(name,case)
         if case.get('fault'):inputs['fault']=case['fault']

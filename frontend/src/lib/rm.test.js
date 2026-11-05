@@ -246,3 +246,19 @@ test('the Calendar agent’s availability card becomes the Schedule page’s cal
   assert.equal(sent[0][2].reason,'Unavailable');
   assert.equal(REPORT_TITLES.decide_request,'Answer a meeting request');assert.equal(REPORT_TITLES.open,'From your records');
 });
+
+test('the ask card sends a reason code, the meeting only for meeting prep, and says nothing is shared yet',async()=>{
+  const {askBody,askNotice,askReasons}=await import('./rm.js');
+  const card={customer_id:1002,client:'Michelle Ng (DEMO)',category:'transaction_insights',category_label:'Transaction insights',reason:'meeting_prep',
+    meeting_id:'00000000-0000-4000-8000-000000000001',meeting_when:'Thu 19 Nov 2026, 10:00 am'};
+  assert.deepEqual(askBody('k1',card,'meeting_prep'),{request_key:'k1',customer_id:1002,category:'transaction_insights',reason:'meeting_prep',meeting_id:card.meeting_id});
+  assert.equal(askBody('k1',card,'review').meeting_id,null);
+  assert.deepEqual(askReasons(card).map(([k])=>k),['meeting_prep','review','advice']);
+  assert.deepEqual(askReasons({...card,meeting_id:null}).map(([k])=>k),['review','advice']);  // no meeting: no meeting-prep reason
+  assert.equal(askNotice({created:true,replayed:false,ask:{reference:'TCK-000123',lapses_sgt:'Thu 19 Nov 2026, 9:00 am'}},card),
+    'Michelle Ng gets an Inbox notice and request TCK-000123. Nothing is shared until they switch it on; the request lapses on Thu 19 Nov 2026, 9:00 am.');
+  assert.match(askNotice({created:true,replayed:true,ask:{reference:'TCK-000123',lapses_sgt:'x'}},card),/^Already recorded\. /);
+  assert.equal(askNotice({created:false,duplicate:{lapses_sgt:'Fri 20 Nov 2026, 9:00 am'}},card),
+    'You already asked Michelle Ng to share transaction insights. The request lapses on Fri 20 Nov 2026, 9:00 am.');
+  assert.match(askNotice({created:false,already_shared:true},card),/already shares transaction insights/);
+});

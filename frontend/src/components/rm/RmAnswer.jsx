@@ -3,6 +3,7 @@ import Icon from '../Icon';
 import DraftReview from './DraftReview';
 import DocumentationReview from './DocumentationReview';
 import {AvailabilityReview,DecisionReview} from './CalendarReview';
+import ConsentAskReview from './ConsentAskReview';
 import {KIND_LABELS,REPORT_TITLES,allDrafts,reportText,validationNote} from '../../lib/rm';
 import {formatDateTime} from '../../lib/format';
 
@@ -94,6 +95,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       onRecap={onAsk?(client=>onAsk(`Draft a recap message to ${client||'the client'} of our conversation`)):null}/>}
     {reply.decision&&<DecisionReview card={reply.decision} token={token} latest={latest}/>}
     {reply.availability&&<AvailabilityReview card={reply.availability} token={token} latest={latest}/>}
+    {(reply.consent_asks||[]).map(card=><ConsentAskReview key={`${card.customer_id}-${card.category}`} card={card} token={token} latest={latest}/>)}
     {validationNote(reply.validation)&&<p className="rm-validation" data-testid="rm-validation"><Icon name="shield"/>{validationNote(reply.validation)}</p>}
     {reply.notice&&<p className="rm-validation"><Icon name="info"/>{reply.notice}</p>}
     {sources.length>0&&<section className="rm-sources" data-testid="rm-sources">

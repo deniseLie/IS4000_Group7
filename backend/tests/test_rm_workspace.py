@@ -401,3 +401,19 @@ def test_the_today_page_gets_one_ranked_list_with_its_reasons_from_her_book(data
     assert 'Renewing my fixed deposit' not in got.text and 'purpose' not in got.text
     customer=client.get('/rm/priorities',headers=bearer(sub=str(uuid5(NAMESPACE_URL,'demobank-test-persona:1002'))))
     assert customer.status_code==403 and code(customer)=='rm_only'
+
+
+def test_the_copilots_ask_card_is_recorded_once_through_its_route_and_outside_the_book_is_refused(database: 'Connection[SqlRow]',sophie: dict) -> None:
+    """Consent v2 (0113): "Ask the client to share", approved by the RM. One ask per card id; nothing is shared by it."""
+    body={'request_key':str(uuid4()),'customer_id':1007,'category':'transaction_insights','reason':'review'}
+    first=client.post('/rm/consent-requests',json=body,headers=sophie)
+    again=client.post('/rm/consent-requests',json=body,headers=sophie)
+    assert first.status_code==again.status_code==200 and (first.json()['replayed'],again.json()['replayed'])==(False,True)
+    assert first.json()['ask']['status']=='open' and first.json()['ask']['reference'].startswith('TCK-')
+    assert database.execute('select count(*) from consent.asks where customer_id=1007').fetchone()==(1,)
+    outside=client.post('/rm/consent-requests',json={**body,'request_key':str(uuid4()),'customer_id':1001},headers=sophie)
+    assert outside.status_code==403 and code(outside)=='rm_not_in_book'
+    for bad in [{'reason':'meeting_prep'},{'category':'profile_basics'},{'reason':'because'}]:
+        assert client.post('/rm/consent-requests',json={**body,'request_key':str(uuid4()),**bad},headers=sophie).status_code==422
+    customer=client.post('/rm/consent-requests',json=body,headers=bearer(sub=str(uuid5(NAMESPACE_URL,'demobank-test-persona:1002'))))
+    assert customer.status_code==403 and code(customer)=='rm_only'

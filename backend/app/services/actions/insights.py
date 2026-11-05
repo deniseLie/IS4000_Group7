@@ -1,9 +1,13 @@
-"""Typed talking-point executor inputs; delete, mute, resume and share run in SQL (migration 0108)."""
+"""Typed talking-point executor inputs; delete, mute, resume and share run in SQL (migration 0108), restore since 0110."""
 from app.schemas.contracts import ActionCommand
 from app.schemas.talking_points import InsightPointTarget,InsightResumeTarget,InsightShareTarget,InsightTopicTarget
 
 
 def delete(command: ActionCommand) -> InsightPointTarget:
+    return InsightPointTarget.model_validate(command.target)
+
+
+def restore(command: ActionCommand) -> InsightPointTarget:
     return InsightPointTarget.model_validate(command.target)
 
 

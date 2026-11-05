@@ -8,13 +8,13 @@ const group=(extra={})=>({offer_group:id(1),expires_at:'2026-11-04T12:30:00Z',
 
 test('an offer group is read strictly and copied, never trusted as given',()=>{
   const value=group();
-  assert.deepEqual(parseOffer(value),value);
+  assert.deepEqual(parseOffer(value),{...value,offers:[{...value.offers[0],optional:false}]});  // saved before 0114: no switches
   assert.equal(parseOffer(null),null);
   assert.equal(parseOffer(undefined),null);
   for(const bad of [{offers:[]},{offer_group:'x'},{expires_at:'soon'},{offers:[{...value.offers[0],summary:' '}]},
     {offers:[value.offers[0],value.offers[0]]},{offers:Array.from({length:11},(_,i)=>({...value.offers[0],command_id:id(10+i)}))}])
     assert.throws(()=>parseOffer({...value,...bad}));
-  assert.deepEqual(Object.keys(parseOffer({...value,offers:[{...value.offers[0],target:{secret:1}}]}).offers[0]),['command_id','type','summary','expires_at']);
+  assert.deepEqual(Object.keys(parseOffer({...value,offers:[{...value.offers[0],target:{secret:1}}]}).offers[0]),['command_id','type','summary','expires_at','optional']);
 });
 
 test('an offer is open until it expires or she replies after it',()=>{

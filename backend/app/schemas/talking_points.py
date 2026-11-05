@@ -1,6 +1,6 @@
 """Talking points (migration 0108; RM copilot build plan phase 4). The client's side of the pipeline: her ledger actions
-(insight.delete, insight.mute and insight.resume run at once with a receipt; insight.share is offered in chat and waits
-for her yes), what she sees under Data sharing > What Sophie sees (her points with her own quotes) and the status both
+(insight.delete, insight.mute and insight.resume run at once with a receipt; since 0110 a delete is undone within 7 days
+by insight.restore; insight.share is offered in chat and waits for her yes), what she sees under Data sharing > What Sophie sees (her points with her own quotes) and the status both
 lanes check first. The RM side only ever gets schemas/meetings.TalkingPoint (list values, dates and ids)."""
 from typing import Annotated,Literal
 from uuid import UUID
@@ -47,6 +47,14 @@ class InsightDeleteResult(BaseModel):
     point_id: UUID
     topic: TalkingTopic
     status: Literal['deleted']
+    restore_until: AwareDatetime | None=None  # 0110: Undo until then; purged after
+
+
+class InsightRestoreResult(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    point_id: UUID
+    topic: TalkingTopic
+    status: Literal['restored']
 
 
 class InsightMuteResult(BaseModel):
@@ -92,9 +100,20 @@ class Pause(BaseModel):
     until: AwareDatetime
 
 
+class RemovedTalkingPoint(TalkingPoint):
+    """A point she removed (or that went when she withdrew or narrowed chat topics, or muted it), until it is purged 7
+    days later (0110). Undo only for her own Delete."""
+    model_config=ConfigDict(extra='ignore')
+    removed_at: AwareDatetime
+    reason: Literal['client','muted','chat_topics_revoked','scope_narrowed']
+    restore_until: AwareDatetime | None
+    can_restore: StrictBool
+
+
 class MyTalkingPoints(BaseModel):
     model_config=ConfigDict(extra='ignore')
     points: list[MyTalkingPoint]=Field(max_length=4)
+    removed: list[RemovedTalkingPoint]=Field(default_factory=list,max_length=4)
     muted: list[TalkingTopic]
     pause: Pause | None
     chat_topics: StrictBool

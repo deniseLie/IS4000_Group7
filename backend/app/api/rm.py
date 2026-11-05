@@ -24,7 +24,7 @@ from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event,request_facts,start_trace
 from app.schemas.contracts import RequestContext
-from app.schemas.rm import (Block,ClientMessage,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
+from app.schemas.rm import (Block,ClientMessage,ConsentAsk,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
     ServiceRequestDraft,ServiceRequestSubmit,TasksApproval,TaskStatus,WorkingHours)
 from app.services import audit,customer_data
 from app.services.llm_gateway import LLMError
@@ -211,6 +211,12 @@ async def shared_topics(request: Request,caller: Caller=Depends(rm_caller)):
 @router.post('/meeting-requests/{request_id}/decide')
 async def decide_meeting_request(request_id: UUID,body: MeetingDecision,request: Request,caller: Caller=Depends(rm_caller)):
     return await run(lambda:records.decide_meeting_request(caller.ctx,request_id,body),request,caller,'rm.meeting_request_decide')
+
+# Consent v2 (0113, build plan 6d): the copilot's "Ask the client to share" card, approved by the RM. It opens a request
+# waiting on the client and an Inbox notice; nothing is shared until she switches it on in Data sharing.
+@router.post('/consent-requests')
+async def ask_consent(body: ConsentAsk,request: Request,caller: Caller=Depends(rm_caller)):
+    return await run(lambda:records.ask_consent(caller.ctx,body),request,caller,'rm.ask_consent')
 
 @router.post('/appointments/{appointment_id}/reschedule')
 async def reschedule_meeting(appointment_id: UUID,body: MeetingMove,request: Request,caller: Caller=Depends(rm_caller)):

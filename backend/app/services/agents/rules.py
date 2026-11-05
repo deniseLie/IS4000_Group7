@@ -12,7 +12,7 @@ from app.schemas.agents import Evidence
 from app.schemas.chat import Message, RecordSelection
 from app.schemas.contracts import AgentOutput, AgentResult, AgentSpec, OfferProposal, PlanTask, RequestContext, Task
 from app.services import client_intents, compliance_selection, prompts, rm_handover
-from app.services.agents import (account_answers, card_answers, client_guidance, compliance, document, meeting_answers,
+from app.services.agents import (account_answers, card_answers, client_guidance, compliance, consent_answers, document, meeting_answers,
     relationship, relationship_records, request_status_answers, retail, retail_checks, retail_records, runner, transaction_answers)
 from app.services.agents.answer import WITHHELD
 
@@ -131,11 +131,14 @@ async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContex
             result, evidence = found
             return out(spec, task, result, evidence, None)
     public, current = await knowledge(task, ctx), as_v4(ctx, 'relationship')
+    if ctx.principal.kind == 'customer' and (change := await consent_answers.respond(task.id, question, current)) is not None:
+        return out(spec, task, change.result, change.evidence, None, proposals=change.proposals)
     records = await relationship_records.load(current)
     if (meeting := await meeting_answers.respond(task.id, question, history, records, current, task.intent)) is not None:
         evidence = [*public, *relationship.evidence_for(records)]
+        shares = await consent_answers.meeting_shares(task.id, current) if meeting.proposal else []
         return out(spec, task, meeting.result, evidence, prompts.load('relationship', relationship.PROMPT)['id'],
-            proposals=[meeting.proposal] if meeting.proposal else [])
+            proposals=[meeting.proposal, *shares] if meeting.proposal else [])
     result, evidence, prompt_id = await relationship.respond(shim(task, 'relationship'), history, language, current, public, records)
     return out(spec, task, result, evidence, prompt_id)
 

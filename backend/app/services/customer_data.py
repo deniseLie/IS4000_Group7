@@ -15,6 +15,7 @@ from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,Cus
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
 from app.schemas.appointments import AppointmentRecord
 from app.schemas.consent_actions import ConsentRegistry
+from app.schemas.consent_sharing import AccessLogRow,ConsentAskRecord,ConsentSharing
 from app.schemas.agendas import AgendaRegistry
 from app.schemas.relationship_intro import Introduction,MeetingOption
 from app.schemas.documents import DocumentRecord
@@ -37,6 +38,9 @@ REQUESTS=TypeAdapter(CustomerEnvelope[Annotated[list[RelationshipRequest],Field(
 SLOTS=TypeAdapter(CustomerEnvelope[Annotated[list[AvailableSlot],Field(max_length=20)]])
 APPOINTMENTS=TypeAdapter(CustomerEnvelope[Annotated[list[AppointmentRecord],Field(max_length=200)]])
 CONSENTS=TypeAdapter(CustomerEnvelope[ConsentRegistry])
+SHARING=TypeAdapter(CustomerEnvelope[ConsentSharing])
+ASKS=TypeAdapter(CustomerEnvelope[Annotated[list[ConsentAskRecord],Field(max_length=50)]])
+ACCESS_LOG=TypeAdapter(CustomerEnvelope[Annotated[list[AccessLogRow],Field(max_length=200)]])
 AGENDAS=TypeAdapter(CustomerEnvelope[AgendaRegistry])
 INTRODUCTION=TypeAdapter(CustomerEnvelope[Introduction])
 MEETING_OPTIONS=TypeAdapter(CustomerEnvelope[Annotated[list[MeetingOption],Field(max_length=3)]])
@@ -185,6 +189,25 @@ async def get_meeting_requests(ctx: RequestContext) -> ToolResult:
 
 async def get_consent_records(ctx: RequestContext) -> ToolResult:
     return _result(await _read('consent.records','customer_read_consent_records',{},CONSENTS,ctx))
+
+
+async def get_consent_sharing_record(ctx: RequestContext) -> CustomerEnvelope[ConsentSharing]:
+    """Consent v2 (0109): her card per category, her open accounts, her RM and next meeting."""
+    return await _read('consent.sharing','customer_read_consent_sharing',{},SHARING,ctx)
+
+
+async def get_consent_sharing(ctx: RequestContext) -> ToolResult:
+    return _result(await get_consent_sharing_record(ctx))
+
+
+async def get_consent_asks(ctx: RequestContext) -> ToolResult:
+    """0113: what her RM asked her to share, newest first (at most 50)."""
+    return _result(await _read('consent.asks','customer_read_consent_asks',{},ASKS,ctx))
+
+
+async def get_consent_access_log(ctx: RequestContext) -> ToolResult:
+    """0112: who looked at what she shares, newest first (ids, codes and dates only)."""
+    return _result(await _read('consent.access_log','my_consent_access_log',{'p_limit':50},ACCESS_LOG,ctx))
 
 
 async def get_agendas(ctx: RequestContext) -> ToolResult:

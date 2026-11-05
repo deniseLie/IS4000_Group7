@@ -9,6 +9,13 @@ import tempfile
 # Agents run in parallel (Send x N); a few CLI turns at once, the rest wait instead of failing.
 _slots=asyncio.Semaphore(int(os.getenv('CLAUDE_CLI_CONCURRENCY','3')))
 
+def timeout_s():
+    """Seconds one CLI turn may take (CLAUDE_CLI_TIMEOUT_S, default 90); a long RM turn on a slow subscription model may need more."""
+    try:value=float(os.getenv('CLAUDE_CLI_TIMEOUT_S') or 90)
+    except ValueError:value=0
+    if not 0<value<=900:raise RuntimeError('CLAUDE_CLI_TIMEOUT_S must be a number of seconds from 1 to 900')
+    return value
+
 def cli_environment():
     # Never pass OpenRouter/Supabase/Anthropic keys or parent session variables: the CLI signs in with its own login.
     allowed = ('PATH','HOME','USER','LOGNAME','TMPDIR','TMP','TEMP','LANG','LC_ALL',
@@ -36,13 +43,17 @@ def parse_result(output):
     return parsed,tokens
 
 async def answer(prompt, schema, messages):
-    async with _slots:
-        return await _answer(prompt,schema,messages)
+    return await answer_with_model(prompt,schema,messages,os.getenv('CLAUDE_MODEL','haiku'))
 
-async def _answer(prompt, schema, messages):
+async def answer_with_model(prompt, schema, messages, model):
+    """The same isolated turn with an explicit model (the evaluation judge, which must differ from CLAUDE_MODEL)."""
+    async with _slots:
+        return await _answer(prompt,schema,messages,model)
+
+async def _answer(prompt, schema, messages, model):
     binary=shutil.which(os.getenv('CLAUDE_CLI_PATH','claude'))
     if not binary:raise RuntimeError('Claude Code CLI not found; install it and sign in')
-    model=os.getenv('CLAUDE_MODEL','haiku')
+    limit=timeout_s()
     # A new private directory per request, removed even on timeout/failure; the CLI never sees the repository.
     with tempfile.TemporaryDirectory(prefix='demobank-claude-') as folder:
         directory=Path(folder)
@@ -52,7 +63,7 @@ async def _answer(prompt, schema, messages):
             cwd=directory,env=cli_environment(),stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
         try:
-            stdout,_=await asyncio.wait_for(proc.communicate(payload.encode()),timeout=90)
+            stdout,_=await asyncio.wait_for(proc.communicate(payload.encode()),timeout=limit)
         finally:
             if proc.returncode is None:
                 proc.kill()

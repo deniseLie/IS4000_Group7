@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 pytestmark=pytest.mark.skipif(os.getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native temporary PostgreSQL with TEST_DATABASE_LOCAL=1')
 MEI_LING_REQUEST='00000000-0000-4000-8000-100700000071'
 MICHELLE_REQUEST='00000000-0000-4000-8000-100200000071'
-MICHELLE_GRANT='00000000-0000-4000-8000-100200000041'
+MICHELLE_GRANT='00000000-0000-4000-8000-100200000041'  # chat_topics since consent v2 (0109)
+MICHELLE_INSIGHTS_GRANT='00000000-0000-4000-8000-100200000042'
 
 
 def free_times(db: 'Connection[SqlRow]',customer: int=1002,n: int=3,exclude: str|None=None,skip: int=0) -> list[datetime]:
@@ -58,8 +59,10 @@ def events(db: 'Connection[SqlRow]',meeting: str) -> list[tuple]:
 
 
 def test_the_seed_gives_michelle_a_scheduled_home_loan_meeting_and_queues_its_event(database: 'Connection[SqlRow]') -> None:
-    grant=database.execute("select categories from consent.grants where grant_id='00000000-0000-4000-8000-100200000041'").fetchone()
-    assert grant==(['transaction_insights','chat_topics','meeting_recording'],)
+    # 0109: one v2 grant per category (chat topics keeps the 0106 id)
+    grants=database.execute("select grant_id::text,categories,basis from consent.grants where customer_id=1002 and grant_id::text like '00000000-0000-4000-8000-1002000000%%' order by grant_id").fetchall()
+    assert grants==[(MICHELLE_GRANT,['chat_topics'],'consent'),(MICHELLE_INSIGHTS_GRANT,['transaction_insights'],'consent'),
+        ('00000000-0000-4000-8000-100200000043',['meeting_recording'],'notice')]
     status,meeting=database.execute('select status,appointment_id::text from rm.meeting_requests where request_id=%s',(MICHELLE_REQUEST,)).fetchone()
     assert status=='scheduled'
     row=database.execute('select status,format,purpose,topics,extract(isodow from starts_at at time zone %s) from rm.appointments where appointment_id=%s',
@@ -199,7 +202,7 @@ def test_a_client_reads_only_her_own_requests(database: 'Connection[SqlRow]') ->
 def test_gated_readers_return_data_only_under_consent_and_audit_the_grant_and_purpose(database: 'Connection[SqlRow]') -> None:
     as_rm(database)
     shared=database.execute("select public.rm_transaction_insights(1002,'meeting_prep')").fetchone()[0]
-    assert shared['shared'] is True and shared['grant_id']==MICHELLE_GRANT
+    assert shared['shared'] is True and shared['grant_id']==MICHELLE_INSIGHTS_GRANT
     assert set(shared['data'])>={'monthly','card_spending','overseas','large_movements','recurring'} and 'description' not in json.dumps(shared['data'])
     gap=database.execute("select public.rm_transaction_insights(1007,'client_view')").fetchone()[0]
     assert gap['shared'] is False and gap['data'] is None and gap['denied'] is False
@@ -238,7 +241,7 @@ def test_the_demo_reset_seeds_the_meetings_again_from_today(database: 'Connectio
     accepted=decide(database,MEI_LING_REQUEST,'accept',at)['request']['appointment_id']
     database.execute('reset role')
     database.execute('update consent.grants set revoked_at=now() where grant_id=%s',(MICHELLE_GRANT,))
-    assert database.execute('select count(*) from insights.talking_points where customer_id=1002').fetchone()==(0,)  # 0108: withdrawal
+    assert database.execute('select count(*) from insights.talking_points where customer_id=1002 and deleted_at is null').fetchone()==(0,)  # 0108/0110: withdrawal
     seeded=database.execute('select appointment_id from rm.meeting_requests where request_id=%s',(MICHELLE_REQUEST,)).fetchone()[0]
     others=database.execute('select count(*) from rm.appointments where customer_id=1002 and appointment_id<>%s',(seeded,)).fetchone()[0]
     first=database.execute('select rm.reset_meeting_demo()').fetchone()[0]

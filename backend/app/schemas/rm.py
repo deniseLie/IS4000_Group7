@@ -157,6 +157,21 @@ class MeetingDecision(Model):
         return self
 
 
+class ConsentAsk(Model):
+    """Ask the client to share a category she has not shared (0113 rm_ask_consent), approved on the copilot's card. The
+    reason is a code with fixed wording for her; request_key is made once per card, so a retry records one ask."""
+    request_key: UUID
+    customer_id: int=Field(gt=0)
+    category: Literal['transaction_insights','chat_topics']
+    reason: Literal['meeting_prep','review','advice']
+    meeting_id: UUID|None=None
+
+    @model_validator(mode='after')
+    def _meeting(self):
+        if self.reason=='meeting_prep' and self.meeting_id is None:raise ValueError('meeting_prep needs the meeting')
+        return self
+
+
 class MeetingMove(Model):
     """Move an upcoming confirmed meeting (0106 rm_meeting_reschedule); change_id makes a retry record once."""
     change_id: UUID

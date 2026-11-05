@@ -139,6 +139,25 @@ test('chat to form: explicit end-date correction replaces the previous date',()=
   assert.equal(prefill.details.until,'2028-12-19');
 });
 
+test('chat to form: C04 asks for all details at once and the ready reply names the year she left out',()=>{
+  const asked='Your requested new limit is SGD 30,000. You mentioned travel as the reason. To prepare your card limit request I need a few more details. '
+    +'Which card is this for: Signature Card ending 7310, Travel Card ending 5592? Should it be temporary or permanent? If temporary, until what date (up to 90 days)?';
+  assert.equal(isLimitWorkflowReply({role:'assistant',sections:[{domain:'retail'}],content:'Still needed for your card limit request: What is the reason for the change?'}),true);
+  const turns=[['user','Can you increase my credit card limit to 30k for my Japan trip?'],['assistant',asked],
+    ['user','Signature Card 7310, temporary until 30 Nov']];
+  const before=limitRequestPrefill(turns.map(([role,content])=>({role,content})));
+  assert.equal(before.details.until,undefined);
+  assert.match(before.summary,/year not confirmed/);
+  const ready='Request ready for your review: temporary change to SGD 30,000 on your Signature Card ending 7310 until 30 Nov 2026 for your travel. '
+    +'Tap “Raise a card limit request” to review any remaining details and submit it yourself.';
+  const prefill=limitRequestPrefill([...turns,['assistant',ready]].map(([role,content])=>({role,content})));
+  assert.deepEqual(prefill.details,{new_limit:'30000',duration:'temporary',until:'2026-11-30',reason:'Travel'});
+  assert.equal(prefill.selectedCardLabel,'Signature Card');
+  // a ready reply for another date never fills hers
+  const other=limitRequestPrefill([...turns,['assistant',ready.replace('30 Nov','29 Nov')]].map(([role,content])=>({role,content})));
+  assert.equal(other.details.until,undefined);
+});
+
 test('chat to form: unrelated topic does not contaminate saved card request',()=>{
   const prefill=limitRequestPrefill(limitTurns([['user','2028'],['user','What is my account balance?'],['assistant','Please sign in'],['user','20 December']]));
   assert.equal(prefill.details.until,undefined);

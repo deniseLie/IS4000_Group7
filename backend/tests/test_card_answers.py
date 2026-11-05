@@ -3,7 +3,7 @@ from datetime import datetime,timezone
 import pytest
 from app.schemas.chat import Message
 from app.schemas.retail import RetailRecords
-from app.services import guardrail,typos
+from app.services import guardrail,limit_context,typos
 from app.services.agents import card_answers
 from app.services.orchestrator import simple_task
 
@@ -150,6 +150,61 @@ def test_a_limit_the_bank_would_refuse_is_explained_before_the_form(question: st
     result=ask(question)
     assert result is not None and result.status=='needs_clarification'
     assert 'steps of SGD 1,000' in result.text and offered in result.text and 'Request ready' not in result.text
+
+
+FIFTH=RECORDS.model_copy(update={'captured_at':datetime(2026,11,5,2,tzinfo=timezone.utc)})  # 5 Nov 2026 in Singapore
+
+
+def chat(*user: str,records=FIFTH) -> list:
+    """Her messages one by one, each answered with the rules reply before the next (C04 style)."""
+    history,results=[],[]
+    for text in user:
+        history.append(Message(role='user',content=text))
+        results.append(result:=card_answers.respond('t1',text,history,records))
+        history.append(Message(role='assistant',content=result.text))
+    return results
+
+
+def test_c04_asks_for_every_missing_detail_at_once_then_is_ready() -> None:
+    first,second=chat('Can you increase my credit card limit to 30k for my Japan trip?','Signature Card 7310, temporary until 30 Nov')
+    assert first.status=='needs_clarification' and first.question==first.text
+    # amount and reason she gave are kept; card and duration with the end date are asked in the same reply
+    assert 'SGD 30,000' in first.text and 'travel as the reason' in first.text and 'reason for the change' not in first.text
+    assert 'Which card is this for: Signature Card ending 7310, Travel Card ending 5592?' in first.text and 'temporary or permanent' in first.text
+    assert 'until what date (up to 90 days)' in first.text and 'already has a limit' not in first.text
+    assert second.status=='ok' and second.text.startswith('Request ready for your review: temporary change to SGD 30,000 on your '
+        'Signature Card ending 7310 until 30 Nov 2026 for your travel.') and 'Raise a card limit request' in second.text
+    # the QA1 case's own reply checks hold for this reply ("no limit has been changed" is not a claim that it changed)
+    import json,pathlib,re
+    case=next(c for c in json.loads((pathlib.Path(__file__).parents[1]/'evaluation/qa1_client_cases.json').read_text(encoding='utf-8')) if c['id']=='C04')
+    assert all(re.search(p,second.text) for p in case['reply_has']) and not any(re.search(p,second.text) for p in case['reply_lacks'])
+    assert re.search(case['reply_lacks'][1],'Your limit has been increased to SGD 30,000.')
+
+
+def test_a_partial_answer_is_asked_only_for_what_is_still_missing() -> None:
+    first,second,third,fourth=chat('i wan to raise my card limit to 15000','travel','permanent',"my daughter's wedding")
+    assert all(item in first.text for item in ('Which card is this for','temporary or permanent','reason for the change'))
+    assert second.text=='Still needed for your card limit request: Should it be temporary or permanent? If temporary, until what date '\
+        '(up to 90 days)? What is the reason for the change?'   # "travel" after "Which card" names the Travel Card, not a reason
+    assert third.text=='Still needed for your card limit request: What is the reason for the change?'
+    assert fourth.status=='ok' and 'permanent change to SGD 15,000 on your Travel Card ending 5592.' in fourth.text
+    assert 'for your travel' not in fourth.text
+
+
+def test_a_temporary_end_date_must_be_within_90_days_and_real() -> None:
+    _,late,fixed,_=chat('I want to increase my card limit to 25000','the signature card, temporary until 20 Mar','until 20 Jan','renovation')
+    assert 'from tomorrow up to 90 days, so it can end on 3 Feb 2027 at the latest' in late.text and 'Signature' not in late.text
+    assert fixed.text=='Still needed for your card limit request: What is the reason for the change?'
+    assert chat('I want to increase my card limit to 25000','the signature card, temporary until 20 Mar','until 20 Jan','renovation')[-1].text\
+        .startswith('Request ready for your review: temporary change to SGD 25,000 on your Signature Card ending 7310 until 20 Jan 2027.')
+    _,bad=chat('increase my credit limit to $20k','Travel Card, temporary, 31 Feb')
+    assert '31 Feb is not a date' in bad.text and 'Request ready' not in bad.text
+    # a duration is not a reason, and stopping ends the intake
+    first,=chat('I need a temporary limit increase on my travel card for a month')
+    assert 'What new credit limit' in first.text and 'reason for the change' in first.text and 'Which card' not in first.text
+    asked=[Message(role='user',content='I want to increase my card limit to 25000'),Message(role='assistant',content=first.text)]
+    assert limit_context.active(asked+[Message(role='user',content='a family emergency')])
+    assert not limit_context.active(asked+[Message(role='user',content='never mind')])
 
 
 def test_asking_for_the_current_limit_is_pointed_out() -> None:

@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {supabase} from '../lib/supabase';
 import {createActionCase,proposeAction} from '../lib/actions';
-import {loadTalkingPoints,pauseNote,TOPICS} from '../lib/talkingPoints';
+import {loadTalkingPoints,pauseNote,REMOVED_REASONS,TOPICS} from '../lib/talkingPoints';
 import {formatDate,formatDateTime} from '../lib/format';
 
 // Data sharing → What <RM> sees (0108): each topic exactly as her relationship manager reads it, a Pending badge during
@@ -58,10 +58,14 @@ export default function TalkingPoints({rmName,onReviewActions}) {
           <ul>{point.evidence.map(q=><li key={q.recorded_at+q.quote}>“{q.quote}” <small>{formatDate(q.recorded_at)}</small></li>)}</ul>
           <p className="page-note">Only you can see your words here. {rm[0].toUpperCase()+rm.slice(1)} sees the line above.</p></details>}
         <div className="panel-actions">
-          <button type="button" className="bank-chat-logout" data-testid="talking-point-delete" disabled={off} onClick={()=>act('insight.delete',{point_id:point.point_id},`${TOPICS[point.topic]} was deleted.`)}>Delete</button>
+          <button type="button" className="bank-chat-logout" data-testid="talking-point-delete" disabled={off} onClick={()=>act('insight.delete',{point_id:point.point_id},`${TOPICS[point.topic]} was deleted. ${rm[0].toUpperCase()+rm.slice(1)} no longer sees it. You can undo this for 7 days.`)}>Delete</button>
           {point.origin==='inferred'&&<button type="button" className="bank-chat-logout" data-testid="talking-point-mute" disabled={off} onClick={()=>act('insight.mute',{topic:point.topic},`${TOPICS[point.topic]} won’t be suggested again.`)}>Don’t suggest this again</button>}
         </div>
       </li>)}</ul>
+      {data.removed.length>0&&<><h3>Removed</h3><ul className="relationship-list" data-testid="talking-point-removed">{data.removed.map(p=><li key={p.point_id} data-topic={p.topic}>
+        {TOPICS[p.topic]} · {REMOVED_REASONS[p.reason]} · <small>{formatDate(p.removed_at)}. Gone for good after 7 days.</small>{' '}
+        {p.can_restore&&<button type="button" className="bank-chat-logout" data-testid="talking-point-undo" disabled={off}
+          onClick={()=>act('insight.restore',{point_id:p.point_id},`${TOPICS[p.topic]} is back.`)}>Undo (until {formatDateTime(p.restore_until)})</button>}</li>)}</ul></>}
       {data.muted.length>0&&<><h3>Not suggested</h3><ul className="relationship-list" data-testid="talking-point-muted">{data.muted.map(topic=><li key={topic}>{TOPICS[topic]}{' '}
         <button type="button" className="bank-chat-logout" disabled={off} onClick={()=>act('insight.resume',{topic},`${TOPICS[topic]} can be suggested again.`)}>Resume</button></li>)}</ul></>}
     </>}

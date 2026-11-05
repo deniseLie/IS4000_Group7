@@ -177,6 +177,18 @@ Sophie learns what Michelle is planning without ever seeing her chat. Only a top
 
 Demo (after `34_reset_meeting_demo.sql`): Michelle already has an inferred *Home loan · planning · within 12 months* point, past its hold, with her quote. Tan Mei Ling has an *Investments* point she shared herself, without the consent. Tests: `test_talking_points.py`, native `test_talking_points_db.py`, `talkingPoints.test.js`; evaluation `python -m evaluation.talking_points --live` (61 labelled messages; see `docs/prompt-log/talking_points/v1.md`).
 
+## What she shares with her RM (consent v2, build plan phase 6, migrations 0109–0114)
+
+**Data sharing** (account menu) has one card per category her RM can see only with her consent: *Transaction insights* (all her accounts and cards, or the accounts she picks with no card spending, for the last 3, 6 or 12 months) and *Topics from your chats* (the topic areas she picks; health, family and legal matters are never picked up). Each card shows what is shared, until when (a date at most 12 months away, or until her next meeting ends) and a switch. Switching on shows the exact line her RM will see and asks her to confirm; switching off first says what changes at once (for chat topics, the inferred topics and her words are deleted at once; topics she shared herself stay). Each change is one ledger action with a receipt in Activity. Meeting recording is on for every confirmed meeting under the meeting notice and cannot be switched off here; profile, products, review status and her requests and meetings are listed as *Always shared*, each with its reason. A dated grant sends a notice seven days before it ends.
+
+- **Asks from her RM**: when Sophie asks her to share a category (with a fixed reason: to prepare for a meeting, for her review, or to suggest options), the card shows the ask with *Choose what to share* or *Not now*. Not now is recorded and Sophie sees it; an ask she does not answer closes after 14 days.
+- **Who looked and when**: every RM read of what she shares, newest first, in plain words built from ids and codes (who, what, why, and whether it was shared, not shared or refused).
+- **Topics**: *What Sophie sees* (below) keeps Delete, and a deleted topic can be restored with **Undo** for 7 days, after which a worker deletes it for good.
+- **Delete all my data**: sends a request to the data protection team, who decide what the law requires the bank to keep and reply within 10 business days. Nothing is deleted by the button itself.
+- **In the chat**: "share my chat topics with Sophie for 3 months", "stop sharing my transactions" and "delete the home loan topic" each get one offer built from her records (no model) that she confirms like any other. A meeting request drafted in the chat lists, under it, a switch per category she does not share yet ("Also share your transaction insights with Sophie until this request is answered"); the switches are off unless she turns them on, and a typed yes sends the request only.
+
+Tests: native `test_consent_v2.py`, unit `test_consent_chat.py`, `consentSharing.test.js`, `offers.test.js`.
+
 ## Statements (CR15)
 
 **Overview → Statements**: she picks the account or card and one of the last 3 full months, then *View statement* opens a statement with opening and closing balance, money in and out, and each transaction with a running balance. *Print or save as PDF* prints only the statement. Pending payments are listed as not included. Balances are worked back from today's balance, so they always agree with Overview.

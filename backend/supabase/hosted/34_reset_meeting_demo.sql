@@ -11,6 +11,9 @@
 -- * Mei Ling's open fixed deposit request for the first free Monday and Tuesday at 16:30.
 -- Since 0108 (batch 35) it also resets their talking points: Michelle's inferred home loan topic already past its 24-hour
 -- hold, with her quote, and Mei Ling's investments topic she shared herself (no grant), with its Today notice.
+-- Since 0109 (batch 36) Michelle's grant is three consent v2 grants to Sophie (chat topics in every topic area and
+-- transaction insights for all accounts and 6 months, both for 180 days; meeting recording under the notice), and since
+-- 0113 (batch 39) it also removes the demo's RM asks with their tickets and notices.
 -- Other meetings, records, chats and the audit log stay (the deletions are themselves audited). Safe to run more than once.
 begin;
 

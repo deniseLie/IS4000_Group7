@@ -21,7 +21,8 @@ TOOLS: dict[AgentName, tuple[str, ...]] = {
     'document': ('documents.precheck','compliance.workspace'),
     'relationship': ('kb.search','customer.get_profile','rm.get_assignment','rm.get_introduction','requests.list',
         'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create',
-        'meeting_requests.list'),  # agents/meeting_answers counts her open meeting requests before offering another (0106 allows 3)
+        'meeting_requests.list',  # agents/meeting_answers counts her open meeting requests before offering another (0106 allows 3)
+        'consent.sharing','insights.read'),  # consent v2 (6e): agents/consent_answers reads her cards and topics to offer a change
 }
 
 # Model-facing tool -> the permissions its service read checks. document_templates is fixed public configuration.
@@ -118,7 +119,8 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
     loop_tools=frozenset({'my_rm','my_appointments','free_slots','my_consents','request_categories','knowledge_search'}),
     external=frozenset({'public_holidays'}),imports=frozenset({'due_dates'}),
     offers=frozenset({'meeting.request','appointment.cancel','handoff.create','tickets.follow_up',
-        'consent.grant','consent.revoke','rm.share_summary','insight.share'}))  # insight.share: a compose rule, never the model (0108)
+        'consent.grant','consent.revoke','rm.share_summary','insight.share',  # insight.share: a compose rule, never the model (0108)
+        'insight.delete'}))  # consent v2 (6e): rules in agents/consent_answers offer consent.grant/revoke and insight.delete
 
 # RM agents (architecture §5.6.1; build plan 3a): row scope is the RM's own book. Each owns one data class (RM_OWNER) and is
 # the only proposer of one kind of change. A known intent runs the reads its handler in services/rm/handlers.py makes

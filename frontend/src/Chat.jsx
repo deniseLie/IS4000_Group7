@@ -30,7 +30,7 @@ import LockedPage from './components/LockedPage';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffMessage, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
-import {OFFER_REPLIES,fill,offerState,parseOffer,placeholders} from './lib/offers';
+import {OFFER_REPLIES,fill,offerReply,offerState,parseOffer,placeholders} from './lib/offers';
 import {createActionCase,proposeAction,rejectAction} from './lib/actions';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -342,7 +342,7 @@ export default function Chat({session,onSignIn}) {
   }
   function draft(question) { setInput(question);requestAnimationFrame(()=>composer.current?.focus()); }
   // The offer buttons answer the whole group; the typed reply shown is what the button means.
-  function decideOffer(message,decision) {send(null,OFFER_REPLIES[decision],null,{offer_group:message.offer.offer_group,decision});}
+  function decideOffer(message,decision,on={}) {send(null,OFFER_REPLIES[decision],null,offerReply(message.offer,decision,on));}  // on: her switches (0114)
   function recallSent(e) {  // Up/Down in an empty box (or one still showing a recalled question) steps through sent questions
     const up=e.key==='ArrowUp';if((!up&&e.key!=='ArrowDown')||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.nativeEvent.isComposing)return;
     const box=e.currentTarget,sent=sentHistory(messages),browsing=recall.current!==null&&input===sent[recall.current];
@@ -563,7 +563,7 @@ export default function Chat({session,onSignIn}) {
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Could not verify'}</small>}</div>}
                 <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
-                <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={decision=>decideOffer(m,decision)}/>
+                <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={(decision,on)=>decideOffer(m,decision,on)}/>
                 {ticketStep(m,i)}{inlineCardFor(m,i)}{complianceStep(m,i)}{nextQuestions(m,i)}
                 {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
               </div>

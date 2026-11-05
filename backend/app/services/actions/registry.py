@@ -16,6 +16,7 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'consent.request': records.request_consent,
     'consent.grant': records.grant_consent,
     'consent.revoke': records.revoke_consent,
+    'consent.decline_ask': records.decline_ask,
     'agenda.save': records.save_agenda,
     'rm.share_summary': records.share_agenda,
     'compliance.update_checklist_item': records.update_checklist,
@@ -31,4 +32,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'insight.mute': insights.mute,
     'insight.resume': insights.resume,
     'insight.share': insights.share,
+    'insight.restore': insights.restore,
 }

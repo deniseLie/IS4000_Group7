@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
+import ConsentCards from './ConsentCards';
 import ConsentControls from './ConsentControls';
 import ConsentScope from './ConsentScope';
 import AgendaDrafts from './AgendaDrafts';
@@ -56,6 +57,7 @@ export default function SharingPage({embedded=false,onReviewActions,onRelationsh
       {!recipient&&onAgendas&&<button className="bank-chat-logout" data-testid="open-agenda-drafts" aria-expanded={agendas} onClick={()=>setAgendas(!agendas)}>Prepare meeting agenda</button>}
     </section>
     {agendas&&<AgendaDrafts recipient={recipient} consentRegistry={registry} consentBusy={busy} onReviewActions={onReviewActions}/>}
+    <ConsentCards onReviewActions={onReviewActions} onChanged={refresh}/>
     {recipient&&<TalkingPoints rmName={firstName(recipient.name)} onReviewActions={onReviewActions}/>}
     {registry&&<section className="page-section"><h2 className="section-label">Records {recipient?firstName(recipient.name):'your manager'} can see</h2><ConsentScope registry={registry} recipient={recipient}/></section>}
     {registry&&<section className="page-section"><h2 className="section-label">Your consent history</h2>

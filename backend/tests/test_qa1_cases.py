@@ -23,12 +23,15 @@ MUST_CLIENT={'CR1','CR2','CR3','CR4','CR5','CR6','CR8','CR9','CR10','CR11','CR12
 UBS=set(range(1,8))  # the seven UBS feedback points in the two-week plan
 
 def test_ids_follow_the_template():
-    assert [c['id'] for c in CLIENT]==[f'C{i:02}' for i in range(1,25)] and [c['id'] for c in RM]==[f'R{i:02}' for i in (*range(1,21),*range(24,28))]  # R24–R27: build plan 3b
+    # A letter marks a variant on the same backlog row (C11b, build plan 5b: the lost card with an urgent request already open)
+    assert [c['id'] for c in CLIENT if c['id'][-1].isdigit()]==[f'C{i:02}' for i in range(1,25)] and [c['id'] for c in RM]==[f'R{i:02}' for i in (*range(1,21),*range(24,28))]  # R24–R27: build plan 3b
+    assert [c['id'] for c in CLIENT if not c['id'][-1].isdigit()]==['C11b']
     for c in ALL:
         assert c['type'] in TYPES and c['priority'] in {'must','should'} and set(c['ubs'])<=UBS and c['turns'] and c['check'] and c['must_not']
         assert all(re.fullmatch(r'(CR|RM|F)\d+',s) for s in c['stories']) and all(len(t)==1 and set(t)<={'say','tap','form','upload','confirm_rm_handover'} for t in c['turns'])
+        assert all(len(t)==1 and set(t)<={'say','tap'} for t in c.get('setup_turns',[]))  # played first in a chat of their own (targets.set_up)
         assert c['state'] in {'ready','manual'}
-        assert c['backlog']['id']==c['id'] and c['owner']
+        assert c['backlog']['id']==c['id'].rstrip('b') and c['owner']
         if c['state']=='manual':assert c['manual_reason']
     assert {c['persona'] for c in CLIENT}=={'guest','michelle'} and {c['persona'] for c in RM}=={'sophie'}
 
@@ -63,7 +66,7 @@ def test_references_exist():
             assert case_id in {x['id'] for x in sync.load(dataset)[0]},(c['id'],ref)
 
 def test_document_and_case_files_match():
-    headings=re.findall(r'^## ([CR]\d\d) – (.+)$',DOC,re.M)
+    headings=re.findall(r'^## ([CR]\d\d[a-z]?) – (.+)$',DOC,re.M)
     assert headings==[(c['id'],c['title']) for c in ALL]
 
 @pytest.mark.parametrize('case',[c for c in ALL if c.get('expected_route')],ids=lambda c:c['id'])

@@ -105,6 +105,12 @@ def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     found=[result('completed',not errors,', '.join(map(str,errors)) or f"{len(out['replies'])} turns")]
     # A button the case taps but the previous reply never offered: the conversation stopped where the browser would have.
     if out.get('not_offered'):found.append(result('offered',False,'not offered: '+', '.join(s.get('tap','RM handover confirmation') for s in out['not_offered'])))
+    # A button right after a form or upload the chat cannot play (C04's Confirm after the request form) is that step's, not the chat's.
+    elif after:=[s['tap'] for s in out['skipped'] if s.get('after_skipped')]:
+        found.append(result('offered',None,'follows a step the chat runner cannot play: '+', '.join(after)))
+    if 'offer' in ref:  # C11b: an open urgent request is quoted, so no Confirm is offered
+        shown=any(r.get('offered') for r in out['replies'])
+        found.append(result('offer',shown==ref['offer'],'an offer was shown' if shown else 'no offer shown'))
     text=out['answer']
     if ref.get('reply_has'):
         missing=[p for p in ref['reply_has'] if not re.search(p,text)]
@@ -169,13 +175,13 @@ async def judge(run,example) -> dict[str,Any]:
     relevant={'opened':tickets.get('opened',[]),'quoted':[t for t in tickets.get('all',[]) if t['reference'] in quoted]}
     message=redact(f'{case}\n\nAuthorised RM book: {json.dumps(out.get("authorised_book"),ensure_ascii=False)}\n\nRecorded ticket reads: {json.dumps(relevant,ensure_ascii=False)}\n\nUnplayed steps: {json.dumps(out.get("skipped",[]),ensure_ascii=False)}\n\nConversation:\n{transcript(out)}')[0]
     from app.services.llm_gateway import transport,check
-    if transport()=='codex':
-        from app.services import codex_cli
+    if transport() in ('codex','claude'):  # the same isolated, answer-only CLI connector with an explicit JUDGE_MODEL
+        from app.services import claude_cli,codex_cli
         from app.core.observability import span
-        name=judge_name()
-        with span('judge','llm',agent='judge',transport='codex',model=name,prompt_version='judge/'+JUDGE_PROMPT.stem,
+        name,cli=judge_name(),(codex_cli if transport()=='codex' else claude_cli)
+        with span('judge','llm',agent='judge',transport=transport(),model=name,prompt_version='judge/'+JUDGE_PROMPT.stem,
                 model_inputs={'system':system,'messages':[{'role':'user','content':message}]}) as metadata:
-            graded,usage=await codex_cli.answer_with_model(system,JUDGE_SCHEMA,[('user',message)],name)
+            graded,usage=await cli.answer_with_model(system,JUDGE_SCHEMA,[('user',message)],name)
             metadata.update(usage)
             metadata['model_outputs']=graded
     else:graded=await judge_model().ainvoke([('system',system),('user',message)])

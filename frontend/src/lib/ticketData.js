@@ -140,7 +140,7 @@ const AMOUNT=/(?:s?\$|sgd\s*)?(\d{1,3}(?:,\d{3})+|\d{4,7}|\d{1,3}(?=\s*k\b))(?:\
 export function isLimitWorkflowReply(message) {
   if(!message||message.role!=='assistant'||message.error||message.source_check==='rejected')return false;
   if(!message.sections?.some(section=>section.domain==='retail'))return false;
-  return /\b(?:requested new limit|request ready for your review|which card is this for|temporary change end)\b/i.test(message.content||'');
+  return /\b(?:requested new limit|request ready for your review|which card is this for|temporary change end|(?:to prepare|still needed for) your card limit request)\b/i.test(message.content||'');
 }
 
 export function isConceptQuestion(question) {
@@ -155,6 +155,7 @@ export function isConceptQuestion(question) {
 const MONTHS={jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,sept:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12};
 const DAY_MONTH=/\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\b(?:\s+(20\d{2}))?/i;
 const YEAR_REPLY=/^\s*(20\d{2})\s*[.!]?\s*$/;
+const READY_UNTIL=/^Request ready for your review:[^.]*?\buntil (\d{1,2}) ([A-Z][a-z]+) (20\d{2})\b/;
 const CARD_REPLY=/^\s*(?:the\s+|my\s+)?(travel|signature)(?:\s+(?:card|one))?\s*[.!]?\s*$/i;
 const LIMIT_OTHER=/\b(?:account balance|card balance|statements?|compliance|upload|mortgage|loans?|fraud|suspicious|lost card|appointments?|book (?:a |my )?meeting|annual fee|ticket status|request status|what(?:'s| is) my (?:current )?(?:credit |card )?limit)\b/i;
 
@@ -195,7 +196,13 @@ export function limitRequestPrefill(messages) {
   if(users.length>14)return {summary:'',details:{}};
   let amount=null,prior=[],duration=null,year=null,dayMonth=null,cardLabel=null,reason=null;
   for(let i=0;i<relevant.length;i++) {
-    const entry=relevant[i];if(entry.role!=='user')continue;
+    const entry=relevant[i];
+    // 5b: she may give "30 Nov" without a year; the ready reply then names the date the request means ("until 30 Nov 2026").
+    // Only that reply, and only for the same day and month, fills the year: a partial date is never completed by a guess.
+    const ready=entry.role==='assistant'&&dayMonth&&!dayMonth.date&&READY_UNTIL.exec(entry.content);
+    if(ready&&Number(ready[1])===dayMonth.day&&MONTHS[ready[2].toLowerCase()]===MONTHS[dayMonth.month.toLowerCase()])
+      dayMonth={...dayMonth,year:ready[3],date:validISO(ready[3],MONTHS[dayMonth.month.toLowerCase()],dayMonth.day)};
+    if(entry.role!=='user')continue;
     const value=entry.content.trim();
     const previous=i>0&&relevant[i-1].role==='assistant'?relevant[i-1].content:'';
     const amounts=requestAmount(value);

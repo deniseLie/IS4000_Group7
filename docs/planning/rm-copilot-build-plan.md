@@ -22,10 +22,10 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | 1 | ~~Seam for the meeting side (`0106`, `0107`)~~ **Done 5 Nov 2026**, on hosted | L | – | Delivered |
 | 2a | ~~Meeting requests end to end: client request, RM accept / propose / decline, `care` flag~~ **Done 5 Nov 2026** | M | 1 | No, but it gives them real `meeting.scheduled` events from the app |
 | 2b | ~~Remove the Security agent~~ **Done 5 Nov 2026** | S–M | 1 | No |
-| 3 | ~~RM copilot: three agents, tracing, daily work~~ 3a **done 5 Nov 2026**; 3b **built 5 Nov 2026** (R24–R27 not yet run on hosted) | L | 2a | No |
-| 4 | ~~Talking-point pipeline, on seeded consent (`0108`)~~ **Built 5 Nov 2026** (0108 not yet on hosted) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
-| 5 | Connect to the meeting graph, evaluate, demo, document | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
-| 6 | Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log (`0109`–`0113`) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
+| 3 | ~~RM copilot: three agents, tracing, daily work~~ **Done 5 Nov 2026** (R24–R27 pass on hosted) | L | 2a | No |
+| 4 | ~~Talking-point pipeline, on seeded consent (`0108`)~~ **Built 5 Nov 2026**, 0108 on hosted (done-when not yet run in the browser) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
+| 5 | Connect to the meeting graph, evaluate, demo, document: 5b **run 5 Nov 2026**; 5a waits on the meeting side | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
+| 6 | ~~Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log~~ **Built 5 Nov 2026** except 6c (`0109`, `0110`, `0112`–`0114`; hosted batches not applied) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
 
 - **Why this order.**
   - Meeting requests come first: the demo story starts with one, phase 4 needs its `care` flag, and the meeting side gets events from real clicks instead of only the reset script. The RM's accept / propose / decline buttons move here from 3a. The SQL has existed since `0106`, so the loop closes without waiting for the agent split. 3a then adds the copilot card on the same route.
@@ -196,7 +196,7 @@ Today's spans: `planner`, `agent` (with `path` reads/loop on the client side onl
 
 ### 3b. RM copilot daily work
 
-**Status:** built 5 Nov 2026 (no migration; `rm_planner/v5` and `rm_assistant/v5` re-pinned, new task file `today`). Not yet met: R24–R27 have not been run against the hosted project or a real model (R24, R25 and R27 need `rm.reset_meeting_demo()` first). Differences from the plan:
+**Status:** built 5 Nov 2026 (no migration; `rm_planner/v5` and `rm_assistant/v5` re-pinned, new task file `today`). R24–R27 passed on the hosted project on 5 Nov 2026 after `rm.reset_meeting_demo()` (`demobank-qa1-rm-v2-660caf60`, evaluation README §8), so the done-when is met. Differences from the plan:
 - The score is `services/rm/priority.py` (pure functions, no SQL view): urgent 50, past target or overdue 30, respond-by passed 30, review within 14 days 20, meeting within 2 days 20, 1 a day waiting up to 10. Specialist tickets and commitments are not scored; milestones within 14 days are listed with 0 points. The first 3 items above 0 are *Do first*.
 - `today` and `priorities` are linked to the records they rank by code (`graph.FEEDS`), never by the planner: an independent task of the fed intent already in the plan, or a feed task that only does its fixed reads (no model, not shown).
 - Contract: `PlanTask.inputs_from` (additive) for a dependant with more than one upstream; Calendar exports `requests_to_answer` as well (ids, dates and codes, never the purpose); `meetings_next_7d` drops past meetings.
@@ -224,7 +224,7 @@ Run `34_reset_meeting_demo.sql` first. Then run the story up to the meeting on t
 
 ## Phase 4: Talking-point pipeline (`0108`)
 
-**Status:** built 5 Nov 2026 (`0108_talking_points.sql`, hosted batch `35_apply_0108_hosted.sql` prepared but **not applied**; prompt `talking_points/v1`). Checked natively (SQL, API and unit tests) and with one live run of the labelled set: 61 messages, precision 1.000, recall 0.969 (31 of 32), stage agreement 0.903, nothing stored for the negative, sensitive, care and injection groups (`docs/prompt-log/talking_points/v1.md`). The done-when steps have not been run on the hosted project. Differences from the plan:
+**Status:** built 5 Nov 2026 (`0108_talking_points.sql`, hosted batch `35_apply_0108_hosted.sql`, applied on hosted 5 Nov 2026; prompt `talking_points/v1`). Checked natively (SQL, API and unit tests) and with one live run of the labelled set: 61 messages, precision 1.000, recall 0.969 (31 of 32), stage agreement 0.903, nothing stored for the negative, sensitive, care and injection groups (`docs/prompt-log/talking_points/v1.md`). The done-when steps have not been run in the browser on the hosted project. Its withdrawal rule was checked there by 5b: revoking deletes the inferred point. Differences from the plan:
 - Extra objects: `customer_topic_status`, `rm_shared_topics` (Today: confirmed shares only, 30 days, at most 20), `insights.share_prompts`, `rm.topic_shares`; `customer_read_talking_points` takes `p_customer_id` like the other customer readers.
 - The Data sharing page is back in the client view (removed on 28 Oct) with *What Sophie sees*; agenda and relationship buttons stay hidden.
 - Mute deletes the inferred point; Resume ends a pause and un-mutes a topic. Grant expiry is tidied on her next read; revocation and narrowing act at once through `forget_chat_topics`.
@@ -370,6 +370,20 @@ Sophie only ever gets structured fields rendered by code. Michelle's own words s
 
 ### 5b. Evaluation, demo and docs
 
+**Status:** run 5 Nov 2026 on the hosted project ([results](../evaluation/README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b)).
+- **Results:** safety 8/8, planner 11/16, RM QA1 16/17 (R24–R27 all pass), graph 3/5, client QA1 10/16.
+- **Transport:** OpenRouter had no credit after the safety and planner sets. The RM, graph and client sets therefore ran on the local Claude Code transport: `CHAT_TRANSPORT=claude` with haiku, and a sonnet judge. For this the judge gained a Claude Code path, `claude_cli.answer_with_model`.
+- **Consent step:** rehearsed twice through the real API. After Michelle revokes, Sophie's readers and overview show the gaps and the inferred point is deleted. `rm.reset_meeting_demo()` restored everything each time.
+- **Hosted fix:** `rm_match_clients` returns `outside_book` as a flag; the RM planner span had taken its length.
+- **Met:** guardrails on the automated checks, escalation, and RM groundedness (0.97).
+- **Not met:**
+  - routing: 69% of planner cases pass, and 3 of the 5 failures wait for the C24–C26 links;
+  - client and graph groundedness (0.81 and 0.70);
+  - ticket completeness (C28);
+  - RM usefulness: not rated by teammates yet.
+- **Demo script:** workflow 2, *Copilot demo*.
+- **Done-when:** the full demo twice in a row is not done yet; its brief step needs 5a.
+
 Runs on the seeded grants, so the results and the demo do not wait for consent v2. Phase 6 re-runs only the consent cases and the demo's consent step.
 
 - **Metrics** (targets from the team plan):
@@ -392,6 +406,21 @@ Runs on the seeded grants, so the results and the demo do not wait for consent v
 ---
 
 ## Phase 6: Consent v2 (`0109`–`0113`)
+
+**Status:** 6a, 6b, 6d, 6e and 6f built 5 Nov 2026.
+- **Commits:** `79c51e1`, `7e0a00a`, `fceed33`, `d10b328`, `f77b25f`, `79db2ce`.
+- **Migrations:** `0109`, `0110`, `0112`, `0113`, `0114`; hosted batches `36`–`40` are prepared and **not applied**.
+- **Prompt:** `relationship/v7`.
+- **6c** (`0111`, transcript revoke) is left for the meeting side.
+- **Checks:** native only (SQL, API and unit tests); no live model run. The consent red-team cases and the demo's consent step have not been re-run on v2. 5b rehearsed the step on v1.
+- **Differences from the plan:**
+  - the purge audit is `data.insight_purged`;
+  - the access log takes `p_customer_id`, and its `meeting_id` is derived for meeting-prep reads;
+  - ask reasons are fixed codes;
+  - `0114` adds offer switches (`offer_group_confirm(group, include)`); optional steps are identified by rule, so the contracts do not change;
+  - chat consent offers are rules (`consent_answers`), not the model;
+  - the brief re-check provides only `rm_point_status` on our side;
+  - *Request a meeting* on the Meetings page has no sharing switches yet; only the chat card has them.
 
 Design in [architecture §15.2](../architecture.md). Replaces the seeded grants with the client's own answers; `rm.consent_active` stays the only check, and gated readers still return `{"shared": false}`, never filtered rows.
 

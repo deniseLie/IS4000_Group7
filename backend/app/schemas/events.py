@@ -30,6 +30,7 @@ class ActionRequiredEvent(BaseModel):
     type: str
     summary: str
     expires_at: datetime
+    optional: bool = False  # 0114: a switch in the group, off unless she turns it on (offers.optional)
 
 
 class AnswerSection(BaseModel):  # one per task, priority order

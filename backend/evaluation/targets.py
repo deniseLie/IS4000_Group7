@@ -40,6 +40,14 @@ def prompt_ids(spans) -> list[str]:
     return sorted({f"{a['agent']}/{a['prompt_version']}" for n,a in spans if n=='llm' and a.get('agent') and a.get('prompt_version')})
 
 
+AFTER_REPLY=('talking_points',)  # 0108 lane 1: the classifier runs after the answer was sent, so it is not the turn's model call
+
+
+def answer_calls(spans) -> int:
+    """Model calls behind the turn's answer (the case's `model` check); the after-reply talking-points classifier is left out."""
+    return sum(n=='llm' and a.get('agent') not in AFTER_REPLY for n,a in spans)
+
+
 class NodeLog(AsyncCallbackHandler):
     """A graph node acted when its update changes the state (a new or different non-empty value)."""
     def __init__(self) -> None:
@@ -246,6 +254,30 @@ def handover_reply(answer: str) -> str | None:
     return SEND_REPLY if '“'+SEND_REPLY+'”' in answer else None
 
 
+async def set_up(http,headers,inputs: dict[str,Any]) -> int:
+    """A case's `setup_turns` (C11b: an urgent request already open), played in a saved chat of their own before the
+    measured conversation and its ticket reads. Not scored and not traced into the case's spans. A tap the reply did not
+    offer is not played: what it would open is already there. Returns the number of turns played."""
+    mode,language=inputs.get('mode','personal'),inputs.get('language','English')
+    session=str(uuid4())
+    created=await http.post('/conversations',headers=headers,json={'session_id':session,'mode':mode,'language':language})
+    created.raise_for_status()
+    revision,last,played=created.json()['revision'],'',0
+    for step in inputs['setup_turns']:
+        tap=TAP_ALIASES.get(step.get('tap'),step.get('tap'))
+        text=step.get('say') or (tap if tap in CHAT_TAPS and tap in last else None)
+        if text is None:continue
+        response=await http.post('/chat',headers=headers,json={'messages':[{'role':'user','content':text}],'mode':mode,'language':language,
+            'conversation_id':session,'turn_id':str(uuid4()),'revision':revision})
+        response.raise_for_status()
+        for event,data in sse(response.text):
+            if event=='conversation':revision=json.loads(data)['revision']
+            elif event=='answer':last=json.loads(data)['answer']
+            elif event=='error':raise RuntimeError('setup turn failed: '+data)
+        played+=1
+    return played
+
+
 async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     """Run every playable turn in one new saved chat and return the replies plus what ran. An RM persona plays on the
     RM assistant instead (play_rm)."""
@@ -255,11 +287,13 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[];evidence: list[Evidence]=[]
     replies: list[dict[str,Any]]=[];skipped: list[dict[str,str]]=[];missing: list[dict[str,str]]=[];routes: list[str | None]=[];history: list[dict[str,str]]=[]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://evaluation',timeout=300) as http:
+        setup=await set_up(http,headers,inputs) if token and inputs.get('setup_turns') else 0
         before=await tickets(http,headers) if token else []
         session=str(uuid4())
         created=await http.post('/conversations',headers=headers,json={'session_id':session,'mode':mode,'language':language})
         created.raise_for_status()
         revision=created.json()['revision']
+        after_skip=False  # the previous step was one the chat cannot play
         for step in turns_of(inputs):
             tap=TAP_ALIASES.get(step.get('tap'),step.get('tap'))
             text=step.get('say') or (tap if tap in CHAT_TAPS else None)
@@ -268,9 +302,12 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
                 text=handover_reply(replies[-1].get('answer') or '') if replies else None
                 if text is None:missing.append(step);break
             if text is None:
-                skipped.append(step);continue
+                skipped.append(step);after_skip=True;continue
             if 'tap' in step and not (replies and text in (replies[-1].get('answer') or '')):
+                # A button right after a form or upload the chat skipped (C04's Confirm) belongs to that unplayed step: unplayed, not failed.
+                if after_skip:skipped.append({**step,'after_skipped':True});break
                 missing.append(step);break  # the browser shows this button only when the last reply offers it
+            after_skip=False
             asked=[*history,{'role':'user','content':text}]
             fixed=assess_request(ChatRequest(messages=asked,mode=mode,language=language)).fixed_response
             routes.append(fixed.code if fixed else None)
@@ -281,14 +318,14 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
                 with inject(inputs.get('fault')):response=await http.post('/chat',headers=headers,json=body)
             finally:evidence_sink.reset(tokens[2]);span_sink.reset(tokens[1]);node_log.reset(tokens[0])
             reply: dict[str,Any]={'say':text,'status':response.status_code,'agents':[a.get('agent') for n,a in spans[start:] if n=='agent'],
-                'model_calls':sum(n=='llm' for n,_ in spans[start:])}
+                'model_calls':answer_calls(spans[start:])}
             if response.status_code!=200:reply['error']=response.json().get('error',{}).get('code','http_error')
             for event,data in sse(response.text) if response.status_code==200 else []:
                 if event=='conversation':revision=json.loads(data)['revision']
                 elif event=='answer':
                     answer=json.loads(data)
                     cited={(s['id'],s['version']) for s in answer['sources']}
-                    reply.update(answer=answer['answer'],origin=answer['response_origin'],needs_human=answer['needs_human'],
+                    reply.update(answer=answer['answer'],origin=answer['response_origin'],needs_human=answer['needs_human'],offered=bool(answer.get('offer')),
                         evidence=[item.model_dump(mode='json') for item in evidence[evidence_start:] if (item.source.id,item.source.version) in cited],
                         sources=sorted({source_id(s['id']) for s in answer['sources']}),
                         sections=[{'domain':s['domain'],'priority':s['priority'],'origin':s['response_origin']} for s in answer.get('sections') or []])
@@ -301,10 +338,10 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     known={t['reference'] for t in before}
     waves=[attrs for name,attrs in spans if name=='gather']  # one per turn that ran agents (phase 7)
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':routes,'skipped':skipped,'not_offered':missing,'played':bool(replies),
-        'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
+        'setup_turns':setup,'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
         'service_reads':sorted({attrs['tool'] for _,attrs in spans if 'call_id' in attrs and 'tool' in attrs}),
-        'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans),
+        'model_calls':answer_calls(spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),
             'exports':sorted({e for w in waves for e in w.get('exports',[])}),
             'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},

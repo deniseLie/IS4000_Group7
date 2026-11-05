@@ -42,6 +42,26 @@ def test_parser_only_returns_structured_output_and_numeric_usage():
         usage={'input_tokens':3,'cache_creation_input_tokens':10,'cache_read_input_tokens':5,'output_tokens':4,'service_tier':'standard'}))
     assert data=={'answer':'parser sample'} and usage=={'input_tokens':18,'output_tokens':4}
 
+def test_the_turn_timeout_is_a_setting_and_a_slow_cli_is_stopped(monkeypatch):
+    from app.services import claude_cli
+    monkeypatch.delenv('CLAUDE_CLI_TIMEOUT_S',raising=False)
+    assert claude_cli.timeout_s()==90
+    for bad in ('0','-5','soon','901'):
+        monkeypatch.setenv('CLAUDE_CLI_TIMEOUT_S',bad)
+        with pytest.raises(RuntimeError,match='CLAUDE_CLI_TIMEOUT_S'):claude_cli.timeout_s()
+    killed=[]
+    class Slow:  # stands in for the CLI process only; no answer is ever produced
+        returncode=None
+        async def communicate(self,payload):await asyncio.sleep(5)
+        def kill(self):killed.append(True);self.returncode=-9
+        async def wait(self):return self.returncode
+    async def start(*args,**kwargs):return Slow()
+    monkeypatch.setenv('CLAUDE_CLI_TIMEOUT_S','0.05')
+    monkeypatch.setattr(claude_cli.shutil,'which',lambda name:'/bin/claude')
+    monkeypatch.setattr(claude_cli.asyncio,'create_subprocess_exec',start)
+    with pytest.raises(TimeoutError):asyncio.run(claude_cli._answer('instructions',SCHEMA,[('user','q')],'haiku'))
+    assert killed==[True]
+
 def test_missing_cli_is_visible_error_without_api_fallback(monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app

@@ -222,7 +222,9 @@ def insights_evidence(result: dict,customer_id: int) -> Evidence:
     gap=not_shared(result,'transaction-insights',title,customer_id)
     if gap:return gap
     data=result['data']
-    return Evidence('transaction-insights',f"{title} for the last {data['days']} days",'record',data,str(result.get('as_of')),customer_id)
+    # 0109: only the accounts and look-back she chose (scope); say so, so the reply never implies her whole banking
+    chosen=' from the accounts the client chose (no card spending)' if isinstance((data.get('scope') or {}).get('accounts'),list) else ''
+    return Evidence('transaction-insights',f"{title} for the last {data['days']} days{chosen}",'record',data,str(result.get('as_of')),customer_id)
 
 
 def _words(d: date) -> str:return f'{d.day} {d:%b %Y}'  # 12 Nov 2026, as rm.day writes dates
