@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from starlette.exceptions import HTTPException
 
-from app.api import actions, admin, auth, chat, consent, conversations, customer, documents, knowledge, notifications, relationship, rm, tickets
+from app.api import actions, admin, auth, chat, consent, conversations, customer, documents, knowledge, notifications, relationship, rm, tickets, meetings
 from app.core.config import settings
 from app.core.errors import http_error
 from app.core.gateway import GatewayMiddleware
@@ -40,10 +40,13 @@ app.include_router(documents.router)
 app.include_router(tickets.router)
 app.include_router(admin.router)
 app.include_router(rm.router)
+app.include_router(meetings.router)
 
 
 @app.get("/health")
 def health(request: Request):
+    meeting_task=getattr(request.app.state,'meeting_worker',None)
+    if meeting_task is not None and meeting_task.done():return JSONResponse({'status':'degraded','meeting_worker':'stopped'},status_code=503)
     task=getattr(request.app.state,'notification_worker',None)
     if task is not None and task.done():return JSONResponse({'status':'degraded','notification_worker':'stopped'},status_code=503)
     return {"status": "ok"}

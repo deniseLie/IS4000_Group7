@@ -40,6 +40,7 @@ def in_use():
         'runner_common': runner.COMMON, 'rm_planner': graph.PLANNER_VERSION, 'rm_assistant': handlers.ASSISTANT_VERSION,
         'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT, 'talking_points': talking_points.PROMPT,
         **{registry.SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()}}
+    found['minutes_writer']='v1'
     return {family: version for family, version in sorted(found.items()) if version}
 
 def released():

@@ -87,7 +87,7 @@ def test_enqueue_dedupes_and_accepts_only_ids_codes_and_dates(database: 'Connect
     assert row==[(1002,SOPHIE,'pending',0)]
     assert database.execute("select count(*) from audit.events where action='action.meeting_event_queued' and resource_id=%s",(str(first),)).fetchone()==(1,)
     for kind,payload,target,error in [('meeting.scheduled',{'note':'Michelle wants a home loan'},meeting_id,'ids, codes and dates'),
-            ('meeting.started',{},meeting_id,'check constraint'),('meeting.scheduled',{},str(uuid4()),'meeting not found')]:
+            ('meeting.unknown',{},meeting_id,'check constraint'),('meeting.scheduled',{},str(uuid4()),'meeting not found')]:
         database.execute('savepoint s')
         with pytest.raises(Exception,match=error):enqueue(database,target,kind,payload)
         database.execute('rollback to savepoint s')
@@ -124,8 +124,11 @@ def test_only_the_meeting_runner_role_reaches_the_queue(database: 'Connection[Sq
             with pytest.raises(Exception,match='permission denied'):database.execute(statement)
             database.execute('rollback to savepoint s')
     database.execute('savepoint s')
+    queued=enqueue(database,meeting_id,'brief.requested',key='provider:evt-1')
     database.execute('set local role demobank_meetings')
-    queued=enqueue(database,meeting_id,'transcript.ready',key='provider:evt-1')
     assert claim(database)[0]==queued
+    database.execute('savepoint no_enqueue')
+    with pytest.raises(Exception,match='permission denied'):enqueue(database,meeting_id)
+    database.execute('rollback to savepoint no_enqueue')
     with pytest.raises(Exception,match='permission denied'):database.execute('select count(*) from meetings.events')
     database.execute('rollback to savepoint s')

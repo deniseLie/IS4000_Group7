@@ -92,9 +92,10 @@ class GatewayMiddleware:
     async def __call__(self,scope,receive,send):
         if scope['type']!='http' or scope['method']=='OPTIONS' or scope['path'] in SKIP:return await self.app(scope,receive,send)
         headers=dict(scope['headers'])
+        body_limit=settings.meeting_import_max_bytes if scope['method']=='POST' and scope['path'].startswith('/meetings/') and scope['path'].endswith('/transcript-import') else settings.max_body_bytes
         try:
             size=headers.get(b'content-length')
-            if size is not None and (not size.isdigit() or int(size)>settings.max_body_bytes):raise ApiError(413,'payload_too_large','The request is too large.')
+            if size is not None and (not size.isdigit() or int(size)>body_limit):raise ApiError(413,'payload_too_large','The request is too large.')
             ctx,db=await build_context(scope,headers)
         except ApiError as e:
             if e.status_code>=500 or e.status_code==429:log_event('gateway_rejected',status=e.status_code,code=e.code)
@@ -108,7 +109,7 @@ class GatewayMiddleware:
             message=await receive()
             if message['type']=='http.request':
                 seen+=len(message.get('body',b''))
-                if seen>settings.max_body_bytes:raise ApiError(413,'payload_too_large','The request is too large.')
+                if seen>body_limit:raise ApiError(413,'payload_too_large','The request is too large.')
             return message
         token=current_ctx.set(ctx)
         try:await self.app(scope,limited_receive,send)

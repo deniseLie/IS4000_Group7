@@ -1,3 +1,4 @@
+import MeetingWorkspace from './meetings/MeetingWorkspace';
 import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
@@ -14,7 +15,7 @@ import {DECLINED,LIMITS,STATUS,TOPICS,isOpen,meetingRequestTarget,openCount,requ
 const LEAD=2*60*60*1000;  // SQL refuses times within an hour; free times start two hours ahead, as in the chat
 function range(days=14) {
   const now=new Date(Date.now()+8*60*60*1000);
-  return {from_date:now.toISOString().slice(0,10),to_date:new Date(now.getTime()+(days-1)*86400000).toISOString().slice(0,10),limit:24};
+  return {from_date:now.toISOString().slice(0,10),to_date:new Date(now.getTime()+(days-1)*86400000).toISOString().slice(0,10),limit:20};
 }
 async function token() {
   const {data,error}=await supabase.auth.getSession();
@@ -31,6 +32,7 @@ export default function Meetings({rmName}) {
   const [purpose,setPurpose]=useState(''),[topics,setTopics]=useState([]),[format,setFormat]=useState('video'),[times,setTimes]=useState([]);
   const [busy,setBusy]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const active=useRef(null);
+  const [workspace,setWorkspace]=useState(null);
   async function load(signal) {
     const access=await token();
     const [free,booked,asked]=await Promise.all([loadSlots(access,range(),signal),loadAppointments(access,signal),loadMeetingRequests(access,signal)]);
@@ -100,6 +102,7 @@ export default function Meetings({rmName}) {
         {item.status==='held'&&<small>Held until {formatTime(item.hold_expires_at)}. Not booked yet.</small>}</div>
       <span className={`act-pill ${item.status==='confirmed'?'ok':'wait'}`}>{LABEL[item.status]}</span>
       <div className="meeting-actions">
+        {item.status==='confirmed'&&<button className="bank-chat-logout" data-testid="open-meeting-workspace" disabled={busy} onClick={()=>setWorkspace(item.appointment_id)}>Notes and follow-up</button>}
         {item.status==='held'&&item.case_id&&<button className="primary-button" data-testid="confirm-meeting" disabled={busy} onClick={()=>decide(item,'appointment.confirm','Meeting booked. You will also see it in your Inbox.')}>Confirm booking</button>}
         <button className="bank-chat-logout" data-testid="cancel-meeting" disabled={busy} onClick={()=>decide(item,'appointment.cancel',item.status==='held'?'Time released.':'Meeting cancelled.')}>{item.status==='held'?'Release':'Cancel meeting'}</button>
       </div></li>)}</ul>
@@ -127,6 +130,7 @@ export default function Meetings({rmName}) {
             disabled={busy||full||(!picked&&times.length>=LIMITS.times)} onClick={()=>setTimes(toggleTime(times,slot.starts_at))}>{slotTime(slot.starts_at)}</button>;})}</div></div>)}</div>
       <button type="submit" className="primary-button" data-testid="send-meeting-request" disabled={busy||full||!free.length}>Send request</button>
     </form>}
-    {past.length>0&&<details className="act-more"><summary>Past and cancelled</summary><ul className="meetings-list past">{past.map(item=><li key={item.appointment_id} className="meeting"><div><strong>{appointmentTime(item.starts_at)}</strong><small>{FORMATS[item.format]}</small></div><span className="act-pill muted">{LABEL[item.status]||item.status}</span></li>)}</ul></details>}
+    {workspace&&<MeetingWorkspace meetingId={workspace} token={token} onClose={()=>setWorkspace(null)}/>}
+    {past.length>0&&<details className="act-more"><summary>Past and cancelled</summary><ul className="meetings-list past">{past.map(item=><li key={item.appointment_id} className="meeting"><div><strong>{appointmentTime(item.starts_at)}</strong><small>{FORMATS[item.format]}</small>{item.status==='confirmed'&&<button className="bank-chat-logout" data-testid="open-past-meeting-workspace" onClick={()=>setWorkspace(item.appointment_id)}>Notes and follow-up</button>}</div><span className="act-pill muted">{LABEL[item.status]||item.status}</span></li>)}</ul></details>}
   </section>;
 }

@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     external_timeout_s: float = Field(default=5,gt=0,le=30)
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
-    meetings_enabled: bool = False  # meeting lifecycle (services/meetings, 0105); off until the meeting graph is built and wired
+    meetings_enabled: bool = False  # meeting lifecycle (services/meetings, 0105); explicit opt-in for the hybrid meeting lifecycle
+    zoom_oauth_directory: Path | None = None
+    meetings_database_url: SecretStr | None = Field(default=None,repr=False)
+    run_meeting_worker_in_api: bool = False
+    meeting_import_max_bytes: int = Field(default=2200000,ge=65536,le=8000000)
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
     document_ocr_command: str | None = None
     precheck_mode: Literal['template','notice'] = 'template'  # template: fixed per-document rules (document_templates.py); notice: model reads the notice

@@ -1089,9 +1089,9 @@ The phased plan, with files, tests and done criteria per phase, is [planning/v5-
 | 8 | Eval cases (C23–C27, handoff) and planner dataset; docs | No |
 | 9 | RM pipeline onto the same graph (R21–R23), later | Yes (RM) |
 
-## 15. Meeting lifecycle seam (RM copilot target, agreed 4 Nov 2026, not built yet)
+## 15. Meeting lifecycle seam (RM copilot target, hybrid slice implemented)
 
-The next target centres the product on the relationship manager: a client's meeting request, a consent-gated pre-meeting brief, the meeting itself, and RM-approved minutes. The meeting lifecycle runs as its own LangGraph graph (durable, one thread per meeting, pauses for the RM's approvals), separate from the chat graphs, because it is started by events and lives for days. It is built by a second developer on a separate branch; migration `0105` and the files below are the only contract between the two halves.
+The next target centres the product on the relationship manager: a client's meeting request, a consent-gated pre-meeting brief, the meeting itself, and RM-approved minutes. The meeting lifecycle runs as its own LangGraph graph (durable, one thread per meeting, pauses for the RM's approvals), separate from the chat graphs, because it is started by events and lives for days. Migration `0105` and the shared files below define the original seam. The opt-in hybrid implementation in §15.3 provides the minutes and follow-up slice; the complete durable pre-meeting graph remains a target.
 
 | Part | Where | Rule |
 |---|---|---|
@@ -1148,6 +1148,18 @@ The client decides per category what her RM may see, for how long, and can take 
 | Access log | `0112`: `public.my_consent_access_log()` | The client's view of RM reads of gated categories (who, when, category, purpose, meeting), from the `data.read` audit events; ids, codes and dates only |
 | RM asks to share | `0113`: request category `rm_consent_request` (0071 ticket pattern) | Sophie asks with a reason and optional meeting; lapses after 14 days; the client answers in Data sharing or chat |
 | Client offers | Relationship & Service (`relationship/v7`) | `consent.grant` (with scope), `consent.revoke`, `insight.delete`, `transcript.revoke`, all confirmed as v5 offers. The meeting request card shows inline switches as a chained offer group |
+
+### 15.3 Hybrid meeting lifecycle (implemented, explicit runtime opt-in)
+
+`MEETINGS_ENABLED` keeps the existing client and RM chat graphs independent. The existing client action ledger and RM Calendar own scheduling. `api/meetings.py` uses the same verified gateway and caller-JWT Data API; it never uses a service-role key or lab identities. Shared React meeting cards reuse the product's form/button/theme tokens in client Meetings and RM Schedule.
+
+Meeting-owned migrations 0120–0124 add fenced queue claims, per-meeting occurrence/revision state, a private evidence store, exact-version/hash/permission-epoch approvals and separate task/recap effects. `services/meetings/graph.py` is the separate Minutes Writer LangGraph. Its state contains IDs; the runtime carries only the selected redacted transcript or explicit RM notes. It cannot read bank records or send a client message. SQL validates quotes, speaker ownership, conditions and dates again at persistence and approval. The restricted worker never receives the RM's JWT. Restart recovery reuses an already persisted draft; SQL phase state is durable, while model calls are not automatically recoverable mid-call.
+
+Both current participants acknowledge the versioned meeting notice before transcript import. Withdrawal immediately blocks new generation; existing drafts require fresh review, approved minutes remain, and raw transcript cues are purged within seven days. Otherwise raw cues expire thirty days after minutes approval. The restricted worker runs audited retention. These are meeting-side provisions pending the team's 0109–0113 consent-v2 integration; no existing broad grants are expanded.
+
+Zoom currently supplies scheduling/link management through a configured private own-user OAuth grant. Call times are explicitly RM-documented. TXT/VTT intake is bounded at 1 MiB raw input, 100 cues and 16 KB redacted evidence, with no truncation. Speaker mapping and coverage are RM assertions. Transcripts queue a worker job; explicit typed notes can be drafted on an RM request. Creating follow-ups and sharing a recap require separate approvals after exact minutes approval. Each participant completes only their own follow-ups with evidence.
+
+Automatic provider webhooks/capture, caption plugin installation, longer-call chunking, pre-meeting Brief Writer and client-safe Proposal Drafter remain separate work. `prepare` therefore continues to report unavailable; the existing brief seam is not replaced by a notes summary. No hosted migration is applied automatically, and no credentials are included in source.
 
 ## Appendix: knowledge base
 

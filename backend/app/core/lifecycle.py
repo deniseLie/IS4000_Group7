@@ -16,7 +16,7 @@ def report_worker_exit(task: asyncio.Task[None]) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def notification_lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.notification_worker=None
     if not settings.run_worker_in_api:
         yield
@@ -33,3 +33,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except asyncio.CancelledError:pass
             finally:
                 if app.state.notification_worker is task:app.state.notification_worker=None
+
+
+@asynccontextmanager
+async def meeting_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.meeting_worker=None
+    if not settings.run_meeting_worker_in_api:
+        yield
+        return
+    if not settings.meetings_enabled or settings.meetings_database_url is None:
+        raise RuntimeError('Meeting worker requires MEETINGS_ENABLED and a restricted MEETINGS_DATABASE_URL')
+    from app.services.meetings.database import WorkerDatabase
+    from app.services.meetings.worker import run
+    db=WorkerDatabase(settings.meetings_database_url)
+    await asyncio.to_thread(db.verify_identity)
+    task=asyncio.create_task(run(db),name='meeting-worker')
+    def report_exit(finished: asyncio.Task[None]) -> None:
+        if not finished.cancelled():
+            error=finished.exception()
+            log_event('meeting_worker_stopped',logging.ERROR,error_type=type(error).__name__ if error else 'UnexpectedWorkerExit')
+    task.add_done_callback(report_exit)
+    app.state.meeting_worker=task
+    try:yield
+    finally:
+        task.cancel()
+        try:await task
+        except asyncio.CancelledError:pass
+        finally:app.state.meeting_worker=None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async with meeting_lifespan(app),notification_lifespan(app):yield
