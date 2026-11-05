@@ -27,6 +27,8 @@ through the separate write routes, so the RM graph has no `act` node and saves n
 """
 import json
 import operator
+import re
+from difflib import SequenceMatcher
 from dataclasses import dataclass,field
 from datetime import timedelta
 from typing import Annotated,TypedDict
@@ -42,7 +44,7 @@ from app.services.agents import registry
 from app.services.privacy import redact
 from app.services.rm import evidence as ev
 from app.services.rm import handlers,priority
-from app.services.rm.handlers import Say,capability_refusal,clarify,refusal,today
+from app.services.rm.handlers import Say,Show,capability_refusal,clarify,refusal,today
 
 PLANNER_VERSION='v5'
 MAX_TASKS=5
@@ -56,6 +58,7 @@ class RmRuntime:
     req: RmAssistantRequest
     ctx: RequestContext
     say: Say
+    show: Show|None=None  # a `section` event: a client report's record sections, and its model points once checked
     book: list[dict]=field(default_factory=list)
     named: list[dict]=field(default_factory=list)  # clients named in the message who are in the book
     outside: bool=False  # someone named is not in the book (nothing about them is read)
@@ -97,6 +100,48 @@ async def model_plan(rt: RmRuntime,message: str) -> list[dict]:
     result=await llm_gateway.call(pv,system,[*history,('user',message)],plan_schema())
     rows=result.data.get('tasks') if isinstance(result.data,dict) else None
     return [r for r in rows if isinstance(r,dict)][:MAX_TASKS] if isinstance(rows,list) else []
+
+
+# One-request messages planned by rule (docs/planning/rm-answer-speed.md slice 5): the planner model call costs 6-8 s on
+# the Claude Code transport and adds nothing when the whole message is one of these, or a brief followed by follow-ups
+# from the latest note (the declared latest_note link, R22). Anything else, or any doubt (another request, a second name,
+# someone outside the book), goes to the model planner.
+WHO=r"(?P<who>[a-z][a-z .'’-]{1,60}?)"
+BRIEF=(r"^(?:please\s+)?(?:brief me (?:on|for|about)|prepare (?:me )?(?:a )?(?:brief(?:ing)? )?(?:for|on)"
+        r"(?: (?:my|the) (?:meeting|call) with)?)\s+"+WHO)
+ONE_REQUEST={'meeting_brief':re.compile(BRIEF+r"[.!]?$",re.I),
+    'client_overview':re.compile(r"^(?:please\s+)?(?:(?:give|show) me |can i (?:have|get|see) )?(?:an? )?(?:quick |full )?(?:overview|snapshot|360(?:°| view)?)"
+        r" (?:of|on|for)\s+"+WHO+r"[.!?]?$",re.I),
+    'today':re.compile(r"^(?:what(?:'s|’s| is) on (?:for )?today|plan my day|what does my day look like|what(?:'s|’s| is) my day looking like)[.!?]?$",re.I)}
+MORE=re.compile(r"\b(?:and|then|also|plus)\b|[,;]",re.I)
+# The declared link "a brief → follow-ups from its latest note" (latest_note), asked in one sentence (R22).
+BRIEF_THEN_FOLLOW_UPS=re.compile(BRIEF+r",?\s+(?:and(?: then)?|then)\s+(?:draft|prepare|propose|suggest|list)\s+(?:the\s+|any\s+)?"
+    r"(?:follow[- ]?ups?|follow[- ]?up (?:tickets|tasks|actions|requests|items)|next steps|action items)"
+    r"(?: for (?:anything|everything|what(?:'s|’s| is)?) (?:still )?(?:open|outstanding|pending))?"
+    r"\s+(?:from|out of|based on)\s+(?:the|my|our|her|his|their)\s+(?:last|latest|most recent|previous)\s+(?:meeting|note|call|catch[- ]?up)[.!]?$",re.I)
+
+
+def only_name(who: str,name: str) -> bool:
+    """Every word the rule took as the client is part of her book name (or a near spelling), so wording such as "my next
+    confirmed meeting with Michelle" goes to the model planner, which reads its meeting hint."""
+    parts,words=handlers.name_parts(name),handlers.name_parts(who)
+    return bool(words) and handlers.names_match(who,name) and all(w in parts or len(w)>=4 and any(SequenceMatcher(None,w,p).ratio()>=0.85 for p in parts)
+        for w in words)
+
+
+def rule_plan(rt: RmRuntime,message: str) -> list[dict]|None:
+    text=' '.join(message.split())
+    if rt.outside:return None
+    if (m:=BRIEF_THEN_FOLLOW_UPS.match(text)) and len(rt.named)==1 and only_name(m.group('who'),rt.named[0]['name']):
+        return [{'intent':'meeting_brief','client_name':m.group('who')},{'intent':'actions_from_note','client_name':m.group('who'),'depends_on':1}]
+    if MORE.search(text):return None
+    for intent,pattern in ONE_REQUEST.items():
+        m=pattern.match(text)
+        if not m:continue
+        if intent=='today':return [{'intent':'today'}] if not rt.named else None
+        who=m.group('who')
+        if len(rt.named)==1 and only_name(who,rt.named[0]['name']):return [{'intent':intent,'client_name':who}]
+    return None
 
 
 def tasks_from(rows: list[dict],message: str) -> list[PlanTask]:
@@ -164,6 +209,9 @@ async def planner(state: RmTurn,runtime: Runtime[RmRuntime]) -> dict:
                 entities={'client_name':'','uses_active_client':True,'ticket_ref':'','appointment_hint':message,
                     'draft_scope':'ticket' if rt.req.context.ticket_ref else 'client',
                     'is_new_notes':rt.req.intent=='document_interaction' and rt.req.context.documentation is None,'button':True})]
+        elif (rows:=rule_plan(rt,message)) is not None:
+            attrs.update(route='rule',source='rule')
+            tasks=tasks_from(rows,message)
         else:
             attrs.update(route='model',source='model')
             tasks=tasks_from(await model_plan(rt,message),message)
@@ -227,7 +275,7 @@ async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> di
     rt,task=runtime.context,item['task']
     spec=registry.SPECS[task.agent]
     e,inputs=task.entities,item.get('inputs') or {}
-    turn=handlers.Turn(rt.req,rt.ctx.model_copy(update={'agent':spec.name}),rt.say,base=rt.ctx,book=rt.book)
+    turn=handlers.Turn(rt.req,rt.ctx.model_copy(update={'agent':spec.name}),rt.say,base=rt.ctx,book=rt.book,on_section=rt.show,task_id=task.id)
     turn.inputs,feed=inputs,bool(e.get('feed'))
     plan={'intent':task.intent,'client_name':e.get('client_name') or '','uses_active_client':bool(e.get('uses_active_client')),
         'ticket_ref':e.get('ticket_ref') or '','draft_scope':e.get('draft_scope') or 'client','appointment_hint':e.get('appointment_hint') or '',
@@ -328,10 +376,12 @@ def build_graph():
 GRAPH=build_graph()
 
 
-async def respond(req: RmAssistantRequest,ctx: RequestContext,say: Say) -> dict:
-    """The /rm/assistant reply: the composed workspace reply plus the prompt versions and the privacy notices."""
+async def respond(req: RmAssistantRequest,ctx: RequestContext,say: Say,show: Show|None=None) -> dict:
+    """The /rm/assistant reply: the composed workspace reply plus the prompt versions and the privacy notices. show, when
+    given, receives a client report's sections before the reply (docs/planning/rm-answer-speed.md slice 4): code-written
+    record sections once read, model points once checked; the reply repeats them in their place."""
     message,redacted=redact(req.message)
-    rt=RmRuntime(req=req,ctx=ctx.model_copy(update={'agent':None}),say=say)
+    rt=RmRuntime(req=req,ctx=ctx.model_copy(update={'agent':None}),say=say,show=show)
     with span('route','agent',route='llm',pipeline='v5-rm'):
         state=await GRAPH.ainvoke({'request':req,'history':[Message(role='user',content=message[:4000])],'outputs':[]},context=rt)
     reply=state['reply']

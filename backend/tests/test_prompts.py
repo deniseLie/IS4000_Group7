@@ -58,6 +58,7 @@ RELEASED[('rm_assistant','v4')]='v4+83cc3e8b'
 RELEASED[('rm_assistant','v2')]='v2+bdcb8a3f'
 RELEASED[('rm_planner','v5')]='v5+dd5370bc'  # build plan 3b: the today intent
 RELEASED[('rm_assistant','v5')]='v5+6738eb5a'  # build plan 3b: today.md, ranked priorities.md
+RELEASED[('rm_assistant','v6')]='v6+251d64ae'  # RM answer speed: code writes the client reports' record sections
 RELEASED[('accounts','v1')]='v1+872a384c'
 RELEASED[('runner_common','v1')]='v1+0c95684c'
 RELEASED[('runner_common','v2')]='v2+659e0d0c'  # batch 2 (C12): never restate a figure from her own message
