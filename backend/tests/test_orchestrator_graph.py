@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 import pytest
 from app.schemas.chat import ChatRequest
-from app.schemas.contracts import AgentOutput,AgentResult,PlanTask,Principal,RequestContext
+from app.schemas.contracts import OPEN_INTENT,AgentOutput,AgentResult,PlanTask,Principal,RequestContext
 from app.services import offers,orchestrator,rm_handover
 from app.services.agents import runner
 from app.services.guardrail import assess_request
@@ -110,6 +110,23 @@ def test_guests_get_guide_only_and_a_planner_failure_asks_to_rephrase(monkeypatc
     req=ChatRequest(messages=[{'role':'user','content':'Tell me about the thing with the stuff, and the other one'}],mode='personal')
     answer=asyncio.run(orchestrator.answer(req,assess_request(req),context()))
     assert answer.answer==orchestrator.REPHRASE and seen==['guide']
+
+
+def test_a_guests_personal_tasks_become_one_guide_task():
+    """P12: one "sign in to check" Guide answer, not one per personal agent; Guide's own task and an urgent card task stay."""
+    guest=ChatRequest(messages=[{'role':'user','content':'If I have a payment due next week, move my meeting'}])
+    tasks=[PlanTask(id='a',agent='accounts',intent='card_figures',question='Do I have a payment due next week?'),
+        PlanTask(id='b',agent='relationship',intent='appointments',question='Move my meeting',priority='P2')]
+    [one]=orchestrator.checked(tasks,guest)
+    assert (one.id,one.agent,one.intent,one.entities,one.priority)==('t1','guide','general',{},'P2')
+    assert one.question=='Do I have a payment due next week? Move my meeting'
+    mixed=[PlanTask(id='g',agent='guide',intent='general',question='What is a GIRO?'),*tasks,
+        PlanTask(id='u',agent='relationship',intent=OPEN_INTENT,question='a charge I do not recognise',entities={'urgent':True},priority='P0')]
+    assert [(t.agent,t.entities) for t in orchestrator.checked(mixed,guest)]==[('guide',{}),('guide',{}),('guide',{'urgent':True})]
+    signed_in=orchestrator.checked(tasks,guest.model_copy(update={'mode':'personal'}))
+    assert [(t.agent,t.entities) for t in signed_in]==[('accounts',{'with_relationship':True}),('relationship',{})]  # C28: no waiver hint
+    alone=orchestrator.checked([tasks[0].model_copy(update={'entities':{'with_relationship':True}})],guest.model_copy(update={'mode':'personal'}))
+    assert alone[0].entities=={}  # set by code only, never by the planner
 
 
 def test_a_yes_answers_the_open_offer_without_planning_or_agents(monkeypatch: pytest.MonkeyPatch):
