@@ -9,6 +9,8 @@ Matching uses the typo-tolerant copy of her words, so "wats my crad bal" works.
 """
 import re
 from collections.abc import Sequence
+from datetime import date,timedelta
+from zoneinfo import ZoneInfo
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,Citation
 from app.schemas.customer_data import CreditCard,CustomerTransaction
@@ -161,12 +163,39 @@ def _limit_card(text: str,cards: Sequence[CreditCard]) -> CreditCard | None:
     return None
 
 
-def limit_conversation(task_id: str,history: Sequence[Message],cards: Sequence[CreditCard]) -> AgentResult | None:
-    """Gather customer-requested details in several turns using owned card records.
+MONTH_NUMBER={name:number for number,name in enumerate(('jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'),1)}
+LONGEST=90  # 0096: a temporary limit lasts from tomorrow up to 90 days
+SGT=ZoneInfo('Asia/Singapore')
+DATE_ASK='Until what date should the temporary change last (up to 90 days)?'
 
-    No model-generated figure is needed for a card selection or amount correction,
-    and no card limit is changed or submitted by this function. The UI's request
-    form remains the only submission entry point, with explicit customer review.
+
+def end_of(context: limit_context.LimitContext,today: date) -> tuple[date | None,str | None]:
+    """Her temporary end date, or the question to ask instead. A day and month without a year is the next such date after today."""
+    if context.end_date is None:
+        return None,(f'Until what date in {context.end_year} should the temporary change last (up to 90 days)?' if context.end_year else DATE_ASK)
+    day,month=context.end_date.split()
+    found=None
+    for year in ([int(context.end_year)] if context.end_year else [today.year,today.year+1]):
+        try:value=date(year,MONTH_NUMBER[month[:3].lower()],int(day))
+        except ValueError:continue
+        if context.end_year or value>today:
+            found=value;break
+    if found is None:
+        return None,f'{context.end_date}{" "+context.end_year if context.end_year else ""} is not a date. {DATE_ASK}'
+    latest=today+timedelta(days=LONGEST)
+    if not today<found<=latest:
+        return None,(f'A temporary change can last from tomorrow up to 90 days, so it can end on {when(latest)} at the latest. '
+            'Until what date should it last?')
+    return found,None
+
+
+def limit_conversation(task_id: str,history: Sequence[Message],cards: Sequence[CreditCard],today: date) -> AgentResult | None:
+    """Gather customer-requested details using owned card records.
+
+    The first reply asks for every detail she has not given (amount, card, temporary or permanent with the end date, reason);
+    a later reply asks only for what is still missing. No model-generated figure is needed for a card selection or amount
+    correction, and no card limit is changed or submitted by this function. The UI's request form remains the only
+    submission entry point, with explicit customer review.
     """
     context=limit_context.extract(history)
     if context is None:return None
@@ -183,40 +212,44 @@ def limit_conversation(task_id: str,history: Sequence[Message],cards: Sequence[C
         chosen=selected
     # One card in the authorised records removes the ambiguity, but not the approval step.
     if len(cards)==1:chosen=cards[0]
-    amount=(f'{chosen.currency} {context.amount:,}' if context.amount is not None and chosen is not None and chosen.currency else
-        f'SGD {context.amount:,}' if context.amount is not None and context.amount_currency=='SGD' else
-        f'{context.amount:,} (currency to confirm)' if context.amount is not None else None)
-    prefix=f'Your requested new limit is {amount}. ' if amount is not None else ''
-    if chosen is not None:prefix+=f'You selected the {name_of(chosen)}. '
-    if context.travel_reason:prefix+='You mentioned travel as the reason. '
-    rule=off_step(context.amount,chosen) if context.amount is not None else None
-    if rule is not None:
-        question=rule
-    elif amount is None:
-        question=('A temporary change can be requested. What new credit limit would you like?'
-            if context.temporary else 'What new credit limit would you like to request?')
-    elif context.temporary is None:
-        question='Should this increase be temporary or permanent?'
-    elif chosen is None:
-        names=', '.join(name_of(card) for card in cards)
-        question=f'Which card is this for: {names}?'
-    elif context.temporary and context.end_date is None:
-        question=(f'You mentioned {context.end_year} as the year. What day and month should the temporary change end?'
-            if context.end_year else 'What date should the temporary change end? Please include the day, month and year.')
-    elif context.temporary and context.end_year is None:
-        question=f'You said {context.end_date}. Which year should the temporary change end?'
-    else:
+    # The chosen card's currency; before she chooses, the one currency all her cards share.
+    shared={card.currency for card in cards}
+    currency=(chosen.currency if chosen is not None else next(iter(shared)) if len(shared)==1 else None) or (
+        'SGD' if context.amount_currency=='SGD' else None)
+    amount=None if context.amount is None else f'{currency} {context.amount:,}' if currency else f'{context.amount:,} (currency to confirm)'
+    asks=[]
+    if context.amount is not None and (rule:=off_step(context.amount,chosen)):asks.append(rule)
+    elif amount is None:asks.append('What new credit limit would you like?')
+    if chosen is None:asks.append(f'Which card is this for: {", ".join(name_of(card) for card in cards)}?')
+    until=None
+    if context.temporary is None:asks.append('Should it be temporary or permanent? If temporary, until what date (up to 90 days)?')
+    elif context.temporary:
+        until,ask=end_of(context,today)
+        if ask:asks.append(ask)
+    if not context.reason:asks.append('What is the reason for the change?')
+    if not asks:
         kind='temporary' if context.temporary else 'permanent'
-        end=f' until {context.end_date} {context.end_year}' if context.temporary else ''
+        end=f' until {when(until)}' if until else ''
         reason=' for your travel' if context.travel_reason else ''
         text=(f'Request ready for your review: {kind} change to {amount} on your {name_of(chosen)}{end}{reason}. '
               'Tap “Raise a card limit request” to review any remaining details and submit it yourself. '
               'The cards and credit team decides; approval isn’t guaranteed and no limit has been changed.')
         return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',text=text)
-    # Clarify one field at a time, keeping the verified previous details in the next turn.
-    text=prefix+question
+    # One reply asks for everything still missing; after our first list, only what is left, in one line.
+    if any(item.role=='assistant' and limit_context.ASKED.search(item.content) for item in history[context.start:]):
+        text='Still needed for your card limit request: '+' '.join(asks)
+    else:
+        prefix=f'Your requested new limit is {amount}. ' if amount is not None else ''
+        if chosen is not None:prefix+=f'You selected the {name_of(chosen)}. '
+        if context.travel_reason:prefix+='You mentioned travel as the reason. '
+        text=(prefix+'To prepare your card limit request I need '+('a few more details. ' if len(asks)>1 else 'one more detail. ')
+            +' '.join(asks))
     return AgentResult(task_id=task_id,agent='retail',status='needs_clarification',answer_kind='conversation',
         text=text,question=text)
+
+
+def today_of(records: RetailRecords) -> date:
+    return records.captured_at.astimezone(SGT).date()
 
 
 def respond(task_id: str,question: str,history: Sequence[Message],records: RetailRecords) -> AgentResult | None:
@@ -232,7 +265,7 @@ def respond(task_id: str,question: str,history: Sequence[Message],records: Retai
         # General 'how do I...' remains guidance; an actual request becomes multi-turn intake.
         if len(history)==1 and limit_context.extract(history).amount is None and not re.search(r'\b(?:my trip|temporary|permanent)\b',text) and not REQUEST_ACTION.search(text):
             return limit_change(task_id,text)
-        return limit_conversation(task_id,history,cards)
+        return limit_conversation(task_id,history,cards,today_of(records))
     if intent is None:
         if ELSEWHERE.search(text):return None
         intent=intent_of(text)
