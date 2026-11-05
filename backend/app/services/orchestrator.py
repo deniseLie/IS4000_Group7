@@ -659,8 +659,9 @@ async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     with span('act', 'tool', decision=reply.decision) as attrs:
         chained = await offers.chained(reply.group, ctx, runtime.context.conversation_id) if reply.decision == 'confirm' else set()
         outcomes = await offers.confirm(reply.group, ctx, reply.include) if reply.decision == 'confirm' else await offers.cancel(reply.group, ctx)
-        attrs['offers'], attrs['chained'] = len(outcomes), len(chained)
-        if reply.decision == 'confirm':attrs['failed'] = sum(o.receipt is None or o.receipt.outcome != 'succeeded' for o in outcomes)
+        attrs['offers'], attrs['chained'], attrs['switches_on'] = len(outcomes), len(chained), len(reply.include)
+        if reply.decision == 'confirm':  # a switch she left off is her no (rejected), not a failure
+            attrs['failed'] = sum(o.command.state != 'rejected' and (o.receipt is None or o.receipt.outcome != 'succeeded') for o in outcomes)
     lines, earlier = [], None
     # a switch she left off (or a cancelled group's switches) is her no; it needs no line of its own
     outcomes = [o for o in outcomes if not (o.command.state == 'rejected' and offers.optional(o.command.type, o.command.target.model_dump(mode='json')))]

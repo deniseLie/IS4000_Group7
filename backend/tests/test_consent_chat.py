@@ -164,3 +164,23 @@ def test_the_data_sharing_reads_need_her_session_and_read_through_customer_data(
         with pytest.raises(customer_data.CustomerDataIntegrityError):asyncio.run(call(context().request))
     assert seen==[('consent.sharing','customer_read_consent_sharing',{}),('consent.asks','customer_read_consent_asks',{}),
         ('consent.access_log','my_consent_access_log',{'p_limit':50})]
+
+
+def test_a_switch_left_off_has_no_line_and_is_not_counted_as_failed(monkeypatch: pytest.MonkeyPatch):
+    from contextlib import contextmanager
+    def outcome(state,type_,until=None):
+        target=SimpleNamespace(model_dump=lambda mode='json':{'until':until} if until else {})
+        return SimpleNamespace(command=SimpleNamespace(command_id=uuid4(),state=state,type=type_,target=target),
+            receipt=SimpleNamespace(outcome='succeeded',result=None) if state=='succeeded' else None)
+    async def confirm(group,ctx,include=None):return [outcome('succeeded','meeting.request'),outcome('rejected','consent.grant','request')]
+    async def unchained(*a):return set()
+    spans=[]
+    @contextmanager
+    def span(name,kind,**attrs):
+        spans.append((name,attrs));yield attrs
+    monkeypatch.setattr(offers,'confirm',confirm);monkeypatch.setattr(offers,'chained',unchained);monkeypatch.setattr(orchestrator,'span',span)
+    req=ChatRequest(messages=[{'role':'user','content':'Yes, confirm'}],mode='personal',offer={'offer_group':str(uuid4()),'decision':'confirm'})
+    answer=asyncio.run(orchestrator.answer(req,assess_request(req),context()))
+    assert answer.answer==orchestrator.DONE and orchestrator.CANCELLED not in answer.answer
+    [act]=[attrs for name,attrs in spans if name=='act']
+    assert (act['offers'],act['failed'],act['switches_on'])==(2,0,0)
