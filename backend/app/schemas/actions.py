@@ -19,8 +19,9 @@ from app.schemas.talking_points import (InsightDeleteResult,InsightMuteResult,In
 from app.schemas.document_uploads import DocumentUploadResult,DocumentUploadTarget,StoredDocumentUploadTarget
 from app.schemas.disputes import DisputeInput,DisputeResult,DisputeTarget,StoredDisputeTarget
 from app.schemas.prechecks import SubmitDocumentTarget,StoredSubmission,SubmissionResult
-from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentRequestResult,ConsentRequestTarget,
-    ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentRequestTarget,StoredConsentRevokeTarget)
+from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentGrantV2Result,ConsentGrantV2Target,ConsentRequestResult,
+    ConsentRequestTarget,ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentGrantV2Target,StoredConsentRequestTarget,
+    StoredConsentRevokeTarget,grant_target,stored_grant_target)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
     'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute','card.unblock','card.cancel_permanently','ticket.create','compliance.answer_request',
@@ -122,11 +123,11 @@ class ActionFailure(BaseModel):
 
 
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
-    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget | StoredTicketTarget | StoredRequestAnswerTarget
+    | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentGrantV2Target | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget | StoredTicketTarget | StoredRequestAnswerTarget
     | StoredMeetingRequestTarget | StoredMeetingRefTarget | StoredCounterReplyTarget
     | StoredInsightPointTarget | InsightTopicTarget | InsightResumeTarget | StoredInsightShareTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
-    | ConsentRequestTarget | ConsentGrantTarget | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget | TicketTarget | RequestAnswerTarget
+    | ConsentRequestTarget | ConsentGrantTarget | ConsentGrantV2Target | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget | TicketTarget | RequestAnswerTarget
     | MeetingRequestTarget | MeetingRefTarget | CounterReplyTarget
     | InsightPointTarget | InsightTopicTarget | InsightResumeTarget | InsightShareTarget)
 
@@ -157,7 +158,7 @@ class ActionRecord(BaseModel):
         if action_type=='appointment.hold':return SlotTarget.model_validate(value)
         if action_type in ('appointment.confirm','appointment.cancel'):return StoredAppointmentTarget.model_validate(value)
         if action_type=='consent.request':return StoredConsentRequestTarget.model_validate(value)
-        if action_type=='consent.grant':return StoredConsentGrantTarget.model_validate(value)
+        if action_type=='consent.grant':return stored_grant_target(value)
         if action_type=='consent.revoke':return StoredConsentRevokeTarget.model_validate(value)
         if action_type=='agenda.save':return StoredAgendaSaveTarget.model_validate(value)
         if action_type=='rm.share_summary':return StoredAgendaShareTarget.model_validate(value)
@@ -216,7 +217,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult | MeetingRequestResult | MeetingWithdrawResult | CounterReplyResult | InsightDeleteResult | InsightMuteResult | InsightResumeResult | InsightShareResult
+    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentGrantV2Result | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult | MeetingRequestResult | MeetingWithdrawResult | CounterReplyResult | InsightDeleteResult | InsightMuteResult | InsightResumeResult | InsightShareResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -265,7 +266,8 @@ class ActionOutcome(BaseModel):
                     if any(receipt.result.model_dump()[key]!=value for key,value in target.items()):
                         raise ValueError('Appointment receipt disagrees with its recorded target')
                 if command.type.startswith('consent.'):
-                    expected={'consent.request':ConsentRequestResult,'consent.grant':ConsentGrantResult,'consent.revoke':ConsentRevokeResult}[command.type]
+                    expected={'consent.request':ConsentRequestResult,'consent.revoke':ConsentRevokeResult,
+                        'consent.grant':ConsentGrantResult if isinstance(command.target,StoredConsentGrantTarget) else ConsentGrantV2Result}[command.type]
                     if not isinstance(receipt.result,expected):raise ValueError('Consent receipt disagrees with its operation')
                     if any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
                         raise ValueError('Consent receipt disagrees with the reviewed scope')
@@ -330,7 +332,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='appointment.hold':return SlotTarget.model_validate(value)
         if info.data.get('type') in ('appointment.confirm','appointment.cancel'):return AppointmentTarget.model_validate(value)
         if info.data.get('type')=='consent.request':return ConsentRequestTarget.model_validate(value)
-        if info.data.get('type')=='consent.grant':return ConsentGrantTarget.model_validate(value)
+        if info.data.get('type')=='consent.grant':return grant_target(value)
         if info.data.get('type')=='consent.revoke':return ConsentRevokeTarget.model_validate(value)
         if info.data.get('type')=='agenda.save':return AgendaSaveTarget.model_validate(value)
         if info.data.get('type')=='rm.share_summary':return AgendaShareTarget.model_validate(value)

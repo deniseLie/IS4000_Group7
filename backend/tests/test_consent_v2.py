@@ -1,0 +1,277 @@
+"""Consent v2 over real temporary PostgreSQL (migrations 0109-0113, RM copilot build plan phase 6): grants with a scope and
+an end, meeting-bound grants, the renewal notice, the recording notice, the wrong advisor and reassignment, and the
+Data sharing read. Synthetic data only.
+
+Run from backend/: TEST_DATABASE_LOCAL=1 ../.venv/bin/python -m pytest tests/test_consent_v2.py -q
+"""
+import json
+import os
+from datetime import date,timedelta
+from typing import TYPE_CHECKING
+from uuid import uuid4
+import pytest
+from app.schemas.actions import ActionOutcome
+from app.schemas.consent_actions import ConsentGrantV2Result
+from tests.database_support import SqlRow,set_customer
+from tests.test_meeting_requests import MICHELLE_GRANT,MICHELLE_INSIGHTS_GRANT,MICHELLE_REQUEST,act,decide,free_times,iso
+from tests.test_meeting_seam import PRIYA,SOPHIE,as_rm
+from tests.test_offer_groups import offer,sqlstate
+
+if TYPE_CHECKING:
+    from psycopg import Connection
+
+pytestmark=pytest.mark.skipif(os.getenv('TEST_DATABASE_LOCAL')!='1',reason='Opt in to native temporary PostgreSQL with TEST_DATABASE_LOCAL=1')
+ACCOUNT=10021  # Michelle's multi-currency account (0004)
+
+
+def today(db: 'Connection[SqlRow]') -> date:
+    db.execute('reset role')
+    return db.execute('select rm.today()').fetchone()[0]
+
+
+def share(category: str='transaction_insights',scope: dict|None=None,until: str='date',**extra: object) -> dict:
+    notice={'transaction_insights':'ti-2026-11','chat_topics':'ct-2026-11'}[category]
+    scope=scope or ({'accounts':'all','lookback_months':6} if category=='transaction_insights' else {'topic_areas':['home_property']})
+    return {'category':category,'recipient':SOPHIE,'scope':scope,'notice_version':notice,'until':until,**extra}
+
+
+def refused(db: 'Connection[SqlRow]',target: dict,customer: int=1002) -> str|None:
+    set_customer(db,customer)
+    case=uuid4()
+    db.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    return sqlstate(db,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case,'consent.grant',json.dumps(target),f'{case}:t1:consent.grant'))
+
+
+def meeting_of(db: 'Connection[SqlRow]',request: str=MICHELLE_REQUEST) -> str:
+    db.execute('reset role')
+    return str(db.execute('select appointment_id from rm.meeting_requests where request_id=%s',(request,)).fetchone()[0])
+
+
+def insights(db: 'Connection[SqlRow]',customer: int=1002,days: int=365) -> dict:
+    as_rm(db)
+    return db.execute("select public.rm_transaction_insights(%s,'meeting_prep',%s)",(customer,days)).fetchone()[0]
+
+
+def grant_row(db: 'Connection[SqlRow]',grant: str) -> tuple:
+    db.execute('reset role')
+    return db.execute('select categories,scope,until_kind,until_meeting_id::text,until_request_id::text,basis,end_reason,revoked_at is null,expires_at '
+        'from consent.grants where grant_id=%s',(grant,)).fetchone()
+
+
+def test_the_catalogue_names_three_gated_categories_and_what_is_always_shared(database: 'Connection[SqlRow]') -> None:
+    set_customer(database,1002)
+    rows=database.execute('select code,gated,default_on,withdrawable,max_months,notice_version,reason is not null from consent.categories order by sort').fetchall()
+    assert rows[:3]==[('transaction_insights',True,False,True,12,'ti-2026-11',False),('chat_topics',True,False,True,12,'ct-2026-11',False),
+        ('meeting_recording',True,True,False,None,'mr-2026-11',True)]
+    assert [(r[0],r[1],r[6]) for r in rows[3:]]==[('profile_basics',False,True),('products',False,True),('requests_and_meetings',False,True),
+        ('compliance_status',False,True)]  # always shared, each with the reason
+
+
+def test_a_scoped_grant_shows_only_her_chosen_account_and_months_until_her_next_meeting(database: 'Connection[SqlRow]') -> None:
+    """Done-when of phase 6: Michelle shares 3 months of one account until her next meeting; Sophie sees only that."""
+    database.execute('reset role')
+    window=database.execute("""select count(*) filter (where account_id=%s and txn_date>=now()-interval '3 months'),
+        count(*) filter (where card_id is not null and amount<0 and txn_date>=now()-interval '6 months')
+        from banking.transactions where customer_id=1002 and status in ('posted','pending')""",(ACCOUNT,)).fetchone()
+    assert window[1]>0,'Michelle has card spending in the seeded 6 months, so leaving cards out is visible'
+    before=insights(database)
+    assert before['grant_id']==MICHELLE_INSIGHTS_GRANT and before['data']['scope']['accounts']=='all' and before['data']['card_spending']
+    meeting=meeting_of(database)
+    outcome=act(database,'consent.grant',share(scope={'accounts':[ACCOUNT],'lookback_months':3},until='meeting',meeting_id=meeting))
+    assert outcome['command']['state']=='succeeded'
+    parsed=ActionOutcome.model_validate(outcome)  # the Python ledger reads it back
+    assert isinstance(parsed.receipt.result,ConsentGrantV2Result) and str(parsed.receipt.result.replaces)==MICHELLE_INSIGHTS_GRANT
+    result=outcome['receipt']['result']
+    assert result['replaces']==MICHELLE_INSIGHTS_GRANT and result['category_label']=='Transaction insights' and result['recipient_name']
+    assert grant_row(database,MICHELLE_INSIGHTS_GRANT)[6:8]==('replaced',False)  # one grant per category and RM
+    categories,scope,until,bound,*_=grant_row(database,result['grant_id'])
+    assert (categories,scope,until,bound)==(['transaction_insights'],{'accounts':[ACCOUNT],'lookback_months':3},'meeting',meeting)
+    after=insights(database)
+    assert after['shared'] is True and after['grant_id']==result['grant_id']
+    data=after['data']
+    assert data['scope']['accounts']==[{'type':'multi_currency','number':'****7734','currency':'SGD'}] and data['scope']['cards'] is False
+    assert data['scope']['lookback_months']==3 and data['transactions']==window[0] and data['card_spending']==[]
+    assert date.fromisoformat(data['from'])>=today(database)-timedelta(days=93)  # asked for 365 days, got her 3 months
+    assert '10021' not in json.dumps(after)  # account ids never reach the RM side
+    as_rm(database)
+    cash=database.execute('select public.rm_cash_events(1002)').fetchone()[0]
+    assert cash['shared'] is True and all(row['date']>=data['from'] for row in cash['data'])
+    database.execute('reset role')
+    audit=database.execute("select details from audit.events where action='consent.granted' and resource_id=%s",(result['grant_id'],)).fetchone()[0]
+    assert audit=={'category':'transaction_insights','until':'meeting','notice_version':'ti-2026-11','replaced':1,'accounts':'1','lookback_months':3,
+        'topic_areas':None}
+
+
+def test_until_meeting_ends_when_the_meeting_side_closes_it_or_the_meeting_is_cancelled(database: 'Connection[SqlRow]') -> None:
+    meeting=meeting_of(database)
+    granted=act(database,'consent.grant',share(until='meeting',meeting_id=meeting))['receipt']['result']
+    database.execute('reset role')
+    assert database.execute("select expires_at=a.ends_at+interval '30 days' from consent.grants g,rm.appointments a where g.grant_id=%s and a.appointment_id=%s",
+        (granted['grant_id'],meeting)).fetchone()==(True,)  # the backstop if the minutes are never approved
+    assert database.execute('select consent.close_meeting_grants(%s)',(meeting,)).fetchone()==(1,)  # minutes.approved on the meeting side
+    assert database.execute('select consent.close_meeting_grants(%s)',(meeting,)).fetchone()==(0,)
+    assert grant_row(database,granted['grant_id'])[6:8]==('meeting_closed',False)
+    gap=insights(database)
+    assert gap['shared'] is False and gap['data'] is None
+    database.execute('reset role')
+    assert database.execute("select details from audit.events where action='consent.closed' and resource_id=%s",(granted['grant_id'],)).fetchone()[0]=={
+        'reason':'meeting_closed','meeting_id':meeting,'category':'transaction_insights'}
+    assert sqlstate(database,"select consent.close_meeting_grants(%s,'whenever')",(meeting,))=='22023'
+    # The meeting runner's role may call it; the app's roles may not.
+    assert database.execute("select has_function_privilege('demobank_meetings','consent.close_meeting_grants(uuid,text)','execute'),"
+        "has_function_privilege('authenticated','consent.close_meeting_grants(uuid,text)','execute')").fetchone()==(True,False)
+    again=act(database,'consent.grant',share(until='meeting',meeting_id=meeting))['receipt']['result']
+    database.execute('reset role')
+    database.execute("update rm.appointments set status='cancelled' where appointment_id=%s",(meeting,))
+    assert grant_row(database,again['grant_id'])[6:8]==('meeting_cancelled',False)
+
+
+def test_sharing_until_a_requested_meeting_follows_the_request(database: 'Connection[SqlRow]') -> None:
+    """The meeting request card's switch: a chained consent.grant after meeting.request, bound to the meeting it becomes."""
+    times=free_times(database,n=2)
+    set_customer(database,1002)
+    case,group=uuid4(),uuid4()
+    database.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    offer(database,case,'meeting.request',{'advisor_id':SOPHIE,'purpose':'Home loan for a condo next year','topics':['home_loan'],'format':'video',
+        'preferred_times':iso(times)},group,1)
+    offer(database,case,'consent.grant',{**share(until='request'),'after_receipt':None},group,2,task='t2')
+    offer(database,case,'consent.grant',{**share('chat_topics',until='request'),'after_receipt':None},group,3,task='t3')
+    outcomes=database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0]
+    assert [o['command']['state'] for o in outcomes]==['succeeded']*3
+    request=outcomes[0]['receipt']['result']['request_id']
+    grants=[o['receipt']['result']['grant_id'] for o in outcomes[1:]]
+    assert [o['receipt']['result']['until_request_id'] for o in outcomes[1:]]==[request,request]
+    assert all(grant_row(database,g)[2:5]==('request',None,request) for g in grants)
+    decide(database,request,'accept',times[0])
+    meeting=meeting_of(database,request)
+    assert all(grant_row(database,g)[3]==meeting for g in grants)  # scheduled: bound to its meeting
+    database.execute('reset role')
+    assert database.execute('select consent.close_meeting_grants(%s)',(meeting,)).fetchone()==(2,)
+    # Not chained to a request: refused at proposal.
+    assert refused(database,share(until='request'))=='22023'
+
+
+def test_a_withdrawn_request_ends_the_grants_waiting_for_it(database: 'Connection[SqlRow]') -> None:
+    times=free_times(database,n=1)
+    set_customer(database,1002)
+    case,group=uuid4(),uuid4()
+    database.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    offer(database,case,'meeting.request',{'advisor_id':SOPHIE,'purpose':'Investments','topics':['investments'],'format':'phone',
+        'preferred_times':iso(times)},group,1)
+    offer(database,case,'consent.grant',{**share(until='request'),'after_receipt':None},group,2,task='t2')
+    outcomes=database.execute('select public.offer_group_confirm(%s)',(group,)).fetchone()[0]
+    request,grant=outcomes[0]['receipt']['result']['request_id'],outcomes[1]['receipt']['result']['grant_id']
+    assert act(database,'meeting.withdraw',{'request_id':request})['command']['state']=='succeeded'
+    assert grant_row(database,grant)[6:8]==('request_closed',False)
+
+
+def test_end_dates_are_checked_and_expiry_closes_access(database: 'Connection[SqlRow]') -> None:
+    day=today(database)
+    for expires in [day,day+timedelta(days=400),'2026-02-30']:
+        assert refused(database,share(until='date',expires_on=str(expires)))=='22023'
+    assert refused(database,share(until='date'))=='22023'  # no date
+    granted=act(database,'consent.grant',share(until='date',expires_on=str(day+timedelta(days=30))))['receipt']['result']
+    assert date.fromisoformat(granted['expires_at'][:10])>=day+timedelta(days=30)  # through the end of that day in Singapore
+    database.execute('reset role')
+    database.execute("update consent.grants set expires_at=now()-interval '1 second' where grant_id=%s",(granted['grant_id'],))
+    assert database.execute("select rm.consent_active(1002,'transaction_insights',%s)",(SOPHIE,)).fetchone()==(False,)
+    assert insights(database)['shared'] is False
+
+
+def test_a_renewal_notice_comes_seven_days_before_a_dated_grant_ends(database: 'Connection[SqlRow]') -> None:
+    day=today(database)
+    granted=act(database,'consent.grant',share(until='date',expires_on=str(day+timedelta(days=5))))['receipt']['result']
+    database.execute('reset role')
+    first=database.execute('select events.enqueue_due_reminders()').fetchone()[0]
+    again=database.execute('select events.enqueue_due_reminders()').fetchone()[0]
+    events=database.execute("select payload from events.outbox where event_type='consent.renewal_due' and customer_id=1002").fetchall()
+    assert first>=1 and [e[0]['grant_id'] for e in events]==[granted['grant_id']] and again<first
+    delivered=database.execute("select notify.deliver(o) from events.outbox o where event_type='consent.renewal_due' and customer_id=1002").fetchone()[0]
+    assert delivered['disposition']=='delivered'
+    title,body=database.execute("select title,body from notify.inbox where customer_id=1002 and template_key='consent.renewal_due'").fetchone()
+    assert title=='Sharing ends soon' and 'transaction insights' in body and 'Sophie Lim' in body and 'Data sharing' in body
+    # A replaced grant's notice is stale.
+    act(database,'consent.grant',share(until='date',expires_on=str(day+timedelta(days=60))))
+    database.execute('reset role')
+    database.execute('delete from notify.inbox where customer_id=1002 and template_key=%s',('consent.renewal_due',))
+    assert database.execute("select notify.deliver(o)->>'disposition' from events.outbox o where event_type='consent.renewal_due' and customer_id=1002").fetchone()==('stale',)
+
+
+def test_only_her_current_rm_and_the_current_notice_can_be_granted(database: 'Connection[SqlRow]') -> None:
+    assert refused(database,{**share(),'recipient':PRIYA,'until':'date','expires_on':str(today(database)+timedelta(days=30))})=='42501'
+    assert refused(database,{**share(until='date',expires_on=str(today(database)+timedelta(days=30))),'notice_version':'ti-2025-01'})=='22023'
+    assert refused(database,share(scope={'accounts':[10011],'lookback_months':3},until='date',expires_on=str(today(database)+timedelta(days=30))))=='42501'  # Alex's
+    assert refused(database,share(scope={'accounts':'all','lookback_months':9},until='date',expires_on=str(today(database)+timedelta(days=30))))=='22023'
+    assert refused(database,share('chat_topics',{'topic_areas':['health']},until='date',expires_on=str(today(database)+timedelta(days=30))))=='22023'
+    assert refused(database,{**share(until='date',expires_on=str(today(database)+timedelta(days=30))),'category':'meeting_recording'})=='22023'
+
+
+def test_reassignment_ends_access_and_the_new_rm_needs_her_own_grant(database: 'Connection[SqlRow]') -> None:
+    database.execute('reset role')
+    assert database.execute("select rm.consent_active(1002,'transaction_insights',%s)",(SOPHIE,)).fetchone()==(True,)
+    database.execute("update rm.assignments set ended_on=rm.today() where customer_id=1002 and advisor_id=%s and ended_on is null",(SOPHIE,))
+    database.execute("insert into rm.assignments(customer_id,advisor_id,started_on) values(1002,%s,rm.today())",(PRIYA,))
+    assert database.execute("select rm.consent_active(1002,'transaction_insights',%s),rm.consent_active(1002,'transaction_insights',%s)",
+        (SOPHIE,PRIYA)).fetchone()==(False,False)
+    assert insights(database)['denied'] is True  # Sophie: no longer her client
+    assert refused(database,share(until='date',expires_on=str(today(database)+timedelta(days=30))))=='42501'  # Sophie is not her RM now
+    granted=act(database,'consent.grant',{**share(until='date',expires_on=str(today(database)+timedelta(days=30))),'recipient':PRIYA})
+    assert granted['command']['state']=='succeeded' and granted['receipt']['result']['replaces'] is None
+    database.execute('reset role')
+    assert database.execute("select rm.consent_active(1002,'transaction_insights',%s)",(PRIYA,)).fetchone()==(True,)
+
+
+def test_meeting_recording_is_on_under_the_meeting_notice_and_cannot_be_revoked(database: 'Connection[SqlRow]') -> None:
+    database.execute('reset role')
+    assert database.execute("select count(*) from consent.grants where customer_id=1007 and 'meeting_recording'=any(categories)").fetchone()==(0,)
+    [at]=free_times(database,1007,n=1)
+    database.execute('reset role')
+    meeting=database.execute("""insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status)
+        values(1007,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed') returning appointment_id,recording_notice_version""",(SOPHIE,at,at)).fetchone()
+    assert meeting[1]=='mr-2026-11'
+    grant,basis,version,until=database.execute("""select grant_id::text,basis,notice_version,until_kind from consent.grants
+        where customer_id=1007 and categories=array['meeting_recording']""").fetchone()
+    assert (basis,version,until)==('notice','mr-2026-11',None)
+    assert database.execute("select rm.consent_active(1007,'meeting_recording',%s)",(SOPHIE,)).fetchone()==(True,)
+    set_customer(database,1002)  # Michelle's seeded recording grant is notice-based too
+    case=uuid4()
+    database.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    assert sqlstate(database,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',
+        (uuid4(),case,'consent.revoke',json.dumps({'grant_id':'00000000-0000-4000-8000-100200000043'}),f'{case}:t1:consent.revoke'))=='22023'
+
+
+def test_revoking_a_v2_grant_records_why_it_ended(database: 'Connection[SqlRow]') -> None:
+    outcome=act(database,'consent.revoke',{'grant_id':MICHELLE_INSIGHTS_GRANT})
+    assert outcome['command']['state']=='succeeded' and outcome['receipt']['result']['status']=='revoked'
+    ActionOutcome.model_validate(outcome)
+    assert grant_row(database,MICHELLE_INSIGHTS_GRANT)[6:8]==('revoked',False)
+    gap=insights(database)
+    assert gap['shared'] is False and gap['data'] is None
+
+
+def test_chat_topic_areas_limit_the_inferred_topics_she_shares(database: 'Connection[SqlRow]') -> None:
+    as_rm(database)
+    assert [p['topic'] for p in database.execute("select public.rm_talking_points(1002,'meeting_prep')").fetchone()[0]['data']]==['home_loan']
+    granted=act(database,'consent.grant',share('chat_topics',{'topic_areas':['investments','deposits']},until='date',
+        expires_on=str(today(database)+timedelta(days=30))))['receipt']['result']
+    assert granted['replaces']==MICHELLE_GRANT and granted['scope']=={'topic_areas':['investments','deposits']}
+    as_rm(database)
+    shown=database.execute("select public.rm_talking_points(1002,'meeting_prep')").fetchone()[0]
+    assert shown['shared'] is True and shown['data']==[] and shown['pending'] is False  # home_loan is outside her areas
+
+
+def test_data_sharing_reads_her_cards_accounts_and_next_meeting_under_her_jwt(database: 'Connection[SqlRow]') -> None:
+    set_customer(database,1002)
+    data=database.execute('select public.customer_read_consent_sharing(1002)').fetchone()[0]['data']
+    assert data['rm']['advisor_id']==SOPHIE and data['rm']['name']=='Sophie Lim'
+    cards={c['code']:c for c in data['categories']}
+    assert cards['transaction_insights']['grant']['grant_id']==MICHELLE_INSIGHTS_GRANT and cards['transaction_insights']['grant']['scope']=={
+        'accounts':'all','lookback_months':6}
+    assert cards['meeting_recording']['grant']['basis']=='notice' and cards['products']['grant'] is None and not cards['products']['gated']
+    database.execute('reset role')
+    first=database.execute("select appointment_id::text from rm.appointments where customer_id=1002 and advisor_id=%s and status='confirmed' "
+        "and starts_at>now() order by starts_at limit 1",(SOPHIE,)).fetchone()[0]
+    assert [a['account_id'] for a in data['accounts']]==[ACCOUNT] and data['next_meeting']['meeting_id']==first
+    assert data['topic_areas']==['home_property','investments','deposits','insurance','cards','everyday_banking']
+    set_customer(database,1002)
+    assert sqlstate(database,'select public.customer_read_consent_sharing(1003)',())=='42501'
