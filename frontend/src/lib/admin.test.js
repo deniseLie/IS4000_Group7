@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {KINDS,MIN_COMPARE,SIDES,counted,defaultPair,delta,filterGroups,firstLine,isAdmin,loadAgents,mix,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
+import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,failingFirst,filterGroups,firstLine,isAdmin,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -56,6 +56,24 @@ test('the default comparison is the last two full runs, else the last two runs',
   assert.deepEqual(defaultPair([point('a'),point('b'),point('c',true)]),['a','b']);
   assert.deepEqual(defaultPair([point('a'),point('b',true)]),['a','b']);
   assert.deepEqual(defaultPair([point('a')]),[null,null]);
+});
+
+test('the All datasets row is the latest full run against the full run before it, with its problem cases', () => {
+  const point=(experiment,pass_rate,subset=false)=>({experiment,pass_rate,subset,started_at:`2026-11-0${experiment.length}T00:00:00Z`,counts:{pass:1,fail:0,error:0,skipped:0}});
+  const row=datasetRow({dataset:'demobank-graph',runs:3,last_run:'2026-11-04T00:00:00Z',stale:false,
+    timeline:[point('a',0.6),point('bb',0.8),point('ccc',0.1,true)],heatmap:{labels:{passing:4,flaky:1,regressed:2,fixed:3}}});
+  assert.equal(row.pass_rate,0.8);assert.equal(row.previous_pass_rate,0.6);assert.equal(row.started_at,'2026-11-02T00:00:00Z');assert.equal(row.fixed,3);
+  assert.deepEqual(row.problems,[{label:'regressed',count:2},{label:'flaky',count:1}]);
+  const never=datasetRow({dataset:'demobank-new',runs:0,timeline:[],heatmap:{labels:{}}});
+  assert.equal(never.pass_rate,null);assert.equal(never.counts,null);assert.deepEqual(never.problems,[]);
+});
+
+test('heatmap rows put cases that need a look first and a run lists errors and failures first, otherwise in order', () => {
+  const rows=[['C01','passing'],['C02','flaky'],['C03','fixed'],['C04','regressed'],['C05','passing'],['C06','always_failing']].map(([case_id,label])=>({case_id,label}));
+  assert.deepEqual(problemFirst(rows).map(row=>row.case_id),['C04','C02','C06','C03','C01','C05']);
+  const cases=[['C01','pass'],['C02','fail'],['C03','error'],['C04','skipped'],['C05','fail']].map(([case_id,status])=>({case_id,status}));
+  assert.deepEqual(failingFirst(cases).map(item=>item.case_id),['C03','C02','C05','C04','C01']);
+  assert.equal(rows[0].case_id,'C01');  // the input order is kept
 });
 
 test('two prompt versions are compared only with enough calls or cases on both sides', () => {

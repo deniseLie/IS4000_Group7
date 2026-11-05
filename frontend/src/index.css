@@ -1526,6 +1526,19 @@ small{font-size:max(12px,.83em)}
 .admin-heatmap tr.chosen td.admin-heat-label { outline: 2px solid var(--ink); border-radius: 999px; }
 .admin-heatmap .admin-heat-col { font-size: 10px; text-align: center; padding: 0; }
 .admin-heatmap td.admin-heat-label { width: auto; height: auto; background: transparent; padding-left: 6px; }
+/* Clickable runs and cases: a dot on the pass-rate chart, a heatmap cell or column date opens Run detail. */
+.admin-chart .dot.pick, .admin-heatmap td.pick { cursor: pointer; }
+.admin-chart .dot.pick:hover, .admin-chart .dot.pick:focus-visible { stroke-width: 3.5; outline: none; }
+.admin-heatmap td.pick:hover, .admin-heatmap td.pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.admin-heat-run { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.admin-heat-run:hover { color: var(--ink); }
+.admin-heat-legend { margin: 0 0 8px; }
+.admin-heat-key { display: inline-block; width: 12px; height: 10px; margin-right: 5px; border-radius: 3px; vertical-align: -1px; }
+.admin-heat-key.pass { background: #7cbf87; } .admin-heat-key.fail { background: #d9705f; } .admin-heat-key.error { background: #8a2a1c; }
+.admin-heat-key.skipped { background: #d6d6cd; } .admin-heat-key.none { border: 1px dashed var(--muted); }
+.admin-heat-tools { margin: 0 0 10px; }
+.admin-row.chosen { background: rgba(189,41,30,.05); }
+.admin-table td.admin-nowrap { white-space: nowrap; }
 .admin-group-row th { padding-top: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); text-align: left; }
 .admin-trend { width: 40%; }
 .admin-trend svg.admin-spark { width: 100%; height: 24px; display: block; }
