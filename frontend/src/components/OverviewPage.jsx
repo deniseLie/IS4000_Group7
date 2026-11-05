@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import Icon from './Icon';
-import {initials} from './SharingPage';
+import {initials} from '../lib/format';
 import Statements from './Statements';
 import CardControls from './CardControls';
 import {supabase} from '../lib/supabase';

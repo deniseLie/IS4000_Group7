@@ -5,7 +5,7 @@ import {readEvents,redact} from './chatTools.js';
 
 const API=import.meta.env?.VITE_API_URL||'/api';
 
-export function isRm(session) {return session?.user?.app_metadata?.demobank_role==='rm';}
+export {isRm} from './roles.js';
 export function newId() {return globalThis.crypto.randomUUID();}
 
 async function call(method,path,token,body,signal) {

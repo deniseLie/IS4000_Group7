@@ -1,9 +1,7 @@
 // Admin dashboard (AI engineering view): LangSmith evaluations and traces, read through the backend (the LangSmith key
 // stays server-side). Only the page link depends on this check; the backend verifies the signed token on every call.
 const API=import.meta.env?.VITE_API_URL||'/api';
-export const ADMIN_ROLE='admin';
-
-export function isAdmin(session) {return session?.user?.app_metadata?.demobank_role===ADMIN_ROLE;}
+export {ADMIN_ROLE,isAdmin} from './roles.js';
 
 async function get(path,token,signal) {
   const response=await fetch(`${API}/admin${path}`,{headers:{Authorization:`Bearer ${token}`},signal});
