@@ -158,13 +158,15 @@ def test_without_chat_topics_only_her_shared_points_reach_the_rm_audited_as_clie
     assert events['data.read']=={'tool':'rm.talking_points','result_count':1,'basis':'client_shared','command_ids':[command],'purpose':'client_view'}
 
 
-def test_withdrawing_chat_topics_deletes_inferred_points_and_all_evidence_and_keeps_confirmed_ones(database: 'Connection[SqlRow]') -> None:
+def test_withdrawing_chat_topics_removes_inferred_points_and_all_evidence_and_keeps_confirmed_ones(database: 'Connection[SqlRow]') -> None:
     act(database,'insight.share',{'topic':'insurance','stage':'planning','timeframe':'unknown'})
     record(database,saved_turn(database,'Planning to invest'),'investments','planning','invest')
     owner(database)
     assert database.execute('select count(*) from insights.talking_point_evidence where customer_id=1002').fetchone()==(2,)
     database.execute('update consent.grants set revoked_at=now() where grant_id=%s',(MICHELLE_GRANT,))
-    assert database.execute('select topic,origin from insights.talking_points where customer_id=1002').fetchall()==[('insurance','confirmed')]
+    assert database.execute('select topic,origin from insights.talking_points where customer_id=1002 and deleted_at is null').fetchall()==[('insurance','confirmed')]
+    # 0110: removed softly (purged after 7 days), her words at once
+    assert database.execute("select count(*) from insights.talking_points where customer_id=1002 and deleted_reason='chat_topics_revoked'").fetchone()==(2,)
     assert database.execute('select count(*) from insights.talking_point_evidence where customer_id=1002').fetchone()==(0,)
     assert database.execute("select details from audit.events where action='data.talking_points_forgotten' order by event_id desc limit 1").fetchone()==(
         {'points':2,'evidence':2},)
@@ -172,10 +174,13 @@ def test_withdrawing_chat_topics_deletes_inferred_points_and_all_evidence_and_ke
 
 def test_her_controls_run_at_once_and_leave_receipts(database: 'Connection[SqlRow]') -> None:
     deleted=propose(database,'insight.delete',{'point_id':MICHELLE_POINT})
-    assert deleted['command']['state']=='succeeded' and deleted['receipt']['result']=={'point_id':MICHELLE_POINT,'topic':'home_loan','status':'deleted'}
+    result=deleted['receipt']['result']
+    assert deleted['command']['state']=='succeeded' and {k:result[k] for k in ('point_id','topic','status')}=={'point_id':MICHELLE_POINT,'topic':'home_loan','status':'deleted'}
     owner(database)
-    assert database.execute('select count(*) from insights.talking_points where point_id=%s',(MICHELLE_POINT,)).fetchone()==(0,)
-    assert database.execute('select count(*) from insights.talking_point_evidence where point_id=%s',(MICHELLE_POINT,)).fetchone()==(0,)
+    # 0110: removed softly with a 7-day undo; her quotes stay for the undo until the purge (never shown to the RM)
+    assert database.execute("select deleted_reason,purge_after>now()+interval '6 days' from insights.talking_points where point_id=%s",
+        (MICHELLE_POINT,)).fetchone()==('client',True)
+    assert database.execute('select count(*) from insights.talking_point_evidence where point_id=%s',(MICHELLE_POINT,)).fetchone()==(1,)
     assert refused(database,'insight.delete',{'point_id':MEI_LING_POINT},customer=1001)=='42501'  # not hers
     record(database,saved_turn(database,'Planning to invest'),'investments','planning','invest')
     muted=propose(database,'insight.mute',{'topic':'investments'})

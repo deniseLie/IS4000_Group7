@@ -10,7 +10,9 @@ SKIP LOCKED excludes competing workers. Expected event failures persist a bounde
 dead-letter outcome; unknown SQL/programming failures propagate and stop this worker.
 The standalone scheduler calls the idempotent recorded-deadline producer every minute.
 It enqueues one reminder per case/due-date/day, from today through seven days ahead in
-Asia/Singapore, only while checklist items remain outstanding. Email and worker-started
+Asia/Singapore, only while checklist items remain outstanding, and (0109) one renewal notice per
+dated consent grant 7 days before it ends. The same minute it purges talking points removed more
+than 7 days ago (0110, events.purge_removed_topics: audited data.insight_purged, ids only). Email and worker-started
 AI turns are not implemented. Templates currently cover en; missing locales fail explicitly.
 """
 import asyncio
@@ -90,12 +92,24 @@ async def enqueue_reminders(db: AsyncConnection[WorkerRow]) -> int:
     return TypeAdapter(StrictInt).validate_python(row[0])
 
 
+async def purge_removed_topics(db: AsyncConnection[WorkerRow]) -> int:
+    async def execute() -> WorkerRow | None:
+        cursor=await db.execute('select events.purge_removed_topics()')
+        return await cursor.fetchone()
+    row=await database_call(execute)
+    if row is None:raise RuntimeError('Topic purge returned no result row')
+    purged=TypeAdapter(StrictInt).validate_python(row[0])
+    if purged:log_event('worker_topics_purged',logging.INFO,count=purged)
+    return purged
+
+
 async def run(db: AsyncConnection[WorkerRow],poll_seconds: float) -> None:
     loop=asyncio.get_running_loop()
     next_schedule=loop.time()
     while True:
         if loop.time()>=next_schedule:
             await enqueue_reminders(db)
+            await purge_removed_topics(db)
             next_schedule=loop.time()+60
         result=await process_once(db)
         if result is None:await asyncio.sleep(poll_seconds)

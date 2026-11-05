@@ -275,3 +275,110 @@ def test_data_sharing_reads_her_cards_accounts_and_next_meeting_under_her_jwt(da
     assert data['topic_areas']==['home_property','investments','deposits','insurance','cards','everyday_banking']
     set_customer(database,1002)
     assert sqlstate(database,'select public.customer_read_consent_sharing(1003)',())=='42501'
+
+
+# 6b (0110): topic deletion with undo -----------------------------------------------------------------------------------
+MICHELLE_POINT='00000000-0000-4000-8000-100200000091'
+MEI_LING_POINT='00000000-0000-4000-8000-100700000091'
+
+
+def topics(db: 'Connection[SqlRow]',customer: int=1002) -> dict:
+    as_rm(db)
+    return db.execute("select public.rm_talking_points(%s,'meeting_prep')",(customer,)).fetchone()[0]
+
+
+def status(db: 'Connection[SqlRow]',points: list[str],customer: int=1002) -> list[tuple]:
+    as_rm(db)
+    data=db.execute('select public.rm_point_status(%s,%s::uuid[])',(customer,points)).fetchone()[0]['data']
+    return [(row['status'],row['removed_on'] is not None) for row in data]
+
+
+def automatic(db: 'Connection[SqlRow]',kind: str,target: dict,customer: int=1002) -> dict:
+    set_customer(db,customer)
+    case=uuid4()
+    db.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    return db.execute('select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case,kind,json.dumps(target),f'{case}:t1:{kind}')).fetchone()[0]
+
+
+def purge(db: 'Connection[SqlRow]') -> int:
+    db.execute('reset role')
+    db.execute("update insights.talking_points set purge_after=now()-interval '1 second' where deleted_at is not null")
+    db.execute('set local role demobank_worker')  # the worker's role (app/worker.py calls it every minute)
+    try:return db.execute('select events.purge_removed_topics()').fetchone()[0]
+    finally:db.execute('reset role')
+
+
+def test_her_delete_hides_a_topic_at_once_undo_brings_it_back_and_the_purge_ends_it(database: 'Connection[SqlRow]') -> None:
+    assert [p['point_id'] for p in topics(database)['data']]==[MICHELLE_POINT]
+    deleted=automatic(database,'insight.delete',{'point_id':MICHELLE_POINT})
+    assert deleted['command']['state']=='succeeded' and deleted['receipt']['result']['status']=='deleted' and deleted['receipt']['result']['restore_until']
+    ActionOutcome.model_validate(deleted)
+    shown=topics(database)
+    assert shown['shared'] is True and shown['data']==[] and shown['pending'] is False  # gone from every RM read at once
+    assert status(database,[MICHELLE_POINT])==[('removed',True)]
+    set_customer(database,1002)
+    mine=database.execute('select public.customer_read_talking_points(1002)').fetchone()[0]['data']
+    assert mine['points']==[] and [(p['point_id'],p['reason'],p['can_restore']) for p in mine['removed']]==[(MICHELLE_POINT,'client',True)]
+    assert refused_point(database,'insight.delete',MICHELLE_POINT)=='22023'  # already removed
+    restored=automatic(database,'insight.restore',{'point_id':MICHELLE_POINT})
+    assert restored['receipt']['result']=={'point_id':MICHELLE_POINT,'topic':'home_loan','status':'restored'}
+    ActionOutcome.model_validate(restored)
+    assert [p['point_id'] for p in topics(database)['data']]==[MICHELLE_POINT] and status(database,[MICHELLE_POINT])==[('shown',False)]
+    automatic(database,'insight.delete',{'point_id':MICHELLE_POINT})
+    assert purge(database)==1
+    assert database.execute('select count(*) from insights.talking_points where point_id=%s',(MICHELLE_POINT,)).fetchone()==(0,)
+    assert database.execute('select count(*) from insights.talking_point_evidence where point_id=%s',(MICHELLE_POINT,)).fetchone()==(0,)
+    assert database.execute("select details,actor_type from audit.events where action='data.insight_purged' and resource_id=%s",(MICHELLE_POINT,)).fetchone()==(
+        {'reason':'client'},'system')
+    assert status(database,[MICHELLE_POINT,MEI_LING_POINT])==[('removed',True),('unknown',False)]  # still removed after the purge; one client per call
+    database.execute('reset role')
+    assert refused_point(database,'insight.restore',MICHELLE_POINT)=='42501'  # purged: nothing to restore
+
+
+def refused_point(db: 'Connection[SqlRow]',kind: str,point: str) -> str|None:
+    set_customer(db,1002)
+    case=uuid4()
+    db.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    return sqlstate(db,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case,kind,json.dumps({'point_id':point}),f'{case}:t1:{kind}'))
+
+
+def test_a_deleted_topic_is_not_inferred_again_before_it_is_purged(database: 'Connection[SqlRow]') -> None:
+    from tests.test_talking_points_db import record,saved_turn
+    automatic(database,'insight.delete',{'point_id':MICHELLE_POINT})
+    assert record(database,saved_turn(database,'Still planning to buy a condo'),'home_loan','planning','buy a condo')['reason']=='removed'
+    purge(database)
+    assert record(database,saved_turn(database,'Still planning to buy a condo'),'home_loan','planning','buy a condo')['recorded'] is True
+
+
+def test_revoking_chat_topics_removes_inferred_topics_and_keeps_the_ones_she_shared(database: 'Connection[SqlRow]') -> None:
+    from tests.test_talking_points_db import record,saved_turn
+    act(database,'insight.share',{'topic':'insurance','stage':'planning','timeframe':'unknown'})
+    record(database,saved_turn(database,'Planning to invest'),'investments','planning','invest')
+    revoked=act(database,'consent.revoke',{'grant_id':MICHELLE_GRANT})
+    assert revoked['command']['state']=='succeeded'
+    database.execute('reset role')
+    rows=database.execute('select topic,origin,deleted_reason from insights.talking_points where customer_id=1002 order by topic').fetchall()
+    assert rows==[('home_loan','inferred','chat_topics_revoked'),('insurance','confirmed',None),('investments','inferred','chat_topics_revoked')]
+    assert database.execute('select count(*) from insights.talking_point_evidence where customer_id=1002').fetchone()==(0,)  # her words go at once
+    gap=topics(database)
+    assert gap['shared'] is False and [(p['topic'],p['origin']) for p in gap['data']]==[('insurance','confirmed')]
+    database.execute('reset role')
+    assert database.execute("select outcome,details->>'reason' from audit.events where action='policy.rm_consent_gap' and resource_id=%s",
+        (gap['call_id'],)).fetchone()==('denied','no_active_consent')  # the copilot shows the gap; the refusal is audited
+    assert record(database,saved_turn(database,'Ready to invest'),'investments','ready','invest')['reason']=='no_consent'  # extraction stops
+    assert refused_point(database,'insight.restore',MICHELLE_POINT)=='22023'  # only her own delete has an undo
+    # Sharing chat topics again: the removed points are not brought back, new ones are recorded afresh.
+    act(database,'consent.grant',share('chat_topics',{'topic_areas':['investments']},until='date',expires_on=str(today(database)+timedelta(days=30))))
+    assert record(database,saved_turn(database,'Ready to invest'),'investments','ready','invest')['recorded'] is True
+
+
+def test_narrowing_her_topic_areas_removes_the_inferred_topics_outside_them(database: 'Connection[SqlRow]') -> None:
+    from tests.test_talking_points_db import record,saved_turn
+    act(database,'consent.grant',share('chat_topics',{'topic_areas':['investments']},until='date',expires_on=str(today(database)+timedelta(days=30))))
+    database.execute('reset role')
+    assert database.execute('select deleted_reason from insights.talking_points where point_id=%s',(MICHELLE_POINT,)).fetchone()==('scope_narrowed',)
+    assert record(database,saved_turn(database,'Buying a condo next year'),'home_loan','planning','condo')['reason']=='out_of_scope'
+    assert record(database,saved_turn(database,'Planning to invest'),'investments','planning','invest')['recorded'] is True
+    database.execute('reset role')
+    assert sqlstate(database,"insert into insights.talking_points(customer_id,topic,stage,origin,visible_from,expires_at) "
+        "values(1002,'health','curious','inferred',now(),now())",())=='23514'  # never stored

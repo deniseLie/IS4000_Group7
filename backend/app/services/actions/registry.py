@@ -31,4 +31,5 @@ EXECUTORS: dict[CustomerActionType,Callable[[ActionCommand],InputTarget]] = {
     'insight.mute': insights.mute,
     'insight.resume': insights.resume,
     'insight.share': insights.share,
+    'insight.restore': insights.restore,
 }

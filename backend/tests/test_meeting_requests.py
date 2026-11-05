@@ -241,7 +241,7 @@ def test_the_demo_reset_seeds_the_meetings_again_from_today(database: 'Connectio
     accepted=decide(database,MEI_LING_REQUEST,'accept',at)['request']['appointment_id']
     database.execute('reset role')
     database.execute('update consent.grants set revoked_at=now() where grant_id=%s',(MICHELLE_GRANT,))
-    assert database.execute('select count(*) from insights.talking_points where customer_id=1002').fetchone()==(0,)  # 0108: withdrawal
+    assert database.execute('select count(*) from insights.talking_points where customer_id=1002 and deleted_at is null').fetchone()==(0,)  # 0108/0110: withdrawal
     seeded=database.execute('select appointment_id from rm.meeting_requests where request_id=%s',(MICHELLE_REQUEST,)).fetchone()[0]
     others=database.execute('select count(*) from rm.appointments where customer_id=1002 and appointment_id<>%s',(seeded,)).fetchone()[0]
     first=database.execute('select rm.reset_meeting_demo()').fetchone()[0]

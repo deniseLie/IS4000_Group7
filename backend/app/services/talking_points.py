@@ -254,4 +254,7 @@ def points_with_lines(envelope: CustomerEnvelope[MyTalkingPoints]) -> dict:
     for point,model in zip(data['data']['points'],envelope.data.points,strict=True):
         point['line']=TalkingPoint.model_validate(model.model_dump(include=set(TalkingPoint.model_fields))).line()
         point['topic_name']=TOPIC_NAME[model.topic]
+    for point,model in zip(data['data']['removed'],envelope.data.removed,strict=True):  # 0110: what she removed, with Undo
+        point['line']=TalkingPoint.model_validate(model.model_dump(include=set(TalkingPoint.model_fields))).line()
+        point['topic_name']=TOPIC_NAME[model.topic]
     return data
