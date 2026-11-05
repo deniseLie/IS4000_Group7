@@ -80,6 +80,13 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Today → Topics clients shared with you**: confirmed topics from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
 - Reassigning the client ends access at once (book check first); one client per call.
 
+## Consent v2: what clients share and asking for more (build plan phase 6, 0109–0113)
+
+- Each grant now has a scope and an end: transaction insights for all accounts or the ones the client picked, over 3, 6 or 12 months; chat topics for the topic areas the client picked; until a date, the end of a meeting, or until her meeting request is answered (then the meeting it becomes). Readers return only what the scope covers; reassignment ends every grant to the previous RM at once.
+- **Ask the client to share**: a brief or overview that hits a consent gap carries an *Ask the client to share* card per missing category, with a fixed reason (`meeting_prep` with the meeting, else `review`); Sophie approves it through `POST /rm/consent-requests` (`rm_ask_consent`, book check first, one open ask per client and category). The client gets an Inbox notice and an `rm_consent_request` ticket; the ask closes when she shares (any grant of that category), says *Not now*, or after 14 days. Sophie never writes the wording.
+- The client sees every read of her shared data in an access log built from the audit trail (ids, codes and dates only).
+- A client's *Delete all my data* opens a `data_deletion` ticket for the data protection team (10 business days); it is not routed to the RM.
+
 ## Layout (Nov 2026 redesign)
 
 - **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.
