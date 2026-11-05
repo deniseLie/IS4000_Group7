@@ -277,7 +277,8 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
   - C20 ran Relationship twice instead of once.
 - Client re-run after the batch 1 fixes (5 Nov, same Claude Code set-up, `41_eval_cleanup.sql` applied first):
   - C04, C10 and C20 pass. C04 asks for the card and the end date in one reply, then says "Request ready for your review" with 30 Nov 2026; the form and Confirm stay unplayed. Its `reply_lacks` pattern had matched the correct "no limit has been changed" and now leaves the negation out.
-  - C11 and C11b stop at Confirm: hosted answers `offer_group_confirm` with `PGRST202`. The code calls the two-argument version from 0114 (consent v2), which hosted lacks until batches 36–40 are applied.
+  - C11 and C11b first stopped at Confirm: hosted answered `offer_group_confirm` with `PGRST202`. The code calls the two-argument version from 0114 (consent v2), which hosted lacked before batches 36–40.
+  - After batches 36–40 were applied (5 Nov; the text recorded on hosted matches each file), C11 and C11b pass. C11 opened one urgent request (TCK-001086). C11b quoted it in a new chat, with no Confirm and no second request.
 
 **Against the targets**
 
