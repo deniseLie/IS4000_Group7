@@ -1,4 +1,7 @@
 import {sparkSegments} from '../../lib/admin';
+import {formatDate,formatDateTime} from '../../lib/format';
+
+const day=value=>formatDate(value,{year:undefined});  // Singapore day, "4 Nov"
 
 // Small inline SVG charts (no chart library): the numbers are always shown next to them as text.
 export function Sparkline({values,label}) {
@@ -23,7 +26,6 @@ export function LineChart({points,height=190,label}) {
   const xs=points.map(point=>new Date(point.x).getTime()),min=Math.min(...xs),max=Math.max(...xs);
   const x=value=>pad.l+(max===min?0.5:(value-min)/(max-min))*(W-pad.l-pad.r),y=value=>pad.t+(1-value)*plot;
   const line=points.map((point,index)=>({point,cx:x(xs[index])})).filter(({point})=>!point.hollow&&point.y!=null);
-  const day=value=>new Date(value).toLocaleDateString('en-SG',{day:'numeric',month:'short'});
   return <svg className="admin-chart" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={label}>
     {[0,.5,1].map(tick=><g key={tick}><line className="grid" x1={pad.l} x2={W-pad.r} y1={y(tick)} y2={y(tick)}/><text x={pad.l-6} y={y(tick)+3} textAnchor="end">{tick*100}%</text></g>)}
     {points.map((point,index)=>point.marker&&<line key={`m${index}`} className="change" x1={x(xs[index])} x2={x(xs[index])} y1={pad.t} y2={pad.t+plot}><title>{point.marker}</title></line>)}
@@ -35,9 +37,8 @@ export function LineChart({points,height=190,label}) {
 
 // Cases × runs, each cell the case's status in that run (blank: the case was not in that run).
 export function Heatmap({columns,rows,highlight,labels}) {
-  const day=value=>new Date(value).toLocaleDateString('en-SG',{day:'numeric',month:'short'});
   return <div className="admin-table-wrap"><table className="admin-heatmap">
-    <thead><tr><th>Case</th>{columns.map(column=><th key={column.name} title={`${column.name} · ${new Date(column.started_at).toLocaleString('en-SG')}`} className="admin-heat-col">{day(column.started_at)}</th>)}<th>Pattern</th></tr></thead>
+    <thead><tr><th>Case</th>{columns.map(column=><th key={column.name} title={`${column.name} · ${formatDateTime(column.started_at)}`} className="admin-heat-col">{day(column.started_at)}</th>)}<th>Pattern</th></tr></thead>
     <tbody>{rows.map(row=><tr key={row.case_id} className={highlight===row.case_id?'chosen':''}>
       <th>{row.case_id}</th>
       {row.statuses.map((status,index)=><td key={index} className={status||'none'} title={`${row.case_id} in ${columns[index].name}: ${status||'not run'}`}/>)}

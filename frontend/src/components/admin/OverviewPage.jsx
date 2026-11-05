@@ -72,7 +72,7 @@ export default function OverviewPage({onNavigate,views=[]}) {
               <td>{row.url&&<a href={row.url} target="_blank" rel="noreferrer">LangSmith</a>}</td>
             </tr>;})}</tbody></table></div>}
       </section>
-      <p className="admin-muted">Tiles count live requests only (evaluation runs are scored on the Evaluations page). Latency is the whole request, wall clock, as LangSmith recorded it.</p>
+      <p className="admin-muted">Tiles count live requests only (evaluation runs are scored on the Evaluations page). Latency is the whole request, wall clock, as LangSmith recorded it. All dates and times are Singapore time (SGT).</p>
     </>}
   </Page>;
 }
