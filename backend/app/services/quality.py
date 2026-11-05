@@ -2,15 +2,19 @@
 
 The backend reads LangSmith with its own server key; the browser never sees it. Only signed-in users whose
 administrator-owned app_metadata.demobank_role is 'admin' may read it (user_metadata is never trusted). Results are
-cached briefly so the page does not hammer the LangSmith API. Text shown here already passed the redacting client."""
+cached briefly so the page does not hammer the LangSmith API. Text shown here already passed the redacting client.
+
+Requests and steps are read through LangSmith's v2 run query (`query`): up to 1000 runs a page, and not throttled the way
+/runs/query (list_runs) is, which answers 429 after about three 100-run pages and makes the SDK wait up to 9 s each time."""
 import json
 import os
 import threading
 import time
-from collections import defaultdict
+from collections import Counter,defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,timezone
 from itertools import islice
+from types import SimpleNamespace
 from typing import Any
 from langsmith import schemas as ls_schemas
 from langsmith.utils import LangSmithRateLimitError
@@ -25,18 +29,19 @@ _cache: dict[tuple,tuple[float,Any]]={}
 _locks: dict[tuple,threading.Lock]=defaultdict(threading.Lock)  # one LangSmith read per key, even when pages load together
 _client=None
 WINDOWS={'24h':1,'7d':7,'30d':30,'90d':90}  # days; source 'live' is the app's tracing project, 'eval' the requests inside experiments
-REQUEST_NAMES=('chat','rm_assistant')
 REQUESTS='or(eq(name, "chat"), eq(name, "rm_assistant"))'
 STEPS=('llm','agent','tool_call','kb.search','planner','gather','act','compose','embed','loop_step')
-STEP_FILTER='or('+', '.join(f'eq(name, "{n}")' for n in STEPS)+')'
-EVAL_FILTER='or('+', '.join(f'eq(name, "{n}")' for n in REQUEST_NAMES+STEPS)+')'
+# Steps plus the model client's own runs (run_type llm), whose tokens add up to a request's total as /runs/query summed it.
+STEPS_AND_MODELS='or('+', '.join(f'eq(name, "{n}")' for n in STEPS)+', eq(run_type, "llm"))'
 MAX_REQUESTS,MAX_STEPS,MAX_TRACE=2000,20000,500  # bounded reads; the page says "sampled" when a cap is reached
-POOL,RUN_QUERIES,BACKOFF_S=6,4,(2,5,10)  # parallel project reads, of which at most RUN_QUERIES query LangSmith at once (it rate-limits /runs/query)
+POOL,RUN_QUERIES,BACKOFF_S=6,4,(2,5,10)  # parallel project reads, of which at most RUN_QUERIES query LangSmith at once (with backoff on 429)
 FINISHED_MIN,FINISHED_S=60,6*3600  # an experiment older than an hour has finished, so its runs are cached for hours
-EVAL_PROJECTS,PAGE=8,100  # requests and steps are read from the latest experiments only (one query each); cases from every experiment
+EVAL_PROJECTS,PAGE,V2_PAGE=8,100,1000  # requests and steps are read from the latest experiments only; cases from every experiment
+LIVE_DAYS=sorted({*WINDOWS.values(),*(2*d for d in WINDOWS.values())})  # windows the pages read (Overview and Failures read two)
 _gate=threading.BoundedSemaphore(RUN_QUERIES)
-REQUEST_FIELDS=['id','name','trace_id','session_id','parent_run_id','start_time','end_time','status','error','extra','inputs','outputs','total_tokens']
-STEP_FIELDS=['id','name','run_type','trace_id','session_id','parent_run_id','start_time','end_time','status','error','extra','total_tokens']
+RUN_SELECTS=['ID','NAME','RUN_TYPE','TRACE_ID','PARENT_RUN_IDS','PROJECT_ID','START_TIME','LATENCY_SECONDS','STATUS','ERROR','METADATA']
+REQUEST_SELECTS=RUN_SELECTS+['INPUTS','OUTPUTS']
+STEP_SELECTS=RUN_SELECTS+['TOTAL_TOKENS']
 # Step metadata the dashboard reads (names, statuses, counts and ms; never text).
 STEP_KEYS=('agent','intent','path','status','outcome','tool_calls','steps','refused','evidence_count','exports','wave','prompt_version','model','transport',
     'input_tokens','output_tokens','retries','cause','error_type','tool','mode','count','embedding_error','embed_ms','sql_ms','route','tasks','dependent','side',
@@ -65,6 +70,11 @@ def cached(key: tuple,load,ttl: int=CACHE_S):
         value=load()
         _cache[key]=(time.monotonic()+ttl,value)
         return value
+
+
+def fresh(key: tuple):
+    hit=_cache.get(key)
+    return hit[1] if hit and hit[0]>time.monotonic() else None
 
 
 def checks_of(stats: dict[str,Any] | None) -> list[Check]:
@@ -177,10 +187,67 @@ def gated(read):
             time.sleep(wait)
 
 
+def when(text: str | None) -> datetime | None:
+    if not text:return None
+    found=datetime.fromisoformat(text)
+    return found if found.tzinfo else found.replace(tzinfo=timezone.utc)
+
+
+def unquoted(text: str | None) -> str | None:
+    """v2 returns some errors as a JSON string literal ('"LLMError(...)\\n..."'); list_runs gave the text itself."""
+    if isinstance(text,str) and text.startswith('"'):
+        try:
+            found=json.loads(text)
+            if isinstance(found,str):return found
+        except ValueError:pass
+    return text
+
+
+def as_run(item: dict[str,Any]) -> SimpleNamespace:
+    """A v2 run with the attributes list_runs gives (what as_request and as_step read)."""
+    parents=item.get('parent_run_ids') or []  # root first, so the last one is the direct parent
+    latency=item.get('latency_seconds')
+    return SimpleNamespace(id=item['id'],name=item.get('name'),run_type=item.get('run_type'),trace_id=item.get('trace_id'),parent_run_ids=parents,
+        parent_run_id=parents[-1] if parents else None,session_id=item.get('project_id'),start_time=when(item.get('start_time')),
+        latency=round(latency,6) if isinstance(latency,(int,float)) else None,status=item.get('status'),error=unquoted(item.get('error')),
+        extra={'metadata':item.get('metadata') or {}},inputs=item.get('inputs'),outputs=item.get('outputs'),total_tokens=item.get('total_tokens'))
+
+
+def query(body: dict[str,Any],cap: int) -> list[SimpleNamespace]:
+    """LangSmith's v2 run query, page by page, up to `cap` runs (newest first). Set min_start_time: it defaults to a day ago."""
+    found,cursor=[],None
+    while len(found)<cap:
+        data=json.dumps({**body,'page_size':min(V2_PAGE,cap-len(found)),**({'cursor':cursor} if cursor else {})})
+        page=gated(lambda:client().request_with_retries('POST','/api/v2/runs/query',request_kwargs={'data':data}).json())
+        found.extend(page.get('items') or [])
+        if not (cursor:=page.get('next_cursor')):break
+    return [as_run(item) for item in found[:cap]]
+
+
+def with_tokens(asked: list,runs: list) -> list:
+    """Each request's total_tokens: the tokens of the model runs (run_type llm) under it, which is what /runs/query reported."""
+    ids={str(r.id) for r in asked};total=Counter()
+    for r in runs:
+        if r.run_type=='llm':
+            for parent in r.parent_run_ids:
+                if parent in ids:total[parent]+=r.total_tokens or 0
+    for r in asked:r.total_tokens=total.get(str(r.id))
+    return asked
+
+
+def read_runs(base: dict[str,Any],source: str,root: bool | None=None) -> tuple[list[dict],list[dict]]:
+    """(requests, steps) of one project: two queries at once, requests with their text, steps with metadata only."""
+    with ThreadPoolExecutor(2) as pool:
+        asked=pool.submit(query,{**base,'filter':REQUESTS,'selects':REQUEST_SELECTS,**({'is_root':root} if root is not None else {})},MAX_REQUESTS)
+        inner=pool.submit(query,{**base,'filter':STEPS_AND_MODELS,'selects':STEP_SELECTS,**({'trace_filter':REQUESTS} if root else {})},MAX_STEPS)
+        runs=inner.result();found=with_tokens(asked.result(),runs)
+    return [as_request(r,source) for r in found],[dict(as_step(r),source=source) for r in runs if r.name in STEPS]
+
+
 def per_project(kind: str,projects: list,read) -> list:
     """read(project) for each experiment project in parallel, cached on its own: for hours once its experiment has
     finished. LangSmith answers a run query over many projects for only some of them, so each project is read alone."""
-    def one(p):return cached((kind,str(p.id)),lambda:gated(lambda:read(p)),FINISHED_S if finished(p.start_time) else CACHE_S)
+    def one(p):return cached((kind,str(p.id)),lambda:read(p),FINISHED_S if finished(p.start_time) else CACHE_S)
     if not projects:return []
     with ThreadPoolExecutor(min(POOL,len(projects))) as pool:return list(pool.map(one,projects))
 
@@ -248,41 +315,43 @@ def recent_projects(since: datetime) -> list:
 
 
 def eval_runs(since: datetime) -> list[tuple[list[dict],list[dict]]]:
-    """(requests, steps) of each recent experiment, both from one run query per experiment."""
-    def read(p):
-        runs=list(islice(client().list_runs(project_id=p.id,filter=EVAL_FILTER,select=REQUEST_FIELDS),MAX_STEPS))
-        return [as_request(r,'eval') for r in runs if r.name in REQUEST_NAMES],[dict(as_step(r),source='eval') for r in runs if r.name in STEPS]
-    return per_project('eval_runs',recent_projects(since),read)
+    """(requests, steps) of each recent experiment."""
+    return per_project('eval_runs',recent_projects(since),
+        lambda p:read_runs({'project_ids':[str(p.id)],'min_start_time':(p.start_time-timedelta(days=1)).isoformat()},'eval'))
+
+
+def live_project() -> str:
+    return cached(('live_project',project()),lambda:str(client().read_project(project_name=project()).id),3600)
+
+
+def live_runs(days: int) -> tuple[list[dict],list[dict]]:
+    """(requests, steps) of the app's own project in the last `days` days. Every page and source shares this read, and a
+    shorter window is cut from a wider one still cached (Overview reads 14 days for 7, so the 7-day pages need no read)."""
+    since=now()-timedelta(days=days)
+    for wider in (d for d in LIVE_DAYS if d>days):
+        if hit:=fresh(('live_runs',wider)):return [r for r in hit[0] if r['started_at']>=since],[s for s in hit[1] if s['started_at']>=since]
+    return cached(('live_runs',days),lambda:read_runs({'project_ids':[live_project()],'min_start_time':since.isoformat()},'live',root=True))
 
 
 def requests(source: str,days: int) -> list[dict[str,Any]]:
     """Client and RM requests that started in the last `days` days. Eval requests carry their case (dataset, case id, status)."""
-    def load():
-        since=now()-timedelta(days=days);found=[]
-        if source in ('live','all'):
-            runs=client().list_runs(project_name=project(),is_root=True,start_time=since,filter=REQUESTS,select=REQUEST_FIELDS)
-            found.extend(as_request(r,'live') for r in islice(runs,MAX_REQUESTS))
-        if source in ('eval','all'):
-            case={c['run_id']:(e,c) for e in experiment_runs() for c in e['cases']}
-            for row in islice((r for rows,_ in eval_runs(since) for r in rows if r['started_at']>=since),MAX_REQUESTS):
-                row=dict(row)
-                if hit:=case.get(row['trace_id']):row.update(dataset=hit[0]['dataset'],experiment=hit[0]['name'],case_id=hit[1]['case_id'],case_status=hit[1]['status'])
-                found.append(row)
-        return sorted(found,key=lambda r:r['started_at'])
-    return cached(('requests',source,days),load)
+    since=now()-timedelta(days=days);found=[]
+    if source in ('live','all'):found.extend(live_runs(days)[0])
+    if source in ('eval','all'):
+        case={c['run_id']:(e,c) for e in experiment_runs() for c in e['cases']}
+        for row in islice((r for rows,_ in eval_runs(since) for r in rows if r['started_at']>=since),MAX_REQUESTS):
+            row=dict(row)
+            if hit:=case.get(row['trace_id']):row.update(dataset=hit[0]['dataset'],experiment=hit[0]['name'],case_id=hit[1]['case_id'],case_status=hit[1]['status'])
+            found.append(row)
+    return sorted(found,key=lambda r:r['started_at'])
 
 
 def steps(source: str,days: int) -> list[dict[str,Any]]:
     """The steps inside those requests: model calls, agents, tools, knowledge search and graph nodes."""
-    def load():
-        since=now()-timedelta(days=days);found=[]
-        if source in ('live','all'):
-            runs=client().list_runs(project_name=project(),start_time=since,filter=STEP_FILTER,trace_filter=REQUESTS,select=STEP_FIELDS)
-            found.extend(dict(as_step(r),source='live') for r in islice(runs,MAX_STEPS))
-        if source in ('eval','all'):
-            found.extend(islice((s for _,rows in eval_runs(since) for s in rows if s['started_at']>=since),MAX_STEPS-len(found)))
-        return found
-    return cached(('steps',source,days),load)
+    since=now()-timedelta(days=days);found=[]
+    if source in ('live','all'):found.extend(live_runs(days)[1])
+    if source in ('eval','all'):found.extend(islice((s for _,rows in eval_runs(since) for s in rows if s['started_at']>=since),MAX_STEPS-len(found)))
+    return found
 
 
 def trace_runs(run_id: str) -> dict[str,Any]:
