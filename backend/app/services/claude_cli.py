@@ -40,6 +40,11 @@ def parse_result(output):
     counted=[v for k in ('input_tokens','cache_creation_input_tokens','cache_read_input_tokens') if isinstance(v:=usage.get(k),int)]
     tokens={'input_tokens':sum(counted)} if counted else {}  # cached prompt tokens are still input
     if isinstance(usage.get('output_tokens'),int):tokens['output_tokens']=usage['output_tokens']
+    # Speed facts for the llm span (docs/planning/rm-answer-speed.md slice 5). The CLI counts thinking inside output_tokens
+    # and does not report it apart, so the visible answer's size is kept: output_tokens far above answer_chars/4 is thinking.
+    for key,name in (('num_turns','num_turns'),('duration_api_ms','api_ms')):
+        if isinstance(event.get(key),int):tokens[name]=event[key]
+    tokens['answer_chars']=len(json.dumps(parsed,ensure_ascii=False))
     return parsed,tokens
 
 async def answer(prompt, schema, messages):

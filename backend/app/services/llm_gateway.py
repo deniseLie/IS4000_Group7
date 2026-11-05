@@ -119,6 +119,7 @@ async def call(prompt,system,messages,schema,model=None,retries=None):
                     from app.services import claude_cli  # own timeout; no retries, each run is a subscription turn
                     data,usage=await claude_cli.answer(system,schema,messages)
                     tokens=(usage.get('input_tokens'),usage.get('output_tokens'))
+                    a.update({k:usage[k] for k in ('num_turns','api_ms','answer_chars') if k in usage})  # counts only: how much was thinking
                 else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a,model,retries)
             except TimeoutError as e:
                 raise LLMTimeout('Model request timed out') from e
