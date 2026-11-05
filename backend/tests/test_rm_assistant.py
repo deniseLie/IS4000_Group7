@@ -2,6 +2,7 @@
 these tests pin that unsupported figures and dates, advice, decisions, action claims and invented actions are withheld,
 that names and appointments resolve deterministically, and that the handover brief keeps its fixed structure.
 Real-provider behaviour is exercised in the browser against the running app (docs/workflows/workflow-2-relationship-manager.md)."""
+import asyncio
 from datetime import datetime,timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -99,6 +100,20 @@ def test_names_appointments_and_tickets_resolve_without_the_model():
         {'reference':'TCK-001003','category_label':'Update personal details','category':'personal_details_update','summary':'Update my residential address'}]
     assert handlers.pick_ticket("Draft a reply to Michelle's statement copy request",tickets)[0]=='TCK-001002'
     assert handlers.pick_ticket('Draft a reply to Michelle',tickets)[0] is None
+    # R08: a lone open ticket is picked only when the message is about it
+    assert handlers.pick_ticket("Should we approve Michelle's limit increase?",tickets[:1])[0] is None
+    assert handlers.pick_ticket("Where is Michelle's statement copy?",tickets[:1])[0]=='TCK-001002'
+    advice=[{'reference':'TCK-001085','category_label':'Question for your relationship manager','category':'rm_handover',
+        'summary':'[Investment or product advice] Client question for you: Should I invest 200k in a structured product?'}]
+    assert handlers.pick_ticket("Should we approve Michelle's limit increase?",advice)[0] is None  # "should" is no topic
+    def ref(message,open_tickets):
+        context=SimpleNamespace(draft=None,ticket_ref=None,client_id=None)
+        turn=SimpleNamespace(req=SimpleNamespace(context=context),message=message,name=lambda cid:'Michelle Ng',context=lambda cid,**kw:{'client_id':cid})
+        return asyncio.run(handlers._ticket_ref(turn,{'intent':'ticket_summary'},1002,{'data':{'tickets':open_tickets}}))
+    both=[*advice,tickets[0]]
+    assert ref("Should we approve Michelle's limit increase?",both)==(None,None)  # about none of them: her client record (cards)
+    assert ref("Summarise Michelle's request",advice)==('TCK-001085',None)  # no topic: her only ticket
+    assert ref("Summarise Michelle's request",both)[1]['clarification']['question']=='Which request do you mean?'
 
 
 def test_priorities_never_suggest_a_second_meeting_and_handover_keeps_its_structure():

@@ -43,6 +43,13 @@ TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews',
 HANDOVER_SECTIONS=['Client overview','Open requests and tickets','Recorded commitments','Pending reviews','Recorded preferences',
     'What the client was previously told','Gaps to clarify','Suggested introductory topics']
 STOP={'the','a','an','to','of','for','and','on','my','me','his','her','their','about','please','request','reply','ticket','client','draft','with','what','is','in'}
+# Question and function words carry no topic: "Should we approve…" must not match a ticket that says "Should I invest…" (R08).
+STOP|={'should','could','would','will','can','shall','may','might','must','we','you','our','your','she','him','they','them','this','that',
+    'these','those','how','why','when','where','who','which','does','did','has','have','had','was','were','are','any','from','into','not',
+    'but','just','also','now','still','there','here','its','client','question','asked','tell','show','give','get','need','want','know'}
+# Words that ask about a request without saying what it is about ("summarise her request", "any update?").
+GENERIC={'summarise','summarize','summary','brief','explain','check','update','updates','status','latest','open','current','see','look',
+    'help','happening','going','progress','next','new','reply','respond','answer','write','message','handle','deal'}
 Say=Callable[[str],Awaitable[None]]
 
 
@@ -109,12 +116,15 @@ def names_match(query: str,name: str) -> bool:
 def keywords(text: str) -> set[str]:return {w for w in re.findall(r'[a-z]{3,}',text.lower()) if w not in STOP}
 
 
+def ticket_words(ticket: dict) -> set[str]:
+    return keywords(f"{ticket.get('category_label','')} {ticket.get('category','').replace('_',' ')} {ticket.get('summary') or ''}")
+
+
 def pick_ticket(message: str,tickets: list[dict]) -> tuple[str|None,list[dict]]:
-    """A unique best keyword match between the message and a ticket's type or summary, else the candidates to ask about."""
-    if len(tickets)==1:return tickets[0]['reference'],tickets
+    """A unique best keyword match between the message and a ticket's type or summary, else the candidates to ask about.
+    A lone open ticket needs a match too (R08: "approve Michelle's limit increase" is not about her only, unrelated ticket)."""
     words=keywords(message)
-    scored=sorted(((len(words&keywords(f"{t.get('category_label','')} {t.get('category','').replace('_',' ')} {t.get('summary') or ''}")),t) for t in tickets),
-        key=lambda pair:-pair[0])
+    scored=sorted(((len(words&ticket_words(t)),t) for t in tickets),key=lambda pair:-pair[0])
     if scored and scored[0][0]>0 and (len(scored)==1 or scored[0][0]>scored[1][0]):return scored[0][1]['reference'],tickets
     return None,tickets
 
@@ -511,6 +521,12 @@ async def _ticket_ref(t: Turn,plan,client_id,profile) -> tuple[str|None,dict|Non
     if not open_tickets:return None,None
     chosen,candidates=pick_ticket(t.message,open_tickets)
     if chosen:return chosen,None
+    # Topic words are the message's keywords without the client's name. None ("summarise her request") points at a ticket:
+    # her only one, or ask which. Topic words that match no ticket mean the question is about something else, so it is
+    # answered from her client record, which has her cards and profile (R08: "approve Michelle's limit increase").
+    topic=keywords(t.message)-GENERIC-set(name_parts(t.name(client_id) or ''))
+    if not topic and len(candidates)==1:return candidates[0]['reference'],None
+    if topic and not any(topic&ticket_words(x) for x in candidates):return None,None
     return None,clarify('Which request do you mean?',[{'label':f"{x['reference']} · {x['category_label']}",'ticket_ref':x['reference'],'client_id':client_id}
         for x in candidates],plan['intent'],t.context(client_id))
 
