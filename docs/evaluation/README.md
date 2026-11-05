@@ -266,6 +266,8 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
 - Graph:
   - C28 did not hand the fee waiver to Relationship: no reroute, no second wave, no ticket.
   - R22 stopped with "assistant model is unavailable". The Claude Code CLI call failed, the failure was reported (not replaced), and R22's checks failed with it.
+    - Re-run later on 5 Nov: it hit the same fixed 90-second CLI limit, so that limit is now `CLAUDE_CLI_TIMEOUT_S`. At 240 s the brief call then used up the 24,000-token request budget. One Claude Code turn reported 24,066 input tokens (cached prompt reads included) and 21,011 output tokens.
+    - A diagnostic run with `LLM_REQUEST_TOKEN_BUDGET=120000` passed every deterministic check in 139 s: two waves, `client_ref` and `latest_note` passed to Requests, nothing written. The judge gave 0.5 because the follow-ups section listed no drafts. The budget default stays 24,000.
 - Client:
   - C04 (card limit increase) offered no Confirm.
   - C11 (lost card) quoted the urgent request TCK-001081 that earlier evaluation runs had opened for Michelle, instead of offering a new one. 0082 quotes an open urgent lost-card request by design, so this case needs a fresh fixture rather than a code change.
