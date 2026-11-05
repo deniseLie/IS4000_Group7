@@ -174,6 +174,11 @@ def test_c04_asks_for_every_missing_detail_at_once_then_is_ready() -> None:
     assert 'until what date (up to 90 days)' in first.text and 'already has a limit' not in first.text
     assert second.status=='ok' and second.text.startswith('Request ready for your review: temporary change to SGD 30,000 on your '
         'Signature Card ending 7310 until 30 Nov 2026 for your travel.') and 'Raise a card limit request' in second.text
+    # the QA1 case's own reply checks hold for this reply ("no limit has been changed" is not a claim that it changed)
+    import json,pathlib,re
+    case=next(c for c in json.loads((pathlib.Path(__file__).parents[1]/'evaluation/qa1_client_cases.json').read_text(encoding='utf-8')) if c['id']=='C04')
+    assert all(re.search(p,second.text) for p in case['reply_has']) and not any(re.search(p,second.text) for p in case['reply_lacks'])
+    assert re.search(case['reply_lacks'][1],'Your limit has been increased to SGD 30,000.')
 
 
 def test_a_partial_answer_is_asked_only_for_what_is_still_missing() -> None:

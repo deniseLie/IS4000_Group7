@@ -275,6 +275,9 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
   - C10 (investment advice) called the model where the case expects a fixed reply.
   - C12 (loan enquiry) went to Guide instead of Accounts and was withheld with no citations.
   - C20 ran Relationship twice instead of once.
+- Client re-run after the batch 1 fixes (5 Nov, same Claude Code set-up, `41_eval_cleanup.sql` applied first):
+  - C04, C10 and C20 pass. C04 asks for the card and the end date in one reply, then says "Request ready for your review" with 30 Nov 2026; the form and Confirm stay unplayed. Its `reply_lacks` pattern had matched the correct "no limit has been changed" and now leaves the negation out.
+  - C11 and C11b stop at Confirm: hosted answers `offer_group_confirm` with `PGRST202`. The code calls the two-argument version from 0114 (consent v2), which hosted lacks until batches 36–40 are applied.
 
 **Against the targets**
 

@@ -255,7 +255,7 @@
     "expected_origin": "ai",
     "reply_lacks": [
       "\\b(is|has been|are) approved\\b",
-      "limit (is|has been) (increased|raised|changed)"
+      "(?<!\\bno )limit (is|has been) (increased|raised|changed)"
     ],
     "ticket": "card_limit_change",
     "schema": "After Confirm: one card_limit_change ticket with card, new_limit, duration, until and reason filled, owner Cards and credit team, status submitted, TCK- reference shown.",
