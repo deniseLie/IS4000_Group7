@@ -169,6 +169,9 @@ def test_planner_only_target_runs_the_planner_node_alone(monkeypatch):
 def test_an_rm_reply_reads_as_the_workspace_shows_it():
     reply={'summary':'S','sections':[{'heading':'H','items':[{'text':'a'}]}],'drafts':[{'client':'Michelle','text':'Hi'}]}
     assert targets.rm_text(reply).splitlines()==['S','H','- a','Draft to Michelle: Hi']
+    follow_ups={'summary':'P','sections':[],'documentation':{'draft':{'summary':'','actions':[{'kind':'follow_up_task','title':'Check the review',
+        'evidence_quote':'Check the review status.','flags':['No owner stated in the notes']}]}}}
+    assert targets.rm_text(follow_ups).splitlines()==['P','Proposed follow up task: Check the review (quotes the note: “Check the review status.”) [No owner stated in the notes]']
 
 def test_plan_checks_score_dependencies():
     ref={'tasks':[{'id':'a','agent':'accounts'},{'agent':'relationship','depends_on':'a','condition':'due_in_window','priority':'P3'}]}
