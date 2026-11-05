@@ -8,10 +8,9 @@ import TalkingPoints from './TalkingPoints';
 import {supabase} from '../lib/supabase';
 import {loadConsentRecords,loadSharingStatus} from '../lib/consent';
 import {consentCategoryText} from '../lib/consentData';
-import {displayName,firstName,formatDate,formatDateTime} from '../lib/format';
+import {displayName,firstName,formatDate,formatDateTime,initials} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 
-export function initials(name) {return name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('');}
 
 // Agenda drafts and the relationship page show only when their handlers are passed (those client pages were removed on 28 Oct).
 export default function SharingPage({embedded=false,onReviewActions,onRelationship,onAgendas}) {

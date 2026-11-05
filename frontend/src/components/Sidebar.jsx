@@ -1,6 +1,6 @@
 import Icon from './Icon';
 import AccountMenu from './AccountMenu';
-import {initials} from './SharingPage';
+import {initials} from '../lib/format';
 
 // One list of pages for everyone: guests see a lock on pages that need an account (they open a sign-in prompt).
 function label(page) {return page.locked?`${page.label} (sign in required)`:page.badge>0?`${page.label}, ${page.badge} ${page.badgeLabel||'unread'}`:undefined;}
