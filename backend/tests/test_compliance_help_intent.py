@@ -70,3 +70,26 @@ def test_specific_compliance_question_uses_record_evidence_and_checked_model(mon
     assert checked.await_count==1
     assert len(checked.await_args.args[3])==4
     assert load.await_count==1
+
+
+def test_an_open_review_answer_ends_with_its_recorded_due_date():
+    """C07: code adds the due date (cited to the case) when the model left it out; never twice, never once closed."""
+    from datetime import date
+    from uuid import uuid4
+    from app.schemas.contracts import Citation
+    from app.schemas.customer_data import ComplianceCase
+    case = ComplianceCase(case_id=uuid4(), case_type='periodic_review', title='Periodic review', notice_text='Please send four documents.',
+        notice_date=date(2026, 10, 1), due_date=date(2026, 11, 30), status='awaiting_client_documents',
+        status_updated_at=datetime(2026, 10, 1, tzinfo=timezone.utc), requested_items=[], status_history=[], info_requests=[])
+    ok = AgentResult(task_id='t1', agent='compliance', status='ok', text='You still need to send your proof of address.',
+        citations=[Citation(source_id='compliance-items')])
+    added = compliance.with_due_date(ok, case)
+    assert added.text.endswith('\n\nYour review is due on 30 Nov 2026.')
+    assert [c.source_id for c in added.citations] == ['compliance-items', 'compliance-case']
+    for said in ('It is due on 30 November 2026.', 'Send it by Nov 30.', 'Due 30th Nov.'):
+        same = ok.model_copy(update={'text': said})
+        assert compliance.with_due_date(same, case) == same
+    assert compliance.with_due_date(ok, case.model_copy(update={'status': 'completed'})) == ok
+    assert compliance.with_due_date(ok, case.model_copy(update={'due_date': None})) == ok
+    asked = AgentResult(task_id='t1', agent='compliance', status='needs_clarification', answer_kind='conversation', text='Which one?', question='Which one?')
+    assert compliance.with_due_date(asked, case) == asked
