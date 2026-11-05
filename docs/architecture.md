@@ -974,7 +974,7 @@ class AgentSpec(BaseModel):
 
 | Interaction | Planner writes | Router does | Example |
 |---|---|---|---|
-| **Conditional** | `depends_on`, `condition` (a `bool` export) | Runs the task only if the export is `true`; `false` or unknown skips it with a fixed line | "If a payment falls due while I'm away, move my meeting" |
+| **Conditional** | `depends_on`, `condition` (a `bool` export) | Runs the task only if the export is `true`; `false` or unknown skips it with a fixed line | "If a payment falls due while I'm away, move my meeting"; "if I'd have less than 5k in savings after paying my cards, book a time with my RM" (`below_threshold`); "if my address proof failed its check, tell my RM" (`check_failed`) |
 | **Input** | `depends_on` | Passes only the exports in the receiver's `imports` | Tax self-certification listing `account_refs` (type, currency, last 4; no balances) |
 | **Fan-out** | `depends_on`, `for_each` (a list export) | One task per item, **at most 5**; "showing 5 of N" | RM: a reminder draft per client with a review due |
 | **Handoff** | — | An agent returns `out_of_scope` with a `suggested` agent from `hands_to`; the task is reassigned **once**, question only, no planner call | Fee waiver sent to Accounts & Cards, passed to Relationship & Service |
@@ -988,6 +988,9 @@ Rules:
 5. **No crossing roles.** Client exports never reach RM agents in the same turn, or the other way round. Guests get no dependent tasks.
 6. **Audit records names and counts**, never values: `export.passed {from, to, name, count}`.
 7. **More than one upstream (build plan 3b).** A dependant may name further wave-1 upstreams in `PlanTask.inputs_from`, for inputs only (no condition or fan-out). Each one passes the same link checks and must export something the receiver imports. `gather` skips the dependant if any upstream is not ok, and records `agent.export_passed` per upstream.
+8. **Rules take part too (batch 3).** An agent's rules (`agents/rules.py`, which answer before the runner's model) receive the same `inputs` and may return exports through `rules.out`, released only with an `ok` answer and only for names the spec declares. Accounts exports `account_refs` from the records its rules answered from (`retail-accounts`); Compliance adds imported values to its evidence (`input-account_refs`, citable under compliance v7) and exports `check_failed` from the `document-prechecks` rows of the document the question names (`derived.check_failed`: issues found or unable to assess is true, no issues is false, no current check or no single match is unknown).
+9. **The export decides the upstream's intent.** When a condition or `for_each` export is computed by one intent only (`registry.EXPORT_INTENT`: `due_in_window`/`due_dates` → `trip_due_dates`, `below_threshold` → `savings_after_cards`, `check_failed` → `document_findings`), `orchestrator.export_intents` gives the upstream task that intent before the link check, and the planner span records it as `intent_set`.
+10. **Client exports (batch 3).** Accounts: `due_in_window`, `due_dates`, `account_refs` and `below_threshold` (`savings_after_cards`: her active SGD savings minus every card's outstanding balance, against the planner's `threshold` entity; another or unrecorded currency is not checked, and a missing amount is a fixed question). Compliance: `check_failed`; it imports `account_refs`. Relationship imports `due_dates`. The planner's agent list shows each agent's exports and imports (planner v10).
 
 ```python
 def next_wave(state: Turn) -> list[Send] | str:
