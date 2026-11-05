@@ -60,6 +60,7 @@ RELEASED[('rm_planner','v5')]='v5+dd5370bc'  # build plan 3b: the today intent
 RELEASED[('rm_assistant','v5')]='v5+6738eb5a'  # build plan 3b: today.md, ranked priorities.md
 RELEASED[('accounts','v1')]='v1+872a384c'
 RELEASED[('runner_common','v1')]='v1+0c95684c'
+RELEASED[('runner_common','v2')]='v2+659e0d0c'  # batch 2 (C12): never restate a figure from her own message
 RELEASED[('guide','v1')]='v1+3948ad35'
 RELEASED[('security','v1')]='v1+fb828ecf'
 RELEASED[('guide','v2')]='v2+20d159f2'  # build plan 2b: login, OTP and phishing move to Guide

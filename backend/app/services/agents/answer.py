@@ -1,12 +1,13 @@
 """Generate and validate one agent's public answer; never substitute a stored article for AI."""
 import json
 from pydantic import JsonValue, ValidationError
-from app.core.observability import log_event
+from app.core.observability import add_span, log_event
 from app.schemas.agents import AgentDraft, Evidence
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult, Citation, Task
 from app.services import llm_gateway, prompts
 from app.services.answers import ACTION_CLAIM, URL, check_answer
+from app.services.source_checks import check_sources
 from app.services.privacy import redact
 from app.services.agents.registry import AGENT_FOR, AgentName
 
@@ -36,11 +37,17 @@ def validate_draft(task: Task, raw: str, evidence: list[Evidence], agent: str | 
         draft = AgentDraft.model_validate_json(raw)
     except ValidationError as error:
         log_event('agent_validation',agent=name,reason='draft_contract',error_types=[item['type'] for item in error.errors()])
+        add_span('validation','decision',agent=name,reason='draft_contract')  # the reason code in the trace (never the text)
         return AgentResult(task_id=task.task_id, agent=name, status='error', text=WITHHELD)
     data = [item.model_dump(exclude={'source'}) for item in evidence]
     answer, ids, reason = check_answer(raw, data)
     if reason:
         log_event('agent_validation',agent=name,reason=reason)
+        # The trace keeps the reason code and, for a source check, which one failed (C12: unsupported_figure); never the text.
+        detail = None
+        if reason == 'source_check':
+            detail = check_sources(draft.answer, draft.source_ids, data) if draft.answer_kind == 'banking' else 'conversation_with_sources_or_figures'
+        add_span('validation','decision',agent=name,reason=reason,**({'detail':detail} if detail else {}))
         return AgentResult(task_id=task.task_id, agent=name, status='error', text=WITHHELD)
     return AgentResult(task_id=task.task_id, agent=name, status=draft.status, answer_kind=draft.answer_kind,
         text=answer, question=draft.clarification_question if draft.status=='needs_clarification' else None,

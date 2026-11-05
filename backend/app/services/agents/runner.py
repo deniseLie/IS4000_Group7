@@ -29,7 +29,7 @@ from app.services.agents import derived, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
 PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
-COMMON = 'v1'  # runner_common: the shared answer contract and step format
+COMMON = 'v2'  # runner_common: the shared answer contract and step format (v2: never restate her own figures, C12)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'DemoBank synthetic records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
