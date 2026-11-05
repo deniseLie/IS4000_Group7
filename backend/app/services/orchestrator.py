@@ -42,6 +42,7 @@ from app.services.answers import NOTICE, PINNED, clean_history
 from app.services.guardrail import FRAUD
 
 MAX_TASKS = 5
+WITH_RELATIONSHIP = rules.WITH_RELATIONSHIP  # an Accounts task's entity, set only by checked()
 MAX_ITEMS = 5  # fan-out cap per list export
 PLANNER = 'v9'  # v8: Relationship meeting_request (2a); v9: no Security agent, urgent card cases go to the RM (2b)
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
@@ -346,22 +347,44 @@ def entity_value(name: str, value):
     return value
 
 
+def for_guest(tasks: list[PlanTask]) -> tuple[list[PlanTask], dict[str, str]]:
+    """A guest gets Guide only. Guide's own tasks stay; every task planned for a personal agent becomes ONE Guide
+    `general` task (one "sign in to check" answer, P12), with their questions in plan order and the highest priority; an
+    urgent card task stays its own (the fixed steps, no offer). Returns the tasks and the merged ids (old -> kept)."""
+    personal = [t for t in tasks if t.agent != 'guide' and not is_urgent(t)]
+    merged = {t.id: personal[0].id for t in personal}
+    out: list[PlanTask] = []
+    for item in tasks:
+        if item in personal[1:]:continue
+        update: dict = {'agent': 'guide', 'intent': item.intent if item.agent == 'guide' else 'general', 'entities': {'urgent': True} if is_urgent(item) else {}}
+        if personal and item is personal[0]:
+            update.update(question=' '.join(dict.fromkeys(t.question for t in personal)), priority=min(t.priority for t in personal))
+        out.append(item.model_copy(update=update))
+    return out, merged
+
+
 def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
-    """The plan check against SPECS: guests get only Guide; an unknown intent becomes `open`, or the agent's first intent."""
+    """The plan check against SPECS: guests get only Guide (for_guest); an unknown intent becomes `open`, or the agent's
+    first intent. Accounts tasks learn whether Relationship also has a task (with_relationship)."""
     plan: list[PlanTask] = []
     ids: dict[str, str] = {}
+    merged: dict[str, str] = {}
+    if req.mode != 'personal':tasks, merged = for_guest(tasks[:MAX_TASKS])
     for item in tasks[:MAX_TASKS]:
-        if req.mode != 'personal':item = item.model_copy(update={'agent': 'guide', 'intent': item.intent if item.agent == 'guide' else 'general',
-            'entities': {'urgent': True} if is_urgent(item) else {}})  # a guest's urgent card task: the fixed steps, no offer
         spec = registry.SPECS[item.agent]
         intent = item.intent if item.intent in spec.intents or (item.intent == OPEN_INTENT and spec.loop_tools) else \
             OPEN_INTENT if spec.loop_tools else next(iter(spec.intents))
-        entities = {k: v for k, v in ((k, entity_value(k, v)) for k, v in item.entities.items()) if v is not None}
+        entities = {k: v for k, v in ((k, entity_value(k, v)) for k, v in item.entities.items()) if v is not None and k != WITH_RELATIONSHIP}
         ids[item.id] = f't{len(plan)+1}'
         plan.append(item.model_copy(update={'id': ids[item.id], 'intent': intent, 'entities': entities}))
+    ids.update({old: ids[kept] for old, kept in merged.items() if kept in ids})
     plan = [t.model_copy(update={'depends_on': ids.get(t.depends_on, '?'), 'inputs_from': [ids.get(u, '?') for u in t.inputs_from]})
         if t.depends_on else t for t in plan]  # '?': not in the plan
-    return [t.model_copy(update={'priority': t.priority if t.priority != 'P3' else priority(t)}) for t in plan]
+    # Set by code only: Relationship already answers part of this message (C28: the fee waiver), so Accounts leaves out
+    # its "say 'waive my annual fee'" hint.
+    with_relationship = any(t.agent == 'relationship' and not is_urgent(t) for t in plan)
+    return [t.model_copy(update={'priority': t.priority if t.priority != 'P3' else priority(t),
+        **({'entities': {**t.entities, WITH_RELATIONSHIP: True}} if with_relationship and t.agent == 'accounts' else {})}) for t in plan]
 
 
 def unlinked(item: PlanTask, up: PlanTask | None, by_id: dict[str, PlanTask] | None = None) -> str | None:

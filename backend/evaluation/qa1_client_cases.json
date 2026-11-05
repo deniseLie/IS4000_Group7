@@ -889,7 +889,7 @@
         "act"
       ],
       "agents": {
-        "accounts": 1
+        "guide": 1
       },
       "tools": [],
       "model": true

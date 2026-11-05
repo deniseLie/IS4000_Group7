@@ -4,7 +4,7 @@ import re
 from pydantic import JsonValue
 from app.schemas.agents import Evidence
 from app.schemas.chat import Message
-from app.schemas.contracts import AgentResult,RequestContext,Task,ToolResult
+from app.schemas.contracts import AgentResult,Citation,RequestContext,Task,ToolResult
 from app.schemas.customer_data import ComplianceCase,CustomerEnvelope
 from app.schemas.events import Source
 from app.services import customer_data,llm_gateway,prompts,compliance_selection,prechecks,tools
@@ -51,6 +51,21 @@ def submission_summary(case: ComplianceCase) -> dict[str,JsonValue]:
     return {'item_counts':counts,'all_requested_items_sent':all_sent,'items_may_be_truncated':len(case.requested_items)==200,
         'overall_status_still_awaits_documents':all_sent and case.status in ('documents_requested','documents_partially_received','awaiting_client_documents'),
         'open_bank_questions':sum(item.status=='open' for item in case.info_requests)}
+
+
+CLOSED=('completed','closed')
+
+
+def with_due_date(result: AgentResult,case: ComplianceCase | None) -> AgentResult:
+    """C07: while the review is open, an answer always ends with its recorded due date, added by code (the model may
+    leave it out) and cited to the case record. Not added when the answer already gives that day and month."""
+    if result.status!='ok' or case is None or case.due_date is None or case.status in CLOSED:return result
+    due=case.due_date
+    month=f'(?:{due:%b}|{due:%B})'
+    if re.search(rf'\b{due.day}(?:st|nd|rd|th)?\s+{month}\b|\b{month}\s+{due.day}\b',result.text,re.I):return result
+    cited=result.citations if any(c.source_id=='compliance-case' for c in result.citations) else [*result.citations,Citation(source_id='compliance-case')]
+    return result.model_copy(update={'text':f'{result.text.rstrip()}\n\nYour review is due on {due.day} {due:%b %Y}.',
+        'answer_kind':'banking','citations':cited})
 
 
 async def load(ctx: RequestContext) -> CustomerEnvelope[ComplianceCase | None]:
@@ -104,4 +119,5 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     # format/citation failure. Both drafts must satisfy the same source checks;
     # no unsupported bank facts, statuses or approvals are allowed through.
     result=await checked_model_answer(task,system,history,evidence,pv)
+    if chosen is None:result=with_due_date(result,snapshot.data)  # a selected bank question keeps its own answer
     return result,evidence,pv['id']

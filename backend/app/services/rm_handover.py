@@ -40,7 +40,9 @@ ADVICE=re.compile(
     r"|\bwhich\s+(?:funds?|stocks?|shares|bonds?|investments?|insurance|policy)\b",re.I)
 FEES=re.compile(
     r"\b(?:waive|waiver|negotiate|reverse|refund)\b[^.?!]{0,30}\b(?:fees?|charges?|interest|rates?)\b"
-    r"|\b(?:waive|waiver)\b"
+    r"|\b(?:waive|waiver|waiving)\b"
+    # "can you get it waived?" (C28); "has my fee been waived?" asks about the record and stays with the assistant
+    r"|\b(?:get|have|getting|having)\s+(?:it|that|this|them|(?:the|my)\s+(?:\w+\s+){0,2}(?:fees?|charges?|interest))\s+waived\b"
     r"|\b(?:lower|reduce|better|preferential|special)\s+(?:my\s+|the\s+)?(?:interest\s+)?(?:rates?|fees?|pricing)\b",re.I)
 COMPLAINT=re.compile(r"\b(?:complain|complaint|unhappy with (?:the )?(?:service|bank))\b",re.I)
 CONTACT=re.compile(

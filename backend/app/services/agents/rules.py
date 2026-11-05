@@ -18,8 +18,12 @@ from app.services.agents.answer import WITHHELD
 
 SGT = ZoneInfo('Asia/Singapore')
 # A fee waiver or refund is a person's decision: Accounts hands the question to Relationship once (§14.6 handoff).
+# "the annual fee on my travel card and can you get it waived?" (C28) has the fee 38 characters before "waived".
 WAIVER = re.compile(r'\b(?:waive[ds]?|waiving|waiver|refund|reverse)\b[^.?!]{0,40}\b(?:fees?|interest|late charges?)\b'
-    r'|\b(?:fees?|interest)\b[^.?!]{0,30}\b(?:waived?|waiver|refunded|reversed)\b', re.I)
+    r'|\b(?:fees?|interest)\b[^.?!]{0,60}\b(?:waived?|waiving|waiver|refunded|reversed)\b'
+    r'|\b(?:get|have|getting|having)\s+(?:it|that|this|them)\s+waived\b', re.I)
+# The orchestrator sets this entity on Accounts tasks when Relationship has a task in the same plan (orchestrator.checked).
+WITH_RELATIONSHIP = 'with_relationship'
 STATUS_UNAVAILABLE = ("I couldn't retrieve your request status right now. Please check My Requests "
     "or try again later. I can't confirm an approval without a bank-recorded decision.")
 
@@ -78,7 +82,8 @@ async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, h
     records = await retail_records.load(current)
     evidence = [*public, *retail.evidence_for(records)]
     latest = history[-1].content if history and history[-1].role == 'user' else task.question
-    direct = (account_answers.respond(task.id, task.question, records, public) or card_answers.respond(task.id, task.question, history, records)
+    direct = (account_answers.respond(task.id, task.question, records, public)
+        or card_answers.respond(task.id, task.question, history, records, waiver_hint=not task.entities.get(WITH_RELATIONSHIP))
         or transaction_answers.respond(task.id, task.question, latest, records))
     if direct is not None:return out(spec, task, direct, evidence, runner.prompt_id(spec))
     if not retail_checks.relevant(records, task.question, ctx.received_at.astimezone(SGT).date()):return None

@@ -80,7 +80,8 @@ def clarify(intent: str,cards: Sequence[CreditCard]) -> str:
     return f'Which card’s {LABELS[intent]} do you mean: {listed}? You can also say “both”.'
 
 
-def line(intent: str,card: CreditCard,fees: Sequence[CustomerTransaction]) -> str:
+def line(intent: str,card: CreditCard,fees: Sequence[CustomerTransaction],waiver_hint: bool=True) -> str:
+    """waiver_hint=False when Relationship already answers a waiver in the same plan (C28), so the hint is not repeated."""
     status='' if card.status=='active' else f' (the card is {card.status.replace("_"," ")})'
     if intent=='due_and_limit':
         due=f'on {when(card.due_date)}' if card.due_date else 'not recorded'
@@ -95,7 +96,7 @@ def line(intent: str,card: CreditCard,fees: Sequence[CustomerTransaction]) -> st
     if not charged:return f'I can’t see an annual fee charged on your {name_of(card)} in the last 90 days.'
     return ' '.join(f'Your {name_of(card)} was charged an annual fee of {row.currency} {abs(row.amount):,.2f} on {when(row.date)}.'
         for row in charged)+(' If you would like to ask for it to be waived, say “waive my annual fee” and I’ll pass it to your '
-        'relationship manager.')
+        'relationship manager.' if waiver_hint else '')
 
 
 FOLLOW=re.compile(r"^\s*(?:and|also|what about|how about|wat about|then|ok|okay)\b|\b(?:that|this|same|the same) card\b|\bits\b|\bfor it\b",re.I)
@@ -252,7 +253,7 @@ def today_of(records: RetailRecords) -> date:
     return records.captured_at.astimezone(SGT).date()
 
 
-def respond(task_id: str,question: str,history: Sequence[Message],records: RetailRecords) -> AgentResult | None:
+def respond(task_id: str,question: str,history: Sequence[Message],records: RetailRecords,waiver_hint: bool=True) -> AgentResult | None:
     """A rules answer for a plain card-figure question, a which-card question, or None to let the model answer."""
     cards=[card for card in records.cards if card.status!='cancelled'] or list(records.cards)
     if not cards:return None
@@ -294,4 +295,4 @@ def respond(task_id: str,question: str,history: Sequence[Message],records: Retai
     sources=[Citation(source_id='retail-cards')]
     if intent=='annual_fee':sources.append(Citation(source_id='retail-transactions'))
     return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='banking',
-        text=' '.join(line(intent,card,fees) for card in chosen),citations=sources)
+        text=' '.join(line(intent,card,fees,waiver_hint) for card in chosen),citations=sources)

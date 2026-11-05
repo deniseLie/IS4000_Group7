@@ -13,6 +13,6 @@
  {"id":"P12","persona":"guest","say":"If I have a payment due next week, move my meeting","plan":{"tasks":[{"agent":"guide","about":"sign in to check"}],"no_dependencies":true}},
  {"id":"P13","persona":"sophie","say":"draft a short reminder to every client of mine with a review due this month","plan":{"tasks":[{"id":"a","agent":"rm_client","about":"clients with a review due"},{"agent":"rm_requests","about":"reminder draft","depends_on":"a","for_each":"clients_due"}]}},
  {"id":"P14","persona":"sophie","say":"brief me on David and draft follow-up tickets for anything still open","plan":{"tasks":[{"id":"a","agent":"rm_client","about":"brief on David"},{"agent":"rm_requests","about":"ticket drafts","depends_on":"a"}]}},
- {"id":"P15","persona":"michelle","say":"brief me on David's portfolio","plan":{"tasks":[],"route":"refuse","no_agents":["rm_client","rm_requests","rm_calendar"]}},
+ {"id":"P15","persona":"michelle","say":"brief me on David's portfolio","plan":{"tasks":[],"route":"fixed","no_agents":["rm_client","rm_requests","rm_calendar"]}},
  {"id":"P16","persona":"sophie","say":"I just inherited David. If he's agreed to share his handover note, include it in a brief","plan":{"tasks":[{"id":"a","agent":"rm_client","about":"handover brief"},{"agent":"rm_client","about":"his shared note","depends_on":"a","condition":"consent_active"}]}}
 ]

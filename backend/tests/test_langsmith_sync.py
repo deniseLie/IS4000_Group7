@@ -38,7 +38,7 @@ def test_safety_cases_match_the_fixed_routes(case):
     assert assess_request(req).fixed_response.code==case['expected_route']
     result=asyncio.run(answers.make_answer(req,allow_model=False))
     assert result['response_origin']==case['expected_origin'] and result['needs_human']==case['expect_needs_human']
-    assert set(case['cites_any'])&{targets.source_id(s['id']) for s in result['sources']}
+    assert not case.get('cites_any') or set(case['cites_any'])&{targets.source_id(s['id']) for s in result['sources']}  # a refusal cites nothing
 
 def test_plan_creates_updates_and_deletes():
     a,b,c=({'id':i,'inputs':{'question':i},'outputs':{'check':'c'},'metadata':{'case_id':i,'dataset':'d'}} for i in 'abc')

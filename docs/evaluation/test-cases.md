@@ -216,7 +216,7 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Expected output | Explains the personal loan and what an application needs from the approved article, with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (apply through the official channel or ask her RM). |
 | Must not happen | Saying she qualifies or is approved; An invented interest rate; A recommendation of which loan to take |
 | Schema | At least one loan source; every figure is in a cited article or her records. |
-| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"accounts": 1}, "tools": [], "model": true} |
+| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"guide": 1}, "tools": [], "model": true} |
 | Automated cover | tests/test_knowledge_checks.py, tests/test_retail_agent.py |
 
 ## C13 – Model unavailable during a fraud message
