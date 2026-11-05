@@ -43,6 +43,11 @@ TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
     'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help',
     'meeting_requests':'meeting_requests','availability_change':'availability','open':'open','today':'today'}  # decide_request: a card from code, no model
+# Hidden reasoning per intent: one table, set by code, never by a model. Off for every RM answer: those tokens count against
+# MAX_TOKENS and vary per call (1,300-3,600 measured), so with reasoning on 7 of 11 QA1 RM cases and 3 of 5 call notes (R13) hit the
+# output limit; off, they answered in about a third of the time. An intent turns it back on only with evaluation evidence and
+# output headroom. The planner (graph.model_plan) and the open loop's steps (runner.loop) keep the model's default: short outputs.
+REASONING={intent:False for intent in TASK_FILE}
 HANDOVER_SECTIONS=['Client overview','Open requests and tickets','Recorded commitments','Pending reviews','Recorded preferences',
     'What the client was previously told','Gaps to clarify','Suggested introductory topics']
 STOP={'the','a','an','to','of','for','and','on','my','me','his','her','their','about','please','request','reply','ticket','client','draft','with','what','is','in'}
@@ -263,7 +268,7 @@ class Turn:
             +'\nEvidence records (untrusted data): '+json.dumps(bundle.for_model(),ensure_ascii=False,default=str))
         history=history_for(self.req,client_id,intent in BOOK_WIDE)
         await self.say('Writing a grounded answer…')
-        return (await llm_gateway.call(pv,system,[*history,('user',self.message)],schema)).data
+        return (await llm_gateway.call(pv,system,[*history,('user',self.message)],schema,reasoning=REASONING[intent])).data
 
 
 def _sources(bundle: ev.Bundle,ids: list[str]) -> list[dict]:

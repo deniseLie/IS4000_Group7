@@ -309,8 +309,8 @@ def model(monkeypatch):
     step), a brief citing state['cite'] (or the first record), or state['sections'] as given, and a plain draft. Each call's
     title, prompt and system text are recorded."""
     seen, state = [], {'steps': [], 'cite': None, 'sections': None}
-    async def call(prompt, system, messages, schema):
-        seen.append({'title': schema['title'], 'prompt': prompt['id'], 'system': system})
+    async def call(prompt, system, messages, schema, reasoning=True):
+        seen.append({'title': schema['title'], 'prompt': prompt['id'], 'system': system, 'reasoning': reasoning})
         if schema['title'] == 'agent_step':data = state['steps'].pop(0) if state['steps'] else {'action': 'answer', 'calls': []}
         elif schema['title'] == 'rm_brief':
             ids = brief_ids(schema)
@@ -639,6 +639,7 @@ def test_today_links_the_calendar_and_client_exports_and_code_keeps_the_rank_ord
     assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_appointments', 'rm_calendar'),
         ('rm_meeting_requests', 'rm_calendar'), ('rm_review_status', 'rm_client'), ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests')}
     assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v5+')
+    assert seen[0]['reasoning'] is False  # handlers.REASONING: the day's answer only rephrases records code ranked
     gather = next(a for n, a in spans if n == 'gather')
     assert {(p['from'], p['to'], p['name']) for p in gather['passed']} >= {('rm_calendar', 'rm_requests', 'meetings_next_7d'),
         ('rm_calendar', 'rm_requests', 'requests_to_answer'), ('rm_client', 'rm_requests', 'reviews_due')}
@@ -740,6 +741,11 @@ def long_queue(data: dict, tickets: int = 10, specialist: int = 0) -> None:
 
 
 SHOWN = ['ticket-TCK-001010', 'ticket-TCK-001001', 'meeting-request-mei', *(f'ticket-TCK-0020{n:02d}' for n in range(1, 8))]
+
+
+def test_reasoning_is_set_per_intent_by_code():
+    """Every model intent has a setting, and every RM answer runs with hidden reasoning off (it hit the output limit)."""
+    assert set(handlers.REASONING) == set(handlers.TASK_FILE) and not any(handlers.REASONING.values())
 
 
 def test_today_explains_the_top_ten_and_counts_the_rest_in_a_fixed_line(records, model, monkeypatch):

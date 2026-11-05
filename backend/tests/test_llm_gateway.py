@@ -66,3 +66,14 @@ def test_client_uses_gateway_limits(monkeypatch):
     configure(monkeypatch)
     model=gw.build_model(123)
     assert model.max_tokens==123 and model.max_retries==0 and model.request_timeout==settings.llm_timeout_s
+
+def test_reasoning_off_reaches_openrouter_only(monkeypatch):
+    """handlers.REASONING turns hidden reasoning off for RM intents that only rephrase records; the span says where it took effect."""
+    configure(monkeypatch)
+    assert gw.build_model(123).extra_body=={'provider':{'require_parameters':True}}
+    assert gw.build_model(123,reasoning=False).extra_body=={'provider':{'require_parameters':True},'reasoning':{'enabled':False}}
+    assert (gw.reasoning_mode(False),gw.reasoning_mode(True))==('off','default')
+    monkeypatch.setenv('CHAT_TRANSPORT','claude')  # the CLIs cannot turn thinking off
+    assert gw.reasoning_mode(False)=='default'
+    monkeypatch.setenv('CHAT_TRANSPORT','api');monkeypatch.setenv('LLM_BASE_URL','https://api.example.com/v1')
+    assert gw.reasoning_mode(False)=='default' and not gw.build_model(123,reasoning=False).extra_body
