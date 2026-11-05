@@ -21,14 +21,28 @@ export const rmPut=(path,body,token,signal)=>call('PUT',path,token,body,signal);
 export const rmPatch=(path,body,token,signal)=>call('PATCH',path,token,body,signal);
 export const rmDelete=(path,token,signal)=>call('DELETE',path,token,null,signal);
 
-// The assistant streams status lines, then one structured answer (or an error message).
-export async function askAssistant(body,token,onStatus,signal) {
+// The assistant streams status lines and, for a client report, its sections as they are ready (`section`: the record
+// sections code wrote, then the model's points once checked), then one structured answer (or an error message).
+// Unknown events are ignored.
+export async function askAssistant(body,token,onStatus,signal,onSection) {
   const response=await fetch(`${API}/rm/assistant`,{method:'POST',signal,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!response.ok){const data=await response.json().catch(()=>null);throw new Error(data?.error?.message||'The assistant is unavailable. Please retry.');}
   let answer=null;
-  await readEvents(response.body,(type,data)=>{if(type==='status')onStatus?.(data);if(type==='answer')answer=JSON.parse(data);});
+  await readEvents(response.body,(type,data)=>{
+    if(type==='status')onStatus?.(data);
+    if(type==='section'){try{onSection?.(JSON.parse(data));}catch{}}
+    if(type==='answer')answer=JSON.parse(data);});
   if(!answer)throw new Error('No answer was received. Please retry.');
   return answer;
+}
+
+// The sections streamed so far, as one partial reply for RmAnswer (compact): in task order, then in arrival order, with
+// each source once. The answer replaces it.
+export function partialReply(parts) {
+  const order=parts.map((p,i)=>({p,i})).sort((a,b)=>String(a.p.task_id||'').localeCompare(String(b.p.task_id||''),undefined,{numeric:true})||a.i-b.i).map(x=>x.p);
+  const sources=new Map();
+  for(const p of order)for(const s of p.sources||[])if(s?.id&&!sources.has(s.id))sources.set(s.id,s);
+  return {status:'ok',summary:'',sections:order.flatMap(p=>p.sections||[]),sources:[...sources.values()],partial:true};
 }
 
 // Every draft in a reply: one (`draft`), or one per client when the RM asked for a message to several (`drafts`, R21).
