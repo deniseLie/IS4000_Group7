@@ -303,12 +303,18 @@ def brief_ids(schema: dict) -> list[str]:
     return schema['properties']['sections']['items']['properties']['items']['items']['properties']['source_ids']['items'].get('enum') or []
 
 
+def point_ids(schema: dict) -> list[str]:
+    key = next(k for k in schema['properties'] if k != 'summary')
+    return schema['properties'][key]['items']['properties']['source_ids']['items'].get('enum') or []
+
+
 @pytest.fixture
 def model(monkeypatch):
     """Sample model replies by schema title (no provider is called): the loop's steps from state['steps'] (then an answer
-    step), a brief citing state['cite'] (or the first record), or state['sections'] as given, and a plain draft. Each call's
+    step), a brief citing state['cite'] (or the first record), or state['sections'] as given, the judgement points of a
+    client report (one state['point'] per heading, citing state['cite'] or the first fact), and a plain draft. Each call's
     title, prompt and system text are recorded."""
-    seen, state = [], {'steps': [], 'cite': None, 'sections': None}
+    seen, state = [], {'steps': [], 'cite': None, 'sections': None, 'point': 'Ask how her plans are going.'}
     async def call(prompt, system, messages, schema, reasoning=True):
         seen.append({'title': schema['title'], 'prompt': prompt['id'], 'system': system, 'reasoning': reasoning})
         if schema['title'] == 'agent_step':data = state['steps'].pop(0) if state['steps'] else {'action': 'answer', 'calls': []}
@@ -317,6 +323,16 @@ def model(monkeypatch):
             data = {'status': 'ok', 'summary': 'Here is what your records show.', 'clarification_question': '', 'clarification_options': [],
                 'sections': state['sections'] or [{'heading': 'From your records', 'items': [{'text': 'Read from your records.', 'kind': 'record', 'owner': 'rm',
                     'source_ids': [i for i in state['cite'] or [] if i in ids] or ids[:1]}]}]}
+        elif schema['title'].endswith('_points'):
+            ids = point_ids(schema)
+            cite = [i for i in state['cite'] or [] if i in ids] or ids[:1]
+            data = {'summary': 'Worth preparing for.', **{k: [{'text': state['point'], 'source_ids': cite}] for k in schema['properties'] if k != 'summary'}}
+        elif schema['title'] == 'rm_actions':
+            data = {'summary': 'Two follow-ups from the 20 Oct 2026 note.', 'gaps': ['No due date is stated for the rate sheet.'], 'actions': [
+                {'kind': 'follow_up_task', 'title': 'Send the rate sheet', 'details': '', 'owner': '', 'due': '', 'category': '', 'fields': [],
+                    'evidence_quote': 'Send the rate sheet', 'origin': 'notes'},
+                {'kind': 'follow_up_task', 'title': 'Book a valuation', 'details': '', 'owner': 'RM', 'due': '2026-11-20', 'category': '', 'fields': [],
+                    'evidence_quote': 'Book a property valuation', 'origin': 'notes'}]}  # not in the note: withheld
         elif schema['title'] == 'rm_draft':
             data = {'status': 'ok', 'draft': 'Hi Michelle, I would like to catch up about your plans. Would a short call suit you?', 'facts_used': [],
                 'cautions': [], 'suggested_status': 'none', 'clarification_question': '', 'clarification_options': []}
@@ -346,7 +362,7 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
         ('rm_calendar', 'decide_request'), ('rm_calendar', 'availability_change'), ('rm_requests', 'open'), ('rm_client', 'help')]  # never a client agent
     task = graph.plan_schema()['properties']['tasks']['items']['properties']
     assert task['agent']['enum'] == ['', 'rm_calendar', 'rm_client', 'rm_requests'] and 'open' in task['intent']['enum']
-    assert graph.PLANNER_VERSION == handlers.ASSISTANT_VERSION == 'v5'
+    assert (graph.PLANNER_VERSION, handlers.ASSISTANT_VERSION) == ('v5', 'v6')
 
 
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):
@@ -386,7 +402,7 @@ def test_the_requests_agent_never_reads_consent_gated_data_so_a_draft_carries_no
         calls.clear();seen.clear()
         plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Michelle'}, {'intent': 'draft_message', 'client_name': 'Michelle'}])
         reply = run('Give me an overview of Michelle, then draft her a short note', None)
-        overview, draft = (evidence_in(next(c for c in seen if c['title'] == title)) for title in ('rm_brief', 'rm_draft'))
+        overview, draft = (evidence_in(next(c for c in seen if c['title'] == title)) for title in ('rm_overview_points', 'rm_draft'))
         assert ('5200' in overview) is shared and ('"shared": false' in overview) is not shared  # the overview: insights or the gap
         assert not any(word in draft for word in ('5200', 'transaction', 'Home loan', 'cash-events', 'talking-points', '"shared"'))
         assert not {n for n, a in calls if a == 'rm_requests'} & registry.CONSENT_GATED
@@ -408,7 +424,7 @@ def test_an_open_question_loops_at_most_agent_tool_calls_times_and_says_when_it_
     reply, spans = traced('Which card limit requests are waiting on me, and what did the clients ask?')
     steps = [c for c in seen if c['title'] == 'agent_step']
     assert len(steps) == 3 and [n for n, a in calls if a == 'rm_requests'] == ['rm_tickets', 'rm_ticket', 'rm_followups']
-    assert all(c['prompt'].startswith('v5+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v5's step.md
+    assert all(c['prompt'].startswith('v6+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v6's step.md
     assert '"reason": "not_in_book"' in steps[2]['system']  # outside the book: refused by the SQL check and shown to the next step
     assert 'ticket-TCK-001001' in steps[1]['system'] and not any('zebra lantern' in c['system'] for c in steps)  # free text hidden from steps
     assert 'zebra lantern' in evidence_in(next(c for c in seen if c['title'] == 'rm_brief'))  # the answer step reads it as data
@@ -537,7 +553,7 @@ def test_each_rm_turn_traces_its_steps_with_ids_codes_and_counts_only(records, m
     def one(spans, name, **match):return next(m for n, m in spans if n == name and all(m.get(k) == v for k, v in match.items()))
     assert {n for n, _ in fixed} == {'planner', 'agent', 'tool_call', 'compose'} and {n for n, _ in loop} == set(OWN)
     planner = one(fixed, 'planner')
-    assert (planner['side'], planner['source'], planner['route'], planner['named_in_book'], planner['tasks']) == ('rm', 'model', 'model', 1, 1)
+    assert (planner['side'], planner['source'], planner['route'], planner['named_in_book'], planner['tasks']) == ('rm', 'rule', 'rule', 1, 1)  # one request: no planner model call
     assert planner['plan'] == [{'id': 't1', 'agent': 'rm_client', 'intent': 'client_overview', 'depends_on': None, 'condition': None, 'for_each': None}]
     agent = one(fixed, 'agent')
     assert (agent['agent'], agent['intent'], agent['path'], agent['status'], agent['wave'], agent['origin']) == ('rm_client', 'client_overview', 'reads', 'ok', 1, 'ai')
@@ -638,7 +654,7 @@ def test_today_links_the_calendar_and_client_exports_and_code_keeps_the_rank_ord
     # Each agent reads its own records; the feeds call no model, so the only model call is the day's answer.
     assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_appointments', 'rm_calendar'),
         ('rm_meeting_requests', 'rm_calendar'), ('rm_review_status', 'rm_client'), ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests')}
-    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v5+')
+    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v6+')
     assert seen[0]['reasoning'] is False  # handlers.REASONING: the day's answer only rephrases records code ranked
     gather = next(a for n, a in spans if n == 'gather')
     assert {(p['from'], p['to'], p['name']) for p in gather['passed']} >= {('rm_calendar', 'rm_requests', 'meetings_next_7d'),
@@ -808,9 +824,246 @@ def test_the_other_requests_and_client_intents_still_answer(records, model, monk
     for rows, message, title in (([{'intent': 'ticket_summary', 'ticket_ref': 'TCK-001001'}], 'Summarise TCK-001001', 'rm_brief'),
             ([{'intent': 'draft_message', 'client_name': 'Michelle'}], 'Draft Michelle a short note', 'rm_draft'),
             ([{'intent': 'book_question'}], 'Who has requests waiting for me?', 'rm_brief'),
-            ([{'intent': 'client_overview', 'client_name': 'Michelle'}], 'Give me an overview of Michelle', 'rm_brief')):
+            ([{'intent': 'client_overview', 'client_name': 'Michelle'}], 'Give me an overview of Michelle', 'rm_overview_points')):
         seen.clear()
         plan(monkeypatch, rows)
         reply, spans = traced(message)
         assert reply['status'] == 'ok' and reply['intent'] == rows[0]['intent'] and [c['title'] for c in seen] == [title], rows
         assert len(next(a for n, a in spans if n == 'planner')['plan']) == 1  # no feeds outside today and priorities
+
+
+# Answer speed (docs/planning/rm-answer-speed.md): code writes the record sections, the model only the judgement ---------
+MEETING = {'appointment_id': 'a1', 'status': 'confirmed', 'when': 'Mon 9 Nov 2026, 10:00 am', 'format': 'video', 'purpose': 'Home loan review',
+    'starts_at': '2026-11-09T10:00:00+08:00'}
+NOTES = {'data': {'notes': [
+    {'note_id': 'n2', 'met_on': '2026-10-20', 'met_on_text': '20 Oct 2026', 'format': 'video', 'written_by_current_rm': True, 'author': 'Sophie Lim (DEMO)',
+        'title': 'Home loan check-in', 'summary': 'Discussed refinancing timing.', 'commitments': ['Send the rate sheet'],
+        'client_requests': ['Compare fixed and floating'], 'decisions': []},
+    {'note_id': 'n1', 'met_on': '2026-06-02', 'met_on_text': '2 Jun 2026', 'format': 'in_person', 'written_by_current_rm': True, 'author': 'Sophie Lim (DEMO)',
+        'title': 'Annual review', 'summary': 'Older note: violet harbour', 'commitments': [], 'client_requests': [], 'decisions': []}],
+    'withheld_private_notes': 1}, 'as_of': 'now'}
+BRIEF_HEADINGS = ['The meeting', 'Who the client is', 'History and commitments', 'Open matters', 'What the client has told us',
+    'Conversation starters', 'Suggested discussion points', 'Questions to ask', 'Gaps to check']
+
+
+def brief_rows(data: dict, shares: dict[int, bool]):
+    def with_meeting(customer_id):
+        p = profile(customer_id)
+        p['data']['appointments'] = [{**MEETING, 'customer_id': customer_id}]
+        return p
+    data['rows'].update(consent_rows(shares), rm_client_profile=with_meeting, rm_meeting_notes=NOTES)
+
+
+def test_a_meeting_brief_is_code_sections_and_one_small_model_call(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    brief_rows(data, {1002: True})
+    state['cite'] = ['note-2026-10-20']
+    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Michelle'}])
+    reply, spans = traced('Brief me on Michelle')
+    assert [c['title'] for c in seen] == ['rm_brief_points'] and seen[0]['prompt'].startswith('v6+') and 'TASK: the judgement parts of a meeting briefing' in seen[0]['system']
+    evidence = evidence_in(seen[0])
+    # The model sees the latest note only (the older one is counted in its section), and no calendar rows beyond the meeting.
+    assert 'note-2026-10-20' in evidence and 'note-2026-06-02' not in evidence and 'violet harbour' not in evidence
+    assert '"appointments"' not in evidence and 'selected-appointment' in evidence and LINE in evidence
+    assert [s['heading'] for s in reply['sections']] == BRIEF_HEADINGS and reply['status'] == 'ok'
+    history = next(s for s in reply['sections'] if s['heading'] == 'History and commitments')
+    assert [i['source_ids'] for i in history['items']][-2:] == [['note-2026-06-02'], ['notes-withheld']]
+    assert 'Send the rate sheet (recorded, not necessarily completed)' in str(history) and '1 earlier note is recorded' in str(history)
+    told = next(s for s in reply['sections'] if s['heading'] == 'What the client has told us')
+    assert any(i['kind'] == 'suggestion' and 'Not confirmed by the client' in i['text'] for i in told['items'])  # an inferred topic
+    assert any('Prefers calls after 5pm' in i['text'] for i in told['items'])  # her shared handover note, under consent
+    points = [s for s in reply['sections'] if s['heading'] in BRIEF_HEADINGS[5:8]]
+    assert all(i['kind'] == 'suggestion' and i['source_ids'] == ['note-2026-10-20'] for s in points for i in s['items'])
+    assert {'note-2026-06-02', 'note-2026-10-20', 'selected-appointment'} <= {s['id'] for s in reply['sources']}  # every citation shown
+    assert reply['context']['appointment_id'] == 'a1' and 'consent_asks' not in reply
+    agent = next(a for n, a in spans if n == 'agent')
+    assert 'latest_note' in agent['export_names']  # R22's follow-ups still get the note the brief read
+    assert {n for n, a in calls if a == 'rm_client'} >= {'rm_client_profile', 'rm_meeting_notes', 'rm_shared_summary', 'rm_cash_events',
+        'rm_transaction_insights', 'rm_talking_points'}
+
+
+def test_a_brief_without_consent_has_gaps_ask_cards_and_no_shared_note(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    brief_rows(data, {1009: False})
+    data['consent'] = False
+    state['point'] = 'She has SGD 9,999.00 spare.'  # a figure in no record: withheld, and the record sections still stand
+    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Mei Ling'}])
+    reply = run('Brief me on Mei Ling', None)
+    evidence = evidence_in(seen[0])
+    assert 'shared-note' not in evidence and 'Prefers calls' not in evidence and 'planning' not in evidence and '5200' not in evidence
+    assert 'shared-note' not in json.dumps(reply) and 'Prefers calls' not in json.dumps(reply)
+    told = next(s for s in reply['sections'] if s['heading'] == 'What the client has told us')
+    assert {i['text'] for i in told['items']} >= {'The client has not shared topics from their chats with you.',
+        'No handover note is shared with you under active consent.', 'The client has not shared transaction insights with you.'}
+    assert [s['heading'] for s in reply['sections']] == [h for h in BRIEF_HEADINGS if h not in BRIEF_HEADINGS[5:8]]
+    assert reply['validation']['withheld'] == 3 and reply['status'] == 'ok'
+    assert [(a['category'], a['reason'], a['meeting_id']) for a in reply['consent_asks']] == [('transaction_insights', 'meeting_prep', 'a1'),
+        ('chat_topics', 'meeting_prep', 'a1')]
+
+
+def test_r22_follow_ups_read_only_the_note_the_brief_read_and_code_lists_its_items(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    brief_rows(data, {1002: True})
+    async def categories(t):return [{'category': 'card_limit', 'label': 'Card limit change', 'owner_team': 'cards', 'decided_by': 'cards',
+        'fields': [{'key': 'amount', 'label': 'Amount', 'required': True}], 'documents': []}]
+    monkeypatch.setattr(handlers, '_categories', categories)
+    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Michelle'}, {'intent': 'actions_from_note', 'client_name': 'Michelle', 'depends_on': 1}])
+    reply, spans = traced('Brief me on Michelle, then propose follow-ups from her latest note')
+    assert [c['title'] for c in seen] == ['rm_brief_points', 'rm_actions']
+    evidence = json.loads(evidence_in(seen[1]))
+    assert [e['id'] for e in evidence] == ['note-2026-10-20', 'request-types']  # no profile, no older note, no consent-gated record
+    assert 'Selected note: note-2026-10-20' in seen[1]['system'] and 'violet harbour' not in seen[1]['system']
+    doc = reply['documentation']
+    assert doc['note_id'] == 'n2' and doc['from_note'] and doc['draft']['interaction'] == {'met_on': '2026-10-20', 'format': 'video', 'title': 'Home loan check-in'}
+    assert [(i['category'], i['text'], i['certainty']) for i in doc['draft']['items']] == [('commitment', 'Send the rate sheet', 'confirmed'),
+        ('client_request', 'Compare fixed and floating', 'confirmed')]
+    assert [a['title'] for a in doc['draft']['actions']] == ['Send the rate sheet'] and 'not_in_notes' in reply['validation']['reasons']
+    assert doc['draft']['actions'][0]['flags'] == ['No owner stated in the notes', 'No due date stated in the notes']
+    gather = next(a for n, a in spans if n == 'gather')
+    assert ('rm_client', 'rm_requests', 'latest_note') in {(p['from'], p['to'], p['name']) for p in gather['passed']}
+    assert handlers.note_items({'commitments': ['Might send the rate sheet once rates are to confirm'], 'decisions': ['Keep the account']}) == [
+        {'category': 'commitment', 'text': 'Might send the rate sheet once rates are to confirm', 'certainty': 'tentative', 'origin': 'notes', 'owner': 'rm', 'due': ''},
+        {'category': 'decision', 'text': 'Keep the account', 'certainty': 'confirmed', 'origin': 'notes', 'owner': '', 'due': ''}]
+
+
+def test_r11_an_overview_is_code_sections_and_a_question_is_answered_from_that_clients_records(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    def with_review(customer_id):
+        p = profile(customer_id)
+        due = {1002: '30 Nov 2026', 1009: '15 Dec 2026'}[customer_id]
+        p['data'].update(compliance={'title': 'Periodic review', 'status': 'not_submitted', 'due_date': None, 'due_text': due,
+            'outstanding_items': [{'label': 'Proof of address', 'status': 'not_submitted'}], 'open_bank_questions': []},
+            accounts=[{'type': 'savings', 'number': '****1234', 'currency': 'SGD', 'balance': 80000, 'status': 'active'}], gaps=['no_upcoming_appointment'])
+        return p
+    data['rows'].update(consent_rows({1002: True, 1009: False}), rm_client_profile=with_review)
+    plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Michelle'}])
+    overview = run('Give me an overview of Michelle', None)
+    assert [c['title'] for c in seen] == ['rm_overview_points'] and 'TASK: the judgement part of a client overview' in seen[0]['system']
+    heads = [s['heading'] for s in overview['sections']]
+    assert heads == ['Snapshot', 'Accounts and products', 'Upcoming', 'Transaction insights', "Topics from the client's chats", 'Worth raising',
+        'Missing or unavailable']
+    products = next(s for s in overview['sections'] if s['heading'] == 'Accounts and products')['items']
+    assert products == [{'text': 'Savings account ****1234: SGD 80,000.00, active.', 'kind': 'record', 'owner': 'rm', 'source_ids': ['accounts']}]
+    upcoming = next(s for s in overview['sections'] if s['heading'] == 'Upcoming')['items']
+    assert upcoming[0]['text'] == 'Periodic review: not sent yet, due 30 Nov 2026; still to send: Proof of address.'
+    insights = next(s for s in overview['sections'] if s['heading'] == 'Transaction insights')['items']
+    assert [i['text'] for i in insights][1:] == ['Oct 2026: money in 5,200.00, money out 3,100.00.', 'Overseas card spending: 410.00.']
+    seen.clear()
+    for message, client, due, other in (('When is her review due?', 'Michelle', '30 Nov 2026', '15 Dec 2026'),
+            ('Now Mei Ling. What about her deadline?', 'Mei Ling', '15 Dec 2026', '30 Nov 2026')):
+        plan(monkeypatch, [{'intent': 'client_overview', 'client_name': client}])
+        state['cite'] = ['compliance']
+        reply = run(message, None)
+        call = seen[-1]
+        assert call['title'] == 'rm_brief' and 'TASK: a direct answer to the RM' in call['system'] and reply['intent'] == 'client_overview'
+        assert due in evidence_in(call) and other not in evidence_in(call)  # only this client's records reach the model
+        assert reply['sections'][0]['items'][0]['source_ids'] == ['compliance'] and reply['context']['client_name'].startswith(client)
+    assert 'Snapshot' not in str([s['heading'] for s in reply['sections']])
+
+
+def test_wants_report_tells_an_overview_from_a_question():
+    def turn(message, intent=None):
+        t = handlers.Turn(RmAssistantRequest(message=message, intent=intent), rm_ctx(), None, book=BOOK)
+        return handlers.wants_report(t, 'client_overview', handlers.OVERVIEW)
+    assert [turn(m) for m in ('Give me an overview of Michelle', 'Now Mei Ling', 'Michelle', 'Quick summary of David please')] == [True] * 4
+    assert [turn(m) for m in ('When is her review due?', 'Now Mei Ling. What about her deadline?', 'Show me her card limit')] == [False] * 3
+    assert turn('Anything?', intent='client_overview')  # the workspace button
+
+
+def handover_sources(shared: bool) -> dict:
+    p = profile(1003)['data']
+    return {'data': {**p, 'eligible': True, 'relationship': {'assigned_since_text': '1 Oct 2026', 'inherited': True, 'previous_advisor': 'Rachel Ng (DEMO)'},
+        'preferences': [{'preference': 'Prefers email', 'recorded_text': '2 Jun 2026'}], 'gaps': ['no_upcoming_appointment'],
+        'notes': [{'note_id': 'n9', 'met_on': '2026-09-01', 'met_on_text': '1 Sep 2026', 'format': 'phone', 'written_by_current_rm': False,
+            'author': 'Rachel Ng (DEMO)', 'title': 'Transfer set-up', 'summary': 'Quarterly USD transfer.', 'commitments': ['Check the transfer fee'],
+            'client_requests': [], 'decisions': []}], 'withheld_private_notes': 0,
+        'shared': {'consent_active': shared, 'shared': [{'summary_id': 's1', 'content': 'Prefers calls after 5pm.', 'shared_at': 'x', 'shared_text': '1 Nov 2026'}] if shared else []},
+        'told': [{'at_sgt': 'Mon 2 Nov 2026, 9:00 am', 'by': 'bank', 'reference': 'TCK-001003', 'text': 'We are reviewing your request.'}], 'free_slots': []}, 'as_of': 'now'}
+
+
+def test_a_handover_brief_keeps_its_eight_headings_with_code_records_and_model_topics(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    for shared in (True, False):
+        seen.clear()
+        data['rows']['rm_handover_sources'] = handover_sources(shared)
+        plan(monkeypatch, [{'intent': 'handover_brief', 'client_name': 'David'}])
+        reply = run('Prepare a handover brief for David', None)
+        assert [c['title'] for c in seen] == ['rm_handover_points'] and 'TASK: the judgement part of a handover brief' in seen[0]['system']
+        assert ('Prefers calls after 5pm' in evidence_in(seen[0])) is shared  # R23 (shared=False is planned there): not even in the facts
+        assert [s['heading'] for s in reply['sections']] == handlers.HANDOVER_SECTIONS
+        by = {s['heading']: s['items'] for s in reply['sections']}
+        assert by['Recorded commitments'][0]['text'] == 'Check the transfer fee (recorded 1 Sep 2026 by Rachel Ng (DEMO); not necessarily completed).'
+        assert by['What the client was previously told'][0]['text'] == 'Mon 2 Nov 2026, 9:00 am, bank about TCK-001003: We are reviewing your request.'
+        assert ('Prefers calls after 5pm' in str(by['Recorded preferences'])) is shared
+        assert ('No handover note is shared' in str(by['Recorded preferences'])) is not shared
+        assert by['Suggested introductory topics'][0]['kind'] == 'suggestion' and by['Gaps to clarify'][0]['text'] == 'No upcoming meeting with you is booked.'
+        assert by['Gaps to clarify'][-1]['kind'] == 'gap'  # the model's gap, after code's
+
+
+def test_a_meeting_history_is_one_section_per_note_and_a_question_goes_to_the_model(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    brief_rows(data, {1002: True})
+    plan(monkeypatch, [{'intent': 'meeting_history', 'client_name': 'Michelle'}])
+    reply = run("Summarise Michelle's meeting history", None)
+    assert [c['title'] for c in seen] == ['rm_history_points'] and 'TASK: the judgement part of a meeting history' in seen[0]['system']
+    assert [s['heading'] for s in reply['sections']] == ['20 Oct 2026, video (your note): Home loan check-in', '2 Jun 2026, in person (your note): Annual review',
+        'Older and private notes', 'Gaps to check']
+    assert reply['sections'][0]['items'][0] == {'text': 'Discussed refinancing timing.', 'kind': 'record', 'owner': 'rm', 'source_ids': ['note-2026-10-20']}
+    assert reply['sections'][3]['items'][0]['kind'] == 'gap'
+    seen.clear()
+    reply = run('What did we agree about the rate sheet?', None)
+    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: answer the RM' in seen[0]['system'] and 'violet harbour' in evidence_in(seen[0])
+
+
+def test_a_brief_streams_its_record_sections_before_the_model_call_and_never_a_withheld_point(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    brief_rows(data, {1002: True})
+    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Michelle'}])
+    parts: list[tuple[int, dict]] = []
+    async def say(text):pass
+    async def show(part):parts.append((len(seen), json.loads(json.dumps(part, default=str))))
+    def streamed(message):
+        parts.clear();seen.clear()
+        return asyncio.run(graph.respond(RmAssistantRequest(message=message), rm_ctx(), say, show))
+    reply = streamed('Brief me on Michelle')
+    assert [(n, p['task_id'], [s['heading'] for s in p['sections']]) for n, p in parts] == [
+        (0, 't1', ['The meeting', 'Who the client is', 'History and commitments', 'Open matters', 'What the client has told us', 'Gaps to check']),
+        (1, 't1', ['Conversation starters', 'Suggested discussion points', 'Questions to ask'])]  # records before the model, points after it
+    assert {s['id'] for s in parts[0][1]['sources']} >= {'selected-appointment', 'note-2026-10-20', 'note-2026-06-02'}
+    final = {s['heading']: s['items'] for s in reply['sections']}
+    assert all(final[s['heading']] == s['items'] for _, p in parts for s in p['sections'])  # the answer repeats what streamed
+    state['point'] = 'She has SGD 9,999.00 spare.'  # every point withheld: nothing after the model call is streamed
+    streamed('Brief me on Michelle')
+    assert [n for n, _ in parts] == [0] and '9,999' not in json.dumps([p for _, p in parts])
+    asyncio.run(graph.respond(RmAssistantRequest(message='Brief me on Michelle'), rm_ctx(), say))  # show stays optional
+
+
+def test_a_one_request_message_is_planned_by_rule_and_anything_else_by_the_model():
+    def rt(named, outside=False):
+        return graph.RmRuntime(req=RmAssistantRequest(message='q'), ctx=rm_ctx(), say=None, book=BOOK,
+            named=[c for c in BOOK if c['name'].split()[0] in named], outside=outside)
+    assert graph.rule_plan(rt('Michelle'), 'Brief me on Michelle') == [{'intent': 'meeting_brief', 'client_name': 'Michelle'}]
+    assert graph.rule_plan(rt('Mei'), 'Prepare for my meeting with Mei Ling.') == [{'intent': 'meeting_brief', 'client_name': 'Mei Ling'}]
+    assert graph.rule_plan(rt('Michelle'), 'Give me an overview of Michelle Tan') == [{'intent': 'client_overview', 'client_name': 'Michelle Tan'}]
+    assert graph.rule_plan(rt(''), 'What’s on today?') == [{'intent': 'today'}]
+    pair = [{'intent': 'meeting_brief', 'client_name': 'Michelle'}, {'intent': 'actions_from_note', 'client_name': 'Michelle', 'depends_on': 1}]
+    assert graph.rule_plan(rt('Michelle'), 'brief me on Michelle and draft follow-up tickets for anything still open from the last meeting') == pair  # R22
+    assert graph.rule_plan(rt('Michelle'), 'Brief me on Michelle, then propose next steps from our latest note.') == pair
+    linked = graph.tasks_from(pair, 'q')
+    assert linked[1].depends_on == 't1' and linked[1].agent == 'rm_requests' and orchestrator.linked(linked, RmAssistantRequest(message='q'), {})[0][1].depends_on == 't1'
+    for named, message, outside in (('David', 'Brief me on David and draft follow-up tickets for anything still open', False),  # P14: two requests
+            ('Michelle', 'Brief me on Michelle and draft follow-ups from the last meeting and email her', False),
+            ('Michelle', 'Brief me for my next confirmed meeting with Michelle', False),  # R04: the model planner reads the meeting hint
+            ('Mei', 'Brief me for my 10am with Mei Ling', False),
+            ('Michelle David', 'Brief me on Michelle and draft follow-ups from the last meeting', False),
+            ('Michelle', 'Brief me on Michelle, then her overview', False), ('Michelle David', 'Brief me on Michelle', False),
+            ('', 'Brief me on Wei Ming', True), ('Michelle', 'Brief me on David', False), ('Michelle', 'When is Michelle’s review due?', False),
+            ('Michelle', "What's on today with Michelle?", False)):
+        assert graph.rule_plan(rt(named, outside), message) is None, message

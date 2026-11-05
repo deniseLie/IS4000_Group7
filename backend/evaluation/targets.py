@@ -196,10 +196,16 @@ async def plan_only_rm(inputs: dict[str,Any]) -> dict[str,Any]:
 
 
 def rm_text(reply: dict[str,Any]) -> str:
-    """An RM reply as one text, as the workspace shows it (frontend lib/rm.js replyText, unbounded)."""
+    """An RM reply as one text, as the workspace shows it (frontend lib/rm.js replyText, unbounded), plus the proposed
+    actions of a documentation or follow-ups card (each with the note's words it quotes and its flags), which the
+    workspace shows on that card, so the judge can see them."""
     drafts=reply.get('drafts') or ([reply['draft']] if reply.get('draft') else [])
+    doc=(reply.get('documentation') or {}).get('draft') or {}
     return '\n'.join(filter(None,[reply.get('summary') or '',*(x for s in reply.get('sections') or [] for x in [s['heading'],*(f"- {i['text']}" for i in s['items'])]),
-        *(f"Draft{' to '+d['client'] if d.get('client') else ''}: {d['text']}" for d in drafts)]))
+        *(f"Draft{' to '+d['client'] if d.get('client') else ''}: {d['text']}" for d in drafts),
+        f"Documentation: {doc['summary']}" if doc.get('summary') else '',
+        *(f"Proposed {str(a.get('kind') or 'action').replace('_',' ')}: {a.get('title') or ''} (quotes the note: “{a.get('evidence_quote') or ''}”)"
+          +(f" [{'; '.join(a['flags'])}]" if a.get('flags') else '') for a in doc.get('actions') or [])]))
 
 
 async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:

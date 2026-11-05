@@ -1,6 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {contextAfter,dayCells,followupGroups,historyFor,interactionPayload,isRm,missingFields,replyText,requestContext,validationNote} from './rm.js';
+import {askAssistant,contextAfter,dayCells,followupGroups,historyFor,interactionPayload,isRm,missingFields,partialReply,replyText,requestContext,validationNote} from './rm.js';
+
+test('the assistant hands each streamed section on, ignores unknown events and returns the answer',async()=>{
+  const part=(task,heading,source)=>({task_id:task,sections:[{heading,items:[{text:'x',kind:'record',source_ids:[source]}]}],sources:[{id:source,title:source}]});
+  const events=[['status','Reading…'],['section',JSON.stringify(part('t1','The meeting','selected-appointment'))],['mystery','{}'],
+    ['section','not json'],['answer',JSON.stringify({status:'ok',summary:'Brief',sections:[]})],['done','']];
+  const body=events.map(([e,d])=>`event: ${e}\ndata: ${d}\n\n`).join('');
+  const fetched=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(body,{status:200,headers:{'Content-Type':'text/event-stream'}});
+  try {
+    const statuses=[],parts=[];
+    const answer=await askAssistant({message:'Brief me'},'token',s=>statuses.push(s),undefined,p=>parts.push(p));
+    assert.deepEqual(statuses,['Reading…']);
+    assert.equal(parts.length,1);assert.equal(parts[0].sections[0].heading,'The meeting');
+    assert.equal(answer.summary,'Brief');
+    assert.equal((await askAssistant({message:'Brief me'},'token')).summary,'Brief');  // the callbacks stay optional
+  } finally {globalThis.fetch=fetched;}
+  const shown=partialReply([part('t2','Open requests','ticket-1'),part('t1','Snapshot','profile'),part('t1','Worth raising','profile')]);
+  assert.deepEqual(shown.sections.map(s=>s.heading),['Snapshot','Worth raising','Open requests']);  // task order, then arrival
+  assert.deepEqual(shown.sources.map(s=>s.id),['profile','ticket-1']);
+  assert.equal(shown.partial,true);
+});
 
 test('only an administrator-set rm role opens the RM workspace',()=>{
   assert.equal(isRm({user:{app_metadata:{demobank_role:'rm'}}}),true);

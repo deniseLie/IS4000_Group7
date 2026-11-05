@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import RmAnswer from './RmAnswer';
-import {askAssistant,contextAfter,conversationPayload,display,historyFor,requestContext,rmGet,rmPut} from '../../lib/rm';
+import {askAssistant,contextAfter,conversationPayload,display,historyFor,partialReply,requestContext,rmGet,rmPut} from '../../lib/rm';
 import {redact} from '../../lib/chatTools';
 
 const STARTERS=[
@@ -21,7 +21,7 @@ const Speech=typeof window!=='undefined'?(window.SpeechRecognition||window.webki
 
 export default function RmAssistant({token,chatCount,messages,setMessages,context,setContext,ask,onAsked,advisor,onNavigate,conversationId,onNew,onSaved,historyOpen,onHistory,notice,onNotice}) {
   const [input,setInput]=useState('');
-  const [busy,setBusy]=useState(false),[status,setStatus]=useState('');
+  const [busy,setBusy]=useState(false),[status,setStatus]=useState(''),[parts,setParts]=useState([]);  // sections streamed before the answer
   const [book,setBook]=useState([]);
   const list=useRef(null),composer=useRef(null),request=useRef(null),listener=useRef(null);
   const [listening,setListening]=useState(false),[dictationNote,setDictationNote]=useState(false);
@@ -71,17 +71,18 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
     const shown=redact(message);
     const user={role:'user',content:shown,client_id:ctx.client_id??null};
     const before=[...messages,user];
-    setMessages([...before,{role:'assistant',pending:true}]);setInput('');setBusy(true);setStatus('Reading your records…');
+    setMessages([...before,{role:'assistant',pending:true}]);setInput('');setBusy(true);setStatus('Reading your records…');setParts([]);
     const controller=new AbortController();request.current=controller;
     try {
-      const reply=await askAssistant({message:shown,history:historyFor(messages),context:requestContext(ctx),intent:options.intent||null},await token(),setStatus,controller.signal);
+      const reply=await askAssistant({message:shown,history:historyFor(messages),context:requestContext(ctx),intent:options.intent||null},await token(),setStatus,
+        controller.signal,part=>setParts(previous=>[...previous,part]));
       const next=contextAfter(ctx,reply);
       setContext(next);
       const list=[...before,{role:'assistant',reply,client_id:next.client_id,ask:{message:shown,intent:reply.intent}}];
       setMessages(list);save(list,next);
     } catch(failure) {
       if(failure.name!=='AbortError')setMessages([...before,{role:'assistant',error:true,content:failure.message}]);
-    } finally {setBusy(false);setStatus('');request.current=null;}
+    } finally {setBusy(false);setStatus('');setParts([]);request.current=null;}
   }
   function choose(option,turn) {
     // Options that name a client, ticket, meeting or note re-ask the same question with that choice; others are replies.
@@ -123,6 +124,7 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
             {m.role==='assistant'&&!(m.reply?.sections?.length&&m.reply.status!=='denied')&&<div className="answer-heading">RM assistant{m.reply?.origin==='access_check'&&<small className="answer-origin">Access check</small>}</div>}
             {m.role==='user'&&<span className="answer-text">{m.content}</span>}
             {m.pending&&<span className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{status}</span>}
+            {m.pending&&parts.length>0&&<div data-testid="rm-partial"><RmAnswer reply={partialReply(parts)} compact latest={false} token={token}/></div>}
             {m.error&&<span className="answer-text">{m.content}</span>}
             {m.reply&&<RmAnswer reply={m.reply} onEdit={next=>{const list=messages.map((x,k)=>k===i?{...x,reply:next}:x);setMessages(list);save(list,context);}} client={m.client_id?clientName(m.client_id):null} onOption={option=>choose(option,m)} token={token} latest={i===lastIndex&&!busy&&!m.restored}
               onAsk={text=>send(text,{intent:'draft_message'})}
