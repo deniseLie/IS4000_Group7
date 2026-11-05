@@ -82,7 +82,8 @@ def request_facts(trace):
     refused=[t for t in trace.tools if t.get('allowed') is False]
     return {'agents':[a['agent'] for a in trace.agents],'agent_status':status,'model_calls':len(calls),'model_failures':sum(not c['ok'] for c in calls),
         'llm_ms':sum(c.get('ms') or 0 for c in calls),'llm_tokens':sum(tokens) if tokens else None,'model':models.most_common(1)[0][0] if models else None,
-        'prompt_ids':sorted({f"{c['agent']}/{c['prompt_version']}" for c in calls if c.get('agent')}),'app_version':app_version(),
+        'prompt_ids':sorted({f"{c['agent']}/{c['prompt_version']}" for c in calls if c.get('agent')}),'reasoning_off':sum(c.get('reasoning')=='off' for c in calls),
+        'app_version':app_version(),
         # Build plan 3a: who asked and what the agents did with their tools, so the Agents and Failures pages can filter.
         'side':facts.get('side') or 'client','role':role,'tool_calls':len(trace.tools),
         'loop_stops':dict(Counter(x['stop'] for x in trace.agents if x.get('stop'))),

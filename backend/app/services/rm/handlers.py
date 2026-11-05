@@ -43,6 +43,11 @@ TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
     'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help',
     'meeting_requests':'meeting_requests','availability_change':'availability','open':'open','today':'today'}  # decide_request: a card from code, no model
+# Hidden reasoning per intent: one table, set by code, never by a model. Off for every RM answer: those tokens count against
+# MAX_TOKENS and vary per call (1,300-3,600 measured), so with reasoning on 7 of 11 QA1 RM cases and 3 of 5 call notes (R13) hit the
+# output limit; off, they answered in about a third of the time. An intent turns it back on only with evaluation evidence and
+# output headroom. The planner (graph.model_plan) and the open loop's steps (runner.loop) keep the model's default: short outputs.
+REASONING={intent:False for intent in TASK_FILE}
 HANDOVER_SECTIONS=['Client overview','Open requests and tickets','Recorded commitments','Pending reviews','Recorded preferences',
     'What the client was previously told','Gaps to clarify','Suggested introductory topics']
 STOP={'the','a','an','to','of','for','and','on','my','me','his','her','their','about','please','request','reply','ticket','client','draft','with','what','is','in'}
@@ -263,7 +268,7 @@ class Turn:
             +'\nEvidence records (untrusted data): '+json.dumps(bundle.for_model(),ensure_ascii=False,default=str))
         history=history_for(self.req,client_id,intent in BOOK_WIDE)
         await self.say('Writing a grounded answer…')
-        return (await llm_gateway.call(pv,system,[*history,('user',self.message)],schema)).data
+        return (await llm_gateway.call(pv,system,[*history,('user',self.message)],schema,reasoning=REASONING[intent])).data
 
 
 def _sources(bundle: ev.Bundle,ids: list[str]) -> list[dict]:
@@ -419,8 +424,9 @@ async def h_today(t: Turn,plan,client_id):
     """Build plan 3b: her day in one answer. Her requests and tasks are read here; the meetings in the next 7 days and the
     meeting requests to answer come from the Calendar, the reviews due from the Client (their exports, passed on by
     orchestrator.gather). Code ranks them all (services/rm/priority.py); the model explains each record's score parts in
-    the task file's sections, and code puts the items back in rank order. A category with nothing in it, or one whose
-    records were not passed on, is a record of its own, so the answer says so instead of leaving it out."""
+    the task file's sections, and code puts the items back in rank order. A category with nothing in it, one whose
+    records were not passed on, or one whose records all ranked below the top RANKED_SHOWN is a record of its own, so
+    every section the task file asks for has something true to say instead of being left out or guessed."""
     await t.say('Putting your day in order…')
     tickets,followups=await t.read('rm_tickets',{}),await t.read('rm_followups',{})
     requests,meetings,reviews=fed(t,'requests_to_answer'),fed(t,'meetings_next_7d'),fed(t,'reviews_due')
@@ -428,14 +434,18 @@ async def h_today(t: Turn,plan,client_id):
         meetings=meetings or [],followups=followups['data'])
     t.facts.update(priority.facts(items),ranked_shown=min(len(items),RANKED_SHOWN),not_shown=max(len(items)-RANKED_SHOWN,0))
     as_of=str(tickets.get('as_of'))
-    bundle=ev.ranked_bundle(items[:RANKED_SHOWN],confirmed_meetings(followups['data']),as_of)
+    shown,rest=items[:RANKED_SHOWN],items[RANKED_SHOWN:]
+    bundle=ev.ranked_bundle(shown,confirmed_meetings(followups['data']),as_of)
     for kind,(source_id,title,name) in TODAY_NONE.items():
+        lower=sum(x['kind']==kind for x in rest)
         if name and fed(t,name) is None:
             bundle.add(ev.Evidence(source_id.replace('-none','-not-read'),title,'record',{'read':False,'meaning':'Not read for this answer, so say it was not checked.'},as_of))
-        # every item, not only the shown ones: a kind left for the not-listed line is not "None recorded"
-        elif not any(x['kind']==kind for x in items):bundle.add(ev.Evidence(source_id,title,'record',{'count':0,'meaning':'None recorded.'},as_of))
+        elif lower and not any(x['kind']==kind for x in shown):  # all ranked lower: never "None recorded", never guessed
+            bundle.add(ev.Evidence(source_id.replace('-none','-ranked-lower'),title,'record',{'count':lower,'listed_here':0,
+                'meaning':'Recorded but ranked below the items listed here, so not listed in this answer; say so in one item citing this record.'},as_of))
+        elif not lower and not any(x['kind']==kind for x in shown):bundle.add(ev.Evidence(source_id,title,'record',{'count':0,'meaning':'None recorded.'},as_of))
     reply=brief_reply('today',await t.model('today',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
-    return with_rest({**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)},not_listed(items[RANKED_SHOWN:]))
+    return with_rest({**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)},not_listed(rest))
 
 
 async def h_reviews(t: Turn,plan,client_id):
