@@ -105,6 +105,12 @@ def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     found=[result('completed',not errors,', '.join(map(str,errors)) or f"{len(out['replies'])} turns")]
     # A button the case taps but the previous reply never offered: the conversation stopped where the browser would have.
     if out.get('not_offered'):found.append(result('offered',False,'not offered: '+', '.join(s.get('tap','RM handover confirmation') for s in out['not_offered'])))
+    # A button right after a form or upload the chat cannot play (C04's Confirm after the request form) is that step's, not the chat's.
+    elif after:=[s['tap'] for s in out['skipped'] if s.get('after_skipped')]:
+        found.append(result('offered',None,'follows a step the chat runner cannot play: '+', '.join(after)))
+    if 'offer' in ref:  # C11b: an open urgent request is quoted, so no Confirm is offered
+        shown=any(r.get('offered') for r in out['replies'])
+        found.append(result('offer',shown==ref['offer'],'an offer was shown' if shown else 'no offer shown'))
     text=out['answer']
     if ref.get('reply_has'):
         missing=[p for p in ref['reply_has'] if not re.search(p,text)]

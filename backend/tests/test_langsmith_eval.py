@@ -54,6 +54,20 @@ def test_reply_source_origin_and_route_checks():
     assert scores(evaluators.checks(out(not_offered=[{'tap':'Yes, report it'}]),{}))=={'completed':1,'offered':0}
     assert evaluators.checks(out(played=False,skipped=[{'upload':'bill'}]),ref)==[{'key':'played','score':None,'comment':'no step can be played in chat: [{"upload": "bill"}]'}]
 
+def test_a_tap_after_a_skipped_form_is_unplayed_and_an_offer_can_be_expected():
+    # C04: Confirm belongs to the request form the chat cannot play, so it is unplayed (None), not a failed offer
+    after_form=out(skipped=[{'form':'card_limit_change'},{'tap':'Confirm','after_skipped':True}])
+    assert scores(evaluators.checks(after_form,{}))=={'completed':1,'offered':None}
+    # C11b: her open urgent request is quoted, so no Confirm is offered
+    quoted=out(replies=[{'say':'q','answer':'TCK-001081','origin':'safety','needs_human':True,'sources':[],'offered':False}])
+    assert scores(evaluators.checks(quoted,{'offer':False}))['offer']==1 and scores(evaluators.checks(quoted,{'offer':True}))['offer']==0
+
+
+def test_the_after_reply_talking_points_call_is_not_the_turns_model_call():
+    spans=[('agent',{'agent':'relationship'}),('llm',{'agent':'relationship'}),('llm',{'agent':'talking_points'})]
+    assert targets.answer_calls(spans)==1 and targets.answer_calls(spans[2:])==0
+
+
 def test_ticket_checks():
     fraud={'reference':'TCK-001200','category':'suspected_fraud','status':'submitted'}
     assert scores(evaluators.checks(out(tickets={'opened':[fraud],'all':[fraud]}),{'ticket':'suspected_fraud'}))['ticket']==1

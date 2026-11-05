@@ -236,22 +236,22 @@
       5
     ],
     "state": "ready",
-    "setup": "Signed in as Michelle. Signature Card ending 7310, limit SGD 20,000. Request category card_limit_change is seeded (0071).",
+    "setup": "Signed in as Michelle. Signature Card ending 7310 (limit SGD 20,000) and Travel Card ending 5592. Request category card_limit_change is seeded (0071). Run before 30 Nov 2026: the end date has no year, so the next 30 Nov is meant, and a temporary change lasts at most 90 days.",
     "turns": [
       {
         "say": "Can you increase my credit card limit to 30k for my Japan trip?"
       },
       {
-        "tap": "Raise a card limit request"
+        "say": "Signature Card 7310, temporary until 30 Nov"
       },
       {
-        "form": "card_limit_change: card 7310, new limit 30000, temporary until 31 Dec 2026, reason Japan trip"
+        "form": "card_limit_change: card 7310, new limit 30000, temporary until 30 Nov 2026, reason Japan trip"
       },
       {
         "tap": "Confirm"
       }
     ],
-    "check": "Clarifies the card, temporary/permanent duration, end date and purpose before submitting. Does not guess which of her two cards she means or quote its limit before selection. The form requires review and confirmation; the cards and credit team decides. Unplayed form steps are not certified by this chat result.",
+    "check": "Turn 1 asks in one reply for every detail she has not given: which card (without guessing between her two cards or quoting a limit), temporary or permanent, and the end date if temporary. It keeps the amount (30k) and the reason (Japan trip) she already gave. Turn 2 gives the card and the end date, so the reply says \"Request ready for your review\" with the full date and points her to the form. The form requires review and confirmation; the cards and credit team decides. The form and Confirm steps are not played by this chat result.",
     "expected_origin": "ai",
     "reply_lacks": [
       "\\b(is|has been|are) approved\\b",
@@ -269,10 +269,10 @@
         "act"
       ],
       "agents": {
-        "accounts": 1
+        "accounts": 2
       },
       "tools": [],
-      "order": "The ticket is created by the form's ticket.create proposal and her Confirm, never by the graph",
+      "order": "Both turns are answered by the Accounts & Cards card-limit rules from her own words and her card records (no model); the ticket is created by the form's ticket.create proposal and her Confirm, never by the graph",
       "service_reads": [
         "customer.get_credit_cards"
       ]
@@ -284,6 +284,7 @@
     ],
     "handoff": "card_limit_change ticket to the cards and credit team",
     "covered_by": [
+      "tests/test_card_answers.py",
       "tests/test_tickets.py",
       "../frontend/src/lib/ticketData.test.js"
     ],
@@ -295,7 +296,11 @@
       "row": 16,
       "sha256": "be15c3f1de2516248995c4977581999366a829f1ac530af901f5ad147124a49a"
     },
-    "adaptation": "Uses current synthetic Michelle records and implemented client flow; original backlog row retained as provenance. Direct permission-checked service reads are evaluated separately from named MCP tools; approved memory retrieval is checked through citations and the exact evidence supplied to the answer."
+    "adaptation": "Uses current synthetic Michelle records and implemented client flow; original backlog row retained as provenance. Direct permission-checked service reads are evaluated separately from named MCP tools; approved memory retrieval is checked through citations and the exact evidence supplied to the answer.",
+    "reply_has": [
+      "Request ready for your review",
+      "30 Nov 2026"
+    ]
   },
   {
     "id": "C05",
@@ -690,7 +695,7 @@
       7
     ],
     "state": "ready",
-    "setup": "Signed in as Michelle, saved chat. Cards 7310 and 5592 are active.",
+    "setup": "Signed in as Michelle, saved chat. Cards 7310 and 5592 are active. Run backend/supabase/hosted/41_eval_cleanup.sql first, so no urgent lost-card request is open (C11b covers the open one).",
     "turns": [
       {
         "say": "I lost my card, please block it"
@@ -699,7 +704,7 @@
         "tap": "Confirm"
       }
     ],
-    "check": "Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers one urgent request to her relationship manager and, only after Confirm, records it (an urgent rm_handover ticket) or quotes her open urgent lost-card request. Never claims the chat itself froze, blocked or cancelled a card. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted.",
+    "check": "Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers one urgent request to her relationship manager and, only after Confirm, records it as an urgent rm_handover ticket and quotes its TCK- reference. Never claims the chat itself froze, blocked or cancelled a card. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted.",
     "cites_any": [
       "lost-card"
     ],
@@ -714,7 +719,7 @@
       "\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b"
     ],
     "ticket": "rm_handover",
-    "schema": "One urgent general_support handoff (topic Urgent card) and one urgent rm_handover ticket for her RM; asking again in a new chat quotes the same reference; both cards stay active until she or the bank acts.",
+    "schema": "One urgent general_support handoff (topic Urgent card) and one urgent rm_handover ticket for her RM; both cards stay active until she or the bank acts.",
     "trajectory": {
       "nodes": [
         "planner",
@@ -754,7 +759,92 @@
       "row": 23,
       "sha256": "be15c3f1de2516248995c4977581999366a829f1ac530af901f5ad147124a49a"
     },
-    "adaptation": "Uses current synthetic Michelle records and implemented client flow; original backlog row retained as provenance. Direct permission-checked service reads are evaluated separately from named MCP tools; approved memory retrieval is checked through citations and the exact evidence supplied to the answer."
+    "adaptation": "Uses current synthetic Michelle records and implemented client flow; original backlog row retained as provenance. Direct permission-checked service reads are evaluated separately from named MCP tools; approved memory retrieval is checked through citations and the exact evidence supplied to the answer.",
+    "offer": true
+  },
+  {
+    "id": "C11b",
+    "title": "Lost card with an urgent request already open",
+    "persona": "michelle",
+    "type": "edge",
+    "priority": "must",
+    "stories": [
+      "CR12",
+      "F16"
+    ],
+    "ubs": [
+      2,
+      5,
+      7
+    ],
+    "state": "ready",
+    "setup": "Signed in as Michelle. The setup turns open her urgent lost-card request (or find the one already open) in a chat of their own, before this case reads her tickets.",
+    "turns": [
+      {
+        "say": "I've lost my card, can you block it?"
+      }
+    ],
+    "check": "In a new chat, gives the same fixed urgent lost-card guidance without a model and quotes her open urgent lost-card request by its TCK- reference. It offers no Confirm and opens no second request. Never claims the chat froze, blocked or cancelled a card.",
+    "cites_any": [
+      "lost-card"
+    ],
+    "expected_origin": "safety",
+    "expected_route": "lost_card",
+    "expect_needs_human": true,
+    "reply_has": [
+      "TCK-\\d+"
+    ],
+    "reply_lacks": [
+      "(?i)(?:I(?:'ve| have) (?:blocked|frozen|cancelled)|your card (?:is now|has been) (?:blocked|frozen|cancelled))",
+      "\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b"
+    ],
+    "ticket": null,
+    "schema": "No new ticket; the quoted reference is her open urgent rm_handover ticket (topic Urgent card).",
+    "trajectory": {
+      "nodes": [],
+      "idle": [
+        "planner",
+        "agent",
+        "act",
+        "compose"
+      ],
+      "agents": {},
+      "tools": [],
+      "model": false,
+      "order": "Fixed lost-card route: her open urgent request is read and quoted before any graph node runs",
+      "service_reads": [
+        "tickets.list"
+      ]
+    },
+    "must_not": [
+      "A second urgent request for the same lost card",
+      "A Confirm offer for a request that is already open",
+      "Saying the card is blocked",
+      "A full card number",
+      "A model-written answer"
+    ],
+    "handoff": "None: her open urgent request is quoted",
+    "covered_by": [
+      "tests/test_fraud_confirmation.py",
+      "tests/test_offer_turns.py"
+    ],
+    "owner": "Denise (CR12) / TBC (F16)",
+    "backlog": {
+      "id": "C11",
+      "sheet": "Test case",
+      "row": 23,
+      "sha256": "be15c3f1de2516248995c4977581999366a829f1ac530af901f5ad147124a49a"
+    },
+    "adaptation": "Split from C11 on 5 Nov 2026 (build plan 5b): C11 covers the clean fixture and this case the request already open, which is quoted instead of opening another. Shares C11's backlog row.",
+    "offer": false,
+    "setup_turns": [
+      {
+        "say": "I lost my card, please block it"
+      },
+      {
+        "tap": "Confirm"
+      }
+    ]
   },
   {
     "id": "C12",
@@ -1309,10 +1399,10 @@
       ],
       "agents": {
         "accounts": 2,
-        "relationship": 1
+        "relationship": 2
       },
       "tools": [],
-      "order": "Card answers come from records in the Accounts & Cards rules without a model; the waiver is an RM handover the relationship rules answer with a fixed line",
+      "order": "Card answers come from records in the Accounts & Cards rules without a model; the waiver is an RM handover the relationship rules answer with a fixed line, and her send choice goes back to the same rules (a second Relationship run, as in C10)",
       "service_reads": [
         "customer.get_credit_cards"
       ]

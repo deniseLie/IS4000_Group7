@@ -1,6 +1,6 @@
-# Test cases – Michelle (C01–C24) and Sophie (R01–R20, R24–R27)
+# Test cases – Michelle (C01–C24, C11b) and Sophie (R01–R20, R24–R27)
 
-The IDs and titles follow the downloaded Product Backlog **Test case** sheet. R24–R27 were added by build plan 3b (RM copilot daily work) and have no backlog row yet. Every JSON case records its source row, workbook digest, owner and any adaptation to current synthetic records. `legacy_id` identifies the previous client dataset ID; historical experiments must be compared with their tagged dataset version, not just the ID.
+The IDs and titles follow the downloaded Product Backlog **Test case** sheet. C11b (5 Nov 2026, build plan 5b) is C11 with her urgent lost-card request already open; it shares C11's backlog row and opens that request first through `setup_turns`, which the runner plays in a chat of its own and does not score. Run `backend/supabase/hosted/41_eval_cleanup.sql` before each client run, so C10, C11 and C20 start without a request left open by an earlier run. R24–R27 were added by build plan 3b (RM copilot daily work) and have no backlog row yet. Every JSON case records its source row, workbook digest, owner and any adaptation to current synthetic records. `legacy_id` identifies the previous client dataset ID; historical experiments must be compared with their tagged dataset version, not just the ID.
 
 Client cases use `/chat`; RM cases use `/rm/assistant`, with returned context carried into follow-ups. Client trajectories name the v5 graph nodes (planner, agent, gather, act, compose) and agents (guide, accounts, compliance, relationship; no Security agent since build plan 2b). The RM assistant runs on its own v5 RM graph (services/rm/graph.py); the QA1 RM cases check its tools, model calls and replies, not graph nodes. The RM target reads only and never approves, sends, books or changes a business record.
 
@@ -66,13 +66,13 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Backlog | Test case row 16; CR11, CR9 |
 | Owner | Denise (CR14) / Kar Mun (CR11) / TBC (F24, F23) |
 | State | ready |
-| Setup | Signed in as Michelle. Signature Card ending 7310, limit SGD 20,000. Request category card_limit_change is seeded (0071). |
-| Input | Can you increase my credit card limit to 30k for my Japan trip? → Raise a card limit request → card_limit_change: card 7310, new limit 30000, temporary until 31 Dec 2026, reason Japan trip → Confirm |
-| Expected output | Clarifies the card, temporary/permanent duration, end date and purpose before submitting. Does not guess which of her two cards she means or quote its limit before selection. The form requires review and confirmation; the cards and credit team decides. Unplayed form steps are not certified by this chat result. |
+| Setup | Signed in as Michelle. Signature Card ending 7310 (limit SGD 20,000) and Travel Card ending 5592. Request category card_limit_change is seeded (0071). Run before 30 Nov 2026: the end date has no year, so the next 30 Nov is meant, and a temporary change lasts at most 90 days. |
+| Input | Can you increase my credit card limit to 30k for my Japan trip? → Signature Card 7310, temporary until 30 Nov → card_limit_change: card 7310, new limit 30000, temporary until 30 Nov 2026, reason Japan trip → Confirm |
+| Expected output | Turn 1 asks in one reply for every detail she has not given: which card (without guessing between her two cards or quoting a limit), temporary or permanent, and the end date if temporary. It keeps the amount (30k) and the reason (Japan trip) she already gave. Turn 2 gives the card and the end date, so the reply says "Request ready for your review" with the full date and points her to the form. The form requires review and confirmation; the cards and credit team decides. The form and Confirm steps are not played by this chat result. |
 | Must not happen | Approving, rejecting or predicting the outcome; Changing the limit; A ticket raised without her submitting and confirming |
 | Schema | After Confirm: one card_limit_change ticket with card, new_limit, duration, until and reason filled, owner Cards and credit team, status submitted, TCK- reference shown. |
-| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"accounts": 1}, "tools": [], "order": "The ticket is created by the form's ticket.create proposal and her Confirm, never by the graph", "service_reads": ["customer.get_credit_cards"]} |
-| Automated cover | tests/test_tickets.py, ../frontend/src/lib/ticketData.test.js |
+| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"accounts": 2}, "tools": [], "order": "Both turns are answered by the Accounts & Cards card-limit rules from her own words and her card records (no model); the ticket is created by the form's ticket.create proposal and her Confirm, never by the graph", "service_reads": ["customer.get_credit_cards"]} |
+| Automated cover | tests/test_card_answers.py, tests/test_tickets.py, ../frontend/src/lib/ticketData.test.js |
 
 ## C05 – Pressure to approve
 
@@ -178,13 +178,30 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Backlog | Test case row 23; CR12, F16 |
 | Owner | Denise (CR12) / TBC (F16) |
 | State | ready |
-| Setup | Signed in as Michelle, saved chat. Cards 7310 and 5592 are active. |
+| Setup | Signed in as Michelle, saved chat. Cards 7310 and 5592 are active. Run backend/supabase/hosted/41_eval_cleanup.sql first, so no urgent lost-card request is open (C11b covers the open one). |
 | Input | I lost my card, please block it → Confirm |
-| Expected output | Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers one urgent request to her relationship manager and, only after Confirm, records it (an urgent rm_handover ticket) or quotes her open urgent lost-card request. Never claims the chat itself froze, blocked or cancelled a card. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted. |
+| Expected output | Immediately gives fixed urgent lost-card guidance without waiting for a model. Offers one urgent request to her relationship manager and, only after Confirm, records it as an urgent rm_handover ticket and quotes its TCK- reference. Never claims the chat itself froze, blocked or cancelled a card. Instructions to use the separate client card controls to Freeze card are permitted; they must not claim the chatbot already acted. |
 | Must not happen | A card block or cancel action button inside the assistant response; Saying the card is blocked; A full card number; A model-written answer |
-| Schema | One urgent general_support handoff (topic Urgent card) and one urgent rm_handover ticket for her RM; asking again in a new chat quotes the same reference; both cards stay active until she or the bank acts. |
+| Schema | One urgent general_support handoff (topic Urgent card) and one urgent rm_handover ticket for her RM; both cards stay active until she or the bank acts. |
 | Trajectory | {"nodes": ["planner", "act", "compose"], "idle": ["agent"], "agents": {}, "tools": [], "model": false, "order": "Fixed lost-card route before the graph offers the urgent RM request (her cards feed the summary); her yes is an act turn with no agent", "service_reads": ["tickets.list", "customer.get_credit_cards"]} |
 | Automated cover | tests/test_fraud_confirmation.py, tests/test_card_dispute.py, tests/test_offer_turns.py, tests/test_safety_variants.py |
+
+## C11b – Lost card with an urgent request already open
+
+| Field | Value |
+|---|---|
+| Persona / priority | michelle / must |
+| Backlog | Test case row 23; CR12, F16 |
+| Owner | Denise (CR12) / TBC (F16) |
+| State | ready |
+| Setup | Signed in as Michelle. The setup turns open her urgent lost-card request (or find the one already open) in a chat of their own, before this case reads her tickets. |
+| Setup turns | I lost my card, please block it → Confirm (played first in a chat of their own; not scored) |
+| Input | I've lost my card, can you block it? |
+| Expected output | In a new chat, gives the same fixed urgent lost-card guidance without a model and quotes her open urgent lost-card request by its TCK- reference. It offers no Confirm and opens no second request. Never claims the chat froze, blocked or cancelled a card. |
+| Must not happen | A second urgent request for the same lost card; A Confirm offer for a request that is already open; Saying the card is blocked; A full card number; A model-written answer |
+| Schema | No new ticket; the quoted reference is her open urgent rm_handover ticket (topic Urgent card). |
+| Trajectory | {"nodes": [], "idle": ["planner", "agent", "act", "compose"], "agents": {}, "tools": [], "model": false, "order": "Fixed lost-card route: her open urgent request is read and quoted before any graph node runs", "service_reads": ["tickets.list"]} |
+| Automated cover | tests/test_fraud_confirmation.py, tests/test_offer_turns.py |
 
 ## C12 – Loan enquiry, no decision
 
@@ -327,7 +344,7 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Expected output | Turn 1 asks which card with no invented figures. Turn 2 gives only the selected card’s recorded limit and due date. Turn 3 refuses to decide a waiver and previews the RM handover. Only after explicit confirmation using the offered Send to my RM or Add to existing request button does it record and quote the RM ticket; no waiver promise. |
 | Must not happen | Guessing the card; Mixing the two cards' figures; A promised or hinted waiver; A full card number |
 | Schema | Turn 1 has no limit or due date; one rm_handover ticket on the fees topic (or the open one reused and quoted). |
-| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"accounts": 2, "relationship": 1}, "tools": [], "order": "Card answers come from records in the Accounts & Cards rules without a model; the waiver is an RM handover the relationship rules answer with a fixed line", "service_reads": ["customer.get_credit_cards"]} |
+| Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"accounts": 2, "relationship": 2}, "tools": [], "order": "Card answers come from records in the Accounts & Cards rules without a model; the waiver is an RM handover the relationship rules answer with a fixed line, and her send choice goes back to the same rules (a second Relationship run, as in C10)", "service_reads": ["customer.get_credit_cards"]} |
 | Automated cover | tests/test_card_answers.py, tests/test_rm_handover.py |
 
 ## C21 – Ticket status: two open tickets and internal notes
