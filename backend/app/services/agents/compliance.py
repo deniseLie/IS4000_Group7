@@ -39,7 +39,7 @@ CLARIFICATION = (
     "or understand a correction request?"
 )
 
-PROMPT='v6'
+PROMPT='v7'  # v7 (batch 3, P05): her account list from Accounts (input-account_refs) is citable
 
 
 def submission_summary(case: ComplianceCase) -> dict[str,JsonValue]:

@@ -71,6 +71,8 @@ RELEASED[('planner','v8')]='v8+2710b2ab'
 RELEASED[('relationship','v6')]='v6+eb7307b9'
 RELEASED[('relationship','v7')]='v7+e690200b'  # build plan 6e (consent v2): Data sharing explained, changes offered by rules
 RELEASED[('talking_points','v1')]='v1+254803bd'  # build plan 4 (0108): lane 1 classifier
+RELEASED[('planner','v10')]='v10+67067378'  # batch 3: a question needing another agent's data is two tasks; imports; threshold
+RELEASED[('compliance','v7')]='v7+51624f5a'  # batch 3 (P05): her account list from Accounts is citable
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

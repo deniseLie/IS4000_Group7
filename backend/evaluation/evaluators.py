@@ -93,6 +93,12 @@ def plan_checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     if ref.get('no_agents'):found.append(result('no_agents',not set(ref['no_agents'])&set(planned),f'planned {dict(planned)}'))
     wrong=[t['agent'] for t in ref['tasks'] if 'priority' in t and not any(g['agent']==t['agent'] and g['priority']==t['priority'] for g in got['tasks'])]
     if any('priority' in t for t in ref['tasks']):found.append(result('priority',not wrong,'wrong: '+', '.join(wrong) if wrong else ''))
+    # The intent decides which values an agent computes (P06: only savings_after_cards exports below_threshold).
+    wrong=[f"{t['agent']} {t['intent']}" for t in ref['tasks'] if 'intent' in t and not any(g['agent']==t['agent'] and g.get('intent')==t['intent'] for g in got['tasks'])]
+    if any('intent' in t for t in ref['tasks']):found.append(result('intents',not wrong,'missing: '+', '.join(wrong) if wrong else ''))
+    has=lambda g,k,v:isinstance(g.get('entities'),dict) and str(g['entities'].get(k))==str(v)
+    wrong=[f"{t['agent']} {k}={v}" for t in ref['tasks'] for k,v in t.get('entities',{}).items() if not any(g['agent']==t['agent'] and has(g,k,v) for g in got['tasks'])]
+    if any('entities' in t for t in ref['tasks']):found.append(result('entities',not wrong,'missing: '+', '.join(wrong) if wrong else ''))
     return found
 
 

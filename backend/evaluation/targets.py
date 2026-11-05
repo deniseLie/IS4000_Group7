@@ -177,7 +177,8 @@ async def plan_only(inputs: dict[str,Any]) -> dict[str,Any]:
 def plan_rows(tasks: list) -> list[dict[str,Any]]:
     by_id={t.id:t for t in tasks}
     return [{'agent':t.agent,'intent':t.intent,'priority':t.priority,'depends_on':by_id[t.depends_on].agent if t.depends_on in by_id else None,
-        'condition':t.condition,'for_each':t.for_each,'entities':sorted(t.entities)} for t in tasks]
+        'condition':t.condition,'for_each':t.for_each,  # scalar entity values (threshold, handover); never her message
+        'entities':{k:v for k,v in sorted(t.entities.items()) if k!='message' and isinstance(v,(str,int,float,bool))}} for t in tasks]
 
 
 async def plan_only_rm(inputs: dict[str,Any]) -> dict[str,Any]:

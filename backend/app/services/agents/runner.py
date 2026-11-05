@@ -35,8 +35,9 @@ RECORDS = 'DemoBank synthetic records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
     'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
-# services/agents/rules.py registers them: (spec, task, ctx, history, language).
-Rule = Callable[[AgentSpec, PlanTask, RequestContext, list[Message], str], Awaitable[AgentOutput | None]]
+# services/agents/rules.py registers them: (spec, task, ctx, history, language, inputs). inputs are the upstream exports
+# this agent imports (wave 2); a rule's own exports go out only with an `ok` answer (rules.out), as on the model path.
+Rule = Callable[[AgentSpec, PlanTask, RequestContext, list[Message], str, dict[str, Export]], Awaitable[AgentOutput | None]]
 RULES: dict[str, tuple[Rule, ...]] = {}
 # Expected provider and data failures withhold the section (the v4 dispatch_task list); anything else fails the turn.
 FAILURES = (LLMError, TimeoutError, ValidationError, APIError, httpx.TransportError, PermissionError,
@@ -351,9 +352,10 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
         try:
             async with asyncio.timeout(settings.agent_timeout_s):
                 for rule in RULES.get(spec.name, ()):
-                    if (ruled := await rule(spec, task, ctx, history, language)) is not None:
+                    if (ruled := await rule(spec, task, ctx, history, language, inputs)) is not None:
                         a['path'], a['status'] = 'rule', ruled.status
                         a['cards'] = dict(Counter(p.type for p in ruled.proposals))
+                        a['export_names'] = sorted(ruled.exports)
                         return ruled
                 if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
                 got.evidence.extend(input_evidence(inputs));got.taken.update(e.id for e in got.evidence)

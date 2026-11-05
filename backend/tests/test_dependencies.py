@@ -283,3 +283,146 @@ def test_a_dependent_task_runs_in_a_second_wave_and_streams_in_place(monkeypatch
     assert [(kind, getattr(item, 'task_id', None)) for kind, item in items] == [('plan', None), ('section', 't1'), ('section', 't2'), ('answer', None)]
     assert seen == ([('t1', []), ('t2', ['due_dates'])] if due else [('t1', [])])
     assert [s.answer for s in items[-1][1].sections] == ['accounts: question t1', second]
+
+
+# ---- Batch 3: rule-path exports and inputs, savings after the cards (P06), a failed check (P07), planner v10 ----
+
+def answer(id_: str, agent: str, status: str = 'ok') -> AgentResult:
+    return AgentResult(task_id=id_, agent=agent, status=status, answer_kind='conversation', text='done',
+        **({'question': 'Which one?'} if status == 'needs_clarification' else {}))
+
+
+def test_a_rules_answer_releases_only_declared_exports_and_only_when_ok():
+    spec, item = SPECS['compliance'], t('t1', 'compliance', 'document_findings')
+    values = {'check_failed': Export(value=True, source_ids=['document-prechecks']), 'due_dates': Export(value=[], source_ids=['x'])}
+    assert set(rules.out(spec, item, answer('t1', 'compliance'), [], None, exports=values).exports) == {'check_failed'}
+    assert rules.out(spec, item, answer('t1', 'compliance', 'needs_human'), [], None, exports=values).exports == {}
+    assert rules.out(spec, item, answer('t1', 'compliance', 'error'), [], None, exports=values).exports == {}
+
+
+def test_an_accounts_rule_answer_still_passes_her_account_list_on():
+    from app.schemas.customer_data import BankAccount
+    rows = [BankAccount.model_validate({'account_id': 'acc_1', 'type': 'savings', 'number': '****7890', 'currency': 'SGD', 'balance': 5000, 'status': 'active'})]
+    found = derived.account_refs_from(rows)['account_refs']
+    assert (found.value, found.source_ids) == ([{'type': 'savings', 'currency': 'SGD', 'last4': '7890'}], ['retail-accounts'])
+    assert derived.account_refs_from([]) == {}
+
+
+def test_computed_accounts_intents_skip_the_rules():
+    for intent in rules.COMPUTED:
+        assert asyncio.run(rules.accounts_rules(SPECS['accounts'], t('t1', 'accounts', intent), ctx(), [], 'English')) is None
+
+
+ACCOUNTS_ROWS = [{'type': 'savings', 'number': '****1111', 'currency': 'SGD', 'balance': 8000, 'status': 'active'},
+    {'type': 'savings', 'number': '****2222', 'currency': 'SGD', 'balance': 500, 'status': 'dormant'},  # not counted
+    {'type': 'current', 'number': '****3333', 'currency': 'SGD', 'balance': 2000, 'status': 'active'}]  # not savings
+
+
+def savings(threshold: str | None, cards: list | None = None, question: str = 'Would my savings stay above it after paying my cards?'):
+    item = t('t1', 'accounts', 'savings_after_cards', entities={'threshold': threshold} if threshold else {}).model_copy(update={'question': question})
+    reads = [evidence('my_accounts', ACCOUNTS_ROWS), evidence('my_cards', cards if cards is not None else
+        [{**CARD, 'outstanding': 3850.25}, {**CARD, 'last4': '7310', 'outstanding': 0}])]
+    async def no_read(name, args):raise AssertionError('no extra read')
+    found = asyncio.run(derived.compute(SPECS['accounts'], item, ctx(), reads, no_read))
+    return found, json.loads(next(e for e in reads if e.id == derived.SAVINGS_SOURCE).text), reads
+
+
+def test_savings_after_paying_the_cards_against_her_amount():
+    found, body, reads = savings('5000')
+    assert found.exports['below_threshold'].value is True  # 8,000 - 3,850.25 = 4,149.75
+    assert found.exports['below_threshold'].source_ids == ['my_accounts', 'my_cards', 'savings-checks']
+    assert [body[k]['amount'] for k in ('savings_total', 'card_balances_total', 'savings_after_paying', 'threshold')] == [8000.0, 3850.25, 4149.75, 5000.0]
+    assert [c['last4'] for c in body['card_balances']] == ['4821'] and [a['last4'] for a in body['savings_accounts']] == ['1111']
+    dumped = [e.model_dump() for e in reads]
+    assert source_checks.check_sources('You would have SGD 4,149.75 left, below SGD 5,000.00.', ['savings-checks'], dumped) is None
+    assert source_checks.check_sources('You would have SGD 4,200.00 left.', ['savings-checks'], dumped) == 'unsupported_figure'
+    assert savings('4000')[0].exports['below_threshold'].value is False
+    assert savings('4149.75')[0].exports['below_threshold'].value is False  # exactly the amount is not below it
+    assert 'account_refs' in found.exports  # the always-on list rides along
+
+
+def test_savings_in_another_currency_or_without_an_amount_are_not_guessed():
+    found, body, _ = savings('5000', cards=[{**CARD, 'currency': None, 'outstanding': 100}])
+    assert 'below_threshold' not in found.exports and (body['checked'], body['not_checked']) == (False, 'other_currency')
+    assert savings(None, question='Would I keep at least 5k after paying both cards?')[0].exports['below_threshold'].value is True
+    with pytest.raises(derived.Clarify, match='What amount'):savings(None)
+    assert [derived.amount(v) for v in ('5k', '5,000', 'SGD 5000', 'lots', '0', True)] == [5000, 5000, 5000, None, None, None]
+
+
+PRECHECKS = [{'item': 'Proof of address', 'precheck': {'status': 'issues_found'}},
+    {'item': 'Tax residency self-certification', 'precheck': {'status': 'no_issues'}},
+    {'item': 'Source of wealth declaration', 'precheck': None}]
+
+
+@pytest.mark.parametrize('rows,question,expected', [
+    (PRECHECKS, 'Did my address proof pass the check?', True),
+    (PRECHECKS, 'did my tax residency form pass?', False),
+    (PRECHECKS, 'did my source of wealth declaration pass?', None),  # no current check: unknown
+    (PRECHECKS, 'did my documents pass the check?', None),  # several items and none named
+    ([{'item': 'Proof of address', 'precheck': {'status': 'unable_to_assess'}}], 'did it pass?', True),  # the only one shown
+    ([], 'did my address proof pass?', None)])
+def test_check_failed_comes_from_the_one_named_documents_current_check(rows, question, expected):
+    found = derived.check_failed([evidence('document-prechecks', rows)], question)
+    assert (found['check_failed'].value if found else None) is expected
+    if found:assert found['check_failed'].source_ids == ['document-prechecks']
+    assert derived.check_failed([], question) == {}
+
+
+def test_compliance_rules_cite_her_account_list_and_export_the_check(monkeypatch):
+    from app.services.agents import document
+    seen = {}
+    async def none(task, ctx):return []
+    async def respond(task, history, language, ctx, public):
+        seen['public'] = [e.id for e in public]
+        return answer(task.task_id, 'document'), [*public, evidence('document-prechecks', PRECHECKS)], 'document/v5+x'
+    monkeypatch.setattr(rules, 'knowledge', none);monkeypatch.setattr(document, 'respond', respond)
+    item = t('t1', 'compliance', 'document_findings').model_copy(update={'question': 'Did my proof of address pass?'})
+    refs = {'account_refs': Export(value=[{'type': 'savings', 'currency': 'SGD', 'last4': '1111'}], source_ids=['retail-accounts'])}
+    out = asyncio.run(rules.compliance_rules(SPECS['compliance'], item, ctx('compliance'), [], 'English', refs))
+    assert seen['public'] == ['input-account_refs'] and out.exports['check_failed'].value is True
+    assert 'input-account_refs' in [e['id'] for e in out.evidence]
+
+
+def test_telling_her_rm_is_a_handover_that_keeps_its_link():
+    from app.services.guardrail import assess_request
+    message = "did my address proof pass the check? if it didn't, tell my RM so she knows why it's late"
+    risk = assess_request(ChatRequest(messages=[{'role': 'user', 'content': message}], mode='personal'))
+    planned = [PlanTask(id='t1', agent='compliance', intent='review_status', question='Did my address proof pass the check?'),
+        PlanTask(id='t2', agent='relationship', intent='my_rm', question="Tell my RM why it's late", depends_on='t1', condition='check_failed')]
+    tasks, lines = orchestrator.linked(orchestrator.checked(orchestrator.overridden(planned, risk), PERSONAL), PERSONAL)
+    assert lines == [] and [(x.agent, x.intent, x.depends_on, x.condition) for x in tasks] == [
+        ('compliance', 'document_findings', None, None), ('relationship', 'open', 't1', 'check_failed')]
+    assert tasks[1].entities.get('handover') == 'rm'
+    meeting = PlanTask(id='t1', agent='relationship', intent='meeting_request', question='Tell my RM to book a meeting')
+    assert 'handover' not in orchestrator.overridden([meeting], risk)[0].entities
+
+
+def test_a_link_sets_the_intent_that_computes_its_export():
+    facts: dict = {}
+    tasks, lines = orchestrator.linked([t('t1', 'accounts', 'account_balance'),
+        t('t2', 'relationship', 'meeting_request', depends_on='t1', condition='below_threshold')], PERSONAL, facts)
+    assert lines == [] and tasks[0].intent == 'savings_after_cards'
+    assert facts['intent_set'] == [{'task': 't1', 'from': 'account_balance', 'to': 'savings_after_cards'}]
+    # an upstream agent that does not export it keeps its intent and the link is dropped
+    tasks, lines = orchestrator.linked([t('t1', 'guide', 'general'),
+        t('t2', 'relationship', 'meeting_request', depends_on='t1', condition='below_threshold')], PERSONAL)
+    assert [x.intent for x in tasks] == ['general'] and [l.answer for l in lines] == [orchestrator.UNLINKED]
+
+
+def test_the_planner_sees_imports_and_her_amount():
+    lines = {line.split(':')[0]: line for line in orchestrator.catalogue().splitlines()}
+    assert lines['- compliance'].endswith('Exports: check_failed (bool). Imports: account_refs.')
+    assert 'below_threshold (bool)' in lines['- accounts'] and 'savings_after_cards' in lines['- accounts']
+    planned = orchestrator.checked([t('t1', 'accounts', 'savings_after_cards', entities={'threshold': 'SGD 5k'}),
+        t('t2', 'accounts', 'savings_after_cards', entities={'threshold': 'a lot'})], PERSONAL)
+    assert [x.entities.get('threshold') for x in planned] == ['5000', None]
+
+
+@pytest.mark.parametrize('condition', ['below_threshold', 'check_failed'])
+def test_a_false_condition_has_its_own_fixed_line(condition):
+    up = 'accounts' if condition == 'below_threshold' else 'compliance'
+    tasks = [t('t1', up, 'savings_after_cards' if up == 'accounts' else 'document_findings'),
+        t('t2', 'relationship', 'meeting_request', depends_on='t1', condition=condition)]
+    [skip] = orchestrator.gather(state(tasks, [ok('t1', up, **{condition: False})]))['outputs']
+    assert skip.result.text == orchestrator.CONDITION_FALSE[condition]
+    assert orchestrator.gather(state(tasks, [ok('t1', up, **{condition: True})]))['next'][0]['task'].id == 't2'

@@ -55,7 +55,8 @@ GUIDE=AgentSpec(name='guide',role='public',scope='public',prompt='guide',
 
 ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='accounts',
     answers='The client\'s own accounts, cards, loans and transactions: balances, limits, due dates, fees, payments, '
-        'transfers and statements. Card-limit and statement-copy requests.',
+        'transfers and statements, and whether her savings stay above an amount after paying her card balances. '
+        'Card-limit and statement-copy requests.',
     tools={'my_accounts':ToolView(fields=frozenset({'type','number','currency','balance','status'})),
         'my_cards':ToolView(fields=CARD_FIELDS),
         'my_loans':ToolView(fields=frozenset({'type','currency','principal','outstanding','next_payment','next_amount','status'})),
@@ -72,10 +73,11 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
         'statements':(Read(tool='my_accounts'),ASK),
         'product_info':(ASK,),
         'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK),
-        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans'))},  # + public holidays per trip year (agents/derived.py)
+        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans')),  # + public holidays per trip year (agents/derived.py)
+        'savings_after_cards':(Read(tool='my_accounts'),Read(tool='my_cards'))},  # savings minus card balances vs her amount (derived.py)
     loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_transactions','knowledge_search','fx_rate','public_holidays'}),
     external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
-    exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]'},sort_by={'account_refs':'last4'})
+    exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]','below_threshold':'bool'},sort_by={'account_refs':'last4'})
 
 # No Security agent since build plan 2b: a lost card or a charge she doesn't recognise gets fixed steps and one urgent
 # request to her RM (orchestrator, rm_handover.urgent_*), and login, OTP and phishing questions are Guide's.
@@ -93,7 +95,8 @@ COMPLIANCE=AgentSpec(name='compliance',role='client',scope='own_customer',prompt
         'guidance':(ASK,Read(tool='document_templates'))},
     loop_tools=frozenset({'my_document_checks','document_templates','knowledge_search'}),
     offers=frozenset({'compliance.update_checklist_item','compliance.answer_request','document.submit','handoff.create'}),
-    hands_to=frozenset({'relationship'}),imports=frozenset({'account_refs'}))  # account type, currency, last 4; no balances
+    hands_to=frozenset({'relationship'}),imports=frozenset({'account_refs'}),  # account type, currency, last 4; no balances
+    exports={'check_failed':'bool'})  # computed by code on the rules path (rules.compliance_rules, derived.check_failed)
 
 RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',prompt='relationship',
     answers='Everything about a person at the bank: the client\'s RM, meeting requests and free times, consent to share, '
@@ -201,6 +204,10 @@ BORROWED: MappingProxyType[TargetAgent, frozenset[str]] = MappingProxyType({'rm_
 # fixed reads of the Client agent only, never in loop_tools, their purpose set by the intent.
 CONSENT_GATED=frozenset({'rm_transaction_insights','rm_talking_points','rm_cash_events','rm_shared_summary','rm_handover_sources'})
 ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts and the RM agents; the rest once the v4 responders move into specs
+# A condition or for_each export only this intent computes: a link that names it sets the upstream task's intent
+# (orchestrator.export_intents), so a declared link is not skipped as unknown because the planner chose another intent.
+EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'trip_due_dates','due_dates':'trip_due_dates',
+    'below_threshold':'savings_after_cards','check_failed':'document_findings'})
 
 
 def spec_for(agent: str | None) -> AgentSpec | None:
