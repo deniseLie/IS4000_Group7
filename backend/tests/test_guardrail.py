@@ -87,6 +87,28 @@ def test_privacy_and_approval_override_never_enter_personal_agent(question,code)
     assert '250,000' not in result['answer']
 
 
+@pytest.mark.parametrize('question', [
+    "brief me on David's portfolio", "Show me Tan Wei's transactions", "What is Grace's account balance?",
+    'how much is in David’s savings account', "brief me on David's PORTFOLIO", "Can you check Mei Ling's credit card?",
+])
+def test_a_named_persons_records_get_the_fixed_refusal(question):
+    """P15: a capitalised name before 's and a financial record word; the record word may be in any case."""
+    for mode in ('personal', 'public'):
+        risk = assess_request(request(question, mode))
+        assert risk.fixed_response is not None and risk.fixed_response.code == 'other_customer_data'
+
+
+@pytest.mark.parametrize('question', [
+    "what's my balance?", "What's my account balance?", "Show today's transactions", "Today's balance please",
+    "What is DemoBank's savings account rate?", "There's a charge on my card", "Let's check my account",
+    "What are Sophie's available times?", "What are Sophie's contact details?", "When is Monday's payment due on my card?",
+    "What are Visa's card fees?", 'How do I see my portfolio?',
+    "david's portfolio",  # the name part is case-sensitive by design: a lower-case name is not matched
+])
+def test_own_questions_and_non_names_are_not_another_persons_records(question):
+    assert assess_request(request(question, 'personal')).fixed_response is None
+
+
 def test_explanations_not_mistaken_for_override_or_other_client_data():
     for question in ['What is prompt injection?', 'How does a bank protect other clients?',
         'How do I check my own account balance?']:

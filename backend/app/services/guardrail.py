@@ -20,6 +20,18 @@ THIRD_PARTY = re.compile(
     r"|\b(?:someone|somebody|anyone)\s+else(?:['’]s)?\b.{0,65}\b(?:account|balance|statement|transactions?|card|loan|profile|information|details|income|assets)\b"
     r"|\b(?:my\s+)?(?:friend|colleague|neighbour|neighbor)(?:['’]s)?\b.{0,55}\b(?:account|balance|statement|transactions?|card|loan)\b",
     re.I)
+# A named person's records ("brief me on David's portfolio", "show Tan Wei's card"). The name is case-sensitive (a
+# capital letter, matched on the original text, never the lower-case typo copy), so "what's my balance" or "today's
+# transactions" never match; the record words are not. Words that are not names are listed (NOT_A_NAME).
+NOT_A_NAME = ('What|That|There|Here|It|Let|Who|Where|When|How|Why|He|She|This|Today|Tomorrow|Yesterday|Tonight|Week|Month|Year|'
+    'Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|'
+    'October|November|December|Bank|DemoBank|Singapore|Visa|Mastercard|Apple|Google|Mother|Father|Valentine|Christmas|New Year')
+# Financial records only: "Sophie's details" (her own RM's contact) is not another client's data.
+NAMED_RECORDS = re.compile(
+    r"\b(?!(?:" + NOT_A_NAME + r")['’]s\b)[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?['’]s\s+"
+    r"(?i:(?:(?:credit|debit|savings|current|joint|bank|investment|fixed\s+deposit|home|personal|travel)\s+)?"
+    r"(?:portfolios?|accounts?|balances?|statements?|transactions?|cards?|loans?|income|assets|"
+    r"investments?|savings|records|holdings|spending|finances|deposits?))\b")
 # Reject direct attempts to override the banking approval/access rules, without
 # mistaking general questions about security or prompt injection for instructions.
 OVERRIDE = re.compile(
@@ -93,6 +105,7 @@ def assess_request(req: ChatRequest) -> RiskAssessment:
     elif THIRD_PARTY.search(probe) or (req.mode=='public' and DELEGATE_CLAIM.search(probe) and PRIVATE_REQUEST.search(probe)):
         fixed = FixedResponse(code='other_customer_data', needs_human=False)
     elif OVERRIDE.search(probe) or BANK_DECISION.search(probe):fixed = FixedResponse(code='instruction_override', needs_human=False)
+    elif NAMED_RECORDS.search(question):fixed = FixedResponse(code='other_customer_data', needs_human=False)  # after an override, as before
     elif human:fixed = FixedResponse(code='human_support', needs_human=True)
     elif req.mode == 'public' and PERSONAL.search(question):
         fixed = FixedResponse(code='guest_balance', needs_human=False)
