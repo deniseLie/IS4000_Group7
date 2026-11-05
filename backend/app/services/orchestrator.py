@@ -2,7 +2,7 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-urgent card and login wording, an explicit request for a person, greetings), then one planner/v9 call, then the rule
+urgent card and login wording, an explicit request for a person, greetings), then one planner/v10 call, then the rule
 overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent, except an
 urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
 offer from code, never the model (build plan 2b: there is no Security agent). Agents never
@@ -36,7 +36,7 @@ from app.schemas.talking_points import InsightShareResult
 from app.schemas.tickets import TicketResult
 from app.services import audit, limit_context, llm_gateway, offers, prompts, rm_handover, talking_points, typos, client_intents
 from app.services.llm_gateway import LLMError
-from app.services.agents import card_answers, client_guidance, compliance, consent_answers, meeting_answers, registry, request_status_answers, runner, rules  # noqa: F401 (rules registers)
+from app.services.agents import card_answers, client_guidance, compliance, consent_answers, derived, meeting_answers, registry, request_status_answers, runner, rules  # noqa: F401 (rules registers)
 from app.services.agents.answer import WITHHELD
 from app.services.answers import NOTICE, PINNED, clean_history
 from app.services.guardrail import FRAUD
@@ -44,7 +44,7 @@ from app.services.guardrail import FRAUD
 MAX_TASKS = 5
 WITH_RELATIONSHIP = rules.WITH_RELATIONSHIP  # an Accounts task's entity, set only by checked()
 MAX_ITEMS = 5  # fan-out cap per list export
-PLANNER = 'v9'  # v8: Relationship meeting_request (2a); v9: no Security agent, urgent card cases go to the RM (2b)
+PLANNER = 'v10'  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3)
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
 GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
 LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app"
@@ -67,6 +67,9 @@ TOPICS: dict[TargetAgent, re.Pattern[str]] = {
 # Asking a person at the bank to do something is relationship intake even when it names an account word such as "statement".
 RM_REQUEST = re.compile(r'\b(?:can|could|would)\s+(?:someone|somebody|my (?:rm|relationship manager|advisor|adviser|banker))\s+(?:please\s+)?'
     r'(?:send|arrange|prepare|get|call|email|post)\b', re.I)
+# Passing something on to her RM ("tell my RM so she knows why it's late", P07) is a handover of that one Relationship task;
+# it keeps the task's link, so it is not in rm_handover's whole-message rules (which would replace the plan with one handover).
+TELL_RM = re.compile(r'\b(?:tell|let|inform|notify|update|warn|alert)\s+(?:my\s+|the\s+)?(?:rm|relationship manager|banker|advis[eo]r)\b', re.I)
 ACCOUNT_INTENTS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ('transfer_status', re.compile(r'\b(?:transfers?|pending|landlord|payee|arrive|go through)\b', re.I)),
     ('card_limit', re.compile(r'\b(?:card|credit)\s+limit\b|\blimit\s+(?:increase|change)\b', re.I)),
@@ -95,6 +98,8 @@ UNLINKED = 'I couldn’t link one part of your message to the rest, so I haven�
 UPSTREAM_UNKNOWN = 'I couldn’t check what this part depends on, so I haven’t gone ahead with it. Ask again on its own if you still want it.'
 CONDITION_FALSE: dict[str, str] = {
     'due_in_window': 'None of your card or loan payments falls due during your trip, so I haven’t gone ahead with that part.',
+    'below_threshold': 'You would still have at least the amount you named in savings after paying your card balances, so I haven’t gone ahead with that part.',
+    'check_failed': 'Your document passed its preliminary check, so I haven’t gone ahead with that part.',
     'consent_active': 'The client hasn’t shared a handover note with you under an active consent, so nothing from one is included.'}  # RM (R23)
 CONDITION_FALSE_ANY = 'What you asked this to depend on isn’t the case, so I haven’t gone ahead with that part.'
 MORE_ITEMS = 'I’ve shown the first {shown} of {total}. Ask about the others if you need them.'
@@ -274,7 +279,8 @@ def catalogue() -> str:
     for spec in registry.CLIENT_SPECS.values():
         intents = [*spec.intents, *([OPEN_INTENT] if spec.loop_tools else [])]
         exports = f' Exports: {", ".join(f"{n} ({t})" for n, t in spec.exports.items())}.' if spec.exports else ''
-        lines.append(f'- {spec.name}: {spec.answers} Intents: {", ".join(intents)}.{exports}')
+        imports = f' Imports: {", ".join(sorted(spec.imports))}.' if spec.imports else ''  # v10: a question needing an import is two tasks
+        lines.append(f'- {spec.name}: {spec.answers} Intents: {", ".join(intents)}.{exports}{imports}')
     return '\n'.join(lines)
 
 
@@ -315,6 +321,8 @@ def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
         if (FRAUD.search(item.question) or FRAUD.search(text)) and not (LOGIN.search(text) and RELATED.search(text)):
             item = urgent_task(item.question, message, item.id)
         elif LOGIN.search(item.question) or LOGIN.search(text):item = item.model_copy(update={'agent': 'guide', 'intent': 'login_help'})
+        elif item.agent == 'relationship' and TELL_RM.search(text) and not rm_handover.MEETING.search(text):
+            item = item.model_copy(update={'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
         elif RM_REQUEST.search(text) and not handovers and not rm_handover.MEETING.search(text):
             item = item.model_copy(update={'agent': 'relationship', 'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
         routed.append(item)
@@ -344,6 +352,9 @@ def entity_value(name: str, value):
     if name == 'days':
         days = int(value) if isinstance(value, str) and value.isdigit() else value if isinstance(value, int) else None
         return days if days is not None and 1 <= days <= 90 else None
+    if name == 'threshold':  # "5k", "5,000", "SGD 5000" -> "5000"; anything else is dropped, and Accounts asks for it
+        found = derived.amount(value)
+        return None if found is None else format(found.normalize(), 'f')
     return value
 
 
@@ -403,6 +414,20 @@ def unlinked(item: PlanTask, up: PlanTask | None, by_id: dict[str, PlanTask] | N
     return None
 
 
+def export_intents(tasks: list[PlanTask], facts: dict | None = None) -> list[PlanTask]:
+    """A link whose condition or for_each names an export only one intent computes (registry.EXPORT_INTENT) gives the
+    upstream task that intent when its agent has it (P06: below_threshold needs savings_after_cards), so a declared link
+    is not skipped at gather as unknown because the planner chose a neighbouring intent. Recorded in the planner span."""
+    wanted = {t.depends_on: registry.EXPORT_INTENT[n] for t in tasks for n in (t.condition, t.for_each) if t.depends_on and n in registry.EXPORT_INTENT}
+    out: list[PlanTask] = []
+    for item in tasks:
+        if (intent := wanted.get(item.id)) and item.intent != intent and intent in registry.SPECS[item.agent].intents:
+            if facts is not None:facts.setdefault('intent_set', []).append({'task': item.id, 'from': item.intent, 'to': intent})
+            item = item.model_copy(update={'intent': intent})
+        out.append(item)
+    return out
+
+
 def linked(tasks: list[PlanTask], req: ChatRequest, facts: dict | None = None) -> tuple[list[PlanTask], list[AnswerSection]]:
     """The dependency check (§14.6 rules 3 and 5): the upstream is another planned task that depends on nothing (so no
     cycles and at most 2 waves), both agents are on the same side (client or RM), and the condition is a bool export
@@ -412,6 +437,7 @@ def linked(tasks: list[PlanTask], req: ChatRequest, facts: dict | None = None) -
     if getattr(req, 'mode', 'personal') != 'personal':  # the RM request (rm/graph.py) has no mode: an RM is always signed in
         dropped += [{'task': t.id, 'agent': t.agent, 'reason': 'guest'} for t in tasks if t.depends_on]
         return [t.model_copy(update={'depends_on': None, 'condition': None, 'for_each': None, 'inputs_from': []}) for t in tasks], []
+    tasks = export_intents(tasks, facts)
     by_id = {t.id: t for t in tasks}
     kept, lines = [], []
     for item in tasks:

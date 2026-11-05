@@ -10,9 +10,9 @@ import re
 from zoneinfo import ZoneInfo
 from app.schemas.agents import Evidence
 from app.schemas.chat import Message, RecordSelection
-from app.schemas.contracts import AgentOutput, AgentResult, AgentSpec, OfferProposal, PlanTask, RequestContext, Task
+from app.schemas.contracts import AgentOutput, AgentResult, AgentSpec, Export, OfferProposal, PlanTask, RequestContext, Task
 from app.services import client_intents, compliance_selection, prompts, rm_handover
-from app.services.agents import (account_answers, card_answers, client_guidance, compliance, consent_answers, document, meeting_answers,
+from app.services.agents import (account_answers, card_answers, client_guidance, compliance, consent_answers, derived, document, meeting_answers,
     relationship, relationship_records, request_status_answers, retail, retail_checks, retail_records, runner, transaction_answers)
 from app.services.agents.answer import WITHHELD
 
@@ -24,6 +24,8 @@ WAIVER = re.compile(r'\b(?:waive[ds]?|waiving|waiver|refund|reverse)\b[^.?!]{0,4
     r'|\b(?:get|have|getting|having)\s+(?:it|that|this|them)\s+waived\b', re.I)
 # The orchestrator sets this entity on Accounts tasks when Relationship has a task in the same plan (orchestrator.checked).
 WITH_RELATIONSHIP = 'with_relationship'
+# Accounts intents whose values code computes from the default reads (agents/derived.HOOKS): the runner answers them.
+COMPUTED = frozenset({'trip_due_dates', 'savings_after_cards'})
 STATUS_UNAVAILABLE = ("I couldn't retrieve your request status right now. Please check My Requests "
     "or try again later. I can't confirm an approval without a bank-recorded decision.")
 
@@ -43,15 +45,18 @@ async def knowledge(task: PlanTask, ctx: RequestContext) -> list[Evidence]:
 
 
 def out(spec: AgentSpec, task: PlanTask, result: AgentResult, evidence: list[Evidence], prompt_id: str | None,
-        origin: str | None = None, decision: str | None = None, proposals: list[OfferProposal] | None = None) -> AgentOutput:
-    """An AgentOutput from a rule; an error shows only its fixed text and releases no evidence or offers."""
+        origin: str | None = None, decision: str | None = None, proposals: list[OfferProposal] | None = None,
+        exports: dict[str, Export] | None = None) -> AgentOutput:
+    """An AgentOutput from a rule; an error shows only its fixed text and releases no evidence or offers. Exports (computed
+    by code, agents/derived.py) go out only with an `ok` answer and only the names the spec declares, as on the model path."""
     status = result.status if result.status in {'ok', 'needs_clarification', 'needs_human'} else 'error'
     if status == 'error':
         text = result.text if result.text.endswith(WITHHELD) else WITHHELD
         return AgentOutput(task_id=task.id, agent=spec.name, status='error', result=result.model_copy(update={'text': text, 'citations': []}),
             origin='validation', prompt_id=prompt_id)
+    released = {k: v for k, v in (exports or {}).items() if k in spec.exports} if status == 'ok' else {}
     return AgentOutput(task_id=task.id, agent=spec.name, status=status, result=result, evidence=runner.dumps(evidence),
-        origin=origin or 'ai', prompt_id=prompt_id, decision=decision, proposals=proposals or [])
+        origin=origin or 'ai', prompt_id=prompt_id, decision=decision, proposals=proposals or [], exports=released)
 
 
 def conversation(task: PlanTask, agent: str, text: str, status: str = 'needs_human') -> AgentResult:
@@ -60,7 +65,8 @@ def conversation(task: PlanTask, agent: str, text: str, status: str = 'needs_hum
 
 # ---- Guide ----
 
-async def guide_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput | None:
+async def guide_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
+        inputs: dict[str, Export] | None = None) -> AgentOutput | None:
     """Signed-in app guidance (personal-details form, statements, which loan, where to start) from fixed wording."""
     if ctx.principal.kind != 'customer':return None
     public = await knowledge(task, ctx)
@@ -70,45 +76,52 @@ async def guide_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, hist
 
 # ---- Accounts & Cards ----
 
-async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput | None:
-    """Figures and "which card?" straight from records; questions needing computed checks keep the retail prompt."""
+async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
+        inputs: dict[str, Export] | None = None) -> AgentOutput | None:
+    """Figures and "which card?" straight from records; questions needing computed checks keep the retail prompt. Every
+    `ok` answer from her records also exports her account list (account_refs, no balances) for a dependent task."""
     if WAIVER.search(task.question) and not task.rerouted:
         return AgentOutput(task_id=task.id, agent=spec.name, status='out_of_scope', suggested='relationship')
-    if task.intent == 'trip_due_dates':return None  # computed by code (agents/derived.py), answered by the accounts prompt
+    if task.intent in COMPUTED:return None  # computed by code (agents/derived.py), answered by the accounts prompt
     v4, current = shim(task, 'retail'), as_v4(ctx, 'retail')
     public = await knowledge(task, ctx)
     if (found := client_guidance.respond(task.id, task.question, public, ctx.received_at)) is not None:
         return out(spec, task, found, public, runner.prompt_id(spec))
     records = await retail_records.load(current)
     evidence = [*public, *retail.evidence_for(records)]
+    refs = derived.account_refs_from(records.accounts)
     latest = history[-1].content if history and history[-1].role == 'user' else task.question
     direct = (account_answers.respond(task.id, task.question, records, public)
         or card_answers.respond(task.id, task.question, history, records, waiver_hint=not task.entities.get(WITH_RELATIONSHIP))
         or transaction_answers.respond(task.id, task.question, latest, records))
-    if direct is not None:return out(spec, task, direct, evidence, runner.prompt_id(spec))
+    if direct is not None:return out(spec, task, direct, evidence, runner.prompt_id(spec), exports=refs)
     if not retail_checks.relevant(records, task.question, ctx.received_at.astimezone(SGT).date()):return None
     result, evidence, prompt_id = await retail.model_answer(v4, task.question, history, language, current, records, evidence)
-    return out(spec, task, result, evidence, prompt_id)
+    return out(spec, task, result, evidence, prompt_id, exports=refs)
 
 
 # ---- Compliance & Documents ----
 
-async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput:
-    """The released compliance v5 and document v5 answers, scoped to the record the client selected, if any."""
+async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
+        inputs: dict[str, Export] | None = None) -> AgentOutput:
+    """The released compliance v7 and document v5 answers, scoped to the record the client selected, if any. Imported
+    values (her account list from Accounts, P05) are citable evidence; whether the document she asked about failed its
+    preliminary check is exported (check_failed, P07), computed by code from the check rows the answer used."""
     raw = task.entities.get('record_context')
     chosen = RecordSelection.model_validate(raw) if isinstance(raw, dict) else None
     documents = (chosen.kind == 'document') if chosen is not None else task.intent == 'document_findings'
     agent = 'document' if documents else 'compliance'
-    public = await knowledge(task, ctx)
+    public = [*runner.input_evidence(inputs or {}), *await knowledge(task, ctx)]
     token = compliance_selection.selection.set(chosen)
     try:result, evidence, prompt_id = await (document.respond if documents else compliance.respond)(shim(task, agent), history, language, as_v4(ctx, agent), public)
     finally:compliance_selection.selection.reset(token)
-    return out(spec, task, result, evidence, prompt_id)
+    return out(spec, task, result, evidence, prompt_id, exports=derived.check_failed(evidence, task.question))
 
 
 # ---- Relationship & Service ----
 
-async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str) -> AgentOutput:
+async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
+        inputs: dict[str, Export] | None = None) -> AgentOutput:
     """RM handovers (preview, then her choice), request status from her tickets, a meeting request drafted from the records
     (one meeting.request offer, 2a), then the released relationship v6 answer."""
     question = task.question

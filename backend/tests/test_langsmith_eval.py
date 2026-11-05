@@ -180,6 +180,15 @@ def test_plan_checks_score_dependencies():
     assert found['dependencies']['score']==0 and found['dependencies']['comment']=='missing: relationship after accounts if due_in_window'
     assert scores(evaluators.plan_checks(loose,{**ref,'tasks':[{'agent':'accounts'},{'agent':'relationship'}],'no_dependencies':True}))['dependencies']==1
 
+def test_plan_checks_score_intents_and_entities():
+    ref={'tasks':[{'id':'a','agent':'accounts','intent':'savings_after_cards','entities':{'threshold':'5000'}},{'agent':'relationship','depends_on':'a'}]}
+    row=lambda **kw:{'agent':'accounts','intent':'savings_after_cards','depends_on':None,'condition':None,'priority':'P3','entities':{'threshold':'5000'}}|kw
+    other={'agent':'relationship','intent':'meeting_request','depends_on':'accounts','condition':None,'priority':'P3','entities':{}}
+    plan=lambda first:{'plan':{'route':'plan','unlinked':0,'tasks':[first,other]}}
+    assert scores(evaluators.plan_checks(plan(row()),ref))=={'route':1,'agents':1,'dependencies':1,'intents':1,'entities':1}
+    found={r['key']:r for r in evaluators.plan_checks(plan(row(intent='account_balance',entities={'threshold':'500'})),ref)}
+    assert (found['intents']['comment'],found['entities']['comment'])==('missing: accounts savings_after_cards','missing: accounts threshold=5000')
+
 @pytest.mark.parametrize('name',sorted(langsmith_sync.DATASETS))
 def test_every_case_reference_is_checkable(name):
     """Every case file's reference fields fit the evaluators (a renamed field would silently skip a check)."""
