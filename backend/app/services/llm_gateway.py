@@ -40,15 +40,24 @@ def transport():
     if name not in ('api','codex','claude'):raise LLMNotConfigured('Unknown CHAT_TRANSPORT; choose api, codex or claude')
     return name
 
-def build_model(max_tokens=None,model=None):
+def openrouter():
+    return (os.getenv('LLM_PROVIDER') or 'openai')=='openai' and urlsplit(os.getenv('LLM_BASE_URL','')).hostname=='openrouter.ai'
+
+def reasoning_mode(reasoning=True):
+    """'off' only where the switch reaches the model: the API transport on OpenRouter. The Codex and Claude CLIs cannot turn
+    thinking off, and other providers keep their default, so the span says 'default' there."""
+    return 'off' if not reasoning and transport()=='api' and openrouter() else 'default'
+
+def build_model(max_tokens=None,model=None,reasoning=True):
     """LLM_PROVIDER picks the LangChain provider (default 'openai', which also covers OpenRouter via LLM_BASE_URL).
-    model overrides LLM_MODEL for one caller (TALKING_POINTS_MODEL); same provider, key and base URL."""
+    model overrides LLM_MODEL for one caller (TALKING_POINTS_MODEL); same provider, key and base URL.
+    reasoning=False asks OpenRouter to turn the model's hidden reasoning off (it counts against max_tokens and varies per call)."""
     provider = os.getenv('LLM_PROVIDER') or 'openai'
     kwargs = {'timeout':settings.llm_timeout_s,'max_retries':0,'max_tokens':max_tokens or settings.max_tokens}  # retries happen in call()
     if provider == 'openai':
         kwargs.update(api_key=os.environ['LLM_API_KEY'],base_url=os.environ['LLM_BASE_URL'])
         if urlsplit(kwargs['base_url']).hostname == 'openrouter.ai':
-            kwargs['extra_body'] = {'provider':{'require_parameters':True}}
+            kwargs['extra_body'] = {'provider':{'require_parameters':True},**({} if reasoning else {'reasoning':{'enabled':False}})}
     return init_chat_model(model or os.environ['LLM_MODEL'],model_provider=provider,**kwargs)
 
 def model_name(override=None):
@@ -79,8 +88,8 @@ def check(value,schema,path='$'):
     if kind=='array':
         for i,v in enumerate(value):check(v,schema.get('items',{}),f'{path}[{i}]')
 
-async def _invoke_api(system,messages,schema,max_tokens,a,name=None,retries=None):
-    model=build_model(max_tokens,name).with_structured_output(schema,method='json_schema',strict=True)
+async def _invoke_api(system,messages,schema,max_tokens,a,name=None,retries=None,reasoning=True):
+    model=build_model(max_tokens,name,reasoning).with_structured_output(schema,method='json_schema',strict=True)
     retries=settings.llm_max_retries if retries is None else retries
     with get_usage_metadata_callback() as usage:
         for attempt in range(retries+1):
@@ -95,10 +104,11 @@ async def _invoke_api(system,messages,schema,max_tokens,a,name=None,retries=None
     tokens=(sum(u.get('input_tokens',0) for u in used),sum(u.get('output_tokens',0) for u in used)) if used else (None,None)
     return data,tokens
 
-async def call(prompt,system,messages,schema,model=None,retries=None):
+async def call(prompt,system,messages,schema,model=None,retries=None,reasoning=True):
     """prompt: a prompts.load() dict (agent, version, id). system: the full system text built from it.
     messages: (role, content) pairs. schema: strict JSON schema for the reply. Returns LLMResult or raises LLMError.
-    model and retries override LLM_MODEL and LLM_MAX_RETRIES for one caller (API transport; the CLIs never retry)."""
+    model and retries override LLM_MODEL and LLM_MAX_RETRIES for one caller (API transport; the CLIs never retry).
+    reasoning=False turns hidden reasoning off for one caller where reasoning_mode() can (the RM intents in handlers.REASONING)."""
     name=transport()
     model=model_name(model if name=='api' else None)
     left=remaining_budget()
@@ -107,7 +117,8 @@ async def call(prompt,system,messages,schema,model=None,retries=None):
     start=time.perf_counter()
     outcome='error'
     inputs={'system':system,'messages':[{'role':role,'content':content} for role,content in messages]} if name=='codex' else None
-    with span('llm','llm',agent=prompt['agent'],model=model,prompt_version=prompt['id'],transport=name,model_inputs=inputs) as a:
+    mode=reasoning_mode(reasoning)
+    with span('llm','llm',agent=prompt['agent'],model=model,prompt_version=prompt['id'],transport=name,reasoning=mode,model_inputs=inputs) as a:
         try:
             try:
                 if name=='codex':
@@ -120,7 +131,7 @@ async def call(prompt,system,messages,schema,model=None,retries=None):
                     data,usage=await claude_cli.answer(system,schema,messages)
                     tokens=(usage.get('input_tokens'),usage.get('output_tokens'))
                     a.update({k:usage[k] for k in ('num_turns','api_ms','answer_chars') if k in usage})  # counts only: how much was thinking
-                else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a,model,retries)
+                else:data,tokens=await _invoke_api(system,messages,schema,max_tokens,a,model,retries,mode!='off')
             except TimeoutError as e:
                 raise LLMTimeout('Model request timed out') from e
             except LLMError:raise
@@ -143,5 +154,5 @@ async def call(prompt,system,messages,schema,model=None,retries=None):
         finally:
             a['outcome']=outcome
             if trace:=current_trace.get():
-                trace.llm_calls.append({'ok':outcome=='ok','agent':prompt['agent'],'model':model,'prompt_version':prompt['id'],'transport':name,
+                trace.llm_calls.append({'ok':outcome=='ok','agent':prompt['agent'],'model':model,'prompt_version':prompt['id'],'transport':name,'reasoning':mode,
                     'input_tokens':a.get('input_tokens'),'output_tokens':a.get('output_tokens'),'ms':round((time.perf_counter()-start)*1000)})

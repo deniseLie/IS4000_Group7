@@ -1,9 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import RmAnswer from './RmAnswer';
-import {initials} from '../SharingPage';
 import {FORMAT_WORDS,STATUS_WORDS,askAssistant,display,filterBook,partialReply,requestContext,rmGet} from '../../lib/rm';
-import {formatDate,formatMoney} from '../../lib/format';
+import {formatDate,formatMoney,initials} from '../../lib/format';
 
 const GAP_WORDS={no_open_compliance_review:'No open compliance review recorded',no_upcoming_appointment:'No upcoming appointment',
   no_recorded_preferences:'No client preferences recorded',no_meeting_notes:'No meeting notes recorded',no_interaction_in_180_days:'No recorded interaction in the last 180 days'};

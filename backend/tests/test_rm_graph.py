@@ -315,8 +315,8 @@ def model(monkeypatch):
     client report (one state['point'] per heading, citing state['cite'] or the first fact), and a plain draft. Each call's
     title, prompt and system text are recorded."""
     seen, state = [], {'steps': [], 'cite': None, 'sections': None, 'point': 'Ask how her plans are going.'}
-    async def call(prompt, system, messages, schema):
-        seen.append({'title': schema['title'], 'prompt': prompt['id'], 'system': system})
+    async def call(prompt, system, messages, schema, reasoning=True):
+        seen.append({'title': schema['title'], 'prompt': prompt['id'], 'system': system, 'reasoning': reasoning})
         if schema['title'] == 'agent_step':data = state['steps'].pop(0) if state['steps'] else {'action': 'answer', 'calls': []}
         elif schema['title'] == 'rm_brief':
             ids = brief_ids(schema)
@@ -655,6 +655,7 @@ def test_today_links_the_calendar_and_client_exports_and_code_keeps_the_rank_ord
     assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_appointments', 'rm_calendar'),
         ('rm_meeting_requests', 'rm_calendar'), ('rm_review_status', 'rm_client'), ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests')}
     assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v6+')
+    assert seen[0]['reasoning'] is False  # handlers.REASONING: the day's answer only rephrases records code ranked
     gather = next(a for n, a in spans if n == 'gather')
     assert {(p['from'], p['to'], p['name']) for p in gather['passed']} >= {('rm_calendar', 'rm_requests', 'meetings_next_7d'),
         ('rm_calendar', 'rm_requests', 'requests_to_answer'), ('rm_client', 'rm_requests', 'reviews_due')}
@@ -758,6 +759,11 @@ def long_queue(data: dict, tickets: int = 10, specialist: int = 0) -> None:
 SHOWN = ['ticket-TCK-001010', 'ticket-TCK-001001', 'meeting-request-mei', *(f'ticket-TCK-0020{n:02d}' for n in range(1, 8))]
 
 
+def test_reasoning_is_set_per_intent_by_code():
+    """Every model intent has a setting, and every RM answer runs with hidden reasoning off (it hit the output limit)."""
+    assert set(handlers.REASONING) == set(handlers.TASK_FILE) and not any(handlers.REASONING.values())
+
+
 def test_today_explains_the_top_ten_and_counts_the_rest_in_a_fixed_line(records, model, monkeypatch):
     calls, data = records
     seen, state = model
@@ -765,17 +771,21 @@ def test_today_explains_the_top_ten_and_counts_the_rest_in_a_fixed_line(records,
     long_queue(data)
     async def no_plan(rt, message):raise AssertionError('the Today button sets the intent')
     monkeypatch.setattr(graph, 'model_plan', no_plan)
-    state['sections'] = [{'heading': 'Client requests', 'items': said(*SHOWN[3:])}, {'heading': 'Do first', 'items': said(*SHOWN[:3])}]
+    state['sections'] = [{'heading': 'Client requests', 'items': said(*SHOWN[3:])}, {'heading': 'Do first', 'items': said(*SHOWN[:3])},
+        {'heading': 'Deadlines and tasks', 'items': said('reviews-ranked-lower', text='2 compliance reviews ranked lower and are not listed here.')}]
     reply, spans = traced("What's on today?", intent='today')
-    # 18 ranked records: the model sees the top 10 only, and no category is called empty because its records ranked lower.
+    # 18 ranked records: the model sees the top 10 only. A category whose records all ranked lower (the meeting, the two
+    # reviews, the task) is a record saying so, never "None recorded", so each section the task file asks for has a true line.
     evidence = json.loads(evidence_in(seen[0]))
-    assert [e['id'] for e in evidence] == SHOWN and [e['record']['rank'] for e in evidence] == list(range(1, 11))
-    assert [s['heading'] for s in reply['sections']] == ['Do first', 'Client requests', 'Not listed here']
+    lower = ['meetings-ranked-lower', 'reviews-ranked-lower', 'tasks-ranked-lower']
+    assert [e['id'] for e in evidence] == SHOWN + lower and [e['record']['rank'] for e in evidence[:10]] == list(range(1, 11))
+    assert [e['record']['count'] for e in evidence[10:]] == [1, 2, 1] and all(e['record']['listed_here'] == 0 for e in evidence[10:])
+    assert [s['heading'] for s in reply['sections']] == ['Do first', 'Client requests', 'Deadlines and tasks', 'Not listed here']
     assert reply['sections'][-1]['items'] == [{'text': '8 lower-ranked items are not listed here: 3 client requests, 2 compliance reviews, '
         '1 confirmed meeting, 1 task and 1 milestone. Your Today page and Ticket inbox show them.', 'kind': 'gap', 'owner': 'none', 'source_ids': []}]
     agent = next(a for n, a in spans if n == 'agent' and a['intent'] == 'today')
     assert (agent['scored'], agent['ranked_shown'], agent['not_shown'], agent['top_score']) == (18, 10, 8, 51)
-    assert {s['id'] for s in reply['sources']} == set(SHOWN)
+    assert {s['id'] for s in reply['sources']} == {*SHOWN, 'reviews-ranked-lower'} and not reply['validation']['withheld']
 
 
 def test_priorities_explain_the_top_ten_and_five_other_follow_ups(records, model, monkeypatch):

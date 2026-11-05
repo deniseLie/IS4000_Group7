@@ -84,15 +84,15 @@ def test_agent_runs_and_model_calls_become_the_request_summary():
             with span('agent','agent',agent='security',intent='login_help') as a:a.update(path='rule',status='needs_human')
             with span('agent','agent',agent='security',intent='unrecognised_charge') as a:a.update(outcome='timeout',status='withheld')
             with span('route','agent',route='llm'):pass
-        trace.llm_calls+=[{'ok':True,'agent':'planner','model':'m1','prompt_version':'v7+abc','transport':'api','input_tokens':10,'output_tokens':5,'ms':100},
-            {'ok':False,'agent':'guide','model':'m1','prompt_version':'v1+def','transport':'api','input_tokens':None,'output_tokens':None,'ms':50}]
+        trace.llm_calls+=[{'ok':True,'agent':'planner','model':'m1','prompt_version':'v7+abc','transport':'api','reasoning':'default','input_tokens':10,'output_tokens':5,'ms':100},
+            {'ok':False,'agent':'guide','model':'m1','prompt_version':'v1+def','transport':'api','reasoning':'off','input_tokens':None,'output_tokens':None,'ms':50}]
         facts=request_facts(trace)
     finally:current_trace.set(None)
     assert trace.attrs=={'plan_route':'model','tasks':2}
     assert [a['agent'] for a in trace.agents]==['guide','security','security'] and all(isinstance(a['ms'],int) for a in trace.agents)
     assert facts['agents']==['guide','security','security'] and facts['agent_status']=={'guide':'ok','security':'withheld'}
-    assert {k:facts[k] for k in ('model_calls','model_failures','llm_ms','llm_tokens','model','prompt_ids')}=={'model_calls':2,'model_failures':1,
-        'llm_ms':150,'llm_tokens':15,'model':'m1','prompt_ids':['guide/v1+def','planner/v7+abc']}
+    assert {k:facts[k] for k in ('model_calls','model_failures','llm_ms','llm_tokens','model','prompt_ids','reasoning_off')}=={'model_calls':2,
+        'model_failures':1,'llm_ms':150,'llm_tokens':15,'model':'m1','prompt_ids':['guide/v1+def','planner/v7+abc'],'reasoning_off':1}
 
 
 def test_the_request_summary_says_who_asked_and_what_the_tools_refused():

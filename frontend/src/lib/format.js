@@ -12,3 +12,4 @@ export function formatMoney(value,currency='SGD') {return `${currency} ${formatA
 // Seeded people carry a "(DEMO)" suffix; the page shows "Demo" once instead of after every name.
 export function displayName(full) {return (full||'').replace(/\s*\(DEMO\)\s*$/,'');}
 export function firstName(full) {return displayName(full).split(' ')[0];}
+export function initials(name) {return name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('');}
