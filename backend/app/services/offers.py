@@ -33,6 +33,12 @@ class OpenOffer(BaseModel):
     expires_at: datetime
 
 
+def optional(type_: str, target: dict) -> bool:
+    """A switch inside a group (0114): a consent grant that waits for the meeting request before it. Off unless she switches
+    it on; a typed yes confirms the rest only."""
+    return type_ == 'consent.grant' and target.get('until') == 'request'
+
+
 def group_for(case_id: UUID) -> UUID:
     """One group per case; a case is one turn, so a replayed turn saves the same group."""
     return uuid5(NAMESPACE_URL, f'demobank-offer-group:{case_id}')
@@ -49,9 +55,13 @@ async def save(proposals: list[Proposal], ctx: RequestContext, turn_id: UUID | N
         require_permission(ctx.principal, proposal.type, {'customer_id': ctx.principal.customer_id}, ctx.model_copy(update={'agent': proposal.agent}))
     group = group_for(ctx.case_id)
     saved: list[Offer] = []
+    used: set[str] = set()
     with data_api.connect(ctx) as db:
         for order, proposal in enumerate(proposals, 1):
-            key = f'{ctx.case_id}:{proposal.task_id}:{proposal.type}'
+            task, n = proposal.task_id, 1
+            while f'{task}:{proposal.type}' in used:n += 1;task = f'{proposal.task_id[:36]}-{n}'  # two offers of one type in a task
+            used.add(f'{task}:{proposal.type}')
+            key = f'{ctx.case_id}:{task}:{proposal.type}'
             command = ActionCommand(command_id=uuid5(NAMESPACE_URL, 'demobank-offer:' + key), idempotency_key=key, type=proposal.type, target=proposal.target)
             target = {**canonical_target(command), **({'after_receipt': None} if proposal.chained else {})}
             response = await data_api.execute(lambda: db.rpc('action_offer', {'p_command_id': str(command.command_id), 'p_case_id': str(ctx.case_id),
@@ -61,7 +71,8 @@ async def save(proposals: list[Proposal], ctx: RequestContext, turn_id: UUID | N
             if result.command.idempotency_key != key or result.command.case_id != ctx.case_id:
                 raise ActionIntegrityError('The saved offer does not match the proposal')
             saved.append(Offer(offer_id=result.command.command_id, type=proposal.type, target=target, summary=proposal.summary,
-                expires_at=result.command.expires_at, after_offer=saved[-1].offer_id if proposal.chained else None))
+                expires_at=result.command.expires_at, after_offer=next((o.offer_id for o in reversed(saved) if not optional(o.type, o.target)), None)
+                if proposal.chained else None))  # a switch waits for the step it serves, not for another switch
     return saved
 
 
@@ -105,11 +116,13 @@ def customer_only(ctx: RequestContext) -> None:
     if ctx.agent is not None or ctx.principal.kind != 'customer':raise PolicyDenied('Only the signed-in customer can confirm or cancel an offer')
 
 
-async def confirm(group_id: UUID, ctx: RequestContext) -> list[ActionOutcome]:
-    """Run the group in order; each receipt can fill the next target; a step that does not succeed stops the rest."""
+async def confirm(group_id: UUID, ctx: RequestContext, include: list[UUID] | None = None) -> list[ActionOutcome]:
+    """Run the group in order; each receipt can fill the next target; a step that does not succeed stops the rest. The
+    optional steps she switched on are in `include`; the others are recorded as declined and skipped (0114)."""
     customer_only(ctx)
+    params = {'p_offer_group': str(group_id), 'p_include': [str(i) for i in include or []]}
     with data_api.connect(ctx) as db:
-        response = await data_api.execute(lambda: db.rpc('offer_group_confirm', {'p_offer_group': str(group_id)}).execute(), 'offers.confirm')
+        response = await data_api.execute(lambda: db.rpc('offer_group_confirm', params).execute(), 'offers.confirm')
     return [checked(item, ctx) for item in response.data or []]
 
 

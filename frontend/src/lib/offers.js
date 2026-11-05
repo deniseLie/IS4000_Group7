@@ -13,10 +13,21 @@ export function parseOffer(value) {
   if(!Array.isArray(value.offers)||!value.offers.length||value.offers.length>10)throw invalid();
   const offers=value.offers.map(o=>{
     if(typeof o?.type!=='string'||typeof o.summary!=='string'||!o.summary.trim())throw invalid();
-    return {command_id:id(o.command_id),type:o.type,summary:o.summary,expires_at:time(o.expires_at)};
+    if(o.optional!==undefined&&typeof o.optional!=='boolean')throw invalid();
+    return {command_id:id(o.command_id),type:o.type,summary:o.summary,expires_at:time(o.expires_at),optional:o.optional===true};
   });
+  if(offers[0].optional)throw invalid();  // a switch always follows the step it belongs to
   if(new Set(offers.map(o=>o.command_id)).size!==offers.length)throw invalid();
   return {offer_group:id(value.offer_group),expires_at:time(value.expires_at),offers};
+}
+
+// Switches (0114): optional steps, off unless she turns them on; Confirm sends the ones she turned on, a typed yes none.
+export const required=offer=>offer.offers.filter(o=>!o.optional);
+export const switches=offer=>offer.offers.filter(o=>o.optional);
+export function included(offer,on) {return switches(offer).filter(o=>on[o.command_id]===true).map(o=>o.command_id);}
+export function offerReply(offer,decision,on={}) {
+  const include=decision==='confirm'?included(offer,on):[];
+  return {offer_group:offer.offer_group,decision,...(include.length?{include}:{})};
 }
 
 // 'open' (buttons work), 'expired' (buttons disabled with EXPIRED_LINE) or 'answered' (a later message replied to it).

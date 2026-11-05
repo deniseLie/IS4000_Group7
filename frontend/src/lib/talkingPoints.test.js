@@ -42,7 +42,13 @@ function insight(type,target,result,state='succeeded') {
 
 test('insight actions parse on the ledger with matching receipts only',()=>{
   const deleted=parseAction(insight('insight.delete',{point_id:id(1),topic:'home_loan'},{point_id:id(1),topic:'home_loan',status:'deleted'}));
-  assert.deepEqual(deleted.receipt.result,{point_id:id(1),topic:'home_loan',status:'deleted'});
+  assert.deepEqual(deleted.receipt.result,{point_id:id(1),topic:'home_loan',status:'deleted',restore_until:null});
+  const undo=parseAction(insight('insight.delete',{point_id:id(1)},{point_id:id(1),topic:'home_loan',status:'deleted',restore_until:'2026-11-12T09:00:00+08:00'}));
+  assert.equal(undo.receipt.result.restore_until,'2026-11-12T09:00:00+08:00');  // 0110: Undo for 7 days
+  assert.deepEqual(parseAction(insight('insight.restore',{point_id:id(1)},{point_id:id(1),topic:'home_loan',status:'restored'})).receipt.result,
+    {point_id:id(1),topic:'home_loan',status:'restored'});
+  assert.throws(()=>parseAction(insight('insight.restore',{point_id:id(1)},{point_id:id(1),topic:'home_loan',status:'deleted'})));
+  assert.equal(insightSentence('insight.restore',{point_id:id(1),topic:'home_loan'}),'Restored the home loan topic you deleted');
   assert.throws(()=>parseAction(insight('insight.delete',{point_id:id(1),topic:'home_loan'},{point_id:id(2),topic:'home_loan',status:'deleted'})));
   assert.equal(parseAction(insight('insight.mute',{topic:'insurance'},{topic:'insurance',status:'muted',removed:1})).receipt.result.removed,1);
   assert.throws(()=>parseAction(insight('insight.mute',{topic:'insurance'},{topic:'home_loan',status:'muted',removed:0})));

@@ -115,7 +115,7 @@ def test_guests_get_guide_only_and_a_planner_failure_asks_to_rephrase(monkeypatc
 def test_a_yes_answers_the_open_offer_without_planning_or_agents(monkeypatch: pytest.MonkeyPatch):
     group=uuid4();calls=[]
     async def open_groups(ctx,conversation):return {group:[]}
-    async def confirm(found,ctx):
+    async def confirm(found,ctx,include=None):
         calls.append(('confirm',found));return []
     async def nothing(*a,**kw):raise AssertionError('no planner or agent on a confirmation turn')
     monkeypatch.setattr(offers,'open_groups',open_groups);monkeypatch.setattr(offers,'confirm',confirm)

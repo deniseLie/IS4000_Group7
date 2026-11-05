@@ -16,7 +16,7 @@ from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.privacy import redact
 from app.services.source_checks import dates,dates_supported
 
-PROMPT='v6'
+PROMPT='v7'
 
 ACTION_CLAIM=re.compile(r"\b(?:I|we)(?:['’]ve)?\s+(?:(?:have|will|just|successfully|already)\s+){0,3}(?:book(?:ed)?|reserv(?:e|ed)|schedul(?:e|ed)|cancel(?:led|ed)?|sent|send|submit(?:ted)?|shar(?:e|ed)|sav(?:e|ed)|grant(?:ed)?|revok(?:e|ed)|contact(?:ed)?)\b",re.I)
 

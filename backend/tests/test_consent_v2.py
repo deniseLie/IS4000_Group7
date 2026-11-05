@@ -1,4 +1,4 @@
-"""Consent v2 over real temporary PostgreSQL (migrations 0109-0113, RM copilot build plan phase 6): grants with a scope and
+"""Consent v2 over real temporary PostgreSQL (migrations 0109-0114, RM copilot build plan phase 6): grants with a scope and
 an end, meeting-bound grants, the renewal notice, the recording notice, the wrong advisor and reassignment, and the
 Data sharing read. Synthetic data only.
 
@@ -16,7 +16,7 @@ from app.schemas.consent_actions import ConsentGrantV2Result
 from tests.database_support import SqlRow,set_customer
 from tests.test_meeting_requests import MICHELLE_GRANT,MICHELLE_INSIGHTS_GRANT,MICHELLE_REQUEST,act,decide,free_times,iso
 from tests.test_meeting_seam import PRIYA,SOPHIE,as_rm
-from tests.test_offer_groups import offer,sqlstate
+from tests.test_offer_groups import offer,sqlstate,states
 
 if TYPE_CHECKING:
     from psycopg import Connection
@@ -534,3 +534,72 @@ def test_delete_all_my_data_is_a_request_with_a_ten_business_day_target(database
         from support.tickets where reference=%s""",(first['receipt']['result']['reference'],)).fetchone()
     assert owner=='Data protection team' and days==10 and due.isoweekday()<6 and (due.hour,due.minute)==(18,0)
     assert act(database,'ticket.create',target)['receipt']['result']['created'] is False  # asking twice shows the open request
+
+
+# ---- 6e: switches inside an offer group (0114) and the Data sharing reads as the app parses them ----
+
+def switch_group(db: 'Connection[SqlRow]',time: str) -> tuple[str,list[str]]:
+    """The chat's meeting request with its two "share until this request is answered" switches (consent_answers.meeting_shares)."""
+    set_customer(db,1002)
+    case,group=uuid4(),uuid4()
+    db.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    found=[offer(db,case,'meeting.request',{'advisor_id':SOPHIE,'purpose':'Investments next year','topics':['investments'],'format':'video',
+        'preferred_times':[time]},group,1),
+        offer(db,case,'consent.grant',{**share(until='request'),'after_receipt':None},group,2,task='t1-2'),
+        offer(db,case,'consent.grant',{**share('chat_topics',until='request'),'after_receipt':None},group,3,task='t1-3')]
+    return str(group),[o['command']['command_id'] for o in found]
+
+
+def test_the_meeting_cards_switches_stay_off_unless_she_turns_them_on(database: 'Connection[SqlRow]') -> None:
+    times=iso(free_times(database,n=2))
+    group,(meeting,insights_on,topics_on)=switch_group(database,times[0])
+    confirm='select public.offer_group_confirm(%s,%s::uuid[])'
+    assert sqlstate(database,confirm,(group,[meeting]))=='22023'  # only a switch can be listed
+    other,_=switch_group(database,times[1])
+    assert sqlstate(database,confirm,(group,[_[2]]))=='22023'  # a switch from another group
+    outcomes=database.execute(confirm,(group,[topics_on])).fetchone()[0]
+    assert [o['command']['state'] for o in outcomes]==['succeeded','rejected','succeeded']
+    request=outcomes[0]['receipt']['result']['request_id']
+    assert outcomes[2]['receipt']['result']['until_request_id']==request and outcomes[1]['receipt'] is None
+    for o in outcomes:ActionOutcome.model_validate(o)
+    assert database.execute(confirm,(group,[insights_on])).fetchone()[0][1]['command']['state']=='rejected'  # her no stands
+    assert states(database,group)==['succeeded','rejected','succeeded']
+    # A typed yes switches nothing on: the request goes, both grants are her no.
+    assert [o['command']['state'] for o in database.execute(confirm,(other,[])).fetchone()[0]]==['succeeded','rejected','rejected']
+    database.execute('reset role')
+    assert database.execute("select count(*) from audit.events where action='action.rejected' and resource_id=any(%s)",
+        ([insights_on,_[1],_[2]],)).fetchone()==(3,)
+
+
+def test_a_failed_switch_does_not_stop_the_next_one(database: 'Connection[SqlRow]') -> None:
+    times=iso(free_times(database,n=1))
+    group,(meeting,insights_on,topics_on)=switch_group(database,times[0])
+    database.execute('reset role')  # the wording she reviewed for the first switch changes before her yes (P1001: target changed)
+    database.execute("update consent.categories set label='Transaction insights (reworded)' where code='transaction_insights'")
+    set_customer(database,1002)
+    outcomes=database.execute('select public.offer_group_confirm(%s,%s::uuid[])',(group,[insights_on,topics_on])).fetchone()[0]
+    assert [o['command']['state'] for o in outcomes]==['succeeded','failed','succeeded']
+    assert outcomes[2]['receipt']['result']['until_request_id']==outcomes[0]['receipt']['result']['request_id']  # chained to the request
+
+
+def test_data_sharing_reads_parse_as_the_app_reads_them(database: 'Connection[SqlRow]') -> None:
+    from app.services import customer_data
+    set_customer(database,1002)
+    sharing=customer_data.SHARING.validate_python(database.execute('select public.customer_read_consent_sharing(1002)').fetchone()[0])
+    assert sharing.data.active('chat_topics').grant_id is not None and sharing.data.rm.name.startswith('Sophie')
+    customer_data.ASKS.validate_python(database.execute('select public.customer_read_consent_asks(1002)').fetchone()[0])
+    customer_data.ACCESS_LOG.validate_python(database.execute('select public.my_consent_access_log(1002,50)').fetchone()[0])
+
+
+def test_the_chat_offers_topic_deletion_and_it_runs_only_on_her_yes(database: 'Connection[SqlRow]') -> None:
+    """consent_answers offers insight.delete (automatic on Data sharing) as a v5 offer: nothing changes until she confirms."""
+    set_customer(database,1002)
+    case,group=uuid4(),uuid4()
+    database.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    offer(database,case,'insight.delete',{'point_id':MICHELLE_POINT},group,1)
+    assert [p['point_id'] for p in topics(database)['data']]==[MICHELLE_POINT]
+    set_customer(database,1002)
+    [done]=database.execute('select public.offer_group_confirm(%s,%s::uuid[])',(group,[])).fetchone()[0]
+    assert done['command']['state']=='succeeded' and done['receipt']['result']['status']=='deleted'
+    ActionOutcome.model_validate(done)
+    assert topics(database)['data']==[]

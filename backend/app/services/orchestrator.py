@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from app.core.config import settings
 from app.core.observability import evidence_sink, log_event, span
 from app.schemas.actions import ActionOutcome, HandoffResult
+from app.schemas.consent_actions import ConsentGrantV2Result
 from app.schemas.agents import Evidence
 from app.schemas.chat import ChatRequest, Message
 from app.schemas.contracts import OPEN_INTENT, AgentOutput, AgentResult, Domain, Export, OfferProposal, PlanTask, Priority, RequestContext, RiskAssessment, TargetAgent
@@ -35,7 +36,7 @@ from app.schemas.talking_points import InsightShareResult
 from app.schemas.tickets import TicketResult
 from app.services import audit, limit_context, llm_gateway, offers, prompts, rm_handover, talking_points, typos, client_intents
 from app.services.llm_gateway import LLMError
-from app.services.agents import card_answers, client_guidance, compliance, meeting_answers, registry, request_status_answers, runner, rules  # noqa: F401 (rules registers)
+from app.services.agents import card_answers, client_guidance, compliance, consent_answers, meeting_answers, registry, request_status_answers, runner, rules  # noqa: F401 (rules registers)
 from app.services.agents.answer import WITHHELD
 from app.services.answers import NOTICE, PINNED, clean_history
 from app.services.guardrail import FRAUD
@@ -79,6 +80,8 @@ EXPIRED = 'That offer has expired or was already answered, so nothing was sent. 
 CANCELLED = 'Okay, nothing has been sent.'
 STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try again, or use the official app.'
 DONE = 'Done. You can see the receipt in Activity.'
+GRANTED = 'Done: {rm} can now see your {label} {until}. You can switch it off on Data sharing at any time.'
+GRANT_UNTIL = {'date': 'until {date}', 'meeting': 'until your meeting ends', 'request': 'until your meeting request is answered'}
 TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
 MEETING_SENT = ('Sent: your meeting request is with your relationship manager. They will answer by {respond_by} (Singapore time): '
     'they accept one of your times, suggest another or reply in a message. You can follow it in My requests → Meetings.')  # 0106
@@ -114,6 +117,7 @@ class Confirmation(BaseModel):
     model_config = ConfigDict(extra='forbid')
     group: UUID
     decision: Literal['confirm', 'cancel']
+    include: list[UUID] = []  # the switches she turned on (a typed yes turns none on)
 
 
 class Turn(TypedDict, total=False):
@@ -223,6 +227,9 @@ def fixed_task(question: str, req: ChatRequest, history: list[Message] = ()) -> 
     # A short follow-up about the ticket just shown ("the statement one") keeps that ticket (request_status_answers.follow_up).
     status = request_status_answers.follow_up(question, history)
     if req.mode == 'personal' and client_intents.request_status(status):return PlanTask(id='t1', agent='relationship', intent='request_status', question=status)
+    # Consent v2 (6e): sharing, stopping or deleting a topic in her own words is a Relationship offer from her records.
+    if req.mode == 'personal' and not MULTIPLE.search(question) and consent_answers.wanted(question):
+        return PlanTask(id='t1', agent='relationship', intent='consent', question=question)
     if client_guidance.PERSONAL_DETAILS.search(question) or client_guidance.UNCLEAR_HELP.search(question) or client_guidance.NEW_REQUEST.search(question) \
             or (client_guidance.GENERIC_LOAN.search(question) and not client_guidance.LOAN_TYPE.search(question)):
         return PlanTask(id='t1', agent='guide', intent='how_to_request', question=question)
@@ -403,7 +410,7 @@ def plan_facts(tasks: list[PlanTask]) -> list[dict]:
 async def confirmation(req: ChatRequest, question: str, history: list[Message], tctx: TurnContext) -> Confirmation | Literal['expired', 'ambiguous'] | None:
     """A whole short English yes or no answers the one open offer group in this chat."""
     if req.mode != 'personal' or tctx.conversation_id is None:return None
-    if req.offer is not None:return Confirmation(group=req.offer.offer_group, decision=req.offer.decision)
+    if req.offer is not None:return Confirmation(group=req.offer.offer_group, decision=req.offer.decision, include=req.offer.include)
     kind = offers.reply_kind(question)
     if kind == 'other':return None
     groups = await offers.open_groups(tctx.request.model_copy(update={'agent': None}), tctx.conversation_id)
@@ -631,6 +638,10 @@ async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str
     if isinstance(receipt.result, MeetingRequestResult):return MEETING_SENT.format(respond_by=receipt.result.respond_by_text) + link
     if isinstance(receipt.result, InsightShareResult):
         return SHARED.format(line=talking_points.shared_line(receipt.result)) + link
+    if isinstance(receipt.result, ConsentGrantV2Result):
+        on = receipt.result.expires_on
+        until = GRANT_UNTIL[receipt.result.until].format(date=f'{on.day} {on:%b %Y}' if on else '')
+        return GRANTED.format(rm=re.sub(r'\s*\(DEMO\)\s*$', '', receipt.result.recipient_name), label=receipt.result.category_label.lower(), until=until)
     return DONE + link
 
 
@@ -647,10 +658,12 @@ async def act(state: Turn, runtime: Runtime[TurnContext]) -> dict:
     ctx = runtime.context.request.model_copy(update={'agent': None})
     with span('act', 'tool', decision=reply.decision) as attrs:
         chained = await offers.chained(reply.group, ctx, runtime.context.conversation_id) if reply.decision == 'confirm' else set()
-        outcomes = await (offers.confirm if reply.decision == 'confirm' else offers.cancel)(reply.group, ctx)
+        outcomes = await offers.confirm(reply.group, ctx, reply.include) if reply.decision == 'confirm' else await offers.cancel(reply.group, ctx)
         attrs['offers'], attrs['chained'] = len(outcomes), len(chained)
         if reply.decision == 'confirm':attrs['failed'] = sum(o.receipt is None or o.receipt.outcome != 'succeeded' for o in outcomes)
     lines, earlier = [], None
+    # a switch she left off (or a cancelled group's switches) is her no; it needs no line of its own
+    outcomes = [o for o in outcomes if not (o.command.state == 'rejected' and offers.optional(o.command.type, o.command.target.model_dump(mode='json')))]
     for i, outcome in enumerate(outcomes):
         urgent = rm_handover.urgent(getattr(outcome.command.target, 'summary', None) or '')
         succeeded = outcome.receipt is not None and outcome.receipt.outcome == 'succeeded'
@@ -716,7 +729,8 @@ async def superseded(proposals: list[OfferProposal], ctx: RequestContext, conver
     if conversation_id is None or not any(p.type == 'meeting.request' for p in proposals):return
     current = ctx.model_copy(update={'agent': None})
     for group, items in (await offers.open_groups(current, conversation_id)).items():
-        if group != offers.group_for(ctx.case_id) and all(o.type == 'meeting.request' for o in items):await offers.cancel(group, current)
+        if group != offers.group_for(ctx.case_id) and all(o.type == 'meeting.request' or o.type == 'consent.grant' and offers.optional(o.type, o.target) for o in items):
+            await offers.cancel(group, current)
 
 
 async def share_offer(state: Turn, runtime: Runtime[TurnContext]) -> tuple[OfferProposal, str] | None:
@@ -746,24 +760,30 @@ async def compose(state: Turn, runtime: Runtime[TurnContext]) -> dict:
         proposals, saved, share = [], [], None
     by_task: dict[str, list[tuple[OfferProposal, object]]] = {}
     for proposal, offer in zip(proposals, saved, strict=True):by_task.setdefault(proposal.task_id, []).append((proposal, offer))
-    line = CONFIRM_LINE + (' Your answer covers every offer in this reply.' if len(saved) > 1 else '')
+    required = [p for p in proposals if not offers.optional(p.type, p.target)]
+    line = CONFIRM_LINE + (' Your answer covers every offer in this reply.' if len(required) > 1 else '')
     sections = []
     for item, output in rows:
         mine = by_task.pop(item.id, [])
         decision = output.decision
-        if mine:decision = (decision or 'Would you like me to: ' + '; '.join(p.summary for p, _ in mine) + '?') + ' ' + line
+        switches = [p.summary for p, _ in mine if offers.optional(p.type, p.target)]
+        if mine:decision = (decision or 'Would you like me to: ' + '; '.join(p.summary for p, _ in mine if not offers.optional(p.type, p.target)) + '?') + ' ' + line
+        if switches:decision += (' You can also switch on: ' + '; '.join(switches) + '. They stay off unless you switch them on below; '
+            'a typed yes sends the request only.')
         sections.append(section_for(item, output, decision))
     for proposal, _ in (pair for pairs in by_task.values() for pair in pairs):
         if share:sections.append(fixed_section(proposal.task_id, share[1], domain='relationship'))
         else:sections.append(fixed_section(proposal.task_id, f'Would you like me to: {proposal.summary}? {line}', domain='relationship', needs_human=True))
     sections += state.get('lines') or []
-    return {'answer': answer_for(sections, state, offer_event(saved, ctx))}
+    return {'answer': answer_for(sections, state, offer_event(saved, ctx, proposals))}
 
 
-def offer_event(saved: list, ctx: RequestContext) -> OfferGroupEvent | None:
+def offer_event(saved: list, ctx: RequestContext, proposals: list[OfferProposal] | None = None) -> OfferGroupEvent | None:
     if not saved:return None
+    switches = [offers.optional(p.type, p.target) for p in proposals] if proposals else [False] * len(saved)
     return OfferGroupEvent(offer_group=offers.group_for(ctx.case_id), expires_at=min(o.expires_at for o in saved),
-        offers=[ActionRequiredEvent(command_id=o.offer_id, type=o.type, summary=o.summary, expires_at=o.expires_at) for o in saved])
+        offers=[ActionRequiredEvent(command_id=o.offer_id, type=o.type, summary=o.summary, expires_at=o.expires_at, optional=switch)
+            for o, switch in zip(saved, switches, strict=True)])
 
 
 def answer_for(sections: list[AnswerSection], state: Turn, offer: OfferGroupEvent | None = None) -> AnswerEvent:

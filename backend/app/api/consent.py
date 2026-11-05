@@ -24,6 +24,23 @@ async def records(request: Request,ctx: RequestContext=Depends(get_ctx)) -> Tool
     return await read_result(lambda:customer_data.get_consent_records(ctx),request,ctx,'consent.records')
 
 
+# Consent v2 (0109-0113): Data sharing's cards, her RM's asks and the access log. Reads only; every change is a ledger
+# action (consent.grant and consent.revoke wait for her confirmation; consent.decline_ask runs at once).
+@router.get('/consent/sharing',response_model=ToolResult)
+async def sharing(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_consent_sharing(ctx),request,ctx,'consent.sharing')
+
+
+@router.get('/consent/asks',response_model=ToolResult)
+async def asks(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_consent_asks(ctx),request,ctx,'consent.asks')
+
+
+@router.get('/consent/access-log',response_model=ToolResult)
+async def access_log(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_consent_access_log(ctx),request,ctx,'consent.access_log')
+
+
 @router.post('/consent/check',response_model=ConsentResult)
 async def check(query: ConsentQuery,request: Request,ctx: RequestContext=Depends(get_ctx)) -> ConsentResult:
     if ctx.principal.kind!='customer':raise ApiError(401,'auth_required','Please sign in to check data-sharing consent.')

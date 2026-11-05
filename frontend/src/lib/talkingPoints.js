@@ -9,7 +9,9 @@ export const STAGES=['curious','exploring','planning','ready','concern'];
 export const TIMEFRAMES={now:'now',within_3m:'within 3 months',within_12m:'within 12 months',later:'later'};
 export const CONCERNS=['rates','fees','eligibility','timing'];
 export const ORIGINS={inferred:'inferred from chat',confirmed:'shared by the client'};
-export const INSIGHT_ACTIONS=['insight.delete','insight.mute','insight.resume','insight.share'];
+export const INSIGHT_ACTIONS=['insight.delete','insight.mute','insight.resume','insight.share','insight.restore'];  // restore: 0110 Undo
+export const REMOVED_REASONS={client:'You deleted it',muted:'You asked not to suggest it',chat_topics_revoked:'You stopped sharing chat topics',
+  scope_narrowed:'Outside the topic areas you share'};
 
 function invalid() {return new Error('Your talking points could not be verified. Refresh to try again.');}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
@@ -42,15 +44,23 @@ function parsePoint(value) {
   return {...point,line:value.line};
 }
 
+// 0110: topics removed in the last 7 days; one she deleted herself can be restored until restore_until.
+function parseRemoved(value) {
+  if(!value||!Object.hasOwn(REMOVED_REASONS,value.reason)||typeof value.can_restore!=='boolean')throw invalid();
+  return {point_id:id(value.point_id),topic:topic(value.topic),reason:value.reason,removed_at:timestamp(value.removed_at),
+    restore_until:value.restore_until===null||value.restore_until===undefined?null:timestamp(value.restore_until),can_restore:value.can_restore};
+}
+
 export function parseTalkingPoints(value) {
   const data=value?.data;
   if(!data||!Array.isArray(data.points)||data.points.length>4||!Array.isArray(data.muted)||typeof data.chat_topics!=='boolean')throw invalid();
+  if(data.removed!==undefined&&(!Array.isArray(data.removed)||data.removed.length>20))throw invalid();
   const rm=data.rm_first_name===null||data.rm_first_name===undefined?null:data.rm_first_name;
   if(rm!==null&&(typeof rm!=='string'||!rm.trim()||rm.length>80))throw invalid();
   const pause=data.pause===null||data.pause===undefined?null:{pause_id:id(data.pause.pause_id),until:timestamp(data.pause.until)};
   const points=data.points.map(parsePoint);
   if(new Set(points.map(p=>p.point_id)).size!==points.length)throw invalid();
-  return {points,muted:data.muted.map(topic),pause,chat_topics:data.chat_topics,rm_first_name:rm,as_of:timestamp(value.as_of)};
+  return {points,muted:data.muted.map(topic),pause,chat_topics:data.chat_topics,rm_first_name:rm,removed:(data.removed||[]).map(parseRemoved),as_of:timestamp(value.as_of)};
 }
 
 export async function loadTalkingPoints(token,signal) {
@@ -65,7 +75,7 @@ export async function loadTalkingPoints(token,signal) {
 // Ledger targets and receipts (services/actions/insights.py); the stored target also names the topic or the RM.
 export function parseInsightTarget(type,value) {
   if(!value)throw invalid();
-  if(type==='insight.delete')return {point_id:id(value.point_id),...(value.topic===undefined?{}:{topic:topic(value.topic)})};
+  if(type==='insight.delete'||type==='insight.restore')return {point_id:id(value.point_id),...(value.topic===undefined?{}:{topic:topic(value.topic)})};
   if(type==='insight.mute')return {topic:topic(value.topic)};
   if(type==='insight.resume')return {topic:value.topic===null||value.topic===undefined?null:topic(value.topic)};
   if(type!=='insight.share')throw invalid();
@@ -76,7 +86,12 @@ export function parseInsightResult(type,target,value) {
   if(!value)throw invalid();
   if(type==='insight.delete') {
     if(value.status!=='deleted'||id(value.point_id)!==target.point_id)throw invalid();
-    return {point_id:target.point_id,topic:topic(value.topic),status:'deleted'};
+    return {point_id:target.point_id,topic:topic(value.topic),status:'deleted',
+      restore_until:value.restore_until===null||value.restore_until===undefined?null:timestamp(value.restore_until)};
+  }
+  if(type==='insight.restore') {
+    if(value.status!=='restored'||id(value.point_id)!==target.point_id)throw invalid();
+    return {point_id:target.point_id,topic:topic(value.topic),status:'restored'};
   }
   if(type==='insight.mute') {
     if(value.status!=='muted'||value.topic!==target.topic||!Number.isSafeInteger(value.removed)||value.removed<0)throw invalid();
@@ -94,6 +109,7 @@ export function parseInsightResult(type,target,value) {
 export function insightSentence(type,target) {
   const name=target.topic?TOPICS[target.topic]:null;
   if(type==='insight.delete')return name?`Deleted the ${name.toLowerCase()} topic from what your relationship manager sees`:'Deleted a topic from what your relationship manager sees';
+  if(type==='insight.restore')return name?`Restored the ${name.toLowerCase()} topic you deleted`:'Restored a topic you deleted';
   if(type==='insight.mute')return `Stopped suggesting ${name.toLowerCase()} as a topic`;
   if(type==='insight.resume')return name?`Suggest ${name.toLowerCase()} as a topic again`:'Resumed topic suggestions';
   return `Let your relationship manager know: ${line({...target,concerns:[],origin:'confirmed'})}`;

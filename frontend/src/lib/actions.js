@@ -8,6 +8,7 @@ import {parseAppointmentResult,parseAppointmentTarget,parseSlotTarget} from './a
 import {agendaTargetMatches,parseAgendaResult,parseAgendaTarget,parseAgendaShareResult,parseAgendaShareTarget} from './agendaData.js';
 import {MEETING_ACTIONS,parseMeetingResult,parseMeetingTarget} from './meetingRequests.js';
 import {INSIGHT_ACTIONS,parseInsightResult,parseInsightTarget} from './talkingPoints.js';
+import {parseAskResult,parseAskTarget,parseGrantV2Result,parseGrantV2Target} from './consentSharing.js';
 import {consentTargetMatches,parseConsentGrantResult,parseConsentGrantTarget,parseConsentRequestResult,parseConsentRequestTarget,parseConsentRevokeResult,parseConsentRevokeTarget} from './consentData.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CARD=/^card_[1-9][0-9]{0,14}$/;
@@ -18,7 +19,7 @@ const STAFF=['card.unblock','card.cancel_permanently','handoff.claim','handoff.c
 // The customer's own card changes share these two types with staff; only the staff target names a handoff.
 export const CARD_CHANGES=['card.unblock','card.cancel_permanently'];
 const APPOINTMENTS=['appointment.hold','appointment.confirm','appointment.cancel'];
-const CONSENTS=['consent.request','consent.grant','consent.revoke'];
+const CONSENTS=['consent.request','consent.grant','consent.revoke','consent.decline_ask'];  // decline_ask: 0113
 
 function invalid() {return new Error('The recorded action could not be verified. Reload its status before retrying.');}
 function id(value) {if(typeof value!=='string'||!UUID.test(value))throw invalid();return value;}
@@ -57,7 +58,8 @@ export function parseAction(value) {
   else if(command.type==='appointment.hold')canonical=parseSlotTarget(target);
   else if(APPOINTMENTS.includes(command.type))canonical=parseAppointmentTarget(target);
   else if(command.type==='consent.request')canonical=parseConsentRequestTarget(target);
-  else if(command.type==='consent.grant')canonical=parseConsentGrantTarget(target);
+  else if(command.type==='consent.grant')canonical=target&&Object.hasOwn(target,'request_id')?parseConsentGrantTarget(target):parseGrantV2Target(target);  // v2: 0109
+  else if(command.type==='consent.decline_ask')canonical=parseAskTarget(target);
   else if(command.type==='consent.revoke')canonical=parseConsentRevokeTarget(target);
   else if(command.type==='compliance.update_checklist_item')canonical=parseChecklistTarget(target);
   else if(command.type==='requests.create')canonical=parseRequestTarget(target);
@@ -132,10 +134,13 @@ export function parseAction(value) {
       result=parseAgendaShareResult(receipt.result);
       if(confirmed_at===null||Date.parse(result.shared_at)<Date.parse(confirmed_at)||!agendaTargetMatches(canonical,result))throw invalid();
     } else if(CONSENTS.includes(command.type)) {
-      if(command.type==='consent.request')result=parseConsentRequestResult(receipt.result);
+      const v2=command.type==='consent.grant'&&!Object.hasOwn(canonical,'request_id');
+      if(command.type==='consent.decline_ask')result=parseAskResult(canonical,receipt.result);  // automatic: her own "Not now"
+      else if(command.type==='consent.request')result=parseConsentRequestResult(receipt.result);
+      else if(v2)result=parseGrantV2Result(canonical,receipt.result);
       else if(command.type==='consent.grant')result=parseConsentGrantResult(receipt.result);
       else result=parseConsentRevokeResult(receipt.result);
-      if(!consentTargetMatches(canonical,result)||command.type!=='consent.request'&&confirmed_at===null)throw invalid();
+      if(command.type!=='consent.decline_ask'&&!v2&&!consentTargetMatches(canonical,result)||!['consent.request','consent.decline_ask'].includes(command.type)&&confirmed_at===null)throw invalid();
     } else if(MEETING_ACTIONS.includes(command.type)) {
       if(confirmed_at===null)throw invalid();
       result=parseMeetingResult(command.type,canonical,receipt.result);
