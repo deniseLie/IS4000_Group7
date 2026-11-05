@@ -728,6 +728,68 @@ def test_priorities_rank_with_the_same_score_and_keep_the_other_follow_ups(recor
     assert reply['status'] == 'ok' and next(a for n, a in spans if n == 'agent' and a['intent'] == 'priorities')['top_score'] == 51
 
 
+def long_queue(data: dict, tickets: int = 10, specialist: int = 0) -> None:
+    """Her day plus `tickets` overdue requests (32 points each, in target-time order) and `specialist` more specialist tickets."""
+    before = (handlers.today() - timedelta(days=2)).isoformat()
+    data['rows']['rm_tickets']['data']['rm_owned'] += [{'reference': f'TCK-0020{n:02d}', 'customer_id': 1003, 'client': 'David Lee (DEMO)',
+        'category_label': 'Talk to my RM', 'urgency': 'normal', 'status': 'submitted', 'overdue': True, 'age_hours': 48,
+        'target_at': f'{before}T{8 + n:02d}:00:00+08:00', 'target_sgt': 'two days ago', 'summary': 'zebra lantern'} for n in range(1, tickets + 1)]
+    data['rows']['rm_followups']['data'] += [{'item_key': f'specialist:TCK-0030{n:02d}', 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)',
+        'kind': 'specialist_ticket', 'title': 'Suspected fraud with the fraud team', 'due_on': None, 'owner': 'specialist', 'confirmed_meeting': None}
+        for n in range(1, specialist + 1)]
+
+
+SHOWN = ['ticket-TCK-001010', 'ticket-TCK-001001', 'meeting-request-mei', *(f'ticket-TCK-0020{n:02d}' for n in range(1, 8))]
+
+
+def test_today_explains_the_top_ten_and_counts_the_rest_in_a_fixed_line(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    day_rows(data)
+    long_queue(data)
+    async def no_plan(rt, message):raise AssertionError('the Today button sets the intent')
+    monkeypatch.setattr(graph, 'model_plan', no_plan)
+    state['sections'] = [{'heading': 'Client requests', 'items': said(*SHOWN[3:])}, {'heading': 'Do first', 'items': said(*SHOWN[:3])}]
+    reply, spans = traced("What's on today?", intent='today')
+    # 18 ranked records: the model sees the top 10 only, and no category is called empty because its records ranked lower.
+    evidence = json.loads(evidence_in(seen[0]))
+    assert [e['id'] for e in evidence] == SHOWN and [e['record']['rank'] for e in evidence] == list(range(1, 11))
+    assert [s['heading'] for s in reply['sections']] == ['Do first', 'Client requests', 'Not listed here']
+    assert reply['sections'][-1]['items'] == [{'text': '8 lower-ranked items are not listed here: 3 client requests, 2 compliance reviews, '
+        '1 confirmed meeting, 1 task and 1 milestone. Your Today page and Ticket inbox show them.', 'kind': 'gap', 'owner': 'none', 'source_ids': []}]
+    agent = next(a for n, a in spans if n == 'agent' and a['intent'] == 'today')
+    assert (agent['scored'], agent['ranked_shown'], agent['not_shown'], agent['top_score']) == (18, 10, 8, 51)
+    assert {s['id'] for s in reply['sources']} == set(SHOWN)
+
+
+def test_priorities_explain_the_top_ten_and_five_other_follow_ups(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    day_rows(data)
+    long_queue(data, specialist=6)
+    plan(monkeypatch, [{'intent': 'priorities'}])
+    reply, spans = traced('Which clients should I follow up with this week, and why?')
+    evidence = json.loads(evidence_in(seen[0]))
+    assert [e['id'] for e in evidence if 'rank' in (e['record'] if isinstance(e['record'], dict) else {})] == SHOWN
+    assert [e['id'] for e in evidence if e['id'].startswith('followup-')] == [f'followup-{n}' for n in range(1, 6)]
+    assert all(e['record']['kind'] == 'specialist_ticket' for e in evidence if e['id'].startswith('followup-'))  # ranked ones never reappear
+    assert [i['text'] for i in reply['sections'][-1]['items']] == [
+        '6 lower-ranked items are not listed here: 3 client requests, 1 confirmed meeting, 1 task and 1 milestone. Your Today page and Ticket inbox show them.',
+        '2 more follow-ups are not listed here: 2 specialist-managed tickets. Your Follow-ups page shows them.']
+    agent = next(a for n, a in spans if n == 'agent' and a['intent'] == 'priorities')
+    assert (agent['scored'], agent['ranked_shown'], agent['not_shown'], agent['followups_not_shown']) == (16, 10, 6, 2)
+
+
+def test_the_not_listed_line_counts_only_and_is_left_off_a_question_or_a_short_queue():
+    assert handlers.not_listed([], []) is None
+    one = handlers.not_listed([{'kind': 'task', 'client': 'Michelle Tan (DEMO)', 'title': 'zebra lantern'}], [{'kind': 'commitment'}, {'kind': 'unknown'}])
+    assert [i['text'] for i in one['items']] == ['1 lower-ranked item is not listed here: 1 task. Your Today page and Ticket inbox show them.',
+        '2 more follow-ups are not listed here: 1 recorded commitment and 1 other item. Your Follow-ups page shows them.']
+    ok = {'status': 'ok', 'sections': [{'heading': 'Do first', 'items': []}]}
+    assert handlers.with_rest(ok, one)['sections'][-1] == one and handlers.with_rest(ok, None) == ok
+    for reply in ({'status': 'clarify', 'sections': []}, {'status': 'unverified', 'sections': []}):assert handlers.with_rest(reply, one) == reply
+
+
 def test_the_other_requests_and_client_intents_still_answer(records, model, monkeypatch):
     calls, data = records
     seen, _ = model
