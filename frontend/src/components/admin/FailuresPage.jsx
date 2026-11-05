@@ -5,7 +5,7 @@ import {KINDS,SOURCES,filterGroups,firstLine,kindCounts,loadFailure,loadFailures
 import {SidePicker} from './AgentsPage';
 import {History} from './charts';
 import {WindowPicker} from './OverviewPage';
-import {Failed,Loading,Page,Status,useLoad} from './shared';
+import {Failed,Loading,More,Page,Status,useLoad,useMore} from './shared';
 
 function Field({label,children}) {return children===null||children===undefined||children===''||children===false?null:<><dt>{label}</dt><dd>{children}</dd></>;}
 function ErrorText({text}) {
@@ -119,6 +119,7 @@ export default function FailuresPage({filter}) {
   const [chosen,setChosen]=useState(null);
   const [state,refresh]=useLoad((auth,signal)=>loadFailures(range,source,side,auth,signal),`${range}|${source}|${side}`);
   const data=state.data,groups=data?filterGroups(data.groups,{kind,text}):[],counts=data?kindCounts(data.groups):{};
+  const [shown,more,total]=useMore(groups,`${state.at}|${kind}|${text}`);
   return <Page id="failures" title="Failures" intro="Failed requests, withheld answers, agent, model and tool errors, and failing evaluation cases, grouped by what went wrong."
     actions={<div className="admin-controls"><WindowPicker value={range} onChange={setRange}/>
       <label>Source <select value={source} onChange={event=>setSource(event.target.value)} data-testid="admin-source">
@@ -144,8 +145,9 @@ export default function FailuresPage({filter}) {
       {chosen&&<FailureCard runId={chosen} onClose={()=>setChosen(null)}/>}
       {!data.groups.length&&<p className="admin-empty" data-testid="admin-no-failures">No failures in this window.</p>}
       {data.groups.length>0&&!groups.length&&<p className="admin-empty">No failure matches this filter.</p>}
-      <ul className="admin-groups">{groups.map(group=><Group key={group.signature} group={group} open={open===group.signature}
+      <ul className="admin-groups">{shown.map(group=><Group key={group.signature} group={group} open={open===group.signature}
         onToggle={()=>setOpen(open===group.signature?null:group.signature)} chosen={chosen} onChoose={id=>{setChosen(id);window.scrollTo?.({top:0,behavior:'smooth'});}}/>)}</ul>
+      <More onMore={more} shown={shown.length} total={total}/>
     </>}
   </Page>;
 }

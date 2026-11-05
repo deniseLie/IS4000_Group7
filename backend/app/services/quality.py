@@ -20,7 +20,7 @@ from app.schemas.quality import Check,Span,Trace
 
 ADMIN_ROLE='admin'
 DATASET_PREFIX='demobank-'  # every evaluation dataset langsmith_sync uploads (evaluation/langsmith_sync.DATASETS)
-CACHE_S=60
+CACHE_S=300  # live reads are cached 5 minutes server-side, so a Refresh inside that window returns the same numbers
 _cache: dict[tuple,tuple[float,Any]]={}
 _locks: dict[tuple,threading.Lock]=defaultdict(threading.Lock)  # one LangSmith read per key, even when pages load together
 _client=None
