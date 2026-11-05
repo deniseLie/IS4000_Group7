@@ -135,7 +135,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 8. **Overview**: My clients → Michelle → *Ask for an overview*. The overview shows transaction insights and her topics (home loan, confirmed), and every line is cited.
 9. **Brief** (needs 5a): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available.
 10. **Reply**: Ticket inbox → one of Michelle's requests → *Draft a reply* → edit → tick → *Approve and send*.
-11. **Consent change**: as Michelle, open Data sharing → *What Sophie sees* and withdraw the grant.
+11. **Consent change**: as Michelle, open Data sharing → *What Sophie sees* and withdraw the grant. Once batches `36`–`40` (consent v2) are on hosted, she switches off the transaction insights and chat topics cards instead.
 12. **The gap**: as Sophie, open Michelle's overview again.
     - Transaction insights and chat topics are listed as not shared.
     - Inferred topics are deleted; the topic she shared herself stays.

@@ -25,7 +25,7 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | 3 | ~~RM copilot: three agents, tracing, daily work~~ **Done 5 Nov 2026** (R24–R27 pass on hosted) | L | 2a | No |
 | 4 | ~~Talking-point pipeline, on seeded consent (`0108`)~~ **Built 5 Nov 2026**, 0108 on hosted (done-when not yet run in the browser) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
 | 5 | Connect to the meeting graph, evaluate, demo, document: 5b **run 5 Nov 2026**; 5a waits on the meeting side | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
-| 6 | Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log (`0109`–`0113`) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
+| 6 | ~~Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log~~ **Built 5 Nov 2026** except 6c (`0109`, `0110`, `0112`–`0114`; hosted batches not applied) | L | 2a, 4 | Yes for `transcript.revoke` (0111): agree the transcript fields first |
 
 - **Why this order.**
   - Meeting requests come first: the demo story starts with one, phase 4 needs its `care` flag, and the meeting side gets events from real clicks instead of only the reset script. The RM's accept / propose / decline buttons move here from 3a. The SQL has existed since `0106`, so the loop closes without waiting for the agent split. 3a then adds the copilot card on the same route.
@@ -406,6 +406,21 @@ Runs on the seeded grants, so the results and the demo do not wait for consent v
 ---
 
 ## Phase 6: Consent v2 (`0109`–`0113`)
+
+**Status:** 6a, 6b, 6d, 6e and 6f built 5 Nov 2026.
+- **Commits:** `79c51e1`, `7e0a00a`, `fceed33`, `d10b328`, `f77b25f`, `79db2ce`.
+- **Migrations:** `0109`, `0110`, `0112`, `0113`, `0114`; hosted batches `36`–`40` are prepared and **not applied**.
+- **Prompt:** `relationship/v7`.
+- **6c** (`0111`, transcript revoke) is left for the meeting side.
+- **Checks:** native only (SQL, API and unit tests); no live model run. The consent red-team cases and the demo's consent step have not been re-run on v2. 5b rehearsed the step on v1.
+- **Differences from the plan:**
+  - the purge audit is `data.insight_purged`;
+  - the access log takes `p_customer_id`, and its `meeting_id` is derived for meeting-prep reads;
+  - ask reasons are fixed codes;
+  - `0114` adds offer switches (`offer_group_confirm(group, include)`); optional steps are identified by rule, so the contracts do not change;
+  - chat consent offers are rules (`consent_answers`), not the model;
+  - the brief re-check provides only `rm_point_status` on our side;
+  - *Request a meeting* on the Meetings page has no sharing switches yet; only the chat card has them.
 
 Design in [architecture §15.2](../architecture.md). Replaces the seeded grants with the client's own answers; `rm.consent_active` stays the only check, and gated readers still return `{"shared": false}`, never filtered rows.
 
