@@ -12,7 +12,8 @@ from app.services.agents.registry import TOOLS
 
 PUBLIC_TOOLS = frozenset({'kb.search','tickets.categories'})
 AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit','compliance.answer_request',
-    'insight.delete','insight.mute','insight.resume','insight.restore'})  # 0108: her own talking-point controls (Data sharing); 0110: Undo
+    'insight.delete','insight.mute','insight.resume','insight.restore',  # 0108: her own talking-point controls (Data sharing); 0110: Undo
+    'consent.decline_ask'})  # 0113: "Not now" to her RM's ask
 # The customer's own card changes: confirmed by the signed-in customer only; agents are refused (customer_only_action).
 # Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
 CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
@@ -30,7 +31,7 @@ AGENT_ACTIONS = {
         'rm.share_summary','consent.grant','consent.revoke','meeting.request',
         'insight.share'}),  # the chat offers a meeting request (2a) and Let-Sophie-know (0108, lane 2)
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list','insights.read','insights.status','insights.record'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list','insights.read','insights.status','insights.record','consent.sharing','consent.access_log','consent.asks'}
 
 
 class PolicyResource(BaseModel):

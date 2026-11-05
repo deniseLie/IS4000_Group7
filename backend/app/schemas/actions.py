@@ -20,12 +20,12 @@ from app.schemas.document_uploads import DocumentUploadResult,DocumentUploadTarg
 from app.schemas.disputes import DisputeInput,DisputeResult,DisputeTarget,StoredDisputeTarget
 from app.schemas.prechecks import SubmitDocumentTarget,StoredSubmission,SubmissionResult
 from app.schemas.consent_actions import (ConsentGrantResult,ConsentGrantTarget,ConsentGrantV2Result,ConsentGrantV2Target,ConsentRequestResult,
-    ConsentRequestTarget,ConsentRevokeResult,ConsentRevokeTarget,StoredConsentGrantTarget,StoredConsentGrantV2Target,StoredConsentRequestTarget,
+    ConsentRequestTarget,ConsentRevokeResult,ConsentRevokeTarget,ConsentAskDeclineResult,ConsentAskTarget,StoredConsentAskTarget,StoredConsentGrantTarget,StoredConsentGrantV2Target,StoredConsentRequestTarget,
     StoredConsentRevokeTarget,grant_target,stored_grant_target)
 
 CustomerActionType=Literal['card.temporary_block','handoff.create','appointment.hold','appointment.confirm','appointment.cancel',
     'consent.request','consent.grant','consent.revoke','agenda.save','rm.share_summary','compliance.update_checklist_item','requests.create','document.register','document.submit','card.dispute','card.unblock','card.cancel_permanently','ticket.create','compliance.answer_request',
-    'meeting.request','meeting.withdraw','meeting.counter_reply','insight.delete','insight.mute','insight.resume','insight.share','insight.restore']
+    'meeting.request','meeting.withdraw','meeting.counter_reply','insight.delete','insight.mute','insight.resume','insight.share','insight.restore','consent.decline_ask']
 # Talking points (0108): her own controls run at once with a receipt; insight.share is offered in chat and needs her yes.
 # insight.restore (0110): Undo of her own delete within 7 days.
 INSIGHT_ACTIONS=('insight.delete','insight.mute','insight.resume','insight.share','insight.restore')
@@ -126,11 +126,11 @@ class ActionFailure(BaseModel):
 StoredTarget: TypeAlias=(StoredCardTarget | HandoffTarget | StaffCardTarget | StaffHandoffTarget | SlotTarget | StoredAppointmentTarget
     | StoredConsentRequestTarget | StoredConsentGrantTarget | StoredConsentGrantV2Target | StoredConsentRevokeTarget | StoredAgendaSaveTarget | StoredAgendaShareTarget | StoredChecklistTarget | StoredRequestTarget | StoredDocumentUploadTarget | StoredSubmission | StoredDisputeTarget | StoredCardChangeTarget | StoredTicketTarget | StoredRequestAnswerTarget
     | StoredMeetingRequestTarget | StoredMeetingRefTarget | StoredCounterReplyTarget
-    | StoredInsightPointTarget | InsightTopicTarget | InsightResumeTarget | StoredInsightShareTarget)
+    | StoredInsightPointTarget | InsightTopicTarget | InsightResumeTarget | StoredInsightShareTarget | StoredConsentAskTarget)
 InputTarget: TypeAlias=(CardBlockTarget | HandoffTarget | SlotTarget | AppointmentTarget
     | ConsentRequestTarget | ConsentGrantTarget | ConsentGrantV2Target | ConsentRevokeTarget | AgendaSaveTarget | AgendaShareTarget | ChecklistTarget | RequestTarget | DocumentUploadTarget | SubmitDocumentTarget | DisputeTarget | CardChangeTarget | TicketTarget | RequestAnswerTarget
     | MeetingRequestTarget | MeetingRefTarget | CounterReplyTarget
-    | InsightPointTarget | InsightTopicTarget | InsightResumeTarget | InsightShareTarget)
+    | InsightPointTarget | InsightTopicTarget | InsightResumeTarget | InsightShareTarget | ConsentAskTarget)
 
 
 class ActionRecord(BaseModel):
@@ -161,6 +161,7 @@ class ActionRecord(BaseModel):
         if action_type=='consent.request':return StoredConsentRequestTarget.model_validate(value)
         if action_type=='consent.grant':return stored_grant_target(value)
         if action_type=='consent.revoke':return StoredConsentRevokeTarget.model_validate(value)
+        if action_type=='consent.decline_ask':return StoredConsentAskTarget.model_validate(value)
         if action_type=='agenda.save':return StoredAgendaSaveTarget.model_validate(value)
         if action_type=='rm.share_summary':return StoredAgendaShareTarget.model_validate(value)
         if action_type=='compliance.update_checklist_item':return StoredChecklistTarget.model_validate(value)
@@ -218,7 +219,7 @@ class ActionReceipt(BaseModel):
     command_id: UUID
     customer_id: StrictInt
     outcome: Literal['succeeded','failed']
-    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentGrantV2Result | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult | MeetingRequestResult | MeetingWithdrawResult | CounterReplyResult | InsightDeleteResult | InsightRestoreResult | InsightMuteResult | InsightResumeResult | InsightShareResult
+    result: CardBlockResult | HandoffResult | CustomerCardResult | StaffCardResult | StaffHandoffResult | ActionFailure | AppointmentResult | ConsentRequestResult | ConsentGrantResult | ConsentGrantV2Result | ConsentRevokeResult | AgendaSaveResult | AgendaShareResult | ChecklistResult | RequestResult | DocumentUploadResult | SubmissionResult | DisputeResult | TicketResult | RequestAnswerResult | MeetingRequestResult | MeetingWithdrawResult | CounterReplyResult | InsightDeleteResult | InsightRestoreResult | InsightMuteResult | InsightResumeResult | InsightShareResult | ConsentAskDeclineResult
     audit_event_id: int=Field(strict=True,gt=0)
     created_at: AwareDatetime
 
@@ -267,7 +268,7 @@ class ActionOutcome(BaseModel):
                     if any(receipt.result.model_dump()[key]!=value for key,value in target.items()):
                         raise ValueError('Appointment receipt disagrees with its recorded target')
                 if command.type.startswith('consent.'):
-                    expected={'consent.request':ConsentRequestResult,'consent.revoke':ConsentRevokeResult,
+                    expected={'consent.request':ConsentRequestResult,'consent.revoke':ConsentRevokeResult,'consent.decline_ask':ConsentAskDeclineResult,
                         'consent.grant':ConsentGrantResult if isinstance(command.target,StoredConsentGrantTarget) else ConsentGrantV2Result}[command.type]
                     if not isinstance(receipt.result,expected):raise ValueError('Consent receipt disagrees with its operation')
                     if any(receipt.result.model_dump()[key]!=value for key,value in command.target.model_dump().items()):
@@ -335,6 +336,7 @@ class CreateAction(BaseModel):
         if info.data.get('type')=='consent.request':return ConsentRequestTarget.model_validate(value)
         if info.data.get('type')=='consent.grant':return grant_target(value)
         if info.data.get('type')=='consent.revoke':return ConsentRevokeTarget.model_validate(value)
+        if info.data.get('type')=='consent.decline_ask':return ConsentAskTarget.model_validate(value)
         if info.data.get('type')=='agenda.save':return AgendaSaveTarget.model_validate(value)
         if info.data.get('type')=='rm.share_summary':return AgendaShareTarget.model_validate(value)
         if info.data.get('type')=='compliance.update_checklist_item':return ChecklistTarget.model_validate(value)

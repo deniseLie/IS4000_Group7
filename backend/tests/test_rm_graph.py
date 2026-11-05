@@ -367,6 +367,10 @@ def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without
     assert '5200' not in evidence and 'Home loan' not in evidence and evidence.count('"shared": false') == 3  # cash events, insights, chat topics
     assert 'has not shared transaction insights' in evidence and 'has not shared topics from their chats' in evidence
     assert [(s['kind'], s['record']['shared']) for s in gap['sources'] if s['id'] == 'transaction-insights'] == [('consent', False)]
+    # Consent v2 (0113): each gap comes with an "Ask the client to share" card from the records, approved by the RM; none when shared
+    assert 'consent_asks' not in shared and [(a['customer_id'], a['category'], a['reason'], a['meeting_id']) for a in gap['consent_asks']] == [
+        (1009, 'transaction_insights', 'review', None), (1009, 'chat_topics', 'review', None)]
+    assert graph.cards_of(gap) == {'consent_ask': 2}
     assert {n for n, a in calls if n in registry.CONSENT_GATED} <= {'rm_cash_events', 'rm_transaction_insights', 'rm_talking_points'}
     assert all(a == 'rm_client' for n, a in calls if n in registry.CONSENT_GATED)
 

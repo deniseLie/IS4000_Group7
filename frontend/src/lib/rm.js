@@ -234,6 +234,24 @@ export function decisionNotice(result) {
   if(r.status==='declined')return `${again}You declined ${r.client}’s request${reason?` (${reason})`:''}. The client gets an Inbox notice.`;
   return `${again}${r.client}’s request: ${requestLabel(r)}.`;
 }
+// Consent v2 (0113): "Ask the client to share" on a consent gap. The reason is a code; the client reads fixed wording.
+export const ASK_REASONS=[['meeting_prep','To prepare for your meeting'],['review','For your relationship review'],['advice','To suggest options that fit their plans']];
+export function askBody(key,card,reason) {
+  const meeting=reason==='meeting_prep'?card.meeting_id||null:null;
+  return {request_key:key,customer_id:card.customer_id,category:card.category,reason,meeting_id:meeting};
+}
+// The reasons a card can use: preparing for a meeting needs the meeting the brief was for.
+export function askReasons(card) {return ASK_REASONS.filter(([key])=>key!=='meeting_prep'||!!card?.meeting_id);}
+export function askNotice(result,card) {
+  const who=display(card?.client)||'The client';
+  const what=(card?.category_label||'it').toLowerCase();
+  if(result?.already_shared)return `${who} already shares ${what} with you. Ask again in the assistant to see it.`;
+  if(result?.duplicate)return `You already asked ${who} to share ${what}. The request lapses on ${result.duplicate.lapses_sgt}.`;
+  const ask=result?.ask;
+  if(!ask)return '';
+  return `${result.replayed?'Already recorded. ':''}${who} gets an Inbox notice and request ${ask.reference}. Nothing is shared until they switch it on; the request lapses on ${ask.lapses_sgt}.`;
+}
+
 // The Calendar agent's availability card as the Schedule page's calls, in order: blocks, blocks opened again, weekly hours.
 export function availabilitySteps(card) {
   if(!card)return [];

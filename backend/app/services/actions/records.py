@@ -7,7 +7,7 @@ from app.schemas.tickets import TicketTarget
 from app.schemas.request_answers import RequestAnswerTarget
 from app.schemas.document_uploads import DocumentUploadTarget
 from app.schemas.prechecks import SubmitDocumentTarget
-from app.schemas.consent_actions import ConsentGrantTarget,ConsentGrantV2Target,ConsentRequestTarget,ConsentRevokeTarget,grant_target
+from app.schemas.consent_actions import ConsentAskTarget,ConsentGrantTarget,ConsentGrantV2Target,ConsentRequestTarget,ConsentRevokeTarget,grant_target
 from app.schemas.contracts import ActionCommand
 from app.services.privacy import redact
 
@@ -22,6 +22,10 @@ def grant_consent(command: ActionCommand) -> ConsentGrantTarget | ConsentGrantV2
 
 def revoke_consent(command: ActionCommand) -> ConsentRevokeTarget:
     return ConsentRevokeTarget.model_validate(command.target)
+
+
+def decline_ask(command: ActionCommand) -> ConsentAskTarget:
+    return ConsentAskTarget.model_validate(command.target)
 
 
 def save_agenda(command: ActionCommand) -> AgendaSaveTarget:

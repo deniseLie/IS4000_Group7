@@ -419,18 +419,38 @@ def fixed(intent: str,tool: str) -> dict:
     return dict(next(r.fixed for r in registry.RM_CLIENT.intents[intent] if r.tool==tool))
 
 
-async def _gated(t: Turn,intent: str,client_id: int,bundle: ev.Bundle):
+async def _gated(t: Turn,intent: str,client_id: int,bundle: ev.Bundle) -> list[dict]:
     """Transaction insights and talking points (0106/0107) under the client's consent; a gap when she has not shared them."""
-    bundle.add(ev.insights_evidence(await t.read('rm_transaction_insights',{'customer_id':client_id,**fixed(intent,'rm_transaction_insights')}),client_id))
-    bundle.add(ev.talking_points_evidence(await t.read('rm_talking_points',{'customer_id':client_id,**fixed(intent,'rm_talking_points')}),client_id))
+    reads=[await t.read('rm_transaction_insights',{'customer_id':client_id,**fixed(intent,'rm_transaction_insights')}),
+        await t.read('rm_talking_points',{'customer_id':client_id,**fixed(intent,'rm_talking_points')})]
+    bundle.add(ev.insights_evidence(reads[0],client_id))
+    bundle.add(ev.talking_points_evidence(reads[1],client_id))
+    return reads
+
+
+ASK_LABELS={'transaction_insights':'Transaction insights','chat_topics':'Topics from her chats'}
+
+
+def ask_cards(reads: list[dict],client_id: int,client: str|None,meeting: dict|None) -> list[dict]:
+    """"Ask the client to share" (consent v2, 0113): one card per gated category a read found she has not shared, built
+    from the consent gaps (no model). The RM approves it through POST /rm/consent-requests; the assistant never asks."""
+    gaps=dict.fromkeys(r.get('category') for r in reads if isinstance(r,dict) and r.get('shared') is False and r.get('category') in ASK_LABELS)
+    return [{'customer_id':client_id,'client':client,'category':c,'category_label':ASK_LABELS[c],'reason':'meeting_prep' if meeting else 'review',
+        'meeting_id':str(meeting['appointment_id']) if meeting else None,'meeting_when':meeting.get('when') if meeting else None} for c in gaps]
+
+
+def with_asks(reply: dict,cards: list[dict]) -> dict:
+    return {**reply,'consent_asks':cards} if cards else reply
 
 
 async def h_overview(t: Turn,plan,client_id):
     await t.say(f'Reading {t.name(client_id)}’s records…')
     bundle=ev.client_bundle(await t.read('rm_client_profile',{'customer_id':client_id}))
-    bundle.add(ev.cash_evidence(await t.read('rm_cash_events',{'customer_id':client_id}),client_id))
-    await _gated(t,'client_overview',client_id,bundle)
-    return brief_reply('client_overview',await t.model('client_overview',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
+    cash=await t.read('rm_cash_events',{'customer_id':client_id})
+    bundle.add(ev.cash_evidence(cash,client_id))
+    reads=[cash,*await _gated(t,'client_overview',client_id,bundle)]
+    reply=brief_reply('client_overview',await t.model('client_overview',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))
+    return with_asks(reply,ask_cards(reads,client_id,t.name(client_id),None))
 
 
 async def _notes(t: Turn,client_id: int,bundle: ev.Bundle):
@@ -456,8 +476,9 @@ async def h_brief(t: Turn,plan,client_id):
     bundle=ev.client_bundle({'data':{**profile['data'],'interactions':[]},'as_of':profile['as_of']})
     await _notes(t,client_id,bundle)
     bundle.add(ev.shared_evidence(await t.read('rm_shared_summary',{'customer_id':client_id}),client_id))  # consent is checked in SQL first
-    bundle.add(ev.cash_evidence(await t.read('rm_cash_events',{'customer_id':client_id}),client_id))  # conversation starters
-    await _gated(t,'meeting_brief',client_id,bundle)
+    cash=await t.read('rm_cash_events',{'customer_id':client_id})  # conversation starters
+    bundle.add(ev.cash_evidence(cash,client_id))
+    reads=[cash,*await _gated(t,'meeting_brief',client_id,bundle)]
     upcoming=[a for a in profile['data']['appointments'] if a['status']=='confirmed']
     chosen=next((a for a in upcoming if c.appointment_id and str(a['appointment_id'])==str(c.appointment_id)),None)
     if not chosen and narrows(plan.get('appointment_hint') or '') and not t.req.intent:
@@ -473,7 +494,8 @@ async def h_brief(t: Turn,plan,client_id):
     else:bundle.add(ev.Evidence('selected-appointment','The meeting','calendar',{'confirmed_appointment':None,
         'meaning':'No single confirmed appointment was identified; prepare from the records and say the meeting details are not confirmed.'},str(profile['as_of']),client_id))
     ctx=t.context(client_id,appointment_id=str(chosen['appointment_id']) if chosen else None)
-    return brief_reply('meeting_brief',await t.model('meeting_brief',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx,True)
+    reply=brief_reply('meeting_brief',await t.model('meeting_brief',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx,True)
+    return with_asks(reply,ask_cards(reads,client_id,t.name(client_id),chosen))
 
 
 async def _ticket_ref(t: Turn,plan,client_id,profile) -> tuple[str|None,dict|None]:

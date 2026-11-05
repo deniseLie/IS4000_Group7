@@ -214,7 +214,7 @@ async def feed_reads(turn: handlers.Turn,intent: str,spec) -> dict:
 def cards_of(reply: dict) -> dict[str,int]:
     """The review cards a reply proposes, by type (each is approved separately through the /rm write routes)."""
     found={'draft':int(bool(reply.get('draft')))+len(reply.get('drafts') or []),'documentation':int(bool(reply.get('documentation'))),
-        'decision':int(bool(reply.get('decision'))),'availability':int(bool(reply.get('availability')))}
+        'decision':int(bool(reply.get('decision'))),'availability':int(bool(reply.get('availability'))),'consent_ask':len(reply.get('consent_asks') or [])}
     if (doc:=reply.get('documentation')) and isinstance(doc.get('draft'),dict):found['actions']=len(doc['draft'].get('actions') or [])
     return {k:v for k,v in found.items() if v}
 
@@ -296,7 +296,8 @@ def merged(rows: list[tuple[PlanTask,AgentOutput]],lines: list[AnswerSection]) -
         'validation':{'checked':checked,'withheld':withheld,'reasons':list(dict.fromkeys(reasons))[:10]},
         'origin':'ai' if any(r.get('origin')=='ai' for _,r in replies) else 'records','draft':drafts[0] if len(drafts)==1 else None,
         'drafts':drafts if len(drafts)>1 else [],'documentation':next((r['documentation'] for _,r in replies if r.get('documentation')),None),
-        **{card:found for card in ('decision','availability') if (found:=next((r[card] for _,r in replies if r.get(card)),None))}}
+        **{card:found for card in ('decision','availability') if (found:=next((r[card] for _,r in replies if r.get(card)),None))},
+        **({'consent_asks':asks} if (asks:=list({(a['customer_id'],a['category']):a for _,r in replies for a in r.get('consent_asks') or []}.values())) else {})}
 
 
 def compose(state: RmTurn) -> dict:

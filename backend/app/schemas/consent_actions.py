@@ -147,6 +147,21 @@ class ConsentRevokeResult(StoredConsentRevokeTarget):
     status: Literal['revoked']
 
 
+class ConsentAskTarget(BaseModel):
+    """Her answer "Not now" to her RM's ask (0113 consent.decline_ask, automatic); sharing is a consent.grant."""
+    model_config=ConfigDict(extra='ignore')
+    ask_id: UUID
+
+
+class StoredConsentAskTarget(ConsentAskTarget):
+    category: Literal['transaction_insights','chat_topics']
+    recipient: UUID
+
+
+class ConsentAskDeclineResult(StoredConsentAskTarget):
+    status: Literal['declined']
+
+
 class ConsentRequestRecord(ConsentScope,ConsentGrantTarget):
     recipient_name: RecipientName | None
     grant_expires_at: AwareDatetime | None

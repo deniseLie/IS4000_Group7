@@ -139,6 +139,10 @@ async def decide_meeting_request(ctx,request_id: UUID,body):
     return await rpc('rm_meeting_request_decide',{'p_decision_id':str(body.decision_id),'p_request_id':str(request_id),'p_outcome':body.decision,
         'p_starts_at':body.starts_at.isoformat() if body.starts_at else None,'p_reason':body.reason},ctx,'rm.meeting_request_decide')
 
+async def ask_consent(ctx,body):
+    return await rpc('rm_ask_consent',{'p_request_key':str(body.request_key),'p_customer_id':body.customer_id,'p_category':body.category,
+        'p_reason':body.reason,'p_meeting_id':str(body.meeting_id) if body.meeting_id else None},ctx,'rm.ask_consent')
+
 async def reschedule_meeting(ctx,appointment_id: UUID,body):
     return await rpc('rm_meeting_reschedule',{'p_change_id':str(body.change_id),'p_appointment_id':str(appointment_id),
         'p_starts_at':body.starts_at.isoformat(),'p_reason':body.reason},ctx,'rm.meeting_reschedule')
