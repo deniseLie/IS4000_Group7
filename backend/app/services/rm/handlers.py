@@ -12,7 +12,9 @@ availability cards are built by code from the records (the RM approves each thro
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
 3. One model call (prompt rm_assistant/v5 + the intent's task file) with strict JSON output and cited record ids. For
    `today` and `priorities` code has already ranked the records (services/rm/priority.py, build plan 3b): the model
-   explains each record's score parts and code puts the items back in rank order (in_rank_order).
+   explains each record's score parts and code puts the items back in rank order (in_rank_order). The model sees only
+   the top RANKED_SHOWN ranked records (and FOLLOWUPS_SHOWN other follow-ups), so the answer's length stays bounded
+   however full her queue is; code adds one fixed line counting the rest (not_listed).
 4. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
    links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
    missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
@@ -20,6 +22,7 @@ availability cards are built by code from the records (the RM approves each thro
 import inspect
 import json
 import re
+from collections import Counter
 from collections.abc import Awaitable,Callable
 from datetime import date,datetime,timedelta,timezone
 from difflib import SequenceMatcher
@@ -324,6 +327,40 @@ def in_rank_order(sections: list[dict],bundle: ev.Bundle,headings: list[str]) ->
     return [{**s,'items':sorted(s['items'],key=rank)} for s in sorted(sections,key=lambda s:place.get(s['heading'].strip().lower(),len(headings)))]
 
 
+# Context budget for `today` and `priorities`: the prompt writes one item per record it is given, so the answer grows with
+# her queue (18 records ran into MAX_TOKENS). The model gets the top records only; the rest are counted in a fixed line.
+RANKED_SHOWN,FOLLOWUPS_SHOWN=10,5
+RANKED_WORDS={'request':('client request','client requests'),'meeting_request':('meeting request to answer','meeting requests to answer'),
+    'review':('compliance review','compliance reviews'),'meeting':('confirmed meeting','confirmed meetings'),'task':('task','tasks'),
+    'milestone':('milestone','milestones')}
+FOLLOWUP_WORDS={'specialist_ticket':('specialist-managed ticket','specialist-managed tickets'),'commitment':('recorded commitment','recorded commitments'),
+    'review_deadline':('compliance review','compliance reviews'),'meeting':('meeting','meetings'),'task':('task','tasks'),
+    'milestone':('milestone','milestones'),'rm_ticket':('client request','client requests')}
+
+
+def counted(kinds: list,words: dict) -> str:
+    """'3 client requests, 1 task and 1 milestone': counts in the order of words, any other kind last."""
+    n=Counter(kinds)
+    parts=[f"{n[k]} {words.get(k,('other item','other items'))[n[k]!=1]}" for k in sorted(n,key=lambda k:list(words).index(k) if k in words else len(words))]
+    return ', '.join(parts[:-1])+' and '+parts[-1] if len(parts)>1 else parts[0]
+
+
+def not_listed(ranked: list[dict],followups: list[dict]=()) -> dict|None:
+    """The fixed section (no model, counts only) for the records left out of the model's evidence: lower-ranked items
+    (priority.rank rows) and other follow-ups (rm_followups rows)."""
+    lines=[]
+    if ranked:lines.append(f"{len(ranked)} lower-ranked {'item is' if len(ranked)==1 else 'items are'} not listed here: "
+        f"{counted([x['kind'] for x in ranked],RANKED_WORDS)}. Your Today page and Ticket inbox show them.")
+    if followups:lines.append(f"{len(followups)} more {'follow-up is' if len(followups)==1 else 'follow-ups are'} not listed here: "
+        f"{counted([f.get('kind') for f in followups],FOLLOWUP_WORDS)}. Your Follow-ups page shows them.")
+    return {'heading':'Not listed here','items':[{'text':t,'kind':'gap','owner':'none','source_ids':[]} for t in lines]} if lines else None
+
+
+def with_rest(reply: dict,rest: dict|None) -> dict:
+    """A checked answer ends with the not-listed line; a clarification or an unverified reply is left as it is."""
+    return {**reply,'sections':[*reply['sections'],rest]} if rest and reply.get('status')=='ok' and reply.get('sections') else reply
+
+
 def confirmed_meetings(followups: list[dict]) -> dict[int,str]:
     """Each client's next confirmed meeting (rm_followups confirmed_meeting), so a ranked item can refer to it (RM11)."""
     return {f['customer_id']:f['confirmed_meeting'] for f in followups if f.get('confirmed_meeting')}
@@ -364,11 +401,13 @@ async def h_priorities(t: Turn,plan,client_id):
         reviews=priority.reviews_due([f for f in rows if f.get('kind')=='review_deadline'],today()+timedelta(days=priority.DEADLINE_DAYS)),
         meetings=priority.meetings_next_7d(appointments['data'],today()),followups=rows)
     t.facts.update(priority.facts(items))
-    shown={x['key'] for x in items}
-    bundle=ev.ranked_bundle(items,confirmed_meetings(rows),str(followups.get('as_of')))
-    bundle=ev.followups_bundle({**followups,'data':[f for f in rows if priority.key_of(f) not in shown]},appointments,bundle)
+    ranked={x['key'] for x in items}  # every ranked record, shown or not, stays out of the unscored follow-ups
+    others=[f for f in rows if priority.key_of(f) not in ranked]
+    t.facts.update(ranked_shown=min(len(items),RANKED_SHOWN),not_shown=max(len(items)-RANKED_SHOWN,0),followups_not_shown=max(len(others)-FOLLOWUPS_SHOWN,0))
+    bundle=ev.ranked_bundle(items[:RANKED_SHOWN],confirmed_meetings(rows),str(followups.get('as_of')))
+    bundle=ev.followups_bundle({**followups,'data':others[:FOLLOWUPS_SHOWN]},appointments,bundle)
     reply=brief_reply('priorities',await t.model('priorities',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
-    return {**reply,'sections':in_rank_order(reply['sections'],bundle,PRIORITY_SECTIONS)}
+    return with_rest({**reply,'sections':in_rank_order(reply['sections'],bundle,PRIORITY_SECTIONS)},not_listed(items[RANKED_SHOWN:],others[FOLLOWUPS_SHOWN:]))
 
 
 TODAY_NONE={'meeting_request':('meeting-requests-none','Meeting requests to answer','requests_to_answer'),
@@ -387,15 +426,16 @@ async def h_today(t: Turn,plan,client_id):
     requests,meetings,reviews=fed(t,'requests_to_answer'),fed(t,'meetings_next_7d'),fed(t,'reviews_due')
     items=priority.rank(today=today(),now=datetime.now(SGT),tickets=tickets['data'],requests=requests or [],reviews=reviews or [],
         meetings=meetings or [],followups=followups['data'])
-    t.facts.update(priority.facts(items))
+    t.facts.update(priority.facts(items),ranked_shown=min(len(items),RANKED_SHOWN),not_shown=max(len(items)-RANKED_SHOWN,0))
     as_of=str(tickets.get('as_of'))
-    bundle=ev.ranked_bundle(items,confirmed_meetings(followups['data']),as_of)
+    bundle=ev.ranked_bundle(items[:RANKED_SHOWN],confirmed_meetings(followups['data']),as_of)
     for kind,(source_id,title,name) in TODAY_NONE.items():
         if name and fed(t,name) is None:
             bundle.add(ev.Evidence(source_id.replace('-none','-not-read'),title,'record',{'read':False,'meaning':'Not read for this answer, so say it was not checked.'},as_of))
+        # every item, not only the shown ones: a kind left for the not-listed line is not "None recorded"
         elif not any(x['kind']==kind for x in items):bundle.add(ev.Evidence(source_id,title,'record',{'count':0,'meaning':'None recorded.'},as_of))
     reply=brief_reply('today',await t.model('today',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
-    return {**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)}
+    return with_rest({**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)},not_listed(items[RANKED_SHOWN:]))
 
 
 async def h_reviews(t: Turn,plan,client_id):
