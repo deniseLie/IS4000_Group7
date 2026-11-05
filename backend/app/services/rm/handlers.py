@@ -419,8 +419,9 @@ async def h_today(t: Turn,plan,client_id):
     """Build plan 3b: her day in one answer. Her requests and tasks are read here; the meetings in the next 7 days and the
     meeting requests to answer come from the Calendar, the reviews due from the Client (their exports, passed on by
     orchestrator.gather). Code ranks them all (services/rm/priority.py); the model explains each record's score parts in
-    the task file's sections, and code puts the items back in rank order. A category with nothing in it, or one whose
-    records were not passed on, is a record of its own, so the answer says so instead of leaving it out."""
+    the task file's sections, and code puts the items back in rank order. A category with nothing in it, one whose
+    records were not passed on, or one whose records all ranked below the top RANKED_SHOWN is a record of its own, so
+    every section the task file asks for has something true to say instead of being left out or guessed."""
     await t.say('Putting your day in order…')
     tickets,followups=await t.read('rm_tickets',{}),await t.read('rm_followups',{})
     requests,meetings,reviews=fed(t,'requests_to_answer'),fed(t,'meetings_next_7d'),fed(t,'reviews_due')
@@ -428,14 +429,18 @@ async def h_today(t: Turn,plan,client_id):
         meetings=meetings or [],followups=followups['data'])
     t.facts.update(priority.facts(items),ranked_shown=min(len(items),RANKED_SHOWN),not_shown=max(len(items)-RANKED_SHOWN,0))
     as_of=str(tickets.get('as_of'))
-    bundle=ev.ranked_bundle(items[:RANKED_SHOWN],confirmed_meetings(followups['data']),as_of)
+    shown,rest=items[:RANKED_SHOWN],items[RANKED_SHOWN:]
+    bundle=ev.ranked_bundle(shown,confirmed_meetings(followups['data']),as_of)
     for kind,(source_id,title,name) in TODAY_NONE.items():
+        lower=sum(x['kind']==kind for x in rest)
         if name and fed(t,name) is None:
             bundle.add(ev.Evidence(source_id.replace('-none','-not-read'),title,'record',{'read':False,'meaning':'Not read for this answer, so say it was not checked.'},as_of))
-        # every item, not only the shown ones: a kind left for the not-listed line is not "None recorded"
-        elif not any(x['kind']==kind for x in items):bundle.add(ev.Evidence(source_id,title,'record',{'count':0,'meaning':'None recorded.'},as_of))
+        elif lower and not any(x['kind']==kind for x in shown):  # all ranked lower: never "None recorded", never guessed
+            bundle.add(ev.Evidence(source_id.replace('-none','-ranked-lower'),title,'record',{'count':lower,'listed_here':0,
+                'meaning':'Recorded but ranked below the items listed here, so not listed in this answer; say so in one item citing this record.'},as_of))
+        elif not lower and not any(x['kind']==kind for x in shown):bundle.add(ev.Evidence(source_id,title,'record',{'count':0,'meaning':'None recorded.'},as_of))
     reply=brief_reply('today',await t.model('today',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None),True)
-    return with_rest({**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)},not_listed(items[RANKED_SHOWN:]))
+    return with_rest({**reply,'sections':in_rank_order(reply['sections'],bundle,TODAY_SECTIONS)},not_listed(rest))
 
 
 async def h_reviews(t: Turn,plan,client_id):
