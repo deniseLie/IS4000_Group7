@@ -151,7 +151,7 @@ async def planner(state: RmTurn,runtime: Runtime[RmRuntime]) -> dict:
             return {'tasks':[],'lines':[],'reply':refusal(turn.context(None))}
         named=await tools.call('rm_match_clients',{'text':message},rt.ctx)
         rt.named,rt.outside=named['in_book'],bool(named['outside_book'])
-        attrs.update(named_in_book=len(rt.named),named_outside=len(named['outside_book']))
+        attrs.update(named_in_book=len(rt.named),named_outside=rt.outside)  # rm_match_clients: outside_book is a flag (0089)
         if named['outside_book'] and not named['in_book']:
             attrs.update(route='refused',refusal='outside_book')
             return {'tasks':[],'lines':[],'reply':refusal(turn.context(active))}

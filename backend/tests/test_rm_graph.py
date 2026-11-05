@@ -48,7 +48,7 @@ def records(monkeypatch):
             if name == 'rm_book':return {'data': BOOK, 'as_of': '2026-11-04T09:00:00+08:00'}
             if name == 'rm_match_clients':
                 inside = [c for c in BOOK if c['name'].split()[0] in args['text']]
-                return {'in_book': inside, 'outside_book': [{'name': 'Wei Ming'}] if data['outside'] else []}
+                return {'in_book': inside, 'outside_book': bool(data['outside'])}  # as rm_match_clients returns it (0089)
             if name == 'rm_review_status':return {'data': data['reviews'], 'as_of': '2026-11-04T09:00:00+08:00'}
             if name == 'rm_handover_sources':return {'data': {'eligible': True, 'shared': {'consent_active': data['consent']}}, 'as_of': 'now'}
             if name == 'rm_shared_summary':

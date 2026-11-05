@@ -26,9 +26,13 @@ def test_the_brief_readers_give_data_for_michelle_and_a_gap_for_mei_ling(sophie)
     assert shared['shared'] is True and shared['grant_id'] and {'monthly','large_movements','recurring'}<=set(shared['data'])
     gap=sophie('rm_transaction_insights',{'p_customer_id':1007,'p_purpose':'meeting_prep'})
     assert (gap['denied'],gap['shared'],gap['data'])==(False,False,None)
-    for customer,granted in ((1002,True),(1007,False)):
+    # Since 0108 (batch 35): Michelle's seeded inferred home loan topic is past its hold; Mei Ling has no chat_topics grant,
+    # so only the investments topic she shared herself comes back. Points are list values only (no text field).
+    for customer,granted,seeded in ((1002,True,('home_loan','inferred')),(1007,False,('investments','confirmed'))):
         points=sophie('rm_talking_points',{'p_customer_id':customer,'p_purpose':'meeting_prep'})
-        assert (points['shared'],points['data'])==(granted,[])
+        assert points['shared'] is granted and seeded in {(p['topic'],p['origin']) for p in points['data']}
+        assert all(set(p)<={'point_id','topic','stage','timeframe','concerns','origin','first_seen','last_seen'} for p in points['data'])
+    assert {p['origin'] for p in sophie('rm_talking_points',{'p_customer_id':1007,'p_purpose':'client_view'})['data']}=={'confirmed'}
     assert sophie('rm_transaction_insights',{'p_customer_id':1001,'p_purpose':'client_view'})['denied'] is True  # not in her book
 
 
