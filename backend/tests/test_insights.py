@@ -60,6 +60,11 @@ def test_latest_evals_compare_full_runs_and_skip_subsets():
     assert old['stale']
 
 
+def test_attention_times_are_singapore_time():
+    late=datetime(2026,11,4,17,30,tzinfo=timezone.utc)  # already 5 Nov in Singapore
+    assert insights.sgt(late)=='5 Nov' and insights.sgt(late,time=True)=='5 Nov 01:30 SGT'
+
+
 def test_a_case_that_passed_and_now_fails_is_a_regression():
     before=exp('e1','demobank-planner',2,[('P03','pass'),('P04','fail',('agents',))])
     after=exp('e2','demobank-planner',1,[('P03','fail',('agents',)),('P04','fail',('agents',))])
@@ -136,6 +141,7 @@ def test_dashboard_routes_answer_from_the_reads(monkeypatch):
     assert {e['dataset']:e['pass_rate'] for e in body['evals']}=={'demobank-graph':1.0,'demobank-qa1-client':0.9}
     attention={i['kind']:i for i in body['attention']}
     assert {'new_failure','error_rate','untested_prompt'}<=set(attention) and attention['untested_prompt']['detail']=='answer v8'
+    assert 'first seen 4 Nov 19:00 SGT;' in attention['new_failure']['detail']  # 11:00 UTC
     body=client.get('/admin/failures?window=7d&source=all',headers=ADMIN).json()
     assert {g['kind'] for g in body['groups']}=={'request_error','eval_case'}
     assert client.get('/admin/overview?window=1y',headers=ADMIN).status_code==422

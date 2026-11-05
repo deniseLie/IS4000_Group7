@@ -5,7 +5,7 @@ Definitions: a request is a `chat` or `rm_assistant` run; it failed when the run
 held back when the answer checks withheld it (origin 'validation' or source_check 'rejected'); it was handed to a person
 when needs_human is true. A case passes when no rule check scored 0 (judge scores are model-graded and never decide)."""
 from collections import Counter,defaultdict
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,timezone
 from typing import Any
 
 FIXED_ROUTES=frozenset({'secrets','lost_card','human_support','guest_balance','other_customer_data','instruction_override'})  # api/chat.FIXED_ROUTES
@@ -27,6 +27,14 @@ def pct(values,q: float) -> float | None:
     if not xs:return None
     k=(len(xs)-1)*q;lo=int(k);hi=min(lo+1,len(xs)-1)
     return round(xs[lo]+(xs[hi]-xs[lo])*(k-lo),3)
+
+
+SGT=timezone(timedelta(hours=8),'SGT')  # Singapore has no daylight saving; the dashboard shows every time in SGT
+
+
+def sgt(when: datetime,time: bool=False) -> str:
+    """'4 Nov' or '4 Nov 20:00 SGT', the same day and hour the UI shows (lib/format.js)."""
+    t=when.astimezone(SGT);return f"{t.day} {t:%b}"+(f" {t:%H:%M} SGT" if time else '')
 
 
 def ratio(n: float,d: float) -> float | None:
@@ -287,7 +295,7 @@ def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped
     for g in grouped:
         if g['new'] and g['kind']!='eval_case':
             add('high' if g['kind'] in ('request_error','agent_error','tool_error') else 'medium','new_failure',g['title'],
-                f"{g['in_window']}× in this window, first seen {g['first_seen']:%d %b %H:%M} UTC; not seen in the window before",'failures',signature=g['signature'])
+                f"{g['in_window']}× in this window, first seen {sgt(g['first_seen'],time=True)}; not seen in the window before",'failures',signature=g['signature'])
     n,bad=len(rows),sum(map(failed,rows))
     if n>=MIN_RUNS and bad/n>ERROR_RATE_MAX:add('high','error_rate',f"{bad/n:.0%} of requests failed",f"{bad} of {n} requests (limit {ERROR_RATE_MAX:.0%})",'failures')
     if n>=MIN_RUNS and (p95:=pct([r['latency_s'] for r in rows],.95)) and p95>P95_MAX_S:
@@ -309,7 +317,7 @@ def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped
         add('info','keyword_fallback','Knowledge search runs keyword-only','EMBEDDING_API_KEY is not set on this server, so hybrid search is off','agents')
     if untested:add('info','untested_prompt',f"{len(untested)} configured prompts have no evaluation run in 30 days",', '.join(untested),'prompts')
     for row in latest_evals(experiments,now):
-        if row['stale']:add('info','stale_dataset',f"{row['dataset']} last ran {row['last_run']:%d %b}",f"Older than {STALE_DAYS} days",'evaluations',dataset=row['dataset'])
+        if row['stale']:add('info','stale_dataset',f"{row['dataset']} last ran {sgt(row['last_run'])}",f"Older than {STALE_DAYS} days",'evaluations',dataset=row['dataset'])
     return sorted(items,key=lambda i:LEVELS.index(i['level']))
 
 

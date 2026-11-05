@@ -1526,6 +1526,19 @@ small{font-size:max(12px,.83em)}
 .admin-heatmap tr.chosen td.admin-heat-label { outline: 2px solid var(--ink); border-radius: 999px; }
 .admin-heatmap .admin-heat-col { font-size: 10px; text-align: center; padding: 0; }
 .admin-heatmap td.admin-heat-label { width: auto; height: auto; background: transparent; padding-left: 6px; }
+/* Clickable runs and cases: a dot on the pass-rate chart, a heatmap cell or column date opens Run detail. */
+.admin-chart .dot.pick, .admin-heatmap td.pick { cursor: pointer; }
+.admin-chart .dot.pick:hover, .admin-chart .dot.pick:focus-visible { stroke-width: 3.5; outline: none; }
+.admin-heatmap td.pick:hover, .admin-heatmap td.pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.admin-heat-run { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.admin-heat-run:hover { color: var(--ink); }
+.admin-heat-legend { margin: 0 0 8px; }
+.admin-heat-key { display: inline-block; width: 12px; height: 10px; margin-right: 5px; border-radius: 3px; vertical-align: -1px; }
+.admin-heat-key.pass { background: #7cbf87; } .admin-heat-key.fail { background: #d9705f; } .admin-heat-key.error { background: #8a2a1c; }
+.admin-heat-key.skipped { background: #d6d6cd; } .admin-heat-key.none { border: 1px dashed var(--muted); }
+.admin-heat-tools { margin: 0 0 10px; }
+.admin-row.chosen { background: rgba(189,41,30,.05); }
+.admin-table td.admin-nowrap { white-space: nowrap; }
 .admin-group-row th { padding-top: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); text-align: left; }
 .admin-trend { width: 40%; }
 .admin-trend svg.admin-spark { width: 100%; height: 24px; display: block; }
@@ -2314,3 +2327,4 @@ button.cell.past:disabled{opacity:.35}
 
 /* Meeting lifecycle: shared form, card and button tokens from the app theme. */
 .meeting-lifecycle{margin-top:24px;overflow-wrap:anywhere}.meeting-lifecycle h2{display:flex;gap:10px;align-items:center}.meeting-lifecycle form{display:grid;gap:12px;margin:16px 0}.meeting-notice,.meeting-minutes,.meeting-action-item{padding:16px 0;border-top:1px solid var(--line,#e2e7eb)}.meeting-evidence-form{padding:16px;background:var(--surface,#f7f9fa);border-radius:12px}.meeting-lifecycle blockquote{margin:12px 0;padding-left:14px;border-left:3px solid var(--line,#d9e1e8)}.meeting-action-item label{display:flex;gap:10px;align-items:flex-start}.meeting-lifecycle textarea,.meeting-lifecycle input:not([type=checkbox]),.meeting-lifecycle select{width:100%;max-width:100%}.meeting-lifecycle details{margin:8px 0}.meeting-lifecycle .primary-button{display:inline-flex;align-items:center}.meeting-lifecycle .meeting-actions{display:flex;gap:8px;flex-wrap:wrap}
+.admin-more { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; }

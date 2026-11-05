@@ -164,6 +164,15 @@ Judge scores are always labelled **model-graded**. They never decide pass or fai
 
 ### 2.2 Evaluations: accuracy over time
 
+**Layout (5 Nov 2026).** The page opens on **All datasets**: one row per dataset with the latest full run's pass rate, the change since the full run before it, pass/fail/error/skipped, the cases to look at (regressed, flaky, always failing, failing) and the last run in SGT. Pass rates are not added across datasets, because each dataset tests something different. Picking a dataset shows its tiles and four views:
+
+- **Run detail** (the default): one run's cases with errors and failures first. It shows the latest run until another is picked.
+- **Trends:** the timeline and the check-level trend.
+- **Cases × runs:** the heatmap, with a colour legend, problem cases first and a *Hide passing cases* switch.
+- **Compare:** two runs side by side.
+
+A dot on the timeline, a date in the list of changes or a heatmap column date opens that run in Run detail. A heatmap cell opens that case, expanded, in that run. A regression link from the Overview opens Cases × runs with the case highlighted.
+
 - **Timeline per dataset.**
   - The x-axis is experiment time; the y-axis is case pass rate.
   - Markers show where `prompts_in_use`, `model` or `pipeline` changed from the previous point (for example "retail v10 → v11").

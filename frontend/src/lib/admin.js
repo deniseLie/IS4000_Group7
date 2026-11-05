@@ -97,6 +97,30 @@ export function defaultPair(timeline) {
   return full.length>=2?[full.at(-2).experiment,full.at(-1).experiment]:timeline.length>=2?[timeline.at(-2).experiment,timeline.at(-1).experiment]:[null,null];
 }
 
+// One row of the All datasets table: the latest full run against the full run before it, and its problem cases.
+export const PROBLEMS=['regressed','flaky','always_failing','failing'];
+export function datasetRow(set) {
+  const full=(set.timeline||[]).filter(point=>!point.subset),latest=full.at(-1),previous=full.at(-2);
+  const labels=set.heatmap?.labels||{};
+  return {dataset:set.dataset,pass_rate:latest?.pass_rate??null,previous_pass_rate:previous?.pass_rate??null,counts:latest?.counts||null,
+    started_at:latest?.started_at||null,last_run:set.last_run||null,stale:!!set.stale,runs:set.runs||0,
+    problems:PROBLEMS.filter(label=>labels[label]).map(label=>({label,count:labels[label]})),fixed:labels.fixed||0};
+}
+
+// Heatmap rows with the cases that need a look first (stable: the backend's case order within a label).
+const PATTERN_ORDER=[...PROBLEMS,'fixed','not_scored','passing'];
+export function problemFirst(rows) {
+  const rank=row=>{const at=PATTERN_ORDER.indexOf(row.label);return at<0?PATTERN_ORDER.length:at;};
+  return rows.map((row,index)=>({row,index})).sort((a,b)=>rank(a.row)-rank(b.row)||a.index-b.index).map(({row})=>row);
+}
+
+// A run's cases with errors and failures first (stable within a status).
+const STATUS_ORDER=['error','fail','skipped','pass'];
+export function failingFirst(cases) {
+  const rank=item=>{const at=STATUS_ORDER.indexOf(item.status);return at<0?STATUS_ORDER.length:at;};
+  return cases.map((item,index)=>({item,index})).sort((a,b)=>rank(a.item)-rank(b.item)||a.index-b.index).map(({item})=>item);
+}
+
 // Side-by-side numbers of two prompt versions; `enough` is false below MIN_COMPARE on either side.
 export function versionPair(a,b) {
   const row=(label,pick,kind)=>({label,a:pick(a),b:pick(b),kind});
