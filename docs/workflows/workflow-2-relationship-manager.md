@@ -108,6 +108,32 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 8. **Handover**: My clients → Tan Mei Ling → *Handover brief* (eight sections; the revoked and expired notes are excluded; Rachel's private note is counted, not shown).
 9. **Availability**: Schedule → block a free half hour → Michelle's *Meetings* tab no longer offers it.
 
+## Copilot demo (build plan 5b, 12 steps)
+
+Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project through the API (evaluation README §8). The rest have not been run end to end in the browser. Step 9 waits for build plan 5a.
+
+1. **Reset** (owner, SQL editor): run `backend/supabase/hosted/34_reset_meeting_demo.sql`. This seeds:
+   - Michelle's grant to Sophie and her confirmed home loan meeting on the first free Thursday;
+   - Mei Ling's open request (Monday and Tuesday 16:30);
+   - Michelle's inferred home loan topic, already past its 24-hour hold.
+2. **Michelle shares a topic**: in chat, "I'm thinking of buying a condo next year". The reply offers *Let her know* / *Not now*. *Let her know* makes the topic confirmed, and Sophie gets a notice that names no topic.
+3. **Michelle asks for a meeting**: "I'd like to see my RM next week about an investment review". The chat drafts a request (purpose, topics, up to 3 free times) and she taps *Confirm*. My requests → Meetings shows it open.
+4. **Sophie's Today**: sign in as `demo.sophie@example.com`. Today shows:
+   - *Do first*, with each item's score reasons;
+   - the requests to answer (Mei Ling's and Michelle's);
+   - *Topics clients shared with you* (Michelle's home loan).
+5. **Plan my day**: one cited answer in the code's rank order (R24).
+6. **Answer a request**: in the copilot, "Accept Mei Ling's Monday 4:30 pm time". Sophie approves the card (R25). Then she accepts Michelle's request in Schedule → Requests. Michelle's Meetings shows it confirmed, with an Inbox notice.
+7. **Availability**: "Block Friday afternoon" gives a card, which Sophie approves (R26). Michelle's free times no longer include it.
+8. **Overview**: My clients → Michelle → *Ask for an overview*. The overview shows transaction insights and her topics (home loan, confirmed), and every line is cited.
+9. **Brief** (needs 5a): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available.
+10. **Reply**: Ticket inbox → one of Michelle's requests → *Draft a reply* → edit → tick → *Approve and send*.
+11. **Consent change**: as Michelle, open Data sharing → *What Sophie sees* and withdraw the grant.
+12. **The gap**: as Sophie, open Michelle's overview again.
+    - Transaction insights and chat topics are listed as not shared.
+    - Inferred topics are deleted; the topic she shared herself stays.
+    - Owner: run `34` again to restore the grant.
+
 ## Set up on the hosted project
 
 1. Apply `backend/supabase/hosted/15_apply_0087_0088_hosted.sql` (if not yet) and `16_apply_0089_0090_hosted.sql` in the SQL editor. If 0089/0090 were applied by running the migration files directly (they are missing from `supabase_migrations.schema_migrations` and 16 fails with *already exists*), run `19_repair_0089_0090_hosted.sql` instead.

@@ -169,13 +169,13 @@ async def judge(run,example) -> dict[str,Any]:
     relevant={'opened':tickets.get('opened',[]),'quoted':[t for t in tickets.get('all',[]) if t['reference'] in quoted]}
     message=redact(f'{case}\n\nAuthorised RM book: {json.dumps(out.get("authorised_book"),ensure_ascii=False)}\n\nRecorded ticket reads: {json.dumps(relevant,ensure_ascii=False)}\n\nUnplayed steps: {json.dumps(out.get("skipped",[]),ensure_ascii=False)}\n\nConversation:\n{transcript(out)}')[0]
     from app.services.llm_gateway import transport,check
-    if transport()=='codex':
-        from app.services import codex_cli
+    if transport() in ('codex','claude'):  # the same isolated, answer-only CLI connector with an explicit JUDGE_MODEL
+        from app.services import claude_cli,codex_cli
         from app.core.observability import span
-        name=judge_name()
-        with span('judge','llm',agent='judge',transport='codex',model=name,prompt_version='judge/'+JUDGE_PROMPT.stem,
+        name,cli=judge_name(),(codex_cli if transport()=='codex' else claude_cli)
+        with span('judge','llm',agent='judge',transport=transport(),model=name,prompt_version='judge/'+JUDGE_PROMPT.stem,
                 model_inputs={'system':system,'messages':[{'role':'user','content':message}]}) as metadata:
-            graded,usage=await codex_cli.answer_with_model(system,JUDGE_SCHEMA,[('user',message)],name)
+            graded,usage=await cli.answer_with_model(system,JUDGE_SCHEMA,[('user',message)],name)
             metadata.update(usage)
             metadata['model_outputs']=graded
     else:graded=await judge_model().ainvoke([('system',system),('user',message)])

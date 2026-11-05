@@ -36,13 +36,16 @@ def parse_result(output):
     return parsed,tokens
 
 async def answer(prompt, schema, messages):
-    async with _slots:
-        return await _answer(prompt,schema,messages)
+    return await answer_with_model(prompt,schema,messages,os.getenv('CLAUDE_MODEL','haiku'))
 
-async def _answer(prompt, schema, messages):
+async def answer_with_model(prompt, schema, messages, model):
+    """The same isolated turn with an explicit model (the evaluation judge, which must differ from CLAUDE_MODEL)."""
+    async with _slots:
+        return await _answer(prompt,schema,messages,model)
+
+async def _answer(prompt, schema, messages, model):
     binary=shutil.which(os.getenv('CLAUDE_CLI_PATH','claude'))
     if not binary:raise RuntimeError('Claude Code CLI not found; install it and sign in')
-    model=os.getenv('CLAUDE_MODEL','haiku')
     # A new private directory per request, removed even on timeout/failure; the CLI never sees the repository.
     with tempfile.TemporaryDirectory(prefix='demobank-claude-') as folder:
         directory=Path(folder)

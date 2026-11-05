@@ -2,11 +2,13 @@
 
 The IDs and titles follow the downloaded Product Backlog **Test case** sheet. R24–R27 were added by build plan 3b (RM copilot daily work) and have no backlog row yet. Every JSON case records its source row, workbook digest, owner and any adaptation to current synthetic records. `legacy_id` identifies the previous client dataset ID; historical experiments must be compared with their tagged dataset version, not just the ID.
 
-Client cases use `/chat`; RM cases use `/rm/assistant`, with returned context carried into follow-ups. Client trajectories name the v5 graph nodes (planner, agent, gather, act, compose) and agents (guide, accounts, security, compliance, relationship). The RM assistant runs on its own v5 RM graph (services/rm/graph.py); the QA1 RM cases check its tools, model calls and replies, not graph nodes. The RM target reads only and never approves, sends, books or changes a business record.
+Client cases use `/chat`; RM cases use `/rm/assistant`, with returned context carried into follow-ups. Client trajectories name the v5 graph nodes (planner, agent, gather, act, compose) and agents (guide, accounts, compliance, relationship; no Security agent since build plan 2b). The RM assistant runs on its own v5 RM graph (services/rm/graph.py); the QA1 RM cases check its tools, model calls and replies, not graph nodes. The RM target reads only and never approves, sends, books or changes a business record.
 
 `ready` means the chat steps can be executed, not that the feature passed. `manual` cases retain their acceptance criteria and state the missing UI/fixture/feature boundary. They are excluded from automated scoring rather than counted as passes. Schema/rule checks and judge grades are separate; every live result needs human review.
 
-Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset demobank-qa1-rm`, then `python -m evaluation.langsmith_run --dataset demobank-qa1-rm --case R02 --personas /path/to/private/personas.json --judge`. Use `CHAT_TRANSPORT=codex` and a `JUDGE_MODEL` distinct from `CODEX_MODEL`; credentials stay in ignored local files.
+Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset demobank-qa1-rm`, then `python -m evaluation.langsmith_run --dataset demobank-qa1-rm --case R02 --personas /path/to/private/personas.json --judge`. Use `CHAT_TRANSPORT=codex` (or `claude`) and a `JUDGE_MODEL` distinct from `CODEX_MODEL` (or `CLAUDE_MODEL`); credentials stay in ignored local files.
+
+Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27; client 10 of 16. Failures and limits are in [README §8](README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
 
 ## C01 – General question, not logged in
 
