@@ -168,7 +168,7 @@ class ToolView(Contract):
     max_days: int | None = Field(default=None, gt=0)  # oldest record, counted back from today
     max_rows: int | None = Field(default=None, gt=0)
     free_text: bool = False  # returns text written by other people (ticket messages, notes): a default read only, except in an
-    # RM loop, whose step model sees only the ids and counts of such a read (runner.loop `hidden`; build plan 3a)
+    # RM loop, whose step model sees only the ids and counts of such a read (rm/handlers.h_open `hidden`; build plan 3a)
 
 
 class Read(Contract):
@@ -189,7 +189,7 @@ class AgentSpec(Contract):
     scope: Literal['public', 'own_customer', 'rm_book']
     answers: str  # what it handles; builds the planner prompt
     tools: dict[ToolName, ToolView]
-    intents: dict[str, tuple[Read, ...]]  # intent -> default reads (option B, docs/planning/agent-decisions.md)
+    intents: dict[str, tuple[Read, ...]]  # intent -> default reads (docs/architecture.md §14.5)
     loop_tools: frozenset[ToolName] = frozenset()  # tools an `open` task may choose
     external: frozenset[str] = frozenset()  # external tools (phase 2): public_holidays, fx_rate; usable in reads and loop_tools
     exports: dict[str, str] = {}  # name -> EXPORT_TYPES name, computed by code (agents/derived.py), never by the model
@@ -270,7 +270,7 @@ class AgentOutput(Contract):
     evidence: list[dict[str, JsonValue]] = []  # Evidence dumps with their sources, for the section's citations
     reads: list[dict[str, JsonValue]] = []  # what was read: tool, args, evidence ids (runner)
     exports: dict[str, Export] = {}
-    decision: str | None = None  # fixed text from code shown after the answer (e.g. the charge list to confirm)
+    decision: str | None = None  # fixed text from code shown after the answer (e.g. the RM handover preview to confirm)
     proposals: list[OfferProposal] = []  # saved as offers by compose
     offers: list[Offer] = []
     origin: Literal['ai', 'safety', 'validation'] = 'ai'
@@ -321,7 +321,7 @@ class ToolResult(Contract):  # every Customer Data read
     as_of: datetime = Field(default_factory=now)
 
 
-class KbChunk(Contract):  # kb.search() result
+class KbChunk(Contract):  # unused: kb.search returns schemas/knowledge.KnowledgeSection
     cite: str  # article_id@vN#anchor
     title: str
     heading: str

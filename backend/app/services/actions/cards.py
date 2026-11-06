@@ -12,7 +12,7 @@ def temporary_block(command: ActionCommand) -> CardBlockTarget:
 
 
 def change(command: ActionCommand) -> CardChangeTarget:
-    """The customer's own unblock or permanent cancellation; staff use run_staff (0030), never this path."""
+    """The customer's own unblock (0096); permanent cancellation is bank-only since 0081 (refused in policy and SQL). Staff use run_staff (0030), never this path."""
     return CardChangeTarget.model_validate(command.target)
 
 

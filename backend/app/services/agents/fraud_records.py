@@ -1,4 +1,5 @@
-"""Read only the masked card/security records allowed for the Fraud agent and bound candidate actions."""
+"""Masked card and transaction records for the travel rule (tools.travel_flags); the candidate-action helpers are left
+from the Fraud agent retired in build plan 2b."""
 import re
 from datetime import datetime,timedelta,timezone
 from typing import NamedTuple

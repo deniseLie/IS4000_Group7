@@ -1,4 +1,4 @@
-"""Audit Log Service client (system-architecture.md §6.5, F3, migrations 0005/0054). Events are collected per request and written
+"""Audit Log Service client (docs/architecture.md §6.5, F3, migrations 0005/0054). Events are collected per request and written
 in one public.audit_record_batch call before the answer is sent; if that write fails, the request fails (AuditWriteError)
 instead of continuing unaudited. State changes do not use this: they write their audit row in their own transaction
 (audit.record() and the row triggers in 0006).

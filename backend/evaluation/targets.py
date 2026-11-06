@@ -8,7 +8,7 @@ observability span sink), and it reads the persona's tickets before and after so
 Steps the chat cannot play (form, upload, a button other than a chat reply) are skipped and listed in the output; a chat
 reply button is played only when the previous reply offers it, otherwise the conversation stops there (`not_offered`).
 Graph cases may name a `fault` (architecture §14.12); `inject` makes that one piece fail for the whole case and the output
-says whether the pipeline has the piece at all (v4 has no external tools, so `external_down` changes nothing there)."""
+says whether it was applied (every fault in FAULTS has a built piece to fail)."""
 import json
 import re
 import secrets

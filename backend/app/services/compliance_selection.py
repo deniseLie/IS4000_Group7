@@ -1,4 +1,4 @@
-"""Owned record selectors travel as IDs in the request/checkpoint, never identity or document text."""
+"""Owned record selectors travel as IDs in the request and the task's entities, never identity or document text."""
 from contextvars import ContextVar
 from app.core.errors import ApiError
 from app.schemas.chat import RecordSelection

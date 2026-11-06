@@ -42,7 +42,7 @@ DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection
 EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
           'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','plan','offer')
 OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','backlog','owner','manual_reason','legacy_id','pattern','variant_of')
-# QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name the RM pieces still to build.
+# QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name PLANNED_AGENTS/PLANNED_TOOLS (all built now).
 NODES=('planner','agent','gather','act','compose')
 # rm_assistant: the RM answer prompt that evaluation/rm_target.py counts for the QA1 RM cases (they run on /rm/assistant).
 AGENTS=(*get_args(TargetAgent),'rm_assistant')
@@ -50,8 +50,8 @@ AGENTS=(*get_args(TargetAgent),'rm_assistant')
 V4_NODES=('resume_pending','plan','prioritise','dispatch','propose_actions','review_actions','act','compose')
 V4_AGENTS=('retail','fraud','compliance','document','relationship','answer','rm_assistant')  # rm_assistant: services/rm/assistant.py until phase 9
 PLANNED_AGENTS=('rm_assistant',)
-PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14
-# v5 (architecture §14, §5.6.1): graph cases also name the tools still to build; the RM agents are built (phase 9).
+PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm_shared_summary','rm_review_status')  # F14; all in tools.TOOLS now
+# v5 (architecture §14, §5.6.1): graph cases may also name V5_TOOLS, all built except my_statements; the RM agents are built (phase 9).
 V5_NODES=NODES
 V5_AGENTS=get_args(TargetAgent)  # the built v5 agents (phase 9 added the RM agents; 3a split them into three)
 V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')

@@ -1,4 +1,5 @@
-"""Questions the assistant should not answer go straight to the client's relationship manager (migrations 0073, 0082).
+"""Questions the assistant should not answer are offered to the client's relationship manager (migrations 0073, 0082); with
+confirm_first (the default) she sees a preview and confirms before anything is recorded (CR8).
 
 Rules, not the model, decide what needs a person: advice that depends on the client's goals (investments, products to
 buy), negotiating fees or rates, complaints, complex transfers (large sums, trusts or companies, overseas moves) and
