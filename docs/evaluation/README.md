@@ -341,7 +341,7 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 - `…-6c2d77de` and `…-ffc89ab7` passed at the defaults (21.4k and 20.5k tokens, 43.6 s for the second). Judge 0.5: the evaluation's text view of an RM reply (`targets.rm_text`) left out the follow-ups card. Once it was added, the judge saw that only one of the note's two commitments had been proposed. `actions.md` now asks for one action per commitment and client request, and names open work that may cover one in a gap instead of skipping it.
 - Spread over the four passing runs: the brief call wrote 4.8–8.2k output tokens in 25–40 s, and the request took 44–61 s. The request fails only if the brief alone uses the whole 24k budget.
 
-**Other RM cases on v6** (`demobank-qa1-rm-v2-5975da60`, `demobank-graph-v2-d30d2030`, `v6+6a16d22f`; the later `actions.md` change touches only follow-ups from a note)
+**Other RM cases on v6** (`demobank-qa1-rm-v2-5975da60`, `demobank-graph-v2-d30d2030`, `v6+6a16d22f`; the later `actions.md` change touches only follow-ups from a note, and the committed v6 is `v6+77a77a52`)
 
 | Case | Result | Judge | Model calls (in / out tokens, time) | Case |
 |---|---|---|---|---|
