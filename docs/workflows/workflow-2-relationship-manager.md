@@ -1,6 +1,6 @@
 # Workflow 2 – Relationship manager (Sophie)
 
-**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
+**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Since then: meeting requests, the three-agent copilot, Today's ranking and talking points (build plan 2a–5b, `0106`–`0108`), consent v2 (`0109`–`0114`), and the meeting side's notes and follow-up (`0120`–`0124`, below). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
 
 ## Who she is
 
@@ -45,7 +45,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 | RM1 Sign-in and client book | Login → RM workspace; *My clients*; `rm_book`, `rm_match_clients` | Refused lookups audited; active client always shown |
 | RM2 360° overview | *My clients* → client; assistant "overview of …" | Sources and as-of on every block; gaps listed; client-stated vs AI labelled |
 | RM3 Meeting history | Assistant "summarise past meetings with …" | Previous RM's notes included, private ones withheld; asks which meeting when ambiguous |
-| RM4 Meeting briefing | *Schedule* → Prepare briefing; "Brief me for my 10am with David" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
+| RM4 Meeting briefing | *Schedule* → Prepare briefing; "Brief me for my meeting with Michelle" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
 | RM5 Interaction documentation | Paste notes in the assistant (or *Document a call* on a client) | Facts, decisions, commitments, requests separately; confirmed vs tentative; corrections by chat keep the source notes; saved only on approval |
 | RM6 Service requests | Documentation → *Review request form* | Prefilled from notes, missing fields and open duplicates checked in SQL, verification tick, reference after creation |
 | RM7 Ticket inbox | *Ticket inbox*; "What needs my attention today?" | *My tickets* (draft a reply, summarise, details) vs *Specialist tickets* (status only: no summarise or reply, the owning team deals with the client); "Received 26 hours ago", "Due …" / "Overdue · was due …"; priority filter |
@@ -87,6 +87,10 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - The client sees every read of her shared data in an access log built from the audit trail (ids, codes and dates only).
 - A client's *Delete all my data* opens a `data_deletion` ticket for the data protection team (10 business days); it is not routed to the RM.
 
+## Meeting notes and follow-up (meeting side, 0120–0124)
+
+Built by the meeting team (45e2ea9, 5 Nov; architecture §15) and works only with `MEETINGS_ENABLED=true` (the `/meetings` routes answer 503 otherwise). On *Schedule* → Appointments, *Propose a meeting to a client* (`components/meetings/MeetingProposal.jsx`) holds a free time until the client accepts it in her Meetings tab. Each confirmed meeting opens *Meeting notes and follow-up* (`components/meetings/MeetingWorkspace.jsx`): the recording and transcript notice, a Zoom link, a Zoom TXT/VTT transcript import or her written recollection, minutes drafted by the Minutes Writer (`minutes_writer/v1`; the meeting worker drafts from an imported transcript), then separate approvals for the minutes version, the follow-ups and the client recap. The client can withdraw transcript access for a meeting. The pre-meeting brief (build plan 5a) is not built: *Prepare briefing* still uses the copilot's `meeting_brief`.
+
 ## Layout (Nov 2026 redesign)
 
 - **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.
@@ -99,6 +103,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Client-stated preferences** tied to their notes; **maturities and reviews** (Michelle's fixed deposit ****4410, Mei Ling's ****9051, Grace's check-in, Hafiz's account review, David's annual review).
 - **Appointments** relative to the day 0090 is applied: next Tuesday 10:00 David (local only), next Wednesday 14:30 Michelle (video), next Thursday 11:00 Grace (phone, no purpose recorded), the Monday after next 16:00 Hafiz, and a **held** (unconfirmed) Friday slot for Grace.
 - **Tasks**: "Send Michelle fixed deposit options" (due in 5 days) and an **overdue** task for Hafiz's fee review.
+- Since `0093`, Grace, Hafiz and David belong to Priya: their meetings with Sophie are cancelled and her open tasks for them closed, so Sophie's book is Michelle and Mei Ling.
 - **Mei Ling** (1007): request to Rachel with a bank update, a chat question about a renewal rate that the assistant handed to the RM, a consented handover note, and two notes whose consent expired or was revoked.
 
 ## Demo script (about 10 minutes)
@@ -135,7 +140,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 8. **Overview**: My clients → Michelle → *Ask for an overview*. The overview shows transaction insights and her topics (home loan, confirmed), and every line is cited.
 9. **Brief** (needs 5a): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available.
 10. **Reply**: Ticket inbox → one of Michelle's requests → *Draft a reply* → edit → tick → *Approve and send*.
-11. **Consent change**: as Michelle, open Data sharing → *What Sophie sees* and withdraw the grant. Once batches `36`–`40` (consent v2) are on hosted, she switches off the transaction insights and chat topics cards instead.
+11. **Consent change**: as Michelle, open Data sharing and switch off the transaction insights and chat topics cards (consent v2; batches `36`–`40` are on hosted since 5 Nov).
 12. **The gap**: as Sophie, open Michelle's overview again.
     - Transaction insights and chat topics are listed as not shared.
     - Inferred topics are deleted; the topic she shared herself stays.
@@ -162,7 +167,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 
 ## Known limits
 
-- Audio recordings and speech recognition (RM5 stretch) are not built; notes are typed or pasted.
+- Audio recordings and speech recognition (RM5 stretch) are not built; notes are typed or pasted, or a Zoom text transcript is imported on the meeting side.
 - Checks are conservative format checks (figures, dates, references, wording), not proof that each sentence is true.
 - RM MFA (aal2) is not required in the demo; the support role keeps its aal2 requirement.
-- The live model has not been run against R01–R10 from this environment; run `qa1_rm_cases.json` on the hosted project and record the results.
+- QA1 RM last ran on the hosted project on 5 Nov (16 of 17; R24–R27 pass); re-run `qa1_rm_cases.json` after changes and record the results.

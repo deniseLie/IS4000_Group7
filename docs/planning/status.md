@@ -1,6 +1,6 @@
-# Status (31 Oct 2026)
+# Status (6 Nov 2026)
 
-Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Persona 1 (client) before starting Persona 2 (RM).
+Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history). Both personas are built; the dated sections below are history, newest first.
 
 ## Foundation
 
@@ -23,16 +23,16 @@ Story IDs follow [product-backlog.xlsx](product-backlog.xlsx). Focus: finish Per
 | F15–F17 | Action service, card/handoff, appointment executors | Done | – |
 | F18 | Orchestrator | Done | Handover to RM added (0073). |
 | F19 | Response validator | Done | Withheld answers go to the RM. |
-| F20 | Stub agents | Built, sheet says **No** | All five agents exist; tick it. |
+| F20 | Stub agents | Built, sheet says **No** | The v5 agents exist (Guide, Accounts & Cards, Compliance & Documents, Relationship, and the RM Client, Requests and Calendar agents); tick it. |
 | F21 | Local deployment (Docker) | Dropped | Docker removed; run with uvicorn + npm. |
-| F22 | Hardening and report evidence | **Partly** | Automated: RLS and owner-only checks (`test_rls_live.py`, `test_bank_decisions.py`), audit chain (`test_audit*.py`), 22 Michelle cases written. Still to do for the report: run C01–C22 against the hosted project with LangSmith on and fill the run record, one Playwright smoke run, latency per request type from the LangSmith runs, Sophie's RLS checks (Persona 2). |
+| F22 | Hardening and report evidence | **Partly** | Automated: RLS and owner-only checks (`test_rls_live.py`, `test_bank_decisions.py`), audit chain (`test_audit*.py`), the 49 QA1 cases written. Still to do for the report: re-run QA1 against the hosted project with LangSmith on and keep the run record current (latest run 5 Nov), one Playwright smoke run, latency per request type from the LangSmith runs, Sophie's RLS checks (Persona 2). |
 | F23 | Ticket service | Done | – |
 | F24 | Request categories | Done | – |
-| F25 | MCP tool layer | Done | MCP is the default transport; every agent record read goes through it. RM tools come with F14. |
+| F25 | MCP tool layer | Done | Every agent record read goes through `tools.call`; `TOOL_TRANSPORT=direct` is the default since 31 Oct, and `mcp` sends the same calls through the MCP server. The RM tools (`rm_*`) are in the same table. |
 | F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches the admin dashboard. Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
-| QA1 | Test case set (44 cases) | **Runnable / manual boundaries explicit** | [C01–C24 and R01–R20](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 16 runnable, 8 manual; RM: 13 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
+| QA1 | Test case set (49 cases) | **Runnable / manual boundaries explicit** | [C01–C24, C11b, R01–R20 and R24–R27](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 17 runnable, 8 manual; RM: 17 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
 
 ## Admin dashboard (5 Nov 2026)
 
@@ -40,10 +40,27 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 
 ## Persona 1 (client) – open items
 
-- **Hosted project:** run `07`, `08`, `09` and `10` from `backend/supabase/hosted/` in order (01–06 are done).
+- **Hosted project:** the migration batches through `40` are applied (36–40 on 5 Nov), and the meeting side applied 0120–0124 itself; `32_admin_login_hosted.sql` is the owner's step under *Admin dashboard* above. Run `41_eval_cleanup.sql` before each client evaluation run.
 - **Reminders:** off until the worker runs. README step 5: create the `demobank_reminders` login, set `WORKER_DATABASE_URL` and `RUN_WORKER_IN_API=true`.
-- **Run the 10 test cases** and record the results (F22 evidence).
-- **Assign owners** in the backlog and in `test-cases.md`.
+- **Re-run QA1** and record the results (F22 evidence); the 5 Nov hosted run was client 10 of 16, RM 16 of 17.
+- **Assign owners** where the backlog or `test-cases.md` still says TBC.
+
+## Done on 6 Nov (speed and RM answers; no migrations)
+
+- **Frontend load:** `App.jsx` loads only the signed-in role's workspace (`React.lazy`, `lib/roles.js`), and `index.html` now loads the Stitch fonts (d258d05).
+- **Admin dashboard:** runs are read through LangSmith's v2 run query, with one live read shared by every page (a232246).
+- **RM answers:** every RM answer runs with the model's hidden reasoning off (`rm/handlers.REASONING`, `llm_gateway.call(reasoning=False)`; 06f790f), and a `today` section whose records all ranked lower says so instead of "none" (aa17f4a).
+
+## Done on 5 Nov (evaluation fixes, batches 2 and 3)
+
+- **Batch 2** (a75aef8): R08 picks an RM ticket only on a topic match; a guest's personal tasks merge into one Guide task (P12) and Accounts drops the fee-waiver hint when Relationship is planned (C28); the guardrail refuses a named person's financial records (P15, `NAMED_RECORDS`); an open review's answer ends with its due date (C07); `runner_common/v2` never restates her figures, with a `validation` span (C12).
+- **Batch 3** (f54d7fa): `planner/v10`, rules that receive imported values and return exports, `savings_after_cards` (`below_threshold`) and Compliance `check_failed`; P05–P07 pass. Accounts' transfer and due-day rules stay on `retail/v11` (from 3 Nov, 5cf1ec0).
+- Results: [evaluation README §8](../evaluation/README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
+
+## Done on 5 Nov (meeting lifecycle, by the meeting team; migrations 0120–0124)
+
+- **Notes and follow-up** (45e2ea9): RM meeting proposals from Schedule, held until the client accepts; Zoom links and TXT/VTT transcript import; a Minutes Writer graph (`minutes_writer/v1`) and a restricted worker; RM review and approval of minutes, follow-ups and a recap as separate steps; the client's per-meeting transcript withdrawal (`meeting_transcript_revoke`, 0122). Off unless `MEETINGS_ENABLED=true`; 0120–0124 are applied on hosted.
+- **Not built:** the pre-meeting brief writer and proposal drafter, and the seam functions in `services/meetings/__init__.py` (`prepare`, `decide`, `status`, `on_event` still raise `MeetingsUnavailable`), so 5a still waits.
 
 ## Done on 5 Nov (RM copilot build plan 2a–4 and 5b; migrations 0106–0108 on hosted)
 
@@ -55,13 +72,11 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Evaluation (5b):** on the hosted project, safety 8/8, planner 11/16, RM QA1 16/17 (R24–R27 all pass), graph 3/5 and client QA1 10/16. The consent step was rehearsed twice. Results, transport and failures: [evaluation README §8](../evaluation/README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
 - **Still open:**
   - 5a: waits for the meeting side's `prepare`/`status`;
-  - the planner links for C24–C26;
-  - C28's fee-waiver handoff;
   - RM usefulness ratings from teammates;
   - phase 4's done-when steps in the browser on hosted;
   - the full copilot demo twice in a row (needs 5a);
-  - 6c transcript revoke (with the meeting side);
-  - applying batches `36`–`40` on hosted, then re-running the consent cases and the demo's consent step on v2.
+  - re-running the consent cases and the demo's consent step on v2 (batches `36`–`40` are applied).
+  - (The planner links of the removed C24–C26 and C28's fee-waiver handoff were fixed in batches 2 and 3, above.)
 
 ## Done on 4 Nov (v5 orchestrator, build plan phases 1–9; migrations 0100–0101)
 
@@ -70,7 +85,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Agent dependencies (phase 7):** a task can wait for another (`depends_on`, `condition`, `for_each`, at most 5 items); exports are computed by code (trip due dates, account references); one out-of-scope handoff (fee waiver → Relationship). Travel notice tickets (0101). Planner v7.
 - **Evaluation (phase 8):** graph cases C23–C28 with failure variants, planner-only dataset and target, dependency checks.
 - **RM assistant on the same graph (phase 9):** RM Client Insight and RM Service Desk specs; `services/rm/graph.py` replaces `services/rm/assistant.py` (its handlers moved to `services/rm/handlers.py`); planner `rm_planner/v4` (main's v3 plus the task list); R21 one draft per client with a review due (at most 5), R22 follow-ups from the brief's latest note, R23 the client's handover note only under consent. Several drafts show as separate review cards.
-- **Still open:** Compliance and Relationship still answer with their v4 responders and ignore imported values (C24); meeting reschedule and RM note offers (C23, C27); `below_threshold` and `check_failed` exports (C25, C26); `PLANNER_MODEL` and the 60 s turn budget; LangSmith sync and a scored v5 experiment against the phase 0 timings; QA1 R01–R20 still name the v4 `rm_assistant` agent (state spec). Hosted: 0100 and 0101 applied on 4 Nov (`28_apply_0100_hosted.sql`, `29_apply_0101_hosted.sql`).
+- **Still open:** Compliance and Relationship still answer with their v4 responders and ignore imported values (C24); meeting reschedule and RM note offers (C23, C27); `below_threshold` and `check_failed` exports (C25, C26); `PLANNER_MODEL` and the 60 s turn budget; LangSmith sync and a scored v5 experiment against the phase 0 timings; QA1 R01–R20 still name the v4 `rm_assistant` agent (state spec). (Later: C23–C27 were removed from the graph set on 4 Nov; their planner links and C28 were fixed in batches 2 and 3 on 5 Nov.) Hosted: 0100 and 0101 applied on 4 Nov (`28_apply_0100_hosted.sql`, `29_apply_0101_hosted.sql`).
 
 ## Done on 1 Nov (Persona 2: F12, F14, RM1–RM12, RM16; migrations 0089–0090)
 
@@ -85,14 +100,14 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Fix (0094):** 0089's schema-wide revoke also removed the customer grant on `rm.is_my_advisor`, used by the RLS policies on advisors, working hours and meeting options; Michelle's Overview failed with "Record access does not match the signed-in customer". Grant restored (test added). `17_reset_michelle_demo.sql` now also removes actions whose chat it deletes; `23_repair_michelle_actions.sql` fixes a project where it already ran.
 - **RM insights (0095, rm_assistant v2, rm_planner v2):** Today start page; conversation starters from large money movements, maturities and client statements; *Document this meeting* linked to the appointment and *Draft a recap*; questions across the book (`book_question`); browser dictation (RM5 stretch, demo only). Hosted: `25_apply_0095_hosted.sql`.
 - **Tests:** `test_rm_workspace.py` (native SQL), `test_rm_assistant.py` (checks on sample outputs), `rm.test.js`; `test_rm_seed.py` updated for Mei Ling.
-- **Still open:** apply `16_apply_0089_0090_hosted.sql` on hosted and create Sophie's login; run R01–R10 with the real model and record results; RM5 audio transcription is not built.
+- **Still open:** apply `16_apply_0089_0090_hosted.sql` on hosted and create Sophie's login; run R01–R10 with the real model and record results; RM5 audio transcription is not built. (Since done: Sophie signs in on hosted and QA1 RM ran there on 5 Nov; the meeting side imports text transcripts, not audio.)
 
 ## Done on 31 Oct (F4, F25, CR16; migrations 0086–0088)
 
 - **Loan enquiries (CR16, 0086–0087):** DemoBank home loan and personal loan guidance (0086, already applied on hosted; products, general eligibility, how to apply; no rates, fees or amounts), next to car loans. The general loan article v2 (0087) names the three loan types, so an unclear loan question gets "which loan?"; it also says the chat cannot see loan applications and where to ask instead. New loan suggestion chips and a `home-loan` evaluation case.
-- **MCP tool layer (F25):** new tools for profile, accounts, loans, compliance case, documents, document checks, RM, introduction, requests, appointments and free calendar slots. Retail, fraud, compliance, document and relationship agents (and the pending-transfer reads) load their records through `tools.read`. `TOOL_TRANSPORT=mcp` is the default (`direct` skips MCP), and `mcp` is a core dependency. The in-process MCP call re-raises the tool's own error, so a failed read withholds only its section, as before. Each tool call is a span with `request_id` and agent.
+- **MCP tool layer (F25):** new tools for profile, accounts, loans, compliance case, documents, document checks, RM, introduction, requests, appointments and free calendar slots. Retail, fraud, compliance, document and relationship agents (and the pending-transfer reads) load their records through `tools.read`. `TOOL_TRANSPORT=mcp` is the default (`direct` skips MCP), and `mcp` is a core dependency (later on 31 Oct the default became `direct`). The in-process MCP call re-raises the tool's own error, so a failed read withholds only its section, as before. Each tool call is a span with `request_id` and agent.
 - **Persona 2 seed (F4, 0088):** Michelle's adviser record becomes **Sophie Lim (DEMO)**, so Michelle sees no RM change. David's current assignment moves from Marcus to Sophie, with Rachel as his previous RM: 3 internal meeting notes by Rachel, his open request and a consent-shared handover note. Grace (1004) and Hafiz (1005) join Sophie's book. Wei Ming (1006, like Alex) belongs to Priya. Sophie's book has 10 open tickets across 9 categories (7 on hosted, where David is absent), including one urgent suspected fraud and one past its target. `rm.staff_logins` links `demo.sophie@example.com`, and `rm.meeting_notes` is readable by no client. Tests: `test_rm_seed.py`.
-- **Still open:** apply `backend/supabase/hosted/15_apply_0087_0088_hosted.sql`, then create Sophie's login. Live (real-provider) loan answers have not been checked yet.
+- **Still open:** apply `backend/supabase/hosted/15_apply_0087_0088_hosted.sql`, then create Sophie's login. Live (real-provider) loan answers have not been checked yet. (Since done: batch 15 applied and Sophie's login created; C12 checked a live loan answer on 5 Nov.)
 
 ## Done on 30 Oct (code review follow-ups, migration 0082, fraud prompt v7)
 
@@ -107,14 +122,14 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Demo data (CR14, CR15):** Michelle's Travel Card ending 5592 (annual fee and one purchase) so card questions ask which card; a S$25 transfer fee on her account.
 - **Card and loan currency (CR14, 0083, retail prompt v7):** cards and loans now record their currency (SGD), so the assistant answers "SGD 316.20" instead of saying the currency is unrecorded, and Overview, Records and statements use the recorded currency.
 - **Card answers from records (CR14, CR15, 0084):** card balance, credit limit, minimum payment, due date and annual fee are answered from her records without a model call, so they are never withheld or turned into an RM request. With two cards and no card named she is asked which card, with one-tap replies (each card, "Both cards"). Typo-tolerant matching (`services/typos.py`) for urgent help, routing and card answers ("wats my crad bal", "i lsot my crad"). Michelle's fees are named "Annual card fee" and "Telegraphic transfer fee". Test sheet: `docs/evaluation/assistant-prompt-tests.xlsx`.
-- **Transactions, fees and meetings in chat (0085):** recent transactions, fees and "what was this charge?" (by amount and/or date) are answered from records (`agents/transaction_answers.py`); meetings: free times listed in chat, tap to hold, "Confirm booking" books it (`agents/meeting_answers.py`, same hold and appointment.confirm as the Meetings tab). A different RM question in the same chat opens its own ticket (`customer_open_rm_ticket`); same topic still adds to the open ticket. Approved article `overseas-transfers`.
-- **Still open:** CR16 has DemoBank product details for car loans only; home and personal loans need approved product information before CR16 can be marked done. Hosted: apply `backend/supabase/hosted/11_apply_0082_hosted.sql`.
+- **Transactions, fees and meetings in chat (0085):** recent transactions, fees and "what was this charge?" (by amount and/or date) are answered from records (`agents/transaction_answers.py`); meetings: free times listed in chat, tap to hold, "Confirm booking" books it (`agents/meeting_answers.py`, same hold and appointment.confirm as the Meetings tab; superseded by 2a, where the chat drafts a meeting request). A different RM question in the same chat opens its own ticket (`customer_open_rm_ticket`); same topic still adds to the open ticket. Approved article `overseas-transfers`.
+- **Still open:** CR16 has DemoBank product details for car loans only; home and personal loans need approved product information before CR16 can be marked done. Hosted: apply `backend/supabase/hosted/11_apply_0082_hosted.sql`. (Since done: home and personal loan articles in 0086 on 31 Oct; batch 11 applied.)
 
 ## Done on 29 Oct
 
 - **Michelle's own demo data (CR12, CR13, 0075):** card 7310 used in Singapore then London on 27 Oct; a pending SGD 12,000 transfer.
 - **The bank's decision on a document (CR3, CR6, 0076):** `compliance.record_bank_decision` accepts a file or asks for a correction, which shows on her review and closes when she resubmits; a near due date also triggers a reminder. Reminders she has already acted on disappear from her Inbox (0078).
-- **Meetings with her RM (CR17):** My requests → Meetings (free times, hold, confirm, cancel); meeting questions are no longer turned into RM tickets; prompt `relationship/v5`.
+- **Meetings with her RM (CR17):** My requests → Meetings (free times, hold, confirm, cancel); meeting questions are no longer turned into RM tickets; prompt `relationship/v5`. (Superseded by 2a on 5 Nov: she requests a meeting and the RM answers it.)
 - **Statements (CR15, 0077):** Overview → Statements, last 3 full months for her account and card, printable; older or certified copies via a statement copy request; the assistant points to either.
 - **Answering the bank's questions (CR6, 0080):** reply box on *The bank asked you*; answer sent with a receipt and Inbox notice, then "Sent to the bank on … – waiting for review"; the bank accepts or asks a follow-up with `compliance.record_request_decision`.
 - **Suggested next questions in the chat:** up to 3 tappable follow-ups under the latest answer, from fixed topic lists.
