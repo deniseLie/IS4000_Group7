@@ -29,7 +29,7 @@ TOOLS: dict[AgentName, tuple[str, ...]] = {
 TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
     'knowledge_search':('kb.search',),'knowledge_article':('kb.search',),'request_categories':('tickets.categories',),'document_templates':(),
     'my_profile':('customer.get_profile',),'my_accounts':('customer.get_accounts',),'my_cards':('customer.get_credit_cards',),
-    'my_loans':('customer.get_loans',),'my_transactions':('customer.get_transactions',),
+    'my_loans':('customer.get_loans',),'my_portfolio':('customer.get_portfolio',),'my_transactions':('customer.get_transactions',),
     'travel_flags':('customer.get_credit_cards','customer.get_transactions'),'my_tickets':('tickets.list',),
     'my_compliance_case':('compliance.get_case',),'my_document_checks':('compliance.workspace',),
     'my_rm':('rm.get_assignment',),'my_appointments':('appointments.list',),'free_slots':('appointments.find_slots',),
@@ -54,19 +54,21 @@ GUIDE=AgentSpec(name='guide',role='public',scope='public',prompt='guide',
     loop_tools=frozenset({'knowledge_search','request_categories'}),external=frozenset({'public_holidays','fx_rate'}))
 
 ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='accounts',
-    answers='The client\'s own accounts, cards, loans and transactions: balances, limits, due dates, fees, payments, '
-        'transfers and statements, and whether her savings stay above an amount after paying her card balances. '
+    answers='The client\'s own accounts, cards, loans, investment portfolio (holdings, her time deposit and its maturity) and transactions: '
+        'balances, limits, due dates, fees, payments, transfers and statements, and whether her savings stay above an amount after paying her card balances. '
         'Card-limit and statement-copy requests.',
     tools={'my_accounts':ToolView(fields=frozenset({'type','number','currency','balance','status'})),
         'my_cards':ToolView(fields=CARD_FIELDS),
         'my_loans':ToolView(fields=frozenset({'type','currency','principal','outstanding','next_payment','next_amount','status'})),
+        'my_portfolio':ToolView(fields=frozenset({'asset_class','description','currency','market_value','mandate','as_of','portfolio_total'})),  # 0116
         'my_transactions':ToolView(fields=frozenset({'date','description','amount','currency','status','card_last4','is_overseas','failure_reason'}),
             max_days=TXN_DAYS,max_rows=TXN_ROWS),
         'knowledge_search':KB,'request_categories':ToolView()},
     intents={'card_figures':(Read(tool='my_cards'),),
         'card_limit':(Read(tool='my_cards'),Read(tool='request_categories'),ASK),
         'card_fees':(Read(tool='my_cards'),ASK),
-        'account_balance':(Read(tool='my_accounts'),),
+        'account_balance':(Read(tool='my_accounts'),Read(tool='my_portfolio')),
+        'portfolio':(Read(tool='my_portfolio'),ASK),  # 0116: holdings, her time deposit and when it matures
         'transactions':(Read(tool='my_transactions',entities={'status':'status','days':'days'}),),
         'transfer_status':(Read(tool='my_transactions',fixed={'status':'pending'}),Read(tool='my_accounts')),
         'loans':(Read(tool='my_loans'),ASK),
@@ -75,7 +77,7 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
         'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK),
         'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans')),  # + public holidays per trip year (agents/derived.py)
         'savings_after_cards':(Read(tool='my_accounts'),Read(tool='my_cards'))},  # savings minus card balances vs her amount (derived.py)
-    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_transactions','knowledge_search','fx_rate','public_holidays'}),
+    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_portfolio','my_transactions','knowledge_search','fx_rate','public_holidays'}),
     external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
     exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]','below_threshold':'bool'},sort_by={'account_refs':'last4'})
 

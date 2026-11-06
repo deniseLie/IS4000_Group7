@@ -84,9 +84,9 @@ def test_names_match_the_migration():
 def test_a_talking_point_carries_no_client_text_and_renders_one_line():
     assert set(TalkingPoint.model_fields)=={'point_id','topic','stage','timeframe','concerns','origin','first_seen','last_seen'}
     inferred=TalkingPoint.model_validate(POINT)
-    assert inferred.line()=='Home loan · planning · within 12 months · inferred from chat' and inferred.brief_label()=='ai_suggestion'
+    assert inferred.line()=='Property financing · planning · within 12 months · inferred from chat' and inferred.brief_label()=='ai_suggestion'
     shared=TalkingPoint.model_validate({**POINT,'topic':'fixed_deposit','stage':'concern','timeframe':'unknown','concerns':['rates','fees'],'origin':'confirmed'})
-    assert shared.line()=='Fixed deposit · concern · asks about rates, fees · shared by the client' and shared.brief_label()=='client_said'
+    assert shared.line()=='Time deposit · concern · asks about rates, fees · shared by the client' and shared.brief_label()=='client_said'
 
 
 def test_meetings_are_off_by_default_and_every_call_says_so(monkeypatch):

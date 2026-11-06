@@ -3,6 +3,8 @@ import Icon from '../Icon';
 import {FORMAT_WORDS,byRank,display,firstThings,keyOf,nextStep,openSchedule,rankIndex,reasonText,receivedText,requestsToAnswer,rmGet,todayView,topicLabel} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
 import SharedTopics from './SharedTopics';
+import MeetingBrief from '../meetings/MeetingBrief';
+import {prepareMissingBriefs} from '../../lib/rm';
 
 const BOOK_QUESTIONS=['Which clients have a maturity or review in the next 30 days?','Who haven’t I met in the last 90 days?','Which clients have requests waiting for me?'];
 function timeOf(when) {return (when||'').split(', ').at(-1);}
@@ -13,6 +15,7 @@ function timeOf(when) {return (when||'').split(', ').at(-1);}
 // GET /rm/priorities (services/rm/priority.py, the assistant's score); the page never scores.
 export default function TodayPage({token,onAsk,advisor,today}) {
   const [data,setData]=useState(null),[error,setError]=useState(''),[question,setQuestion]=useState('');
+  const [briefFor,setBriefFor]=useState(null),[prepared,setPrepared]=useState(0);  // 0118: saved briefings
   async function load() {
     setError('');
     try {
@@ -22,13 +25,14 @@ export default function TodayPage({token,onAsk,advisor,today}) {
       setData({appointments:a.data,tickets:t.data,followups:f.data,meetingRequests:requestsToAnswer(m.data),ranked:rankIndex(p.items),first:firstThings(p.items)});
     } catch(failure) {setError(failure.message);}
   }
-  useEffect(()=>{load();},[]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{load();prepareMissingBriefs(token,()=>setPrepared(n=>n+1));},[]);  // eslint-disable-line react-hooks/exhaustive-deps
   const day=today||new Date().toISOString().slice(0,10);
   const v=data?todayView(data,day):null;
   const first=advisor?display(advisor.name).split(' ')[0]:'';
   const hour=Number(new Intl.DateTimeFormat('en-SG',{hour:'numeric',hour12:false,timeZone:'Asia/Singapore'}).format(new Date()));
   const greeting=hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';
-  const brief=a=>onAsk(`Brief me for my meeting with ${a.client} on ${a.when}`,{intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}});
+  // 0118: a confirmed meeting opens its saved briefing (prepared in the background for the next 7 days).
+  const brief=a=>setBriefFor(a);
   const documentMeeting=a=>onAsk(`Notes from my ${FORMAT_WORDS[a.format].toLowerCase()} meeting with ${a.client} on ${a.when}: `,{context:{client_id:a.customer_id,appointment_id:a.appointment_id},prefill:true});
   const ask=text=>text.trim()&&onAsk(text.trim(),{intent:'book_question'});
   const step=x=>{const s=nextStep(x);return s.schedule?openSchedule(s.schedule):onAsk(s.message,{intent:s.intent,context:s.context});};
@@ -62,6 +66,8 @@ export default function TodayPage({token,onAsk,advisor,today}) {
           <div className="rmw-list-actions"><button className="rmw-mini" onClick={()=>step(x)}><Icon name={x.kind==='meeting_request'?'calendar':'spark'}/>{nextStep(x).label}</button></div></li>)}</ul>
       </section>}
 
+      {prepared>0&&<p className="rmw-note" data-testid="rm-briefs-prepared"><Icon name="check"/>{prepared===1?'A briefing was':`${prepared} briefings were`} prepared for your upcoming meetings.</p>}
+      {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
       <div className="rmw-today-grid">
         <section className="rmw-card">
           <div className="rmw-card-head"><h3><Icon name="calendar"/>Meetings</h3></div>
@@ -76,7 +82,7 @@ export default function TodayPage({token,onAsk,advisor,today}) {
           <ul className="rmw-list">{byRank(v.upcoming,'appointment',data.ranked).map(a=><li key={a.appointment_id}><div><strong>{a.client}</strong>
             <small>{a.date===day?'Today':formatDate(a.date,{weekday:'short',year:undefined})} · {timeOf(a.when)} · {FORMAT_WORDS[a.format]}{a.purpose?` · ${a.purpose}`:''}</small>
             {why('appointment',a)}</div>
-            <div className="rmw-list-actions"><button className="rmw-mini" data-testid="rm-today-brief" onClick={()=>brief(a)}><Icon name="spark"/>Brief me</button></div></li>)}</ul>}
+            <div className="rmw-list-actions"><button className="rmw-mini" data-testid="rm-today-brief" onClick={()=>brief(a)}><Icon name="spark"/>Briefing</button></div></li>)}</ul>}
           {v.toDocument.length>0&&<><h4 className="rmw-subhead">To document</h4>
             <ul className="rmw-list">{v.toDocument.map(a=><li key={a.appointment_id}><div><strong>{a.client}</strong>
               <small>{formatDate(a.date,{weekday:'short'})} · {timeOf(a.when)} · {FORMAT_WORDS[a.format]}{a.purpose?` · ${a.purpose}`:''}</small></div>

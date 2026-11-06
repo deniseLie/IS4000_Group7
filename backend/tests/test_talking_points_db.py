@@ -208,7 +208,7 @@ def test_sharing_creates_a_confirmed_point_on_todays_list_with_a_notice_that_nam
     assert set(rows)=={1002,1007} and all(r['point']['origin']=='confirmed' for r in today['data'])
     michelle=rows[1002]
     assert michelle['notice']=='Michelle Ng shared a topic with you. Open your workspace.'
-    assert TalkingPoint.model_validate(michelle['point']).line()=='Home loan · planning · within 12 months · shared by the client'
+    assert TalkingPoint.model_validate(michelle['point']).line()=='Property financing · planning · within 12 months · shared by the client'
     owner(database)
     assert database.execute("select details from audit.events where action='data.read' and resource_id=%s",(today['call_id'],)).fetchone()[0]=={
         'tool':'rm.shared_topics','result_count':2,'basis':'client_shared','command_ids':[shared['command']['command_id']]}

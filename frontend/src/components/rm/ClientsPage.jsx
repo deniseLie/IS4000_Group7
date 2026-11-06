@@ -107,7 +107,13 @@ export function ClientOverview({customerId,token,onAsk,onBack}) {
         <Card title="Accounts and cards" icon="bank" source="banking records" asOf={asOf} empty={!data.accounts.length&&!data.cards.length&&!data.loans.length&&'None recorded'}>
           <ul className="rm-rows">{data.accounts.map(a=><li key={a.number}><span>{words(a.type)} account {a.number}</span><strong>{formatMoney(Number(a.balance),a.currency)}</strong></li>)}
             {data.cards.map(c=><li key={c.last4}><span>{c.name} ••{c.last4}{c.status!=='active'?` · ${c.status}`:''}</span><strong>{formatMoney(Number(c.outstanding_balance),c.currency)}<small> of {formatMoney(Number(c.credit_limit),c.currency)}</small></strong></li>)}
-            {data.loans.map((l,i)=><li key={i}><span>{words(l.type)} loan</span><strong>{formatMoney(Number(l.outstanding_amount),l.currency)}</strong></li>)}</ul></Card>
+            {data.loans.map((l,i)=><li key={i}><span>{l.type==='securities_backed'?'Lombard loan':`${words(l.type)} loan`}</span><strong>{formatMoney(Number(l.outstanding_amount),l.currency)}</strong></li>)}</ul></Card>
+        {data.portfolio&&<Card title="Investment portfolio" icon="chart" source="portfolio records" asOf={asOf}>
+          <ul className="rm-rows" data-testid="rm-portfolio">{data.portfolio.holdings.map(h=><li key={h.holding_id}><span>{h.description} · {words(h.asset_class)}</span><strong>{formatMoney(Number(h.market_value),h.currency)}</strong></li>)}
+            <li><span>Total, {words(data.portfolio.mandate)} mandate</span><strong>{formatMoney(Number(data.portfolio.total_value),data.portfolio.currency)}</strong></li>
+            {data.financing&&<li className={data.financing.collateral_status==='below_limit'?'rm-overdue':''} data-testid="rm-collateral"><span>Lombard borrowing against a lending value of {formatMoney(Number(data.financing.lending_value),data.financing.currency)}
+              {data.financing.collateral_status==='below_limit'?` · short by ${formatMoney(Number(data.financing.shortfall),data.financing.currency)}`:' · covered'}</span>
+              <strong>{formatMoney(Number(data.financing.lombard_outstanding),data.financing.currency)}</strong></li>}</ul></Card>}
         <Card title="Coming up" icon="calendar" source="appointments, reviews, maturities and your tasks" asOf={asOf}
           empty={!data.appointments.length&&!data.compliance&&!data.milestones.length&&!data.tasks.length&&'Nothing coming up'}>
           <ul className="rm-rows">{data.appointments.map(a=><li key={a.appointment_id}><span>{a.status==='held'?'Held (not confirmed)':'Meeting'} · {FORMAT_WORDS[a.format]}{a.purpose?` · ${a.purpose}`:''}</span><strong>{a.when}</strong></li>)}

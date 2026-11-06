@@ -25,7 +25,7 @@ from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event,request_facts,start_trace
 from app.schemas.contracts import RequestContext
-from app.schemas.rm import (Block,ClientMessage,ConsentAsk,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
+from app.schemas.rm import (Block,BriefApproval,BriefPrepare,ClientMessage,ConsentAsk,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
     ServiceRequestDraft,ServiceRequestSubmit,TasksApproval,TaskStatus,WorkingHours)
 from app.services import audit,customer_data
 from app.services.llm_gateway import LLMError
@@ -222,6 +222,46 @@ async def ask_consent(body: ConsentAsk,request: Request,caller: Caller=Depends(r
 @router.post('/appointments/{appointment_id}/reschedule')
 async def reschedule_meeting(appointment_id: UUID,body: MeetingMove,request: Request,caller: Caller=Depends(rm_caller)):
     return await run(lambda:records.reschedule_meeting(caller.ctx,appointment_id,body),request,caller,'rm.meeting_reschedule')
+
+
+# Brief Writer (0118, architecture §15.4): one saved pre-meeting brief per confirmed meeting, written with her JWT by the
+# copilot's meeting brief and re-checked against consent every time it is opened. The workspace calls POST for meetings in
+# the next 7 days that have no brief, so it is ready before she asks; approving records the exact version she read.
+@router.get('/meetings/briefs')
+async def meeting_briefs(request: Request,caller: Caller=Depends(rm_caller)):
+    from app.services.meetings import brief
+    return await run(lambda:brief.upcoming(caller.ctx),request,caller,'rm.meeting_briefs')
+
+@router.get('/meetings/{meeting_id}/brief')
+async def meeting_brief(meeting_id: UUID,request: Request,caller: Caller=Depends(rm_caller)):
+    from app.services.meetings import brief
+    return await run(lambda:brief.read(meeting_id,caller.ctx),request,caller,'rm.meeting_brief')
+
+@router.post('/meetings/{meeting_id}/brief')
+async def prepare_meeting_brief(meeting_id: UUID,body: BriefPrepare,request: Request,caller: Caller=Depends(rm_caller)):
+    from app.services.meetings import brief
+    trace=start_trace()
+    trace.attrs.update(side='rm',role='rm',intent='meeting_brief')
+    async def operation():
+        # A model failure or a brief the copilot could not write is returned, not raised, so run() still flushes the audit.
+        try:return await brief.prepare(meeting_id,caller.ctx,regenerate=body.regenerate)
+        except LLMError:return {'_failed':'model'}
+        except brief.BriefUnavailable:return {'_failed':'brief'}
+        finally:
+            for call in trace.llm_calls:
+                audit.add('agent','agent.llm_call','success' if call['ok'] else 'failed',
+                    details={k:call[k] for k in ('model','prompt_version','transport','input_tokens','output_tokens','ms')})
+    result=await run(operation,request,caller,'rm.meeting_brief_prepare')
+    if result.get('_failed')=='model':
+        raise ApiError(503,'brief_unavailable','The assistant model is unavailable right now, so no briefing was written. Nothing was changed. Please retry.')
+    if result.get('_failed'):
+        raise ApiError(409,'brief_unavailable','The briefing could not be prepared for this meeting. Ask the assistant for a briefing instead.')
+    return result
+
+@router.post('/meetings/{meeting_id}/brief/approve')
+async def approve_meeting_brief(meeting_id: UUID,body: BriefApproval,request: Request,caller: Caller=Depends(rm_caller)):
+    from app.services.meetings import brief
+    return await run(lambda:brief.approve(meeting_id,body.brief_id,body.version,body.command_id,caller.ctx),request,caller,'rm.meeting_brief_approve')
 
 
 # Saved RM conversations (0091) ------------------------------------------------------------------------------------

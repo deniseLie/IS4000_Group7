@@ -211,9 +211,9 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Backlog | Test case row 24; CR16 |
 | Owner | Denise (CR16) |
 | State | ready |
-| Setup | Signed in as Michelle. Loan articles from 0086 and 0087 are published. |
+| Setup | Signed in as Michelle. Financing articles from 0115 are published (personal and car loans retired). |
 | Input | Can I get a personal loan of SGD 30,000? What do I need? |
-| Expected output | Explains the personal loan and what an application needs from the approved article, with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (apply through the official channel or ask her RM). |
+| Expected output | (Since 0115) Says from the approved article that DemoBank does not offer personal loans in this demo and names what it does offer (property financing, borrowing against her investments), with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (apply through the official channel or ask her RM). |
 | Must not happen | Saying she qualifies or is approved; An invented interest rate; A recommendation of which loan to take |
 | Schema | At least one loan source; every figure is in a cited article or her records. |
 | Trajectory | {"nodes": ["planner", "agent", "compose"], "idle": ["act"], "agents": {"guide": 1}, "tools": [], "model": true} |

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {askAssistant,contextAfter,dayCells,followupGroups,historyFor,interactionPayload,isRm,missingFields,partialReply,replyText,requestContext,validationNote} from './rm.js';
+import {askAssistant,briefNotice,briefsToPrepare,contextAfter,dayCells,followupGroups,historyFor,interactionPayload,isRm,missingFields,partialReply,replyText,requestContext,validationNote} from './rm.js';
 
 test('the assistant hands each streamed section on, ignores unknown events and returns the answer',async()=>{
   const part=(task,heading,source)=>({task_id:task,sections:[{heading,items:[{text:'x',kind:'record',source_ids:[source]}]}],sources:[{id:source,title:source}]});
@@ -282,4 +282,23 @@ test('the ask card sends a reason code, the meeting only for meeting prep, and s
   assert.equal(askNotice({created:false,duplicate:{lapses_sgt:'Fri 20 Nov 2026, 9:00 am'}},card),
     'You already asked Michelle Ng to share transaction insights. The request lapses on Fri 20 Nov 2026, 9:00 am.');
   assert.match(askNotice({created:false,already_shared:true},card),/already shares transaction insights/);
+});
+
+test('briefings are prepared for the next 7 days only when missing or stale, soonest first, at most 3 (0118)',()=>{
+  const now=new Date('2026-11-07T02:00:00Z'),at=d=>new Date(now.getTime()+d*86400000).toISOString();
+  const meetings=[{meeting_id:'late',starts_at:at(9),brief_version:null},{meeting_id:'ready',starts_at:at(1),brief_version:1,stale:false},
+    {meeting_id:'stale',starts_at:at(3),brief_version:2,stale:true},{meeting_id:'soon',starts_at:at(2),brief_version:null},{meeting_id:'past',starts_at:at(-1),brief_version:null}];
+  assert.deepEqual(briefsToPrepare(meetings,now).map(m=>m.meeting_id),['soon','stale']);
+  assert.equal(briefsToPrepare([1,2,3,4].map(d=>({meeting_id:d,starts_at:at(d/2),brief_version:null})),now).length,3);
+});
+
+test('a saved briefing says what changed: stale records, withdrawn sharing, removed topics and dropped suggestions (0118)',()=>{
+  assert.deepEqual(briefNotice(null),[]);
+  assert.deepEqual(briefNotice({stale:false,withdrawn:[],removed_points:[],withheld:0}),[]);
+  const lines=briefNotice({stale:true,withdrawn:[{category:'transaction_insights',on:'7 Nov 2026'}],removed_points:[{point_id:'p',on:'7 Nov 2026'}],withheld:2});
+  assert.equal(lines.length,4);
+  assert.match(lines[1],/stopped sharing transaction insights on 7 Nov 2026/);
+  assert.match(lines[2],/removed a topic/);
+  assert.match(lines[3],/2 suggestions were left out/);
+  assert.equal(briefNotice({withdrawn:[{category:'chat_topics',on:'7 Nov 2026'}],removed_points:[{point_id:'p'}]}).length,1);  // the withdrawal covers it
 });

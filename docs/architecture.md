@@ -253,7 +253,7 @@ The client stories are all implemented. The RM side of handovers, tickets and me
 | CR11 Card limit | Assistant explanation + request form (latest stated amount) | Cards and credit team decides |
 | CR12–CR13 Fraud, lost card, pending | Assistant: fixed urgent steps (freeze the card on Overview or call the fraud line) and one urgent request to her RM, offered for Confirm; the fixed lost-card reply makes the same offer | Rules from records; the urgent request is recorded only when she confirms |
 | CR14–CR15 Cards and account | Assistant (records answers, "which card?", follow-ups), Overview (card freeze and unfreeze) | Figures copied from records |
-| CR16 Loans | Assistant (home, personal, car loan articles) | No eligibility, rate or approval promises |
+| CR16 Loans | Assistant (property financing and Lombard articles since 0115; personal and car loans retired) | No eligibility, rate or approval promises |
 | CR17 Meetings | Assistant (drafts a meeting request: one `meeting.request` offer) and My requests > Meetings (request form, answer a proposed time, withdraw) | Requests only; the RM accepts, proposes another time or declines in the RM workspace |
 
 **Rules versus AI.** Actions and safety (handover, urgent card requests, meeting requests, confirmations) are decided by rules,
@@ -1040,7 +1040,7 @@ Built in phases 0–9 on 4 Nov 2026, one commit per phase; the plan with files, 
 <a id="15-meeting-lifecycle-seam-rm-copilot-target-agreed-4-nov-2026-not-built-yet"></a>
 ## 15. Meeting lifecycle seam (RM copilot target, hybrid slice implemented)
 
-The meeting lifecycle centres the RM product on a client's meeting request, a consent-gated pre-meeting brief, the meeting itself and RM-approved minutes. **Built:** the seam (migration `0105` and the shared files below); meeting requests and RM decisions (`0106`, §15.1); consent v2 (`0109`–`0114`, §15.2); and, by the meeting team, the minutes slice (`0120`–`0124`, §15.3): two one-node minutes graphs, a meeting worker, notes and transcript drafting, approvals, follow-ups and a recap. **Still target:** the durable pre-meeting graph (one thread per meeting, pausing for the RM's approvals), the Brief Writer and the Proposal Drafter; `on_event`, `prepare`, `decide` and `status` still raise `MeetingsUnavailable`.
+The meeting lifecycle centres the RM product on a client's meeting request, a consent-gated pre-meeting brief, the meeting itself and RM-approved minutes. **Built:** the seam (migration `0105` and the shared files below); meeting requests and RM decisions (`0106`, §15.1); consent v2 (`0109`–`0114`, §15.2); and, by the meeting team, the minutes slice (`0120`–`0124`, §15.3): two one-node minutes graphs, a meeting worker, notes and transcript drafting, approvals, follow-ups and a recap. **Built 7 Nov:** the Brief Writer (`0118`, §15.4): a saved, versioned pre-meeting brief per meeting, re-checked against consent on every open; `prepare`, `decide` (brief step) and `status` work. **Still target:** the durable pre-meeting graph (one thread per meeting, pausing for the RM's approvals) and the Proposal Drafter; `on_event` still raises `MeetingsUnavailable`.
 
 | Part | Where | Rule |
 |---|---|---|
@@ -1085,7 +1085,7 @@ The client decides per category what her RM may see, for how long, and can take 
 - **0113:** `consent.asks` and `rm_ask_consent`, with fixed reason codes, one open ask per client, RM and category, a 14-day lapse (`rm_consent_request` tickets, 0071 pattern) and `consent.decline_ask`. Also `data_deletion` with a 10-business-day target.
 - **0114:** offer switches through `offer_group_confirm(group, include)`. A switch is a `consent.grant` until `request` after the first step, and stays off unless she turns it on; a typed yes includes none.
 - **Chat:** offers come from rules in `agents/consent_answers.py`; `relationship/v7` only explains.
-- **Not built:** on the meeting side, the brief references, `grants_used` and the *Removed by client* rendering (they wait for the Brief Writer).
+- **Built 7 Nov (0118):** the brief's `grants_used`, the topics it showed, and the *Removed by client on <date>* rendering (§15.4).
 - **Hosted:** batches `36`–`40` were applied on 5 Nov 2026.
 
 | Category | Default | Granularity | Revoke or delete | Expiry |
@@ -1108,7 +1108,30 @@ Both current participants acknowledge the versioned meeting notice before transc
 
 Zoom currently supplies scheduling/link management through a configured private own-user OAuth grant. Call times are explicitly RM-documented. TXT/VTT intake is bounded at 1 MiB raw input, 100 cues and 16 KB redacted evidence, with no truncation. Speaker mapping and coverage are RM assertions. Transcripts queue a worker job; explicit typed notes can be drafted on an RM request. Creating follow-ups and sharing a recap require separate approvals after exact minutes approval. Each participant completes only their own follow-ups with evidence.
 
-Automatic provider webhooks/capture, caption plugin installation, longer-call chunking, pre-meeting Brief Writer and client-safe Proposal Drafter remain separate work. `prepare` therefore continues to report unavailable; the existing brief seam is not replaced by a notes summary. No hosted migration is applied automatically, and no credentials are included in source.
+Automatic provider webhooks/capture, caption plugin installation, longer-call chunking and the client-safe Proposal Drafter remain separate work. The pre-meeting Brief Writer is built (§15.4). No hosted migration is applied automatically, and no credentials are included in source.
+
+### 15.4 Brief Writer (built 7 Nov 2026, migration 0118)
+
+One saved, versioned brief per confirmed meeting (`meetings.copilot_briefs`), written with the RM's JWT; the restricted worker still reads no client records and still rejects `brief.requested`.
+
+| Part | Where | Rule |
+|---|---|---|
+| Writing | `services/meetings/brief.prepare` | Runs the copilot's `meeting_brief` for that appointment (`graph.respond`, intent and appointment set by code), so the book check, the gated reads with purpose `meeting_prep`, the code-written record sections and the checked model points all apply. A new version is written when none exists, when notes or tasks changed since (`stale`), or on request |
+| Stored | `brief.store`, `rm_meeting_brief_save` | Record sections, checked points, source titles. **Not stored:** items from a consent-gated read (topics from her chats, transaction insights, large movements) or their source records; the section keeps their place (`gated_at`). `grants_used` (active grant per category) comes from SQL, never from the caller; the topic ids shown must be hers. Idempotent on `command_id`, audited `action.meeting_brief_saved` |
+| Opening | `rm_meeting_brief`, `brief.view` | Re-reads the three gated readers now and puts their current items back. A grant used that is no longer active, or a topic removed since, is returned with its date and renders as *Removed by client on <date>*; a model point that rested only on gated sources no longer shared is dropped and counted (`withheld`). Audited `data.read` |
+| Approval | `rm_meeting_brief_approve` | The exact latest version (id and number); an older version is refused (P1001); a new version needs a new approval. Audited |
+| Ready before she asks | `rm_meeting_briefs`, `lib/rm.prepareMissingBriefs` | When the RM opens Today, briefs are prepared one at a time for confirmed meetings in the next 7 days that have none or a stale one (at most 3). Today and Schedule → **Briefing** open `MeetingBrief.jsx` |
+| Seam | `services/meetings/__init__.py` | `prepare` returns a `BriefCard` (labels record, client said, AI suggestion, gap; every non-gap item cited), `decide('brief')` approves or writes a new draft, `status` reports `scheduled`, `brief_review` or `brief_approved`. All raise while `MEETINGS_ENABLED` is false; the workspace routes `/rm/meetings/*` do not need it |
+
+The next brief after a meeting includes the approved minutes (a meeting note since 0121) and the follow-ups created from them (RM tasks), so the story carries on.
+
+### 15.5 Storyline alignment (7 Nov 2026, migrations 0115-0117)
+
+Private-client products in the demo, following a Singapore private bank's offer (research: [ubs-practices.md](research/ubs-practices.md) §12–14):
+
+- **Financing (0115):** `loans` v3 (property financing and borrowing against investments; no personal or car loans), `home-loans` v2 (uncommitted, variable rate, no early repayment penalty; RM → mortgage specialist's borrowing plan → valuation and conveyancing → credit decision; documents) and `lombard-financing` v1 (variable loan facility, fixed term advance, collateral and lending values decided by the bank). No rates, amounts, limits or periods.
+- **Portfolio (0116):** `banking.portfolio_holdings` (mandate, asset class, market value, the bank's lending value per holding; RLS own rows), `customer_read_portfolio` (Overview → Investments; lending values are not returned to her), and `portfolio`/`financing` in `rm.client_data` (client page and brief). `rm.check_collateral` adds or clears a `collateral_alert` milestone when Lombard borrowing exceeds the lending value (audited `policy.collateral_alert[_cleared]`); `services/rm/priority.py` scores it `collateral` (40). Demo helpers (owner only): `banking.reset_portfolio_demo`, `rm.demo_lombard_scenario`.
+- **Demo data (0117):** "time deposit" wording; Michelle's meeting "Property financing options" (topics `home_loan`, `investments`) in the seed and every `rm.reset_meeting_demo`; topic labels *Property financing* and *Time deposit* (codes unchanged); the `financing_specialist` request type (owner team *Mortgage and Lombard specialists*) for the RM's hand-off after a meeting.
 
 ## Appendix: knowledge base
 

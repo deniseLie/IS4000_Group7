@@ -123,3 +123,19 @@ def test_only_the_models_points_are_its_own_and_each_heading_is_capped():
     assert {x['kind'] for x in sections[0]['items']} == {'suggestion'}
     ordered = bf.in_order([*sections, bf.meeting_section(None)], bf.BRIEF_ORDER)
     assert [s['heading'] for s in ordered] == ['The meeting', 'Conversation starters']  # empty headings are dropped
+
+
+def test_the_portfolio_and_lombard_cover_are_written_from_the_records() -> None:
+    # 0116: rm.client_data's portfolio and financing; the figures are copied from the record, each line cites it.
+    d=data(portfolio={'mandate':'advised','currency':'SGD','as_of':'2026-11-07','total_value':1150000.0,
+        'holdings':[{'asset_class':'cash','market_value':120000.0,'currency':'SGD'},{'asset_class':'equities','market_value':450000.0,'currency':'SGD'}]},
+        financing={'lombard_outstanding':700000.0,'lending_value':658500.0,'collateral_status':'below_limit','shortfall':41500.0,'currency':'SGD'})
+    rows=bf.product_items(d)
+    assert rows[-2]=={'text':'Advised portfolio: SGD 1,150,000.00 as of 7 Nov 2026 (cash SGD 120,000.00 and equities SGD 450,000.00).',
+        'kind':'record','owner':'rm','source_ids':['portfolio']}
+    assert rows[-1]['text']=='Lombard borrowing SGD 700,000.00 against a lending value of SGD 658,500.00: above the lending value of the collateral, short by SGD 41,500.00.'
+    assert 'an advised portfolio of SGD 1,150,000.00' in bf.who_items(d)[-1]['text'] and 'portfolio' in bf.who_items(d)[-1]['source_ids']
+    bundle=ev.client_bundle({'data':{**d,'milestones':[],'appointments':[],'preferences':[],'rm_requests':[],'tasks':[],'interactions':[]},'as_of':'x'})
+    assert bf.trimmed(bundle.get('portfolio'),set())=={'mandate':'advised','currency':'SGD','total_value':1150000.0,'as_of':'2026-11-07',
+        'asset_classes':[{'asset_class':'cash','market_value':120000.0},{'asset_class':'equities','market_value':450000.0}]}
+    assert bundle.get('financing') is not None and bf.portfolio_items(data())==[]

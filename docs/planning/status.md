@@ -1,4 +1,4 @@
-# Status (6 Nov 2026)
+# Status (7 Nov 2026)
 
 Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history). Both personas are built; the dated sections below are history, newest first.
 
@@ -34,6 +34,16 @@ Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog
 | F28 | Audit trail walkthrough | Done | – |
 | QA1 | Test case set (49 cases) | **Runnable / manual boundaries explicit** | [C01–C24, C11b, R01–R20 and R24–R27](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 17 runnable, 8 manual; RM: 17 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
 
+## Done on 7 Nov (storyline alignment and Brief Writer; migrations 0115-0117, 0118)
+
+Demo script and metrics: [storyline-michelle.md](../workflows/storyline-michelle.md).
+- **Financing (0115):** private-client articles: property financing (`home-loans` v2), borrowing against investments (`lombard-financing` v1), `loans` v3; personal and car loans retired. Evaluation cases, retrieval cases and chips updated.
+- **Portfolio and collateral (0116):** Michelle's advised portfolio on her Overview and on Sophie's client page and brief; a Lombard collateral alert on Today when borrowing exceeds the lending value (demo: `44_demo_lombard_alert.sql`).
+- **Demo data (0117):** time deposit wording, the meeting "Property financing options", topic labels, the `financing_specialist` request type.
+- **Brief Writer (0118, meeting side):** saved, versioned briefs per meeting, prepared in the background for the next 7 days, re-checked against consent on open (*Removed by client on <date>*), approved by exact version; `prepare`, `decide` (brief) and `status` in the seam.
+- **Checked here:** every migration applied to a fresh PostgreSQL 16; the new SQL (RLS, refusals, collateral alert, brief save/replay/recheck/approve) by hand with psql; hosted batch 42 applied and re-run (identical SQL notice) on a copy without 0115–0117/0118; frontend unit tests (`node --test`) and an esbuild bundle of the app; the pure Python tests that import without the full dependency set. **Not run here** (no package registry in that sandbox): the full `pytest` suite with `TEST_DATABASE_LOCAL=1` (new `test_storyline_db.py`), the Playwright suites and a live model brief. Run them before merging.
+- **Still open:** the Proposal Drafter, the durable lifecycle graph and `on_event`; automatic Zoom capture (free Zoom has no cloud transcript); longer-call chunking; Advisor Messaging (vision only).
+
 ## Admin dashboard (5 Nov 2026)
 
 Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-dashboard.md)): the admin role and workspace (Quality removed from the RM workspace and client view), per-request summaries on root runs, Overview and Failures, Evaluations and Prompts, Agents and Latency. Still to do by the owner: create the `demo.admin@example.com` Auth user, run `backend/supabase/hosted/32_admin_login_hosted.sql`, add the login to the persona fixture and run the opt-in hosted check (`npm run test:hosted`). Offer counts and the other new root-run facts appear only on requests made after this change; older runs show "not recorded".
@@ -61,7 +71,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 ## Done on 5 Nov (meeting lifecycle, by the meeting team; migrations 0120–0124)
 
 - **Notes and follow-up** (45e2ea9): RM meeting proposals from Schedule, held until the client accepts; Zoom links and TXT/VTT transcript import; a Minutes Writer graph (`minutes_writer/v1`) and a restricted worker; RM review and approval of minutes, follow-ups and a recap as separate steps; the client's per-meeting transcript withdrawal (`meeting_transcript_revoke`, 0122). Off unless `MEETINGS_ENABLED=true`; 0120–0124 are applied on hosted.
-- **Not built:** the pre-meeting brief writer and proposal drafter, and the seam functions in `services/meetings/__init__.py` (`prepare`, `decide`, `status`, `on_event` still raise `MeetingsUnavailable`), so 5a still waits.
+- **Not built:** the pre-meeting brief writer and proposal drafter, and the seam functions in `services/meetings/__init__.py` (`prepare`, `decide`, `status`, `on_event` still raise `MeetingsUnavailable`), so 5a still waits. (Since 7 Nov: the Brief Writer and `prepare`/`decide`/`status` are built, 0118.)
 
 ## Done on 5 Nov (RM copilot build plan 2a–4 and 5b; migrations 0106–0108 on hosted)
 

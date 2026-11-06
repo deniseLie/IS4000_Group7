@@ -9,7 +9,7 @@ function sourceLabel(id) {
   if(id.startsWith('task:'))return 'your task list';
   return id.replace(/[-_]/g,' ');
 }
-const KIND_WORDS={rm_ticket:'Your request',specialist_ticket:'Specialist case',review_deadline:'Review deadline',milestone:'Maturity / review',task:'Your task',meeting:'Confirmed meeting',commitment:'Commitment'};
+const KIND_WORDS={rm_ticket:'Your request',specialist_ticket:'Specialist case',review_deadline:'Review deadline',milestone:'Maturity, review or alert',task:'Your task',meeting:'Confirmed meeting',commitment:'Commitment'};
 
 // RM11 (and RM10 tasks): follow-ups computed live from the records, each with its reason, date and source. The RM can
 // dismiss an item, open it with the assistant, or ask the assistant to prioritise. Nothing is sent to a client from here.

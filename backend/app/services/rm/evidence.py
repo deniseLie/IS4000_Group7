@@ -92,6 +92,8 @@ def client_bundle(result: dict) -> Bundle:
         {**data['profile'],'relationship':rel,'today':data.get('today_text'),'missing_information':data.get('gaps',[])},as_of,cid))
     for key,title in (('accounts','Accounts'),('cards','Credit cards'),('loans','Loans')):
         bundle.add(Evidence(key,f"{title} ({len(data.get(key) or [])} recorded)",'record',data.get(key) or [],as_of,cid))
+    if data.get('portfolio'):bundle.add(Evidence('portfolio','Investment portfolio','record',data['portfolio'],as_of,cid))  # 0116
+    if data.get('financing'):bundle.add(Evidence('financing','Lombard borrowing and collateral cover','record',data['financing'],as_of,cid))
     bundle.add(Evidence('compliance','Open compliance review','record',data.get('compliance') or {'open_review':None},as_of,cid))
     bundle.add(Evidence('preferences','Preferences the client stated','client_stated',data.get('preferences') or [],as_of,cid))
     bundle.add(Evidence('milestones','Upcoming maturities and reviews (next 120 days)','record',data.get('milestones') or [],as_of,cid))

@@ -10,7 +10,8 @@ import {cacheOwner,cached,remember} from '../lib/cache';
 import {reviewNextStep} from '../lib/compliance';
 
 const ACCOUNT={savings:'Savings account',current:'Current account',multi_currency:'Multi-currency account'};
-const LOAN={home:'Home loan',car:'Car loan',personal:'Personal loan',securities_backed:'Securities-backed loan'};
+const LOAN={home:'Property financing',car:'Car loan',personal:'Personal loan',securities_backed:'Lombard loan (against investments)'};
+const ASSET={cash:'Cash deposits',bonds:'Bonds',equities:'Equities',funds:'Funds',alternatives:'Alternatives'};
 const REVIEW_DONE=['completed','closed'];
 const QUERY={from_date:null,to_date:null,filters:null},KEY=`records:${JSON.stringify(QUERY)}`;  // the same unfiltered read Records opens with
 function greeting() {const hour=Number(new Date().toLocaleString('en-SG',{timeZone:'Asia/Singapore',hour:'numeric',hour12:false}));return hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';}
@@ -42,6 +43,7 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,onRais
       <div className="ov-grid"><div className="ov-main"><span className="skeleton-block"/><span className="skeleton-block"/></div><div className="ov-side"><span className="skeleton-block"/><span className="skeleton-block"/></div></div></div></section>;
   const name=displayName(records.profile.data.name).split(' ')[0];
   const accounts=records.accounts.data.filter(row=>row.status!=='closed'),cards=records.cards.data,loans=records.loans.data.filter(row=>row.status==='active');
+  const portfolio=records.portfolio?.data||null;  // 0116
   const sgd=accounts.filter(row=>row.currency==='SGD').reduce((sum,row)=>sum+row.balance,0);
   const rm=records.advisor.data?.current,review=records.compliance.data,open=review&&!REVIEW_DONE.includes(review.status);
   const reviewStep=open?reviewNextStep(review):null;
@@ -58,6 +60,11 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,onRais
         <article className="ov-card" id="ov-accounts"><h2>Accounts</h2>
           {accounts.length?<ul className="ov-rows">{accounts.map(row=><li key={row.account_id}><span className="ov-icon"><Icon name="account"/></span><div><strong>{ACCOUNT[row.type]}</strong><small>{row.number}{row.status==='dormant'?' · Dormant':''}</small></div><b>{money(row.balance,row.currency)}</b></li>)}</ul>
             :<p className="ov-empty">You have no open accounts.</p>}</article>
+        {portfolio&&<article className="ov-card" id="ov-investments" data-testid="overview-portfolio"><h2>Investments</h2>
+          <p className="ov-empty">{portfolio.mandate==='advised'?'Advised portfolio':'Managed portfolio'} · {money(portfolio.total_value,portfolio.currency)} as of {formatDate(portfolio.as_of)}</p>
+          <ul className="ov-rows">{portfolio.holdings.map(row=><li key={row.holding_id}><span className="ov-icon"><Icon name="chart"/></span>
+            <div><strong>{row.description}</strong><small>{ASSET[row.asset_class]}</small></div><b>{money(row.market_value,row.currency)}</b></li>)}</ul>
+          <button className="source-link" onClick={()=>onAsk('Can I borrow against my investments?')}>Borrowing against your investments</button></article>}
         {cards.length>0&&<article className="ov-card" id="ov-cards"><h2>Cards</h2><ul className="ov-rows ov-cards">{cards.map(row=><li key={row.card_id} className={managing===row.card_id?'managing':''}>
           <div className="ov-card-row"><span className="ov-icon"><Icon name="card"/></span>
           <div><strong>{row.name}</strong><small>•••• {row.last4}{row.status==='temporarily_blocked'?'':row.status!=='active'?` · ${row.status.replaceAll('_',' ')}`:''}{row.due_date?` · Due ${formatDate(row.due_date)}`:''}</small>

@@ -416,7 +416,7 @@ export default function Chat({session,onSignIn}) {
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of complex banking needs.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
-    {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
+    {icon:'loan',title:'Financing options',detail:'Property financing and borrowing against investments.',question:'Which financing does DemoBank offer?'},
   ];
 
   function openInlineRequest(prefill={},index=null) {

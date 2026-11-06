@@ -62,7 +62,7 @@ def test_a_meeting_ask_drafts_one_request_with_fixed_topics_and_free_times() -> 
     assert len(times)==3 and len({t.date() for t in times})==3 and all(9<=t.day<=13 for t in times)  # next week, three days
     text=reply.result.text
     assert 'Sophie Lim' in text and '(DEMO)' not in text and meeting_answers.DRAFTED in text
-    assert '• Topics: Home loan, Loan terms (term sheet)' in text and '• Format: video call' in text
+    assert '• Topics: Property financing, Loan terms (term sheet)' in text and '• Format: video call' in text
     assert 'booked' not in text.lower() and 'sent' not in text.lower()
     MeetingRequestTarget.model_validate(target)  # the shape SQL normalises and validates again at offer time
 

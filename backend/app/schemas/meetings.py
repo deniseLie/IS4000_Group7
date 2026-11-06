@@ -38,7 +38,7 @@ TalkingStage = Literal['curious', 'exploring', 'planning', 'ready', 'concern']
 Timeframe = Literal['now', 'within_3m', 'within_12m', 'later', 'unknown']
 ConcernTag = Literal['rates', 'fees', 'eligibility', 'timing']
 TalkingOrigin = Literal['inferred', 'confirmed']  # inferred from chat, or shared by the client herself
-TOPIC_NAME = {'home_loan': 'Home loan', 'investments': 'Investments', 'fixed_deposit': 'Fixed deposit', 'insurance': 'Insurance'}
+TOPIC_NAME = {'home_loan': 'Property financing', 'investments': 'Investments', 'fixed_deposit': 'Time deposit', 'insurance': 'Insurance'}  # labels since 0117 (codes unchanged)
 TIMEFRAME_TEXT = {'now': 'now', 'within_3m': 'within 3 months', 'within_12m': 'within 12 months', 'later': 'later'}
 ORIGIN_TEXT = {'inferred': 'inferred from chat', 'confirmed': 'shared by the client'}
 
@@ -63,7 +63,7 @@ class TalkingPoint(Contract):
 
     def line(self) -> str:
         """The one rendering every reader uses (RM copilot, meeting brief, the client's Data sharing page):
-        'Home loan · planning · within 12 months · inferred from chat'."""
+        'Property financing · planning · within 12 months · inferred from chat'."""
         parts = [TOPIC_NAME[self.topic], self.stage]
         if self.timeframe != 'unknown':
             parts.append(TIMEFRAME_TEXT[self.timeframe])

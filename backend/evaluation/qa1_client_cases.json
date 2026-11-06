@@ -860,17 +860,17 @@
       3
     ],
     "state": "ready",
-    "setup": "Signed in as Michelle. Loan articles from 0086 and 0087 are published.",
+    "setup": "Signed in as Michelle. Financing articles from 0115 are published (personal and car loans retired).",
     "turns": [
       {
         "say": "Can I get a personal loan of SGD 30,000? What do I need?"
       }
     ],
-    "check": "Explains the personal loan and what an application needs from the approved article, with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (apply through the official channel or ask her RM).",
+    "check": "Says from the approved article that DemoBank does not offer personal loans in this demo and names what it does offer (property financing, borrowing against her investments), with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (ask her RM or request a meeting).",
     "cites_any": [
-      "personal-loans",
-      "sg-loan-types",
-      "loans"
+      "loans",
+      "lombard-financing",
+      "sg-loan-types"
     ],
     "expected_origin": "ai",
     "reply_lacks": [

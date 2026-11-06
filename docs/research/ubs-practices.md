@@ -245,9 +245,28 @@ No retention period was added, because DemoBank has none approved.
 - New loans go through the advisor, not digital banking.
 - Mortgage applications follow a set path: a document checklist, a meeting, the bank's credit check, then a property valuation.
 
-**Informs:** nothing yet.
-- Loans were not a priority in this round, and the existing `loans` and `sg-loan-types` articles already say that only the bank decides.
-- A future DemoBank article on borrowing against investments could borrow this structure. It would need approved synthetic figures in `kb.facts` before it gives any lending values.
+**Informs (7 Nov 2026, migration 0115):** `lombard-financing` v1 and `home-loans` v2, using the structure in §13; no lending values, rates or periods.
+
+## 13. What a Singapore private client is offered (checked 7 Nov 2026)
+
+| Page | Jurisdiction |
+|---|---|
+| https://www.ubs.com/sg/en/wealthmanagement/_jcr_content/root/headercontainer.full-megamenu.html | Singapore |
+| https://www.ubs.com/sg/en/wealthmanagement/what-we-offer/financing/financing-solutions.html | Singapore |
+| https://www.ubs.com/sg/en/wealthmanagement/what-we-offer/financing/mortgage-solutions.html | Singapore |
+| https://www.ubs.com/sg/en/wealthmanagement/digital-banking/faq.html | Singapore |
+
+**What UBS says:**
+- The Singapore wealth management offer is planning (wealth planning, trusts, family advisory), investing (managed and advised portfolios, sustainable and alternative investments), financing (financing solutions, mortgage solutions) and digital banking. No personal or car loans are listed.
+- **Financing solutions:** Lombard credit secured on a portfolio (equities, funds, bonds, cash deposits): a variable loan facility (draw as needed, interest on the amount used) and a fixed term advance (a set amount at a rate fixed for the period); a bank guarantee. If collateral falls below a set limit, the bank may ask for more collateral or repayment and may sell investments.
+- **Mortgage solutions:** property financing and refinancing as a borrowing plan prepared with mortgage planning specialists, third-party valuation and conveyancing, subject to credit approval; an uncommitted mortgage with a variable rate and no early repayment penalty. No document list or rates are published.
+- **Digital banking:** advisor messaging, a document mailbox kept for 10 years, alerts (balances, transactions, orders, mailbox), FX and securities trading, research.
+
+**Informs:** the storyline's products (`docs/workflows/storyline-michelle.md`): Michelle's advised portfolio and time deposit (0116), the financing articles (0115), the `financing_specialist` request type and the meeting "Property financing options" (0117). DemoBank's articles invent no figures and name no bank.
+
+## 14. AI that UBS describes publicly (checked 7 Nov 2026)
+
+From UBS's own US advisor page and press coverage (finews, Financial Planning; one aggregator, bankingnewsai.com, to be checked against its sources): US advisors use STAAT Insights (pre-meeting briefings, about 400 insight scenarios), a scheduling agent, an advisor knowledge chatbot and AI meeting notes; UBS Switzerland rolled out a meeting-preparation tool in 2026 and runs a client chatbot that passes a summary to an employee when it hands over; UBS says AI does not make investment recommendations. Nothing AI-specific is published for Singapore, where clients reach their advisor through Advisor Messaging (WhatsApp or WeChat). **Informs:** the storyline's positioning (one connected client story across these moments) and its metric benchmarks.
 
 ## Gaps in UBS's public pages
 

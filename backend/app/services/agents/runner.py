@@ -33,7 +33,7 @@ PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version;
 COMMON = 'v2'  # runner_common: the shared answer contract and step format (v2: never restate her own figures, C12)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'DemoBank synthetic records'
-TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
+TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_portfolio': 'Your investments', 'my_transactions': 'Your transactions',
     'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
 # services/agents/rules.py registers them: (spec, task, ctx, history, language, inputs). inputs are the upstream exports

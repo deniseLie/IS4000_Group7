@@ -73,6 +73,7 @@ TELL_RM = re.compile(r'\b(?:tell|let|inform|notify|update|warn|alert)\s+(?:my\s+
 ACCOUNT_INTENTS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ('transfer_status', re.compile(r'\b(?:transfers?|pending|landlord|payee|arrive|go through)\b', re.I)),
     ('card_limit', re.compile(r'\b(?:card|credit)\s+limit\b|\blimit\s+(?:increase|change)\b', re.I)),
+    ('portfolio', re.compile(r'\b(?:portfolio|investments?|holdings?|time\s+deposits?|fixed\s+deposits?|matur\w*)\b', re.I)),  # 0116
     ('loans', re.compile(r'\bloans?\b', re.I)), ('statements', re.compile(r'\bstatements?\b', re.I)),
     ('transactions', re.compile(r'\b(?:transactions?|spent|spend|spending|purchases?|charged|charges?)\b', re.I)),
     ('card_fees', re.compile(r'\bfees?\b', re.I)), ('card_figures', re.compile(r'\bcards?\b', re.I)),

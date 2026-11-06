@@ -327,8 +327,8 @@ def test_two_cards_need_a_which_card_question_without_figures() -> None:
     assert 'more than one card record' in prompts.load('retail',retail.PROMPT)['system']
 
 
-def test_car_loan_question_routes_to_retail_with_the_car_loan_article() -> None:
-    # Retrieval and content of car-loans are checked in the database (test_knowledge_checks.py, retrieval cases).
+def test_car_loan_question_routes_to_retail_with_the_financing_article() -> None:
+    # Car loans are not offered since 0115; the loans article says so (test_knowledge_checks.py, retrieval cases).
     issue=simple_task('can i get a car loan','English')
     assert issue is not None and (issue.agent,issue.intent)==('accounts','loans')
     assert 'never say or imply that this customer is eligible' in prompts.load('retail',retail.PROMPT)['system']

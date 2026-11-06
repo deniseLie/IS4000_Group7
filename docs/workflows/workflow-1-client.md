@@ -344,7 +344,7 @@ All three branches rejoin: **all three problems answered and both decisions reco
 |---|---|---|---|
 | 10 | Alex | Asks about his credit card: *"whats my credit card due date and min payment"* | |
 | 11 | Bot | Asks which card if he has more than one, then shows due date, minimum payment, outstanding balance (2,563.10 with the seeded charges) and credit limit from his record. | CR14 · F13 |
-| 12 | Alex | Asks about a loan: *"can i get a car loan"* | |
+| 12 | Alex | Asks about a loan: *"can i get a car loan"* | Since 0115 the answer says car loans are not offered and names property financing and borrowing against investments |
 | 13 | Bot | Explains loan products and eligibility; says the **bank** makes the final decision; links to the application channel; adds the disclaimer. | CR16 · F18 |
 | 14 | Alex | Clicks "Talk to a person". | |
 | 15 | Bot | Hands over to a staff member with a short case summary (no sensitive details). | Common criteria · F16 |

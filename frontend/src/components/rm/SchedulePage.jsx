@@ -1,5 +1,6 @@
 import MeetingWorkspace from '../meetings/MeetingWorkspace';
 import MeetingProposal from '../meetings/MeetingProposal';
+import MeetingBrief from '../meetings/MeetingBrief';
 import {useEffect,useState} from 'react';
 import Icon from '../Icon';
 import {DECLINE_REASONS,FORMAT_WORDS,MOVE_REASONS,WEEKDAY_NAMES,dayCells,decisionBody,decisionNotice,freeTimes,groupByDate,idKeeper,isNewRequest,meetingsPerWeek,
@@ -23,7 +24,7 @@ export default function SchedulePage({token,onAsk,today}) {
   const [requests,setRequests]=useState(null),[shown,setShown]=useState('open'),[toAnswer,setToAnswer]=useState(null);
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const [ids]=useState(()=>idKeeper());
-  const [workspace,setWorkspace]=useState(null);
+  const [workspace,setWorkspace]=useState(null),[briefFor,setBriefFor]=useState(null);  // 0118: the saved briefing
   async function load(view=shown) {
     setError('');
     try {
@@ -68,7 +69,8 @@ export default function SchedulePage({token,onAsk,today}) {
     {!appointments&&!error&&<p className="loading" role="status">Loading your schedule…</p>}
     {tab==='appointments'&&<MeetingProposal token={token} onScheduled={()=>load()}/>}
     {workspace&&<MeetingWorkspace meetingId={workspace} token={token} onClose={()=>setWorkspace(null)}/>}
-    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={setWorkspace}/>}
+    {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
+    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={setWorkspace} onBrief={setBriefFor}/>}
     {appointments&&tab==='requests'&&(!requests?<p className="loading" role="status">Loading meeting requests…</p>
       :<MeetingRequests requests={requests} shown={shown} availability={availability} busy={busy} onDecide={decide}/>)}
     {availability&&tab==='availability'&&<div className="rmw-avail-layout">
@@ -84,7 +86,7 @@ function dayTitle(date,today) {
 }
 function timeOf(when) {return (when||'').split(', ').at(-1);}
 
-function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,onWorkspace}) {
+function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,onWorkspace,onBrief}) {
   const [moving,setMoving]=useState(null);
   if(!appointments.length)return <p className="page-empty">No appointments in the next 14 days.</p>;
   const perWeek=meetingsPerWeek(appointments);
@@ -102,8 +104,7 @@ function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,o
         <span className={`ticket-status ${a.status==='held'?'waiting_on_client':'resolved'}`}>{a.status==='held'?'Held':'Confirmed'}</span>
         {a.status==='confirmed'&&<div className="rmw-appointment-actions" style={{display:'flex',flexWrap:'wrap',gap:8}}>
           <button className="bank-chat-logout" data-testid="rm-open-meeting-workspace" disabled={busy} onClick={()=>onWorkspace(a.appointment_id)}>Notes and follow-up</button>
-          <button className="primary-button small" data-testid="rm-brief" onClick={()=>onAsk(`Brief me for my meeting with ${a.client} on ${a.when}`,
-            {intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}})}><Icon name="spark"/>Prepare briefing</button>
+          {!a.past&&<button className="primary-button small" data-testid="rm-brief" onClick={()=>onBrief(a)}><Icon name="spark"/>Briefing</button>}
           {!a.past&&<button className="bank-chat-logout" data-testid="rm-move" aria-expanded={moving===a.appointment_id} disabled={busy}
             onClick={()=>setMoving(moving===a.appointment_id?null:a.appointment_id)}><Icon name="clock"/>Move</button>}</div>}
         {moving===a.appointment_id&&<MoveForm a={a} free={freeTimes(availability,[a.starts_at])} busy={busy} onMove={onMove} onClose={()=>setMoving(null)}/>}

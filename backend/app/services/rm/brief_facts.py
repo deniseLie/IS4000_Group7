@@ -222,6 +222,8 @@ def who_items(data: dict,products: bool=True) -> list[dict]:
             if rows:
                 names=list(dict.fromkeys(words(r.get('type') or r.get('name') or label) for r in rows))
                 parts.append(f"{plural(len(rows),label)} ({', '.join(names)})");ids.append(key)
+        if (pf:=data.get('portfolio')):
+            parts.append(f"an {words(pf.get('mandate'))} portfolio of {money(pf.get('total_value'),pf.get('currency'))}");ids.append('portfolio')
         if parts:items.append(item('Products: '+joined(parts)+'.','record','rm',ids))
     return items
 
@@ -296,6 +298,24 @@ def product_items(data: dict) -> list[dict]:
         rows.append(item(f"{words(loan.get('type')).capitalize()} loan: outstanding {money(loan.get('outstanding_amount'),loan.get('currency'))}, monthly repayment "
             f"{money(loan.get('monthly_repayment'),loan.get('currency'))}"+(f", next due {day(loan['next_due_date'])}" if loan.get('next_due_date') else '')
             +f", {words(loan.get('status'))}.",'record','rm',['loans']))
+    return rows+portfolio_items(data)
+
+
+COVER_WORDS={'covered':'covered by the lending value of the collateral','below_limit':'above the lending value of the collateral'}
+
+
+def portfolio_items(data: dict) -> list[dict]:
+    """0116: the portfolio by asset class (values as recorded), then Lombard borrowing against the collateral's lending value."""
+    rows,pf,fin=[],data.get('portfolio'),data.get('financing')
+    if pf:
+        parts=[f"{words(h.get('asset_class'))} {money(h.get('market_value'),h.get('currency'))}" for h in pf.get('holdings') or []]
+        rows.append(item(f"{words(pf.get('mandate')).capitalize()} portfolio: {money(pf.get('total_value'),pf.get('currency'))}"
+            +(f" as of {day(pf['as_of'])}" if pf.get('as_of') else '')+(f" ({joined(parts)})" if parts else '')+'.','record','rm',['portfolio']))
+    if fin:
+        status=fin.get('collateral_status')
+        line=f"Lombard borrowing {money(fin.get('lombard_outstanding'),fin.get('currency'))} against a lending value of {money(fin.get('lending_value'),fin.get('currency'))}"
+        line+=f": {COVER_WORDS.get(status,words(status))}"+(f", short by {money(fin.get('shortfall'),fin.get('currency'))}" if status=='below_limit' else '')+'.'
+        rows.append(item(line,'record','rm',['financing']))
     return rows
 
 
@@ -415,6 +435,8 @@ def trimmed(e: ev.Evidence,keep: set[str]) -> Any:
     if e.id=='accounts':return [{k:r.get(k) for k in ('type','currency','balance','status')} for r in d]
     if e.id=='cards':return [{k:r.get(k) for k in ('name','status','currency','credit_limit','outstanding_balance','payment_due_date')} for r in d]
     if e.id=='loans':return [{k:r.get(k) for k in ('type','currency','outstanding_amount','monthly_repayment','next_due_date','status')} for r in d]
+    if e.id=='portfolio':return {k:d.get(k) for k in ('mandate','currency','total_value','as_of')}|{'asset_classes':[
+        {'asset_class':h.get('asset_class'),'market_value':h.get('market_value')} for h in d.get('holdings') or []]}
     if e.id in ('appointments','free-slots'):return None  # the selected meeting is its own record
     if e.id=='cash-events' and isinstance(d,list):return lists(sorted(d,key=lambda r:-abs(float(r.get('amount') or 0))))
     if e.id=='told' and isinstance(d,list):return [{**t,'text':clip(t.get('text'),TEXT_CHARS)} for t in d[-TOP:]]

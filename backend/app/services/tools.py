@@ -104,6 +104,14 @@ async def my_loans() -> dict[str,Any]:
     return {'items':result.data,'call_id':str(result.call_id)}
 
 
+async def my_portfolio() -> dict[str,Any]:
+    """The signed-in customer's own investment portfolio (0116), one row per holding; her time deposit is a cash holding."""
+    result=await customer_data.get_portfolio(_ctx())
+    p=result.data
+    items=[{**h,'mandate':p['mandate'],'as_of':p['as_of'],'portfolio_total':p['total_value']} for h in p['holdings']] if p else []
+    return {'items':items,'call_id':str(result.call_id)}
+
+
 async def travel_flags() -> dict[str,Any]:
     """Charges on one card in another country less than 4 hours after an earlier charge (a rule, not a fraud decision)."""
     flags=fraud_records.travel_flags(await fraud_records.load(_ctx()))
@@ -246,7 +254,7 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
-    'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'travel_flags':travel_flags,
+    'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'my_portfolio':my_portfolio,'travel_flags':travel_flags,
     'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
     **external.TOOLS,  # public data, codes only; an agent may call those named in its spec's `external`
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,

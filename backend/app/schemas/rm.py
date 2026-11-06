@@ -188,3 +188,15 @@ class ConversationSave(Model):
 
 class Dismissal(Model):
     item_key: str=Field(pattern=r'^[a-z_]{1,30}:[A-Za-z0-9_.:-]{1,100}$')
+
+
+class BriefPrepare(Model):
+    """Brief Writer (0118): write a new version even when the saved one is current."""
+    regenerate: bool=False
+
+
+class BriefApproval(Model):
+    """The RM approves the exact brief version she read (0118)."""
+    brief_id: UUID
+    version: int=Field(ge=1)
+    command_id: UUID

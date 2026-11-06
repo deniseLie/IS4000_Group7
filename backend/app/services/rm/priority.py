@@ -6,6 +6,7 @@ so the model only explains an order code has already fixed.
 An item's score is the sum of its parts; every part is {code, points, reason} and travels with the item:
 
     urgent             50  an urgent request in her own queue (the 2b *Urgent card* requests are urgent rm_handover tickets)
+    collateral         40  Lombard borrowing above the lending value of its collateral (the 0116 collateral_alert milestone)
     past_target        30  a request past its target time, a review or a task past its due date
     respond_by_passed  30  a client's meeting request past its respond-by date
     deadline_14d       20  a compliance review due within 14 days (not yet past)
@@ -14,7 +15,7 @@ An item's score is the sum of its parts; every part is {code, points, reason} an
 
 Items: her own open requests (rm_tickets rm_owned; age counts only while submitted or in review), meeting requests
 waiting for her answer, reviews due within 14 days or overdue, confirmed meetings in the next 7 days, tasks with a due
-date and milestones (maturities) within 14 days (no points: listed so the day is complete). Specialist tickets and
+date and milestones (maturities) within 14 days (no points: listed so the day is complete; a collateral alert scores). Specialist tickets and
 commitments are not scored.
 
 Ties (equal scores) are broken in this order: the earlier date first (a request's target time, a meeting request's
@@ -27,12 +28,13 @@ from collections import Counter
 from datetime import date,datetime,time,timedelta,timezone
 
 SGT=timezone(timedelta(hours=8))
-POINTS={'urgent':50,'past_target':30,'respond_by_passed':30,'deadline_14d':20,'meeting_2d':20}
+POINTS={'urgent':50,'collateral':40,'past_target':30,'respond_by_passed':30,'deadline_14d':20,'meeting_2d':20}
 WAIT_CAP=10  # waiting: 1 point a day, at most 10
 KINDS=('request','meeting_request','review','meeting','task','milestone')
 DEADLINE_DAYS,MEETING_DAYS,WEEK,SOON_DAYS,DO_FIRST=14,2,7,14,3
 WAITING=('submitted','in_review')  # waiting on the bank, as rm.ticket_json's overdue
 URGENT_CARD='[Urgent card]'  # the summary prefix of rm_handover.URGENT_TOPIC requests
+COLLATERAL='Lombard collateral below'  # the title prefix of rm.check_collateral's milestone (0116)
 
 
 def day(d: date) -> str:return f'{d.day} {d:%b %Y}'  # rm.day's format, portable (no %-d on Windows)
@@ -146,6 +148,7 @@ def rank(*,today: date,now: datetime,tickets: dict|None=None,requests: list[dict
         due=_date(f.get('due_on'))
         if f.get('kind') not in ('task','milestone') or due is None or (f['kind']=='milestone' and not today<=due<=today+timedelta(days=SOON_DAYS)):continue
         parts=[part('past_target',f"Was due {f.get('due_text') or day(due)}")] if f['kind']=='task' and due<today else []
+        if f['kind']=='milestone' and str(f.get('title') or '').startswith(COLLATERAL):parts.append(part('collateral','Lombard collateral below its lending value'))
         items.append(item(f['kind'],str(f['item_key']),f,f.get('title'),due,f.get('due_text') or day(due),parts,item_key=f['item_key']))
     items.sort(key=order)
     for n,x in enumerate(items,1):x.update(rank=n,do_first=n<=DO_FIRST and x['score']>0)
