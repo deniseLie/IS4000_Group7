@@ -592,7 +592,7 @@ def items_of(export: Export, name: str, agent: TargetAgent) -> list:
 
 
 def passed(up: AgentOutput, to: PlanTask, inputs: dict[str, Export], facts: dict) -> None:
-    """Audit names and counts, never values (§14.6 rule 6; the plan's export.passed, named in its category)."""
+    """Audit names and counts, never values (§14.6 rule 6; audited as agent.export_passed)."""
     for name, export in inputs.items():
         count = len(export.value) if isinstance(export.value, list) else 1
         if (fact := f'{up.agent}>{to.agent}:{name}') not in facts['exports']:facts['exports'].append(fact)

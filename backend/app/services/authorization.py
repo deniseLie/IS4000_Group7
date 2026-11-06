@@ -14,8 +14,9 @@ PUBLIC_TOOLS = frozenset({'kb.search','tickets.categories'})
 AUTO_TYPES = frozenset({'handoff.create','appointment.hold','compliance.update_checklist_item','agenda.save','consent.request','document.register','document.submit','compliance.answer_request',
     'insight.delete','insight.mute','insight.resume','insight.restore',  # 0108: her own talking-point controls (Data sharing); 0110: Undo
     'consent.decline_ask'})  # 0113: "Not now" to her RM's ask
-# The customer's own card changes: confirmed by the signed-in customer only; agents are refused (customer_only_action).
-# Staff run the same two types through scripts/staff_support.py, which never goes through this policy.
+# Card changes confirmed by the signed-in customer only; agents are refused (customer_only_action). Since 0081
+# card.cancel_permanently is bank-only (BANK_ONLY_CARD_ACTIONS, checked first), so only card.unblock is hers (0096).
+# Staff run both types through scripts/staff_support.py, which never goes through this policy.
 CUSTOMER_CARD_CHANGES = frozenset({'card.unblock','card.cancel_permanently'})
 CONFIRM_TYPES = frozenset({'card.temporary_block','card.dispute','card.order_replacement','appointment.confirm','appointment.cancel',
     'requests.create','rm.share_summary','consent.grant','consent.revoke','ticket.create',

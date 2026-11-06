@@ -105,7 +105,7 @@ export function parseInsightResult(type,target,value) {
   return {point_id:id(value.point_id),topic:target.topic,stage:stage(value.stage),timeframe:timeframe(value.timeframe),origin:'confirmed',notified:value.notified};
 }
 
-// Activity wording: one sentence per recorded change.
+// Actions page wording: one sentence per recorded change.
 export function insightSentence(type,target) {
   const name=target.topic?TOPICS[target.topic]:null;
   if(type==='insight.delete')return name?`Deleted the ${name.toLowerCase()} topic from what your relationship manager sees`:'Deleted a topic from what your relationship manager sees';

@@ -12,7 +12,7 @@ from app.schemas.contracts import Contract
 
 MeetingStage = Literal['requested', 'scheduled', 'preparing', 'brief_review', 'brief_approved', 'awaiting_transcript',
     'minutes_review', 'done', 'cancelled', 'failed']
-MeetingEventType = Literal['meeting.scheduled', 'meeting.rescheduled', 'meeting.cancelled', 'brief.requested', 'transcript.ready']  # = 0105 check
+MeetingEventType = Literal['meeting.scheduled', 'meeting.rescheduled', 'meeting.cancelled', 'brief.requested', 'transcript.ready']  # 0105's check; 0120 added meeting.started and meeting.ended (schemas/meeting_lifecycle.Claim)
 ConsentCategory = Literal['transaction_insights', 'chat_topics', 'meeting_recording']  # = rm.consent_active (0105)
 BriefLabel = Literal['record', 'client_said', 'ai_suggestion', 'gap']
 ApprovalStep = Literal['brief', 'minutes']

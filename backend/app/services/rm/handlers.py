@@ -1212,7 +1212,7 @@ TOOL_HELP={'rm_client_profile':'{"client": "<name in your book>"}: one client\'s
     'rm_book_facts':'{}: one line of facts per client in the book','rm_tickets':'{}: open tickets across the book',
     'rm_ticket':'{"reference": "TCK-…"}: one ticket','rm_followups':'{}: deadlines, tickets, tasks and meetings across the book',
     'request_categories':'{}: the request types and what each needs','knowledge_article':'{"article_id": "<id>"}: one approved article',
-    'rm_appointments':'{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}: your appointments (default the next 30 days)',
+    'rm_appointments':'{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}: your appointments (default the next 14 days)',
     'rm_availability':'{}: your working hours and free times for 14 days','rm_meeting_requests':'{"status": "open" | "scheduled" | "closed"}: clients\' meeting requests'}
 STOPPED={'cap':'I can’t answer that fully: I reached the limit of {limit} reads for one question. Here is what I found; ask a narrower question for the rest.',
     'malformed':'I can’t answer that fully: I could not finish looking it up. Here is what I found so far.'}

@@ -31,7 +31,7 @@ router=APIRouter()
 FIXED_ROUTES={'secrets','lost_card','human_support','guest_balance','other_customer_data','instruction_override'}
 
 def audit_model_calls(batch,trace):
-    """Record real model-call metadata before either a reply or a review pause is released."""
+    """Record real model-call metadata before the reply is released."""
     for call in trace.llm_calls:
         batch.add('agent','agent.llm_call','success' if call['ok'] else 'failed',details={k:call[k] for k in ('model','prompt_version','transport','input_tokens','output_tokens','ms')})
 
@@ -126,7 +126,8 @@ async def chat(req:ChatRequest,request:Request,ctx:RequestContext=Depends(get_ct
                 else:result=await make_answer(req,current_context,ctx)
                 result['care']=risk.care  # both pipelines; the answer text is unchanged (guardrail.CARE)
                 if risk.fixed_response is not None and risk.fixed_response.code=='human_support' and p.kind=='customer' and prepared is not None:
-                    # "Talk to a person" in a signed-in saved chat goes straight to the client's RM (migrations 0073, 0082); no model call.
+                    # "Talk to a person" in a signed-in saved chat goes to the client's RM (migrations 0073, 0082); no model call. With
+                    # rm_handover.confirm_first (the default) she sees a preview and confirms before anything is recorded (CR8).
                     # An open RM ticket on the same topic is reused; a failure is explained instead of a generic error (CR9).
                     selected=[req.record_context.document_id] if req.record_context is not None and req.record_context.document_id else []
                     if rm_handover.confirm_first():

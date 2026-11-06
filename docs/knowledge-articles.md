@@ -115,7 +115,7 @@ Kept so old citations still open; search never returns them:
 - **No match means no evidence.** There is no fallback library: a question with no keyword or similarity match gets no articles, and the answer pipeline treats that as an empty result. Non-English questions rely on hybrid search (keyword search alone rarely finds them).
 - **Fixed safety replies keep their own text.** Lost card, human support, secrets and guest balance answer without the model or the database and cite pinned sections (`answers.PINNED`: lost-card v4, support v5, security v2, accounts v1, unrecognised-charge v3). Revising one of those articles means updating the text and pin in `answers.py`; `test_knowledge_checks.py` fails until then.
 - **Gaps:**
-  - home and personal loans, and borrowing against investments;
+  - borrowing against investments;
   - transfer and ATM limits;
   - PayNow and GIRO;
   - deposit insurance;

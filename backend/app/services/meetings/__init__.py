@@ -1,7 +1,8 @@
-"""Meeting lifecycle: public API (seam, migration 0105). Owned by the meeting side; the RM copilot, the /rm routes and the
-meeting runner call only these four functions.
+"""Meeting lifecycle: the seam API for the RM copilot (migration 0105). Owned by the meeting side.
 
-Until the meeting graph is built, and whenever MEETINGS_ENABLED is false, every function raises MeetingsUnavailable.
+Minutes are built (0120-0124): api/meetings.py and worker.py call graph.py, database.py, transcripts.py and zoom.py
+directly, not these functions. Brief preparation is not built (the worker rejects brief.requested), so these four still
+raise MeetingsUnavailable, as they always do while MEETINGS_ENABLED is false.
 Callers report that plainly ("meeting preparation isn't available yet") and never substitute a brief or minutes.
 prepare, decide and status run with the RM's own RequestContext (her JWT: rm.current_advisor and rm.in_book apply);
 on_event runs in the meeting runner, which has no user JWT and must not read client records.

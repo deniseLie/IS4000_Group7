@@ -58,7 +58,7 @@ export async function readEvents(body, onEvent) {
 }
 
 const TOPICS={retail:'Complex banking needs',fraud:'Fraud & security',compliance:'Compliance review',document:'Document check',relationship:'Relationship manager',smalltalk:'General conversation'};
-// Staff handoff text: labels, counts and recorded outcomes only, so no customer wording or record values leave the chat.
+// RM handover summary: labels, counts and recorded outcomes only, so no customer wording or record values leave the chat.
 export function handoffSummary(messages) {
   const sections=messages.filter(m=>m.role==='assistant'&&!m.error).flatMap(m=>m.sections||[]);
   const counts=new Map();

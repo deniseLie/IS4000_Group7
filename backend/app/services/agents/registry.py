@@ -3,7 +3,7 @@
 TOOLS is the v4 allow-list (permission names per agent). SPECS is the v5 agent catalogue (architecture §5.6.1, §14.8):
 one AgentSpec per target agent is the single source for its tools, field views, limits, intents and default reads,
 loop tools and offers. authorization.decide and tools.call both read it. The client specs run on /chat since phase 5, but
-the rules in agents/rules.py still call the v4 responders under their v4 names (retail, fraud, compliance, document,
+the rules in agents/rules.py still call the v4 responders under their v4 names (retail, compliance, document,
 relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from SPECS (ENFORCED).
 The three RM specs (Client, Requests, Calendar; build plan 3a) run on the RM graph (services/rm/graph.py) for a verified
 `rm` login; the client planner never sees them (CLIENT_SPECS).
@@ -164,8 +164,9 @@ RM_REQUESTS=AgentSpec(name='rm_requests',role='rm',scope='rm_book',prompt='rm_as
         # draft or documentation, the notes a recap or follow-ups quote, the free times a draft may offer, meetings to rank.
         'rm_client_profile':TEXT,'rm_meeting_notes':TEXT,'rm_availability':WHOLE,'rm_appointments':WHOLE},
     # knowledge_article: the approved article a ticket's request type names (category_info.kb_article), read by id after rm_ticket.
-    # priorities and today rank with services/rm/priority.py; the meetings, meeting requests and reviews they rank come from
-    # the Calendar and Client agents' exports (rm/graph.py FEEDS links them; priorities still reads its 30-day meetings).
+    # priorities and today rank with services/rm/priority.py. today takes its meetings, meeting requests and reviews from the
+    # Calendar and Client agents' exports (rm/graph.py FEEDS); priorities takes only meeting requests from a feed, reads its
+    # own 30-day meetings and takes reviews from rm_followups.
     intents={'priorities':(Read(tool='rm_tickets'),Read(tool='rm_followups'),Read(tool='rm_appointments')),
         'today':(Read(tool='rm_tickets'),Read(tool='rm_followups')),'ticket_inbox':(Read(tool='rm_tickets'),),
         'ticket_summary':(PROFILE,Read(tool='rm_ticket'),Read(tool='knowledge_article')),

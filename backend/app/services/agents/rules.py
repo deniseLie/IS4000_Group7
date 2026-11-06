@@ -122,8 +122,8 @@ async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext,
 
 async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
         inputs: dict[str, Export] | None = None) -> AgentOutput:
-    """RM handovers (preview, then her choice), request status from her tickets, a meeting request drafted from the records
-    (one meeting.request offer, 2a), then the released relationship v6 answer."""
+    """RM handovers (preview, then her choice), request status from her tickets, a consent change from her records (6e),
+    a meeting request drafted from the records (one meeting.request offer, 2a), then the released relationship v7 answer."""
     question = task.question
     if task.entities.get('handover') == 'rm':
         current = ctx.model_copy(update={'agent': None})

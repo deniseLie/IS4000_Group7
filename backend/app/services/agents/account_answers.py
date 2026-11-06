@@ -26,7 +26,7 @@ def respond(task_id,question,records,public_evidence):
         kind='banking'
     if STATEMENT.search(question):
         # The instructions are cited only when an actually retrieved, approved
-        # source supports them. Database mode does not silently use memory copy.
+        # source supports them (knowledge comes only from the database since 0102).
         approved=next((item for item in public_evidence if
             ('statement' in item.source.title.lower() or 'statement' in item.id.lower())
             and 'Overview' in item.text and 'Statements' in item.text),None)

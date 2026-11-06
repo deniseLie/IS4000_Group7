@@ -12,7 +12,8 @@ import {displayName,firstName,formatDate,formatDateTime,initials} from '../lib/f
 import {cacheOwner,cached,remember} from '../lib/cache';
 
 
-// Agenda drafts and the relationship page show only when their handlers are passed (those client pages were removed on 28 Oct).
+// Agenda drafts and the relationship page show only when their handlers are passed; no caller passes them since those
+// client pages were removed on 28 Oct.
 export default function SharingPage({embedded=false,onReviewActions,onRelationship,onAgendas}) {
   // The last loaded status shows at once; consent controls stay disabled (busy) until the fresh read arrives.
   const [status,setStatus]=useState(()=>cached('sharing-status'));

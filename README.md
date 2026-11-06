@@ -1,5 +1,3 @@
-> **Client v6 patch (31 Oct 2026):** speech-act and planner-scope fixes, record-backed account balance + sourced statement navigation, no unrequested RM handover. See `docs/client-v6-intent-routing-fixes.md` for test results and live test cases. RM features unchanged.
-
 <!-- Source review package: generated from original code; caches, local credentials and Git internals excluded. -->
 # DemoBank – AI banking assistant (IS4000 Group 7)
 
@@ -19,7 +17,7 @@ The client uses the assistant for:
 - **appropriate human handover**: relationship-specific enquiries go to the assigned RM; card, fraud and other operational issues follow the relevant specialist route, where supported. Trackable requests receive a backend ticket reference, which she follows in **My requests**;
 - **meetings** with her RM (My requests → Meetings) and **monthly statements** she can print or save as PDF (Overview → Statements).
 
-Stories and IDs are in [docs/planning/product-backlog.xlsx](docs/planning/product-backlog.xlsx): F1–F28 foundation, CR1–CR18 client, RM1–RM16 relationship manager. What's done and what's open is in [docs/planning/status.md](docs/planning/status.md).
+Stories and IDs (F1–F28 foundation, CR1–CR18 client, RM1–RM16 relationship manager) come from the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history). What's done and what's open is in [docs/planning/status.md](docs/planning/status.md).
 
 ## Folder map
 
@@ -29,7 +27,10 @@ backend/
     api/            HTTP routes (chat, documents, tickets, customer data, actions…)
     core/           config, auth/JWT gateway, Data API client, logging, LangSmith client
     services/       the logic: orchestrator, guardrail, validators, document checks, tickets…
-      agents/       the five agents: retail, fraud, compliance, document, relationship
+      agents/       the v5 agent specs (registry.py: guide, accounts, compliance, relationship and the three RM agents),
+                    the runner, rules and the v4 responders they call (retail, compliance, document, relationship)
+      rm/           the RM assistant graph, handlers and priority score
+      meetings/     the meeting lifecycle (minutes graph, worker, transcripts; meeting team)
       actions/      every change goes through here (handoff, ticket, meeting, upload, answer…)
     prompts/        prompts by agent and version (never edit a released version)
     schemas/        Pydantic models
@@ -40,7 +41,7 @@ backend/
   scripts/          helpers: hosted SQL, audit walkthrough, staff CLI, MCP server, OCR
   tests/            backend tests
 frontend/
-  src/              Chat.jsx (the app), components/, lib/ (data and helpers), index.css
+  src/              App.jsx (picks Chat, RmWorkspace or AdminWorkspace by role), components/, lib/ (data and helpers), index.css
   tests/            Playwright browser tests
 docs/               how the agents run, architecture, workflows, evaluation, planning
 tests/fixtures/     privacy cases shared by backend and frontend tests
@@ -55,7 +56,7 @@ tests/fixtures/     privacy cases shared by backend and frontend tests
 | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) | The relationship manager plan |
 | [docs/architecture.md](docs/architecture.md) | Full design: components, data contracts, security, audit, knowledge base (appendix) |
 | [docs/evaluation/README.md](docs/evaluation/README.md) | How answers are tested (LangSmith) and earlier results |
-| [docs/evaluation/test-cases.md](docs/evaluation/test-cases.md) | Michelle's 10 test cases (QA1) and the run record |
+| [docs/evaluation/test-cases.md](docs/evaluation/test-cases.md) | The 49 QA1 cases (Michelle C01–C24 and C11b, Sophie R01–R20 and R24–R27) and the run record |
 | [docs/planning/status.md](docs/planning/status.md) | What is done and what is open |
 
 `AGENTS.md` is a code map for AI coding tools, and `docs/prompt-log/` holds the prompt-version change history; neither is required for a first look.
@@ -64,15 +65,13 @@ tests/fixtures/     privacy cases shared by backend and frontend tests
 
 You need Python 3.12 and Node.js 22. You don't need Docker.
 
-**1. Settings.** Copy `.env.example` to `backend/.env` and fill in:
+**1. Settings.** Copy `.env.example` to `.env` in the repo root (the backend and the frontend both read it) and fill in:
 - the Supabase URL and anon key;
 - the model key;
 - `CHECKPOINT_SIGNING_KEY` (any long random string);
 - `DOCUMENT_PRECHECK_SIGNING_KEY`, from `select secret from compliance.precheck_keys where key_id='v1';` in the SQL editor.
 
-Keep `PIPELINE=v2`, `CONVERSATION_STORE=database`, and `CLIENT_INTENT_ROUTING=adaptive`. Knowledge is always read from the database, so apply the knowledge migrations (through batch 28) first. Never use a service-role key.
-
-**Client intelligence updates:** [docs/client-ai-improvements.md](docs/client-ai-improvements.md) describes AI-first intent routing, context-aware knowledge retrieval, answer repair, bounded multi-turn card-limit handling and verification. These are client-only changes; the RM assistant is described in the Workflow 2 doc.
+Set `PIPELINE=v2` and `CONVERSATION_STORE=database` (the code defaults are `v1` and `off`); leave `CLIENT_INTENT_ROUTING=adaptive`. Knowledge is always read from the database, so apply the knowledge migrations (through batch 28) first. Never use a service-role key.
 
 **2. Install (first time).**
 ```bash
@@ -101,8 +100,8 @@ Then open http://127.0.0.1:5173 and sign in as Michelle, or as Sophie for the re
    create role demobank_reminders login password '<your password>';
    grant demobank_worker to demobank_reminders;
    ```
-2. In Supabase, open **Connect** and copy the **Session pooler** connection string. Replace the user `postgres` with `demobank_reminders` (keep the `.<project-ref>` after it) and put in the password. Save it in `backend/.env` as `WORKER_DATABASE_URL=…`.
-3. Set `RUN_WORKER_IN_API=true` in `backend/.env` and restart the backend. (Or leave it `false` and run `../.venv/bin/python -m app.worker` from `backend/` in a third terminal.)
+2. In Supabase, open **Connect** and copy the **Session pooler** connection string. Replace the user `postgres` with `demobank_reminders` (keep the `.<project-ref>` after it) and put in the password. Save it in `.env` as `WORKER_DATABASE_URL=…`.
+3. Set `RUN_WORKER_IN_API=true` in `.env` and restart the backend. (Or leave it `false` and run `../.venv/bin/python -m app.worker` from `backend/` in a third terminal.)
 
 **6. Hybrid knowledge search.** Knowledge search ranks sections by keywords *and* meaning (migration 0099) whenever an embedding key is set; with no key, or if the embedding provider fails, it falls back to keyword search and records `mode: keyword_only` in the audit event. There is no switch. It needs its own embedding key, never the model key: `EMBEDDING_API_KEY`, plus `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` and `EMBEDDING_MIN_SIMILARITY=0.4` (see `.env.example`). Store the section vectors once, and again after every knowledge migration, using the owner connection string:
 ```bash
@@ -119,11 +118,11 @@ Reminders are sent from 7 days before a due date, only for documents she still h
 |---|---|
 | `vite: command not found` | Run `npm ci` in `frontend/` (the zip has no `node_modules`). |
 | `No module named …` | Recreate `.venv` and run `pip install -e './backend[dev]'`. |
-| "Document checks are not switched on yet" | `DOCUMENT_PRECHECK_SIGNING_KEY` missing or wrong in `backend/.env`; restart the backend. |
-| The assistant doesn't use Michelle's records | `PIPELINE=v2` and `CONVERSATION_STORE=database` in `backend/.env`; restart the backend. |
+| "Document checks are not switched on yet" | `DOCUMENT_PRECHECK_SIGNING_KEY` missing or wrong in `.env`; restart the backend. |
+| The assistant doesn't use Michelle's records | `PIPELINE=v2` and `CONVERSATION_STORE=database` in `.env`; restart the backend. |
 | Browser can't reach the backend | Both terminals running; frontend started with `VITE_API_URL=/api BACKEND_PORT=5001`. |
 | Nothing appears in LangSmith | `LANGSMITH_TRACING=true` and `LANGSMITH_ENDPOINT=https://apac.api.smith.langchain.com` (the API host, not the website); restart. |
-| "Could not verify" or "Answer withheld" | Inspect `agent_validation` and `agent_revision` in the backend trace. The system will not bypass source checks. Check approved KB matches and model configuration; an RM handover may require a signed-in saved conversation. |
+| "Could not verify" or "Answer withheld" | Look for the `agent_validation` and `agent_revision` events in the backend log and the `validation` step in the LangSmith trace. The system will not bypass source checks. Check approved KB matches and model configuration; an RM handover may require a signed-in saved conversation. |
 
 ## Demo data
 
@@ -134,7 +133,7 @@ Michelle is customer 1002 (`demo.michelle@example.com`). It is all seeded by the
 
 Other test customers exist only in the local test database; `backend/supabase/hosted/06_keep_only_michelle.sql` removes them from the hosted project.
 
-**The bank's decision on a document.** Until the RM workflow exists, record it in the SQL editor after Michelle submits a file. Find the item id with `select item_id,label,submission_status from compliance.requested_items where customer_id=1002;`, then:
+**The bank's decision on a document.** The RM workspace has no decision screen, so record it in the SQL editor after Michelle submits a file. Find the item id with `select item_id,label,submission_status from compliance.requested_items where customer_id=1002;`, then:
 ```sql
 select compliance.record_bank_decision('<item_id>','accepted');
 select compliance.record_bank_decision('<item_id>','rejected','The bill is older than 3 months.');
@@ -159,9 +158,9 @@ cd ../frontend && npm test                                                # fron
 ```
 
 - The local database tests start a temporary PostgreSQL and PostgREST. They never touch the hosted project.
-- Browser tests (`npm run test:e2e`, `playwright.native.config.js`) call the real AI provider and are opt-in.
+- Browser tests are opt-in: `npm run test:e2e` runs `chat.spec.js` and `live.spec.js` against the real AI provider; the native suites in `playwright.native.config.js` run from the backend pytest browser tests with `TEST_BROWSER_LOCAL=1`.
 - Offline answer evaluation: `python -m evaluation.run --output evaluation-results.json`. See [docs/evaluation/README.md](docs/evaluation/README.md).
-- Knowledge search comparison (keyword vs hybrid, spelling table on/off, quality and timing): `python -m evaluation.retrieval --local --search keyword,hybrid --respell on,off`. Hybrid runs call the real embedding provider; the opt-in check is `TEST_DATABASE_LOCAL=1 TEST_EMBEDDINGS_LIVE=1 pytest tests/test_retrieval_eval.py`.
+- Knowledge search comparison (keyword vs hybrid, spelling table on/off, quality and timing): `python -m evaluation.retrieval --search keyword,hybrid --respell on,off` (a temporary local database unless `--database-url` is given). Hybrid runs call the real embedding provider; the opt-in check is `TEST_DATABASE_LOCAL=1 TEST_EMBEDDINGS_LIVE=1 pytest tests/test_retrieval_eval.py`.
 
 ## Tracing and audit
 
@@ -174,12 +173,7 @@ cd ../frontend && npm test                                                # fron
 - RLS stays on, and every customer query filters by `customer_id`. Only `VITE_` variables reach the browser.
 - Lost card, shared secrets and "talk to a person" are fixed responses that never call the model.
 - Don't edit a released migration or prompt version. Add a new one, with a prompt-log note for prompts (`docs/prompt-log/`).
-- Never commit `.env` files or keys. Review [UBS_Project_Code_Cleanup_Audit.md](UBS_Project_Code_Cleanup_Audit.md) before sharing any source archive.
-
-
-## Client chatbot v5 regression update
-
-See [`docs/client-v5-regression-guide.md`](docs/client-v5-regression-guide.md) for the informal-fraud/reporting CTA and ambiguous-spending-intent changes, safety controls, new prompt versions and the testing checklist. The manual 99-case workbook is shared separately.
+- Never commit `.env` files or keys.
 
 ## Sharing a clean source ZIP
 

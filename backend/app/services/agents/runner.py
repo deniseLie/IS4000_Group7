@@ -2,7 +2,8 @@
 
 A known intent runs its default reads (arguments from the task's entities, never from the model) and makes one
 answer call. Only an `open` task first runs a bounded tool loop over the spec's loop_tools. Both paths end in the
-same validated answer (answer.checked_model_answer). orchestrator.agent calls it for every planned task."""
+same validated answer (answer.checked_model_answer). orchestrator.agent calls it for every planned task except an
+urgent card task (orchestrator.urgent_output)."""
 import asyncio
 import json
 import re
@@ -28,7 +29,7 @@ from app.services.llm_gateway import LLMError
 from app.services.agents import derived, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
-PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
+PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version; compliance and relationship answer through their rules only (agents/rules.py)
 COMMON = 'v2'  # runner_common: the shared answer contract and step format (v2: never restate her own figures, C12)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'DemoBank synthetic records'
@@ -125,7 +126,7 @@ async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[
 
 
 def input_evidence(inputs: dict[str, Export]) -> list[Evidence]:
-    """Values another agent computed earlier in the turn (phase 7 fills these)."""
+    """Values another agent computed earlier in the turn (passed by orchestrator.gather in wave 2)."""
     return [Evidence(id=f'input-{name}', text=json.dumps({name: export.value, 'source_ids': export.source_ids}, ensure_ascii=False),
         publisher=RECORDS, scope='A value another DemoBank agent computed from cited records in this turn.',
         source=Source(id=f'input-{name}', title='From another part of this answer', url=None, version='n/a', publisher=RECORDS)) for name, export in inputs.items()]

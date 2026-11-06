@@ -1,4 +1,4 @@
-"""DemoBank tools as a Model Context Protocol server (F21). Requires the optional `mcp` package (v2).
+"""DemoBank tools as a Model Context Protocol server (F21; `mcp` v2 is a core dependency).
 
 In-process: tools.call() with TOOL_TRANSPORT=mcp connects an MCP client to this server inside the API process, so
 every agent tool call is a real MCP tools/call. Stdio: `python -m scripts.mcp_server` serves the same tools to an
