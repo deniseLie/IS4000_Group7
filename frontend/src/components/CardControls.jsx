@@ -14,7 +14,8 @@ const EFFECT={
   'card.unblock':['Unfreeze this card?','New payments can go through again. Only unfreeze it if you have the card and it is safe.','Unfreeze card'],
 };
 
-// Styles live here so the card controls are one file; colours match index.css (--ink, --muted, --line, --red, --tint).
+// Styles live here so the card controls are one file; the colours are the first :root values in index.css, which later
+// :root blocks override (so they no longer match the page tokens exactly).
 const S={
   wrap:{display:'grid',gap:10},
   panel:{border:'1px solid #e4e4de',borderRadius:12,background:'#fff',overflow:'hidden'},

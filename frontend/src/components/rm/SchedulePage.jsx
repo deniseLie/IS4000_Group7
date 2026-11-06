@@ -15,6 +15,8 @@ const REQUEST_VIEWS=[['open','Open'],['scheduled','Scheduled'],['closed','Declin
 // The weekly meeting limit per client (0092) is enforced when clients book; here it is shown, with any week over it.
 // Requests (build plan 2a, 0106): she accepts one of the client's times, proposes another (held for the client) or
 // declines with a reason, and moves a confirmed meeting. Each is one request she presses; SQL checks the slot again.
+// Appointments also lets her propose a meeting (MeetingProposal, held for the client to accept in Meetings) and open each
+// meeting's notes, minutes and follow-ups (MeetingWorkspace, 0120-0124).
 export default function SchedulePage({token,onAsk,today}) {
   const [tab,setTab]=useState(()=>takeScheduleTab()||'appointments');
   const [appointments,setAppointments]=useState(null),[availability,setAvailability]=useState(null);

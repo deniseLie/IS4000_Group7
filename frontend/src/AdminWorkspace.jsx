@@ -22,7 +22,7 @@ const PAGES=[
 const VIEWS=PAGES.map(page=>page.view);
 function pageFromHash() {const page=location.hash.replace(/^#admin-?/,'');return VIEWS.includes(page)?page:VIEWS[0];}
 
-// The AI engineering workspace (app_metadata role 'admin'): evaluations, agents, prompts, latency and failures from
+// The AI engineering workspace (app_metadata role 'admin'): overview, failures, evaluations, agents, prompts, latency and traces from
 // LangSmith. Read-only: nothing here changes a customer, an RM record or a prompt.
 export default function AdminWorkspace({session}) {
   const [view,setView]=useState(pageFromHash);

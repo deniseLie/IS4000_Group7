@@ -10,8 +10,10 @@ import {displayName,formatDateTime,formatTime} from '../lib/format';
 import {DECLINED,LIMITS,STATUS,TOPICS,isOpen,meetingRequestTarget,openCount,requestAppointmentIds,requestChoices,suggestedTime,toggleTime,toggleTopic} from '../lib/meetingRequests';
 
 // 2a (0106): she asks her relationship manager for a meeting (what it is about, topics, format, up to 3 free times); her RM
-// accepts a time, suggests another (held for her to accept or decline) or answers without a meeting. Nothing is booked from
-// this page: each change is a confirm-type action (propose, then her own click confirms it; receipts in Activity).
+// accepts a time, suggests another (held for her to accept or decline) or answers without a meeting. She also confirms or
+// releases a time her RM proposed (appointment.confirm / appointment.cancel) and opens Notes and follow-up on a confirmed
+// meeting (MeetingWorkspace, 0120-0124). Each change is a confirm-type action (propose, then her own click confirms it;
+// receipts in Actions).
 const LEAD=2*60*60*1000;  // SQL refuses times within an hour; free times start two hours ahead, as in the chat
 function range(days=14) {
   const now=new Date(Date.now()+8*60*60*1000);

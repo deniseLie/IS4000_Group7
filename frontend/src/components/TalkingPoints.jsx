@@ -6,7 +6,7 @@ import {formatDate,formatDateTime} from '../lib/format';
 
 // Data sharing → What <RM> sees (0108): each topic exactly as her relationship manager reads it, a Pending badge during
 // the 24-hour hold, her own words under "Why we think this" (hers only), and Delete / Don't suggest this again / Resume,
-// each an automatic action with a receipt in Activity.
+// each an automatic action with a receipt in Actions.
 export default function TalkingPoints({rmName,onReviewActions}) {
   const [data,setData]=useState(null);
   const [busy,setBusy]=useState(true);

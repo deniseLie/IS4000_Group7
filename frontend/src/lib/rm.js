@@ -201,7 +201,7 @@ export function requestLabel(r) {
   if(r.status==='countered')return r.proposal_lapsed?'Proposal lapsed':'Waiting for the client';
   return {scheduled:'Scheduled',declined:'Declined',withdrawn:'Withdrawn by the client'}[r.status]||r.status;
 }
-// Today: the requests to answer, overdue first, then by respond-by (3b ranks them properly).
+// Today: the requests to answer, overdue first, then by respond-by (TodayPage reorders them by the 3b rank, byRank).
 export function requestsToAnswer(requests,now=Date.now()) {
   return (requests||[]).filter(needsAnswer).map(r=>({...r,isNew:isNewRequest(r,now)}))
     .sort((x,y)=>(Number(!!y.overdue)-Number(!!x.overdue))||Date.parse(x.respond_by)-Date.parse(y.respond_by));

@@ -7,7 +7,7 @@ import {firstName,formatDate,formatDateTime} from '../lib/format';
 
 // Data sharing (consent v2, build plan 6e): a card per category she can switch (what is shared, until when, and what
 // changes at once if she stops), the always-shared list, her RM's asks, who looked and when, and Delete all my data.
-// Each change is one ledger action she confirms here; the receipt is in Activity.
+// Each change is one ledger action she confirms here; the receipt is in Actions.
 export default function ConsentCards({onReviewActions,onChanged}) {
   const [sharing,setSharing]=useState(null),[asks,setAsks]=useState([]),[log,setLog]=useState(null);
   const [busy,setBusy]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[done,setDone]=useState('');

@@ -1284,7 +1284,7 @@ small{font-size:max(12px,.83em)}
 .inbox-action{position:relative}.inbox-action.active{border-color:var(--ink,#1C1C1C)}
 .inbox-badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red,#E60000);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
 @media (max-width:640px){.inbox-action span:not(.inbox-badge){display:none}}
-/* Activity page (full-screen Actions): day groups, one plain sentence per entry, details on demand */
+/* Actions page: day groups, one plain sentence per entry, details on demand */
 .activity-search{margin:-6px 0 6px;max-width:320px}
 .activity-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .activity-head h1{margin:6px 0 4px;font-size:28px}.activity-head p{margin:0;color:var(--muted);font-size:14px;max-width:520px}
@@ -1337,7 +1337,7 @@ small{font-size:max(12px,.83em)}
 .compliance-page{max-width:1040px}
 @media (max-width:1000px){.app-page{padding:0 24px}}
 @media (max-width:760px){.app-page{padding:0 16px}}
-/* Meetings tab (CR18) */
+/* Meetings tab (CR17) */
 .meetings-title{margin:22px 0 10px;font-size:16px;font-weight:600}
 .meetings-title:first-of-type{margin-top:4px}
 .meetings-notice{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:#EAF4EC;color:var(--ok);font-size:13px}
@@ -1604,7 +1604,7 @@ small{font-size:max(12px,.83em)}
 
 /* ===================================================================================================================
    UI refresh (31 Oct 2026): one button system, page motion and livelier loading states. Colours stay as they are.
-   This block comes last on purpose so it settles the earlier, layered button rules in one place.
+   It settles the earlier, layered button, motion and loading rules in one place; later blocks only adjust sizes.
    =================================================================================================================== */
 :root{--btn-h:38px;--btn-radius:8px;--ease-out:cubic-bezier(.2,.8,.2,1);--focus-ring:0 0 0 3px rgba(230,0,0,.18)}
 
@@ -1864,7 +1864,7 @@ ul.compliance-items>.cw-item .cw-item-foot{border-top:0!important;padding-top:6p
 .ticket-update{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:#EEF3FB;font-size:13px;line-height:1.55}
 .ticket-update svg{width:15px;height:15px;flex:none;margin-top:3px;color:#2B4C7E}
 
-/* Source drawer */
+/* Report sources (opened in place) */
 .rm-source-fields{display:grid;gap:6px;margin:0}
 .rm-source-fields>div{display:grid;grid-template-columns:minmax(110px,30%) 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .rm-source-fields dt{color:var(--muted)}
@@ -1903,7 +1903,8 @@ button.cell.past:disabled{opacity:.35}
 .rm-history-item{position:relative}
 .rm-history-delete{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--muted)}
 
-/* Narrow screens: the bottom tab bar already opens these pages, so the account menu keeps only Sign out.
+/* Narrow screens: the bottom tab bar already opens Actions, and Recent chats sits beside the chat, so the account menu
+   keeps Records, Data sharing and Sign out.
    Guests: the header's Sign in button is the only one (the sidebar's copy is pinned there on desktop only). */
 @media(max-width:760px){
   .account-menu-list .desktop-only{display:none}
