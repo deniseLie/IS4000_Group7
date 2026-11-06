@@ -13,12 +13,14 @@ flowchart LR
   UI[RM workspace<br/>RmWorkspace.jsx] -->|/rm/*, JWT| API[api/rm.py<br/>app_metadata role=rm]
   UI -->|POST /rm/assistant SSE| AS[services/rm/graph.py<br/>v5 RM graph, phase 9]
   AS --> BC[Book check: rm_match_clients<br/>outside book = refused + audited, no model]
-  AS --> PL[Planner model<br/>rm_planner/v5: up to 5 tasks]
+  AS --> PL[Planner: rule plan or<br/>rm_planner/v5: up to 5 tasks]
   AS --> RS[Per agent: deterministic resolution<br/>client, ticket, meeting, note]
   RS --> AG[RM Client / Requests / Calendar<br/>handlers.py or the open loop, own spec's tools only]
   AG --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
   TL --> DB[(SQL: rm.current_advisor + rm.in_book<br/>audit every read and refusal)]
-  AG --> LLM[Answer model<br/>rm_assistant/v5 + task file]
+  AG --> BF[Client reports: record sections<br/>by code, brief_facts.py]
+  BF -->|section events| UI
+  AG --> LLM[Answer model<br/>rm_assistant/v6 + task file]
   LLM --> CK[Item-level checks<br/>services/rm/checks.py]
   CK --> UI
   UI -->|approve| W[Write RPCs: documentation, tasks,<br/>service requests, client messages, availability]
@@ -72,6 +74,14 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Plan my day** (`today` intent, Requests agent): one answer with *Do first*, meeting requests to answer, client requests, meetings in the next 7 days, deadlines and tasks. Code adds the Calendar (`schedule`, `meeting_requests`) and Client (`reviews`) reads as hidden feed tasks and passes their exports (`meetings_next_7d`, `requests_to_answer`, `reviews_due`: ids, dates and codes only); an empty category is said, and one not passed is a gap. Every line cites its ranked record; the model never ranks and code keeps its items in rank order. A name outside the book is refused before anything is read.
 - **Prioritise with assistant** (`priorities`) uses the same score: *Do first*, *Coming up* (ranked items, then later follow-ups and recorded commitments) and *Specialist-managed*.
 - Spans carry only codes and counts (`scored`, `scored_kinds`, `factors`, `top_score`, `feeds`). QA1 R24–R27 (`docs/evaluation/test-cases.md`) cover Plan my day, accepting a client's time, blocking Friday afternoon and the prioritised list.
+
+## Client reports and streaming (RM answer speed, 6 Nov, rm_assistant v6)
+
+- **Code writes the records, the model the judgement.** The meeting brief, client overview, handover brief and meeting history are built from the records by `services/rm/brief_facts.py` (each item cites its record; lists stop at 5 and count the rest). The model gets a bounded extract (latest note, first 3 open tickets, no account numbers) and writes only the summary and the points: conversation starters, discussion points and questions for a brief, points worth raising for an overview, introductory topics and outdated records for a handover, gaps for a history. `checks.check_sections` checks them against the extract.
+- **A question is not a report.** "When is her review due?" is answered from the full records; a button, report wording without a question mark, or just her name asks for the report (`handlers.wants_report`).
+- **Rule plans.** "Brief me on Michelle", "overview of David", *plan my day*, or a brief then follow-ups from the latest note are planned without the planner model when the words taken as the client are only her book name (`graph.rule_plan`).
+- **Streaming.** `POST /rm/assistant` sends `section` events between `status` and `answer`: the record sections once read, then the checked points. The assistant and Clients pages show them in the pending reply (`lib/rm.js` `partialReply`). Not yet checked live in the browser.
+- Plan, slices and live results: [rm-answer-speed.md](../planning/rm-answer-speed.md), [evaluation §9](../evaluation/README.md#9-rm-answer-speed-6-nov-2026-rm_assistantv6) (R22 from a failed 139 s run to a 48 s pass at the default limits).
 
 ## Topics from her clients' chats (build plan phase 4, 0108)
 

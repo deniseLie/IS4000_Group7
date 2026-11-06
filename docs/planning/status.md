@@ -50,6 +50,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Frontend load:** `App.jsx` loads only the signed-in role's workspace (`React.lazy`, `lib/roles.js`), and `index.html` now loads the Stitch fonts (d258d05).
 - **Admin dashboard:** runs are read through LangSmith's v2 run query, with one live read shared by every page (a232246).
 - **RM answers:** every RM answer runs with the model's hidden reasoning off (`rm/handlers.REASONING`, `llm_gateway.call(reasoning=False)`; 06f790f), and a `today` section whose records all ranked lower says so instead of "none" (aa17f4a).
+- **RM answer speed** ([rm-answer-speed.md](rm-answer-speed.md), `rm_assistant/v6`; cded0b1): code writes the client reports' record sections (`services/rm/brief_facts.py`) and the model only the judgement points; rule plans for one-client briefs, overviews and *plan my day*; `/rm/assistant` streams `section` events. R22 now passes at the default limits (48 s, 21k tokens; evaluation §9). Still open: thinking is most of each report call's output on the CLI, the browser streaming was not checked live, and R05 (manual) was not run.
 
 ## Done on 5 Nov (evaluation fixes, batches 2 and 3)
 

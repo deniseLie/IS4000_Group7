@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime,timedelta,timezone
 import json
 import logging
+import time
 from uuid import UUID
 import httpx
 import langsmith
@@ -249,7 +250,7 @@ async def delete_conversation(conversation_id: UUID,request: Request,caller: Cal
     return await run(lambda:records.delete_conversation(caller.ctx,conversation_id),request,caller,'rm.delete_conversation')
 
 
-# The RM assistant (SSE: status -> answer -> done, or error) ------------------------------------------------------------
+# The RM assistant (SSE: status and section -> answer -> done, or error) ------------------------------------------------
 def reply_details(reply: dict) -> dict:
     v=reply.get('validation') or {}
     return {'intent':reply.get('intent'),'status':reply.get('status'),'origin':reply.get('origin'),'withheld':v.get('withheld',0),
@@ -269,10 +270,12 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
             metadata={'request_id':str(caller.ctx.request_id),'session_id':str(caller.ctx.session_id)})
         run_tree=root.__enter__()
         queue: asyncio.Queue=asyncio.Queue()
+        started=time.perf_counter()
         async def say(text: str):await queue.put(('status',text))
+        async def show(part: dict):await queue.put(('section',part))  # code-written records, or model points after their checks
         async def work():
             with rm_scope(caller.session):
-                try:await queue.put(('answer',await graph.respond(req,caller.ctx,say)))
+                try:await queue.put(('answer',await graph.respond(req,caller.ctx,say,show)))
                 except Exception as error:await queue.put(('error',error))
         task=asyncio.create_task(work())
         failure_=None
@@ -282,6 +285,9 @@ async def rm_assistant(req: RmAssistantRequest,request: Request,caller: Caller=D
             while True:
                 kind,value=await queue.get()
                 if kind=='status':yield {'event':'status','data':value};continue
+                if kind=='section':
+                    trace.attrs.setdefault('first_section_ms',round((time.perf_counter()-started)*1000))  # Admin → Latency, as on /chat
+                    yield {'event':'section','data':json.dumps(value,ensure_ascii=False,default=str)};continue
                 for call in trace.llm_calls:
                     batch.add('agent','agent.llm_call','success' if call['ok'] else 'failed',
                         details={k:call[k] for k in ('model','prompt_version','transport','input_tokens','output_tokens','ms')})

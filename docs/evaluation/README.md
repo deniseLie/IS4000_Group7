@@ -320,6 +320,52 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
 - Side effects on hosted: saved chats, audit events, and tickets and handoffs from the client cases (for example TCK-001081). Run `34` before the RM sets.
 - Judge scores are model-graded. Every result still needs human review.
 
+### 9. RM answer speed (6 Nov 2026, `rm_assistant/v6`)
+
+What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-built-6-nov-2026). Every run below is on the hosted project, `CHAT_TRANSPORT=claude`, `CLAUDE_MODEL=haiku`, judge `sonnet`, with the **default** limits: `LLM_REQUEST_TOKEN_BUDGET=24000` and the 90 s CLI timeout. Times are the `/rm/assistant` request or the case's target run, without the judge. Token counts are the CLI's: input includes cached prompt reads, and output includes thinking, which the CLI does not report separately (`answer_chars` on the `llm` span is the size of the answer itself).
+
+**R22 before and after**
+
+| | Before (5 Nov, `rm_assistant/v5`) | After (6 Nov, `v6+251d64ae`, `demobank-graph-v2-1ca8d26f`) |
+|---|---|---|
+| Result at the default limits | Failed: the CLI timed out at 90 s; at 240 s the brief used up the 24,000-token budget | Pass, every deterministic check |
+| Model calls | planner + brief + follow-ups | brief + follow-ups (the rule planner plans the brief → follow-ups pair) |
+| Brief call | 14–21k output tokens, 60–80 s | 7.8k in, 4.9k out (2,197 characters of answer), 25.5 s |
+| Follow-ups call | not reached | 6.0k in, 2.3k out, 15.3 s |
+| Request | 139 s, only with a 120k budget and a 240 s timeout | 48.0 s, 21.0k tokens |
+| Judge | 0.5 (the follow-ups listed no drafts) | 1.0: both of the note's commitments proposed, each quoting the note; the existing request TCK-001008 flagged by code |
+
+**How we got there (R22 runs on 6 Nov)**
+- `demobank-graph-v2-c48e5fab` failed on the budget after 47 s. The planner used 4.9k tokens and the brief 24.0k: 17.1k input and 6.9k output, but only 2,258 characters of answer. Michelle has 44 open tickets on hosted, most of them opened by evaluation runs, and the extract sent all of them. Now it sends the first 3 in the Open matters order (`brief_facts.facts`), and the follow-ups call gets open tickets counted by category (`handlers.open_by_category`).
+- `…-d7b86d18` (diagnostic, 120k budget) passed. Tokens: planner 4.9k, brief 15.0k (7.8k in, 7.2k out), follow-ups 7.7k, so 27.6k, still over 24k. The brief's output is mostly thinking, and the CLI cannot turn thinking off. The rule planner now plans "brief me on X and draft follow-ups from the last meeting" (the declared `latest_note` link) and saves the planner call.
+- `…-6c2d77de` and `…-ffc89ab7` passed at the defaults (21.4k and 20.5k tokens, 43.6 s for the second). Judge 0.5: the evaluation's text view of an RM reply (`targets.rm_text`) left out the follow-ups card. Once it was added, the judge saw that only one of the note's two commitments had been proposed. `actions.md` now asks for one action per commitment and client request, and names open work that may cover one in a gap instead of skipping it.
+- Spread over the four passing runs: the brief call wrote 4.8–8.2k output tokens in 25–40 s, and the request took 44–61 s. The request fails only if the brief alone uses the whole 24k budget.
+
+**Other RM cases on v6** (`demobank-qa1-rm-v2-5975da60`, `demobank-graph-v2-d30d2030`, `v6+6a16d22f`; the later `actions.md` change touches only follow-ups from a note)
+
+| Case | Result | Judge | Model calls (in / out tokens, time) | Case |
+|---|---|---|---|---|
+| R04 brief | pass | 1 | brief 7.8k / 4.3k, 23.0 s | 32.5 s |
+| R09 meeting question | pass | 1 | planner; question 4.2k / 1.9k, 12.0 s | 26.0 s |
+| R11 overview, then 2 questions | pass | 1 | overview 6.9k / 2.7k, 15.5 s; "When is her review due?" from the full records 24.2k / 1.1k, 14.4 s; Mei Ling's deadline 6.5k / 1.8k, 11.9 s; 2 planner calls | 73.7 s (3 turns) |
+| R14 handover, then a history question | pass | 1 | handover 6.3k / 4.6k, 23.1 s; question 4.1k / 2.5k, 14.0 s; 2 planner calls | 62.4 s (2 turns) |
+| R24 *What's on today?* (rule plan) | pass | 0.5 | today 6.4k / 5.8k, 27.1 s | 41.3 s |
+| R21 reminders to clients with reviews due | pass | 0.5 | planner; open task 23.2k / 2.7k; draft 3.1k / 1.5k | 49.3 s |
+| R23 handover with the shared note | pass | 1 | planner; handover 6.2k / 3.1k, 21.2 s | 37.3 s |
+| R23a the same without consent | pass | 0.5 | planner; handover 6.2k / 3.8k, 22.3 s | 37.1 s |
+
+**Against slice 1–3's "done when"**
+- R22 passes on the default budget and timeout: **met**.
+- R04 passes and the judge's follow-ups gap is closed: **met**.
+- "Each client-report call writes under 4k output tokens": **met** for the overview (2.7k), the questions and the follow-ups (1.1–2.5k). **Not met** for the brief (4.3–8.2k), the handover (3.1–4.6k) and today (5.8k). Their answers are 1.8–2.2k characters; the rest is thinking.
+- R05 is a manual case and was not run.
+
+**Judge 0.5s not caused by this change**
+- R24: the reply lists the top 10 ranked records and counts the rest, as `45637af` intended. Mei Ling's meeting request ranked below 10, most likely because Michelle's urgent evaluation tickets (P0, 50 points each) fill the top of her queue. `41_eval_cleanup.sql` clears those tickets.
+- R21 and R23a: the judge got no source records for the graph cases ("authorised book is null"), so it marked the reply as not checkable. R21 also gave two drafts without saying which one to use.
+
+**Not checked live:** the section streaming in the browser. Unit and frontend tests cover it (`test_rm_graph.py`, `rm.test.js`); `targets.play_rm` reads only the `answer` event. Admin → Latency should show `first_section_ms` for these requests.
+
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.

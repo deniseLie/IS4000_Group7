@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import RmAnswer from './RmAnswer';
-import {FORMAT_WORDS,STATUS_WORDS,askAssistant,display,filterBook,requestContext,rmGet} from '../../lib/rm';
+import {FORMAT_WORDS,STATUS_WORDS,askAssistant,display,filterBook,partialReply,requestContext,rmGet} from '../../lib/rm';
 import {formatDate,formatMoney,initials} from '../../lib/format';
 
 const GAP_WORDS={no_open_compliance_review:'No open compliance review recorded',no_upcoming_appointment:'No upcoming appointment',
@@ -167,16 +167,18 @@ function NoteRow({note:n,onAsk}) {
 // An AI overview generated on request (never automatically), from the same records; shown as a short report.
 function AiOverview({name,customerId,token,onAsk}) {
   const [reply,setReply]=useState(null),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[error,setError]=useState('');
+  const [parts,setParts]=useState([]);  // the record sections, streamed before the model's points
   const request=useRef(null);
   useEffect(()=>()=>request.current?.abort(),[]);
   async function generate() {
-    setBusy(true);setError('');setStatus('Reading the records…');
+    setBusy(true);setError('');setStatus('Reading the records…');setParts([]);
     const controller=new AbortController();request.current=controller;
     try {
       const message=`Give me an overview of ${name}`;
-      setReply(await askAssistant({message,history:[],intent:'client_overview',context:requestContext({client_id:customerId})},await token(),setStatus,controller.signal));
+      setReply(await askAssistant({message,history:[],intent:'client_overview',context:requestContext({client_id:customerId})},await token(),setStatus,
+        controller.signal,part=>setParts(previous=>[...previous,part])));
     } catch(failure) {if(failure.name!=='AbortError')setError(failure.message);}
-    finally {setBusy(false);setStatus('');}
+    finally {setBusy(false);setStatus('');setParts([]);}
   }
   return <section className="rmw-card rmw-ai" data-testid="rm-ai-overview">
     <div className="rmw-card-head"><h3><Icon name="spark"/>AI client overview</h3>
@@ -184,6 +186,7 @@ function AiOverview({name,customerId,token,onAsk}) {
     {!reply&&!busy&&<><p className="rm-small">A summary of {name}’s records with sources, open matters and gaps. Generated only when you ask.</p>
       <button className="primary-button" onClick={generate}><Icon name="spark"/>Generate overview</button></>}
     {busy&&<p className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{status}</p>}
+    {busy&&parts.length>0&&<RmAnswer reply={partialReply(parts)} client={name} compact latest={false} token={token}/>}
     {error&&<p role="alert" className="rm-error">{error}</p>}
     {reply&&!busy&&<><RmAnswer reply={reply} client={name} compact latest={false} token={token}/>
       <button className="bank-chat-logout" onClick={()=>onAsk(`Give me an overview of ${name}`,{intent:'client_overview',context:{client_id:customerId}})}>Continue in the assistant<Icon name="arrow"/></button></>}
