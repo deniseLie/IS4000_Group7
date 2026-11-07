@@ -60,8 +60,11 @@ def test_examples_round_trip(model,data):
     (TalkingPoint,{**POINT,'topic':'term_sheet'}),
     (TalkingPoint,{**POINT,'concerns':['rates','rates']}),
     (TalkingPoint,{**POINT,'last_seen':'2026-11-01'}),
+    (TalkingPoint,{**POINT,'kind':'etf'}),
+    (TalkingPoint,{**POINT,'kind':'condo'}),
+    (TalkingPoint,{**POINT,'concerns':['taxes']}),
 ],ids=['event_type','extra_field','uncited_record','consent_category','version','empty_quote','changes_without_note','error_code',
-    'point_text','point_topic','point_concern_twice','point_dates'])
+    'point_text','point_topic','point_concern_twice','point_dates','point_kind_of_another_topic','point_kind_unlisted','point_concern_unlisted'])
 def test_rejects_unknown_fields_values_and_broken_rules(model,data):
     with pytest.raises(ValidationError):model.model_validate(data)
 
@@ -82,11 +85,14 @@ def test_names_match_the_migration():
 
 
 def test_a_talking_point_carries_no_client_text_and_renders_one_line():
-    assert set(TalkingPoint.model_fields)=={'point_id','topic','stage','timeframe','concerns','origin','first_seen','last_seen'}
+    # 0143 added kind (optional): both sides agreed the field set, and a point without a kind renders exactly as before.
+    assert set(TalkingPoint.model_fields)=={'point_id','topic','stage','timeframe','kind','concerns','origin','first_seen','last_seen'}
     inferred=TalkingPoint.model_validate(POINT)
-    assert inferred.line()=='Home loan · planning · within 12 months · inferred from chat' and inferred.brief_label()=='ai_suggestion'
+    assert inferred.kind is None and inferred.line()=='Home loan · planning · within 12 months · inferred from chat' and inferred.brief_label()=='ai_suggestion'
     shared=TalkingPoint.model_validate({**POINT,'topic':'fixed_deposit','stage':'concern','timeframe':'unknown','concerns':['rates','fees'],'origin':'confirmed'})
     assert shared.line()=='Fixed deposit · concern · asks about rates, fees · shared by the client' and shared.brief_label()=='client_said'
+    kind=TalkingPoint.model_validate({**POINT,'kind':'hdb_resale','concerns':['lock_in','rates']})
+    assert kind.line()=='Home loan · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat'
 
 
 def test_meetings_are_off_by_default_and_every_call_says_so(monkeypatch):
