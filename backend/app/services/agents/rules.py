@@ -155,7 +155,7 @@ async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContex
     if (meeting := await meeting_answers.respond(task.id, question, history, records, current, task.intent)) is not None:
         evidence = [*public, *relationship.evidence_for(records)]
         shares = await consent_answers.meeting_shares(task.id, current) if meeting.proposal else []
-        return out(spec, task, meeting.result, evidence, prompts.load('relationship', relationship.PROMPT)['id'],
+        return out(spec, task, meeting.result, evidence, prompts.current('relationship')['id'],
             proposals=[meeting.proposal, *shares] if meeting.proposal else [])
     result, evidence, prompt_id = await relationship.respond(shim(task, 'relationship'), history, language, current, public, records)
     return out(spec, task, result, evidence, prompt_id)

@@ -55,12 +55,12 @@ def test_tasks_the_agent_cannot_run_are_refused(monkeypatch):
     with pytest.raises(PlanRefused, match="no intent 'move_money'"):check_task(ACCOUNTS, task('move_money'), {})
     with pytest.raises(PlanRefused, match='is for guide'):check_task(ACCOUNTS, task('card_figures', agent='guide'), {})
     no_loop = SPECS['compliance'].model_copy(update={'loop_tools': frozenset()})  # since 3a every spec has loop tools
-    monkeypatch.setitem(runner.PROMPTS, 'compliance', 'v1')  # a prompt alone does not let an agent without loop tools loop
+    monkeypatch.setattr(runner, 'PROMPTED', runner.PROMPTED | {'compliance'})  # a prompt alone does not let an agent without loop tools loop
     with pytest.raises(PlanRefused, match='listed intents only'):check_task(no_loop, task('open', agent='compliance'), {})
 
 
 def test_an_agent_without_a_released_prompt_or_an_unlisted_import_is_refused(monkeypatch):
-    monkeypatch.delitem(runner.PROMPTS, 'guide')
+    monkeypatch.setattr(runner, 'PROMPTED', runner.PROMPTED - {'guide'})
     monkeypatch.delitem(runner.RULES, 'guide', raising=False)  # neither a prompt nor a rules hook
     with pytest.raises(PlanRefused, match='no released runner prompt'):check_task(SPECS['guide'], task('product_info', agent='guide'), {})
     with pytest.raises(PlanRefused, match='does not import'):

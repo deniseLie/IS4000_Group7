@@ -39,8 +39,6 @@ CLARIFICATION = (
     "or understand a correction request?"
 )
 
-PROMPT='v7'  # v7 (batch 3, P05): her account list from Accounts (input-account_refs) is citable
-
 
 def submission_summary(case: ComplianceCase) -> dict[str,JsonValue]:
     """Explain item progress separately from the bank's unchanged overall case status."""
@@ -96,7 +94,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         return (AgentResult(task_id=task.task_id,agent='compliance',
                     status='needs_clarification',answer_kind='conversation',
                     text=CLARIFICATION,question=CLARIFICATION),
-                [],prompts.load('compliance',PROMPT)['id'])
+                [],prompts.current('compliance')['id'])
     snapshot=await load(ctx)
     chosen=compliance_selection.selection.get()
     if chosen is not None:
@@ -111,7 +109,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         if workspace.review is None or workspace.review.case_id!=snapshot.data.case_id:
             raise customer_data.CustomerDataIntegrityError('Compliance review changed while loading current document checks')
         evidence.append(document.evidence_for(workspace,workspace.review.requested_items,checked.as_of))
-    pv=prompts.load('compliance',PROMPT)
+    pv=prompts.current('compliance')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)

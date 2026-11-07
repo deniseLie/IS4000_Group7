@@ -31,7 +31,6 @@ from app.services import audit,llm_gateway,offers,prompts
 from app.services.authorization import require_permission
 from app.services.customer_data import _read
 
-PROMPT='v1'
 TOPICS=('home_loan','investments','fixed_deposit','insurance')
 STAGES=('curious','exploring','planning','ready','concern')
 TIMEFRAMES=('now','within_3m','within_12m','later','unknown')
@@ -149,7 +148,7 @@ async def _rpc(ctx: RequestContext,name: str,params: dict) -> dict:
 
 async def extract(ctx: RequestContext,turn_id: UUID,message: str,previous: str | None,muted: set[str]) -> dict:
     """One classification and the code checks; records the kept points under her JWT. Counts only come back."""
-    prompt=prompts.load('talking_points',PROMPT)
+    prompt=prompts.current('talking_points')
     result=await llm_gateway.call(prompt,system_text(prompt),model_input(message,previous),SCHEMA,model=settings.talking_points_model or None,retries=0)
     kept,dropped=validate(result.data.get('points') or [],message,muted)
     recorded=Counter()

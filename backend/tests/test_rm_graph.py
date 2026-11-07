@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.observability import span_sink
 from app.schemas.contracts import Principal, RequestContext
 from app.schemas.rm import RmAssistantRequest
-from app.services import llm_gateway, orchestrator, tools
+from app.services import llm_gateway, orchestrator, prompts, tools
 from app.services.agents import registry
 from app.services.authorization import PolicyDenied
 from app.services.rm import graph, handlers
@@ -362,7 +362,7 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
         ('rm_calendar', 'decide_request'), ('rm_calendar', 'availability_change'), ('rm_requests', 'open'), ('rm_client', 'help')]  # never a client agent
     task = graph.plan_schema()['properties']['tasks']['items']['properties']
     assert task['agent']['enum'] == ['', 'rm_calendar', 'rm_client', 'rm_requests'] and 'open' in task['intent']['enum']
-    assert (graph.PLANNER_VERSION, handlers.ASSISTANT_VERSION) == ('v5', 'v6')
+    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v5', 'v6')
 
 
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):

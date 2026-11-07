@@ -91,11 +91,15 @@ def test_every_prompt_version_has_a_prompt_log_entry():
     assert set(RELEASED)<=set(prompts.released())
     for agent,version in prompts.released():assert (log/agent/f'{version}.md').is_file(),(agent,version)
 
-def test_agent_versions_are_configured_not_guessed(monkeypatch):
-    monkeypatch.setattr(settings,'prompt_version','v1')
-    assert prompts.current()['id']==RELEASED[('answer','v1')]
-    monkeypatch.setattr(settings,'prompt_versions',{})
-    with pytest.raises(ValueError):prompts.current('planner')
+def test_every_version_is_chosen_in_one_table():
+    """No setting picks a prompt; prompts.VERSIONS is the one table, and in_use adds only the meeting side's own pins."""
+    from app.services import llm
+    assert not {'prompt_version','prompt_versions'}&set(type(settings).model_fields)
+    assert llm.answer_prompt()==prompts.current('answer')==prompts.load('answer',prompts.VERSIONS['answer'])
+    used=prompts.in_use()
+    assert {k:used[k] for k in prompts.VERSIONS}==prompts.VERSIONS
+    assert set(used)-set(prompts.VERSIONS)=={'minutes_writer','minutes_overview','brief_writer','proposal_drafter'}
+    with pytest.raises(ValueError):prompts.current('fraud')  # retired (build plan 2b): not in the table
 
 
 def test_prompts_in_use_are_released_versions():

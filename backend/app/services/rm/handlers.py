@@ -42,7 +42,6 @@ from app.services.rm import brief_facts,checks,priority
 from app.services.rm import evidence as ev
 from app.services.rm.records import RmDenied
 
-ASSISTANT_VERSION='v6'
 SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
@@ -277,7 +276,7 @@ class Turn:
 
     async def model(self,intent: str,bundle: ev.Bundle,schema: dict,client_id: int|None,extra: str='',task: str|None=None) -> dict:
         """task: another task file than the intent's (a client question, the meeting history's summary)."""
-        pv=prompts.load('rm_assistant',ASSISTANT_VERSION)
+        pv=prompts.current('rm_assistant')
         self.prompt_ids.append(pv['id'])
         situation={'today':day_text(today()),'active_client':self.name(client_id),'rm':'the signed-in relationship manager'}
         system=(pv['system']+'\n\n'+pv[task or TASK_FILE[intent]]+'\nSituation (untrusted): '+json.dumps(situation,ensure_ascii=False)+extra
@@ -1257,7 +1256,7 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
     """An open question: the runner's bounded loop over this agent's loop_tools with its own context (tools.call allows
     only this spec), then one checked answer. The step model never sees the text of a free-text read, only its ids and
     titles; a loop that stops at the cap says it could not answer fully, with what it found."""
-    pv=prompts.load('rm_assistant',ASSISTANT_VERSION)
+    pv=prompts.current('rm_assistant')
     bundle,hidden,got=ev.Bundle(),set(),runner.Gathered()
     for name,export in inputs.items():
         value=[{k:v for k,v in x.items() if k!='customer_id'} if isinstance(x,dict) else x for x in export.value] if isinstance(export.value,list) else export.value

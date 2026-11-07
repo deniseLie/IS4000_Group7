@@ -46,7 +46,7 @@ async def classify(case: dict,live: bool) -> dict:
     reason=tp.prefilter(risk.redacted_message,risk)
     if reason:return {'gate':reason,'topics':[],'stages':{},'dropped':{}}
     if not live:return {'gate':'model','topics':None,'stages':{},'dropped':{}}
-    prompt=prompts.load('talking_points',tp.PROMPT)
+    prompt=prompts.current('talking_points')
     start_trace()
     try:
         result=await llm_gateway.call(prompt,tp.system_text(prompt),tp.model_input(risk.redacted_message,case.get('previous')),tp.SCHEMA,
@@ -94,7 +94,7 @@ async def run(selected: list[dict],live: bool) -> dict:
     gates=Counter(r['gate'] for r in rows)
     labelled=[r for r in rows if r['expect']]
     report={'mode':'live' if live else 'offline','cases':len(rows),'dataset_sha256':hashlib.sha256(CASES.read_bytes()).hexdigest(),
-        'prompt_version':prompts.load('talking_points',tp.PROMPT)['id'],'model':llm_gateway.model_name(settings.talking_points_model or None) if live else None,
+        'prompt_version':prompts.current('talking_points')['id'],'model':llm_gateway.model_name(settings.talking_points_model or None) if live else None,
         'gates':dict(gates),'model_calls':gates['model'],
         'prefilter':{'positives_passed':sum(r['gate']=='model' for r in labelled),'positives':len(labelled),
             'negatives_stopped':sum(r['gate']!='model' for r in rows if not r['expect']),'negatives':sum(not r['expect'] for r in rows)},
