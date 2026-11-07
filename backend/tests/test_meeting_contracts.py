@@ -48,7 +48,7 @@ def test_examples_round_trip(model,data):
 
 
 @pytest.mark.parametrize('model,data',[
-    (MeetingEvent,{**EXAMPLES[MeetingEvent],'type':'meeting.started'}),
+    (MeetingEvent,{**EXAMPLES[MeetingEvent],'type':'meeting.unknown'}),
     (MeetingEvent,{**EXAMPLES[MeetingEvent],'client_text':'hello'}),
     (BriefItem,{'label':'record','text':'A fact with no source'}),
     (BriefCard,{**EXAMPLES[BriefCard],'consent':{'transactions':True}}),
@@ -74,7 +74,11 @@ def test_names_match_the_migration():
     folder=Path(__file__).parents[1]/'supabase'/'migrations'
     sql=(folder/'0105_meeting_seam.sql').read_text()
     quoted=lambda text:set(re.findall(r"'([a-z_.]+)'",text))
-    assert quoted(re.search(r'event_type in \(([^)]*)\)',sql)[1])==set(get_args(MeetingEventType))
+    assert quoted(re.search(r'event_type in \(([^)]*)\)',sql)[1])<=set(get_args(MeetingEventType))
+    # Applied migrations extend the seam additively; compare the runtime enum with the latest released constraint.
+    migrations='\n'.join(path.read_text() for path in sorted(folder.glob('*.sql')))
+    constraints=re.findall(r'add constraint events_event_type_check check\s*\(\s*event_type in\s*\(([^)]*)\)',migrations,re.I|re.S)
+    assert quoted(constraints[-1])==set(get_args(MeetingEventType))
     assert quoted(re.search(r'p_category not in \(([^)]*)\)',sql)[1])==set(get_args(ConsentCategory))
     assert quoted(re.search(r'unnest\(array\[([^\]]*)\]\)',sql)[1])==set(get_args(ConsentCategory))
     topics=re.search(r'function rm\.meeting_topics\(\).*?array\[([^\]]*)\]',(folder/'0106_meeting_requests.sql').read_text(),re.S)[1]

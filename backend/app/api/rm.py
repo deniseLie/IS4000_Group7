@@ -11,6 +11,7 @@ import json
 import logging
 import time
 from uuid import UUID
+from typing import Annotated
 import httpx
 import langsmith
 from fastapi import APIRouter,Depends,Query,Request
@@ -25,7 +26,7 @@ from app.core.errors import ApiError
 from app.core.gateway import get_ctx
 from app.core.observability import log_event,request_facts,start_trace
 from app.schemas.contracts import RequestContext
-from app.schemas.rm import (Block,BriefApproval,BriefPrepare,ClientMessage,ConsentAsk,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
+from app.schemas.rm import (AppointmentWindow,Block,BriefApproval,BriefPrepare,ClientMessage,ConsentAsk,ConversationSave,Dismissal,InteractionApproval,MeetingDecision,MeetingMove,RmAssistantRequest,
     ServiceRequestDraft,ServiceRequestSubmit,TasksApproval,TaskStatus,WorkingHours)
 from app.services import audit,customer_data
 from app.services.llm_gateway import LLMError
@@ -76,6 +77,9 @@ async def run(operation,request: Request,caller: Caller,tool: str):
     batch=audit.start_batch(request.state.db,session_id=caller.ctx.session_id)
     try:
         with rm_scope(caller.session):result=await operation()
+    except ApiError:
+        await flush(batch)
+        raise
     except (RmDenied,RmForbidden,APIError,httpx.TransportError,ValidationError,PermissionError) as error:
         batch.add('data','data.read','failed',details={'tool':tool,'error_type':type(error).__name__[:64]})
         await flush(batch)
@@ -109,10 +113,12 @@ async def ticket(reference: str,request: Request,caller: Caller=Depends(rm_calle
     return await run(lambda:records.ticket(caller.ctx,reference),request,caller,'rm.ticket')
 
 @router.get('/appointments')
-async def appointments(request: Request,past_days: int=Query(0,ge=0,le=30),caller: Caller=Depends(rm_caller)):
-    # past_days: also list recent meetings (up to 30 days back) so they can be documented; the range stays within 62 days.
-    start=datetime.now(SGT).date()-timedelta(days=past_days) if past_days else None
-    end=(start+timedelta(days=13+past_days)) if start else None
+async def appointments(request: Request,window: Annotated[AppointmentWindow,Query()],caller: Annotated[Caller,Depends(rm_caller)]):
+    if window.past_days+window.future_days>62:
+        raise ApiError(422,'appointment_range_invalid','Choose a calendar interval spanning at most 62 days.')
+    today=datetime.now(SGT).date()
+    start=today-timedelta(days=window.past_days)
+    end=today+timedelta(days=window.future_days)
     return await run(lambda:records.appointments(caller.ctx,start,end),request,caller,'rm.appointments')
 
 @router.get('/availability')
@@ -244,7 +250,7 @@ async def prepare_meeting_brief(meeting_id: UUID,body: BriefPrepare,request: Req
     trace.attrs.update(side='rm',role='rm',intent='meeting_brief')
     async def operation():
         # A model failure or a brief the copilot could not write is returned, not raised, so run() still flushes the audit.
-        try:return await brief.prepare(meeting_id,caller.ctx,regenerate=body.regenerate)
+        try:return await brief.refresh(meeting_id,caller.ctx) if body.regenerate else await brief.prepare(meeting_id,caller.ctx)
         except LLMError:return {'_failed':'model'}
         except brief.BriefUnavailable:return {'_failed':'brief'}
         finally:

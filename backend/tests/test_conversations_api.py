@@ -12,6 +12,7 @@ from app.schemas.contracts import Principal,RequestContext
 from app.schemas.conversations import ConversationAccess,TurnInput,TurnResponse
 from app.schemas.events import AnswerEvent
 from app.services import conversations
+from app.services.orchestrator import receipt_source
 from tests.data_api_support import NativeAPI,mint_token
 from tests.database_support import persona_id
 
@@ -197,7 +198,7 @@ def test_reopened_history_is_chronological_and_bounded(local_data_api: NativeAPI
     assert history['messages'][0]['redacted_text']=='Question 1' and history['session']['revision']==31
 
 
-@pytest.mark.parametrize('private_field',[None,'answer','summary','identifier','extra'])
+@pytest.mark.parametrize('private_field',[None,'answer','summary','identifier','source','extra'])
 def test_saved_offer_identifiers_do_not_disable_text_redaction(local_data_api: NativeAPI,native_api_client: TestClient,private_field: str | None) -> None:
     """Real SQL storage: numeric UUID segments are metadata; text and malformed identifiers stay subject to redaction."""
     import psycopg
@@ -209,11 +210,13 @@ def test_saved_offer_identifiers_do_not_disable_text_redaction(local_data_api: N
         turn=asyncio.run(conversations.start_turn(TurnInput(turn_id=uuid4(),revision=0,user_text='Please help with my card',priority='P3'),access,ctx,db))
         identifier='00000000-0000-4000-8000-123456789012'
         payload=fixed_answer().model_dump(mode='json')
+        payload['sources']=[receipt_source(UUID(identifier)).model_dump(mode='json')]
         payload['offer']={'offer_group':identifier,'expires_at':'2026-12-01T01:00:00+00:00',
             'offers':[{'command_id':identifier,'type':'handoff.create','summary':'Report my lost card','expires_at':'2026-12-01T01:00:00+00:00'}]}
         if private_field=='answer':payload['answer']=identifier
         elif private_field=='summary':payload['offer']['offers'][0]['summary']=identifier
         elif private_field=='identifier':payload['offer']['offer_group']='1234567890123456'
+        elif private_field=='source':payload['sources'][0]['id']='1234567890123456'
         elif private_field=='extra':payload['untrusted']='1234567890123456'
         query={'p_session_id':str(sid),'p_turn_id':str(turn.turn.turn_id),'p_run_id':str(turn.turn.run_id),'p_response':payload,'p_guest_token':None}
         if private_field:

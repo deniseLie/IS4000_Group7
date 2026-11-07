@@ -30,8 +30,13 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
     meetings_enabled: bool = False  # meeting lifecycle (services/meetings, 0105); explicit opt-in for the hybrid meeting lifecycle
+    meeting_model_token_budget: int = 200000
     zoom_oauth_directory: Path | None = None
+    zoom_capture_enabled: bool = False
+    zoom_webhook_secret: SecretStr | None = Field(default=None,repr=False)
+    zoom_ingress_database_url: SecretStr | None = Field(default=None,repr=False)
     meetings_database_url: SecretStr | None = Field(default=None,repr=False)
+    meetings_checkpoint_signing_key: SecretStr | None = Field(default=None,min_length=43,repr=False)
     run_meeting_worker_in_api: bool = False
     meeting_import_max_bytes: int = Field(default=2200000,ge=65536,le=8000000)
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)

@@ -172,6 +172,8 @@ def test_worker_audit_failure_rolls_back_inbox_and_event(local_data_api: NativeA
     asyncio.run(drain(worker_uri))
     event_id=fresh_consent_event(local_data_api,1001)
     with psycopg.connect(local_data_api.database_uri) as db:
+        # Exercise delivery rollback at every wall-clock time, independently of the seeded optional quiet hours.
+        db.execute("update notify.preferences set channels=array['in_app'],quiet_start=null,quiet_end=null where customer_id=1001")
         db.execute("create function public.native_notification_audit_failure() returns trigger language plpgsql as $$ begin if new.action='notification.sent' then raise exception 'native notification audit failure'; end if; return new; end $$")
         db.execute('create trigger native_notification_failure before insert on audit.events for each row execute function public.native_notification_audit_failure()')
     with pytest.raises(psycopg.errors.RaiseException,match='native notification audit failure'):asyncio.run(drain(worker_uri))
@@ -186,6 +188,8 @@ def test_database_session_crash_rolls_back_uncommitted_delivery(local_data_api: 
     import psycopg
     asyncio.run(drain(worker_uri))
     event_id=fresh_consent_event(local_data_api,1001)
+    with psycopg.connect(local_data_api.database_uri) as db:
+        db.execute("update notify.preferences set channels=array['in_app'],quiet_start=null,quiet_end=null where customer_id=1001")
     crashed=psycopg.connect(worker_uri.get_secret_value())
     try:
         pid=crashed.execute('select pg_backend_pid()').fetchone()[0]

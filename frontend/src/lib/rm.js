@@ -384,18 +384,16 @@ export function nextStep(item) {
 }
 
 // Brief Writer (0118) ------------------------------------------------------------------------------------------------
-// The lines shown above a saved briefing: records changed since it was written, consent withdrawn or topics removed
-// (the items themselves already read "Removed by client on <date>"), and suggestions left out because they rested only
-// on what the client no longer shares.
+// A changed snapshot needs a new review. Attribute withdrawal or deletion only when the current response records it.
 const CATEGORY_WORDS={chat_topics:'topics from her chats',transaction_insights:'transaction insights'};
 export function briefNotice(brief) {
   if(!brief)return [];
   const lines=[];
-  if(brief.stale)lines.push('Notes or tasks for this client changed after this version was written. Write a new version before the meeting.');
+  if(brief.stale)lines.push('Client records, meeting details or sharing choices changed after this version was written. Write and review a new version before acting.');
   for(const w of brief.withdrawn||[])lines.push(`The client stopped sharing ${CATEGORY_WORDS[w.category]||w.category} on ${w.on}; that part is no longer shown.`);
   if(brief.removed_points?.length&&!(brief.withdrawn||[]).some(w=>w.category==='chat_topics'))
     lines.push(`The client removed ${brief.removed_points.length===1?'a topic':`${brief.removed_points.length} topics`} shown in an earlier version.`);
-  if(brief.withheld)lines.push(`${brief.withheld} suggestion${brief.withheld===1?' was':'s were'} left out because they rested only on what the client no longer shares.`);
+  if(brief.withheld)lines.push(`${brief.withheld} item${brief.withheld===1?' was':'s were'} left out because the current source records no longer support them.`);
   return lines;
 }
 // Meetings in the next `days` days without a briefing, or with one whose records changed, soonest first (at most `limit`).
@@ -405,16 +403,13 @@ export function briefsToPrepare(meetings,now=new Date(),days=7,limit=3) {
     .sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at)).slice(0,limit);
 }
 // Prepares those briefings one at a time in the background (once per page load), so they are ready before she asks.
-let preparing=null;
-export function prepareMissingBriefs(token,onReady) {
-  if(preparing)return preparing;
-  preparing=(async()=>{
-    try {
-      const auth=await token();
-      const due=briefsToPrepare((await rmGet('/meetings/briefs',auth)).data);
-      for(const m of due){try{await rmPost(`/meetings/${m.meeting_id}/brief`,{regenerate:false},await token());onReady?.(m);}catch{/* shown when she opens it */}}
-      return due.length;
-    } catch {return 0;}
-  })();
-  return preparing;
+export async function prepareMissingBriefs(token,onReady) {
+  const auth=await token();
+  const due=briefsToPrepare((await rmGet('/meetings/briefs',auth)).data);
+  for(const meeting of due) {
+    try {await rmPost(`/meetings/${meeting.meeting_id}/brief`,{regenerate:false},await token());}
+    catch(failure) {throw new Error(`Briefing for ${meeting.client} (${meeting.when}) failed: ${failure.message}`);}
+    onReady(meeting);
+  }
+  return due.length;
 }

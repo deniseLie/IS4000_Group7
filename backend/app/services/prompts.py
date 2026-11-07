@@ -40,7 +40,11 @@ def in_use():
         'runner_common': runner.COMMON, 'rm_planner': graph.PLANNER_VERSION, 'rm_assistant': handlers.ASSISTANT_VERSION,
         'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT, 'talking_points': talking_points.PROMPT,
         **{registry.SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()}}
-    found['minutes_writer']='v1'
+    from app.services.meetings import writer,preparation
+    found['minutes_writer']=writer.PROMPT
+    found['minutes_overview']=writer.OVERVIEW_PROMPT
+    found['brief_writer']=preparation.PROMPT
+    found['proposal_drafter']='v1'
     return {family: version for family, version in sorted(found.items()) if version}
 
 def released():

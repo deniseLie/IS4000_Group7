@@ -11,6 +11,14 @@ export async function meetingRequest(path,method,value,token,signal){
 
   return body;
 }
+export async function downloadMeetingPdf(path,filename,token,signal){
+  const response=await fetch(`${API}/meetings${path}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/pdf'},signal});
+  if(!response.ok){const body=await response.json();throw new MeetingError(body.error?.message||body.detail?.message||`PDF download failed (HTTP ${response.status}).`,response.status);}
+  if(!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw new MeetingError('The meeting service returned an unexpected document format.',response.status);
+  const data=await response.blob();
+  if(await data.slice(0,5).text()!=='%PDF-')throw new MeetingError('The meeting service returned an invalid PDF document.',response.status);
+  const url=URL.createObjectURL(data);const link=document.createElement('a');link.href=url;link.download=filename;link.click();URL.revokeObjectURL(url);
+}
 export function checkedWorkspace(value){
   if(!value||!UUID.test(value.meeting_id)||!Number.isInteger(value.revision)||!Number.isInteger(value.consent_epoch)||!['scheduled','in_progress','ended','cancelled'].includes(value.state)||!Array.isArray(value.followups)||typeof value.notice!=='string')throw new Error('The meeting workspace response could not be verified.');
   for(const item of value.followups)if(!UUID.test(item.followup_id)||!['rm','client'].includes(item.owner)||!['open','done'].includes(item.status)||typeof item.text!=='string')throw new Error('The meeting follow-up response could not be verified.');

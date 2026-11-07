@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from starlette.exceptions import HTTPException
 
-from app.api import actions, admin, auth, chat, consent, conversations, customer, documents, knowledge, notifications, relationship, rm, tickets, meetings
+from app.api import actions, admin, auth, chat, consent, conversations, customer, documents, knowledge, notifications, relationship, rm, tickets, meetings,meeting_preparation
 from app.core.config import settings
 from app.core.errors import http_error
 from app.core.gateway import GatewayMiddleware
@@ -40,6 +40,7 @@ app.include_router(documents.router)
 app.include_router(tickets.router)
 app.include_router(admin.router)
 app.include_router(rm.router)
+app.include_router(meeting_preparation.router)
 app.include_router(meetings.router)
 
 

@@ -1,8 +1,10 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import {FORMAT_WORDS,byRank,display,firstThings,keyOf,nextStep,openSchedule,rankIndex,reasonText,receivedText,requestsToAnswer,rmGet,todayView,topicLabel} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
 import SharedTopics from './SharedTopics';
+import MeetingReminders from '../meetings/MeetingReminders';
+import MeetingWorkspace from '../meetings/MeetingWorkspace';
 import MeetingBrief from '../meetings/MeetingBrief';
 import {prepareMissingBriefs} from '../../lib/rm';
 
@@ -15,7 +17,9 @@ function timeOf(when) {return (when||'').split(', ').at(-1);}
 // GET /rm/priorities (services/rm/priority.py, the assistant's score); the page never scores.
 export default function TodayPage({token,onAsk,advisor,today}) {
   const [data,setData]=useState(null),[error,setError]=useState(''),[question,setQuestion]=useState('');
+  const [workspace,setWorkspace]=useState(null);
   const [briefFor,setBriefFor]=useState(null),[prepared,setPrepared]=useState(0);  // 0118: saved briefings
+  const preparation=useRef(null);
   async function load() {
     setError('');
     try {
@@ -25,7 +29,8 @@ export default function TodayPage({token,onAsk,advisor,today}) {
       setData({appointments:a.data,tickets:t.data,followups:f.data,meetingRequests:requestsToAnswer(m.data),ranked:rankIndex(p.items),first:firstThings(p.items)});
     } catch(failure) {setError(failure.message);}
   }
-  useEffect(()=>{load();prepareMissingBriefs(token,()=>setPrepared(n=>n+1));},[]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{load();if(!preparation.current)preparation.current=prepareMissingBriefs(token,()=>setPrepared(n=>n+1))
+    .catch(failure=>setError(`${failure.message} Open that meeting’s briefing to retry.`));},[]);  // eslint-disable-line react-hooks/exhaustive-deps
   const day=today||new Date().toISOString().slice(0,10);
   const v=data?todayView(data,day):null;
   const first=advisor?display(advisor.name).split(' ')[0]:'';
@@ -43,6 +48,8 @@ export default function TodayPage({token,onAsk,advisor,today}) {
       <div className="page-header-actions"><button className="bank-chat-logout" data-testid="rm-today-plan" onClick={()=>onAsk('What’s on today?',{intent:'today'})}><Icon name="spark"/>Plan my day</button>
         <button className="bank-chat-logout" onClick={load}><Icon name="refresh"/>Refresh</button></div></header>
     {error&&<p role="alert" className="rm-error">{error}</p>}
+    <MeetingReminders token={token} onOpen={setWorkspace}/>
+    {workspace&&<MeetingWorkspace meetingId={workspace} token={token} onClose={()=>setWorkspace(null)}/>}
     {!v&&!error&&<div className="loading-list" role="status" aria-label="Loading">{[0,1,2].map(k=><span key={k} className="skeleton-card"/>)}</div>}
     {v&&<>
       <div className="rmw-stats">

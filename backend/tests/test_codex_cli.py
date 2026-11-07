@@ -5,6 +5,12 @@ from pathlib import Path
 import pytest
 from app.services.codex_cli import cli_environment, command, parse_events
 
+@pytest.mark.parametrize('value',['0','901','NaN','inf','invalid'])
+def test_invalid_cli_deadline_fails_before_an_external_turn(monkeypatch,value):
+    from app.services.codex_cli import timeout_s
+    monkeypatch.setenv('CODEX_CLI_TIMEOUT_S',value)
+    with pytest.raises(RuntimeError,match='CODEX_CLI_TIMEOUT_S'):timeout_s()
+
 @pytest.mark.skipif(os.getenv('TEST_CODEX_LIVE')!='1',reason='Opt in to real concurrent Codex subscription calls')
 def test_parallel_requests_wait_for_the_subscription_connector():
     import asyncio

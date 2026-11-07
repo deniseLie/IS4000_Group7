@@ -299,6 +299,6 @@ test('a saved briefing says what changed: stale records, withdrawn sharing, remo
   assert.equal(lines.length,4);
   assert.match(lines[1],/stopped sharing transaction insights on 7 Nov 2026/);
   assert.match(lines[2],/removed a topic/);
-  assert.match(lines[3],/2 suggestions were left out/);
+  assert.match(lines[3],/2 items were left out/);
   assert.equal(briefNotice({withdrawn:[{category:'chat_topics',on:'7 Nov 2026'}],removed_points:[{point_id:'p'}]}).length,1);  // the withdrawal covers it
 });

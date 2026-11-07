@@ -75,6 +75,14 @@ RELEASED[('talking_points','v1')]='v1+254803bd'  # build plan 4 (0108): lane 1 c
 RELEASED[('planner','v10')]='v10+67067378'  # batch 3: a question needing another agent's data is two tasks; imports; threshold
 RELEASED[('compliance','v7')]='v7+51624f5a'  # batch 3 (P05): her account list from Accounts is citable
 
+RELEASED[('minutes_writer','v3')]='v3+94a92997'
+RELEASED[('minutes_writer','v4')]='v4+5dec283d'
+RELEASED[('minutes_overview','v1')]='v1+6138bb95'
+RELEASED[('minutes_overview','v2')]='v2+69bbc872'
+RELEASED[('brief_writer','v1')]='v1+25e786cb'
+RELEASED[('brief_writer','v2')]='v2+74f98536'
+RELEASED[('brief_writer','v3')]='v3+8ff73d94'
+
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
 

@@ -9,6 +9,13 @@ from pydantic import JsonValue
 
 _request_lock=asyncio.Lock()
 
+def timeout_s() -> float:
+    """Keep the existing 75-second deadline unless CODEX_CLI_TIMEOUT_S explicitly allows a longer subscription turn."""
+    try:value=float(os.getenv('CODEX_CLI_TIMEOUT_S','75'))
+    except ValueError as error:raise RuntimeError('CODEX_CLI_TIMEOUT_S must be a number of seconds from 1 to 900') from error
+    if not 1<=value<=900:raise RuntimeError('CODEX_CLI_TIMEOUT_S must be a number of seconds from 1 to 900')
+    return value
+
 # These are request-local overrides; the user's Codex configuration is untouched.
 DISABLED_FEATURES = (
     'shell_tool','unified_exec','shell_snapshot','apps','plugins','hooks',
@@ -93,7 +100,7 @@ async def _answer(prompt, schema, messages,model):
             cwd=directory,env=cli_environment(),stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
         try:
-            stdout,_=await asyncio.wait_for(proc.communicate(payload.encode()),timeout=75)
+            stdout,_=await asyncio.wait_for(proc.communicate(payload.encode()),timeout=timeout_s())
         finally:
             if proc.returncode is None:
                 proc.kill()

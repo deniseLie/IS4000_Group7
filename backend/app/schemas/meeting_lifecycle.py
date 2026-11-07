@@ -115,7 +115,7 @@ class MinutesContent(Model):
     summary: tuple[EvidenceClaim, ...] = Field(min_length=1, max_length=4)
     decisions: tuple[EvidenceClaim, ...] = Field(max_length=10)
     actions: tuple[Action, ...] = Field(max_length=10)
-    client_recap: Text = Field(max_length=500)
+    client_recap: Text = Field(max_length=5000)
 
 
 class DraftInput(Model):
@@ -160,6 +160,8 @@ class GenerationContext(Model):
     source_hash: Hash
     source_kind: Literal['transcript', 'rm_notes']
     cues: tuple[Cue, ...]
+    review_id: UUID|None = None
+    review_note: str|None = None
 
 
 class NotesContext(GenerationContext):
@@ -182,7 +184,7 @@ class DraftReceipt(Model):
 class Claim(BaseModel):
     model_config = ConfigDict(extra='ignore', frozen=True)
     event_id: int
-    event_type: Literal['meeting.scheduled', 'meeting.rescheduled', 'meeting.cancelled', 'brief.requested', 'meeting.started', 'meeting.ended', 'transcript.ready']
+    event_type: Literal['meeting.scheduled', 'meeting.rescheduled', 'meeting.cancelled', 'brief.requested', 'meeting.started', 'meeting.ended', 'transcript.ready', 'transcript.fetch', 'transcript.discover', 'lifecycle.changed']
     meeting_id: UUID
     claim_token: UUID
     attempts: int = Field(ge=1, le=5)

@@ -108,10 +108,12 @@ def test_a_saved_brief_is_versioned_rechecked_on_open_and_approved_by_exact_vers
     assert [w['category'] for w in brief['withdrawn']]==['chat_topics'] and [p['point_id'] for p in brief['removed_points']]==[POINT]
     with pytest.raises(DatabaseError,match='replaced brief'):
         with database.transaction():database.execute('select public.rm_meeting_brief_approve(%s,%s,2,%s)',(mid,brief['brief_id'],str(uuid4())))
-    approved=database.execute('select public.rm_meeting_brief_approve(%s,%s,1,%s)',(mid,brief['brief_id'],str(uuid4()))).fetchone()[0]
-    assert approved['status']=='approved'
+    with pytest.raises(DatabaseError,match='sources, access or assignment changed'):
+        with database.transaction():database.execute('select public.rm_meeting_brief_approve(%s,%s,1,%s)',(mid,brief['brief_id'],str(uuid4())))
     second=database.execute('select public.rm_meeting_brief_save(%s,%s::jsonb,null,%s)',(mid,content,str(uuid4()))).fetchone()[0]
     assert second['version']==2 and database.execute('select public.rm_meeting_brief(%s)',(mid,)).fetchone()[0]['data']['brief']['status']=='draft'
+    approved=database.execute('select public.rm_meeting_brief_approve(%s,%s,2,%s)',(mid,second['brief_id'],str(uuid4()))).fetchone()[0]
+    assert approved['status']=='approved'
 
 
 def test_briefs_are_refused_outside_her_meetings(database: 'Connection[SqlRow]') -> None:
@@ -123,3 +125,23 @@ def test_briefs_are_refused_outside_her_meetings(database: 'Connection[SqlRow]')
     as_sophie(database)
     with pytest.raises(InsufficientPrivilege):
         with database.transaction():database.execute('select public.rm_meeting_brief(%s)',(str(uuid4()),))
+
+
+def test_historical_brief_content_never_crosses_the_data_api_after_withdrawal(database: 'Connection[SqlRow]') -> None:
+    from psycopg import Error as DatabaseError
+    marker='QA private inferred property-search context'
+    mid=meeting(database)
+    content={'summary':marker,'sections':[{'heading':'Conversation starters','items':[
+        {'text':marker,'kind':'suggestion','owner':'rm','source_ids':['talking-points']}]}],'sources':[]}
+    as_sophie(database)
+    database.execute('select public.rm_meeting_brief_save(%s,%s::jsonb,%s::uuid[],%s)',(mid,json.dumps(content),[POINT],str(uuid4())))
+    assert marker in json.dumps(database.execute('select public.rm_meeting_brief(%s)',(mid,)).fetchone()[0])
+    owner(database)
+    database.execute("update consent.grants set revoked_at=clock_timestamp() where customer_id=1002 and 'chat_topics'=any(categories)")
+    as_sophie(database)
+    result=database.execute('select public.rm_meeting_brief(%s)',(mid,)).fetchone()[0]
+    assert marker not in json.dumps(result),'Withdrawn historical text must be filtered in SQL before the Data API returns it'
+    assert result['data']['brief']['stale']
+    with pytest.raises(DatabaseError,match='sources, access or assignment changed'):
+        with database.transaction():database.execute('select public.rm_meeting_brief_approve(%s,%s,%s,%s)',
+            (mid,result['data']['brief']['brief_id'],result['data']['brief']['version'],str(uuid4())))

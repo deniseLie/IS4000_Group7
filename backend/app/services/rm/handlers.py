@@ -620,15 +620,20 @@ def report_bundle(r: dict[str,dict],client_id: int) -> tuple[ev.Bundle,list[dict
 
 
 async def h_brief(t: Turn,plan,client_id):
-    """RM4: code writes the record sections (brief_facts.brief_sections); the model writes only the summary, conversation
-    starters, discussion points and questions, from the bounded facts."""
-    await t.say(f'Preparing a briefing from {t.name(client_id)}’s records…')
+    from uuid import UUID
+    from app.core.config import settings
+    from app.services.meetings import preparation
+    from app.services.meetings.assistant import reply as saved_brief_reply
+    from app.services.meetings.database import MeetingStoreError
+    await t.say('Opening the saved meeting brief…')
     c=t.req.context
-    r=await client_reads(t,'meeting_brief',client_id,shared=True)
-    profile=r['profile']
-    reads=[r['cash'],r['insights'],r['points']]
+    profile=await t.read('rm_client_profile',{'customer_id':client_id})
     upcoming=[a for a in profile['data']['appointments'] if a['status']=='confirmed']
     chosen=next((a for a in upcoming if c.appointment_id and str(a['appointment_id'])==str(c.appointment_id)),None)
+    if c.appointment_id and chosen is None:
+        return clarify('The selected meeting is not in this client’s current confirmed appointments. Choose the meeting to prepare.',
+            [{'label':a['when'],'appointment_id':str(a['appointment_id']),'client_id':client_id} for a in upcoming],
+            'meeting_brief',t.context(client_id,appointment_id=str(c.appointment_id)))
     if not chosen and narrows(plan.get('appointment_hint') or '') and not t.req.intent:
         rows=[{**a,'customer_id':client_id} for a in upcoming]
         matches=match_appointments(rows,plan['appointment_hint'],client_id)
@@ -637,20 +642,26 @@ async def h_brief(t: Turn,plan,client_id):
                 'meeting_brief',t.context(client_id))
         chosen=matches[0] if matches else None
     if not chosen and len(upcoming)==1:chosen=upcoming[0]
-    bundle,notes,withheld=report_bundle(r,client_id)
-    if chosen:bundle.add(ev.Evidence('selected-appointment',f"The meeting: {chosen['when']}",'calendar',
-        {k:v for k,v in chosen.items() if k not in ('starts_at','appointment_id')},str(profile['as_of']),client_id))
-    else:bundle.add(ev.Evidence('selected-appointment','The meeting','calendar',{'confirmed_appointment':None,
-        'meaning':'No single confirmed appointment was identified; prepare from the records and say the meeting details are not confirmed.'},str(profile['as_of']),client_id))
     ctx=t.context(client_id,appointment_id=str(chosen['appointment_id']) if chosen else None)
-    records=brief_facts.brief_sections(profile['data'],notes,withheld,bundle,chosen,upcoming)
-    await t.show(records,bundle)
-    facts=brief_facts.facts(bundle,notes)
-    data=await t.model('meeting_brief',facts,brief_facts.points_schema(facts.ids()),client_id)
-    name=t.name(client_id)
-    reply=await split_reply(t,'meeting_brief',data,facts,bundle,records,brief_facts.BRIEF_ORDER,ctx,
-        f"Briefing for {name}"+(f" for the meeting on {chosen['when']}." if chosen else '.'))
-    return with_asks(reply,ask_cards(reads,client_id,name,chosen))
+    if chosen is None:
+        return clarify('Choose the confirmed meeting to prepare. Schedule a meeting first if none is listed.',
+            [{'label':a['when'],'appointment_id':str(a['appointment_id']),'client_id':client_id} for a in upcoming],'meeting_brief',ctx)
+    if not settings.meetings_enabled:
+        return clarify('Meeting preparation is disabled. Enable the meeting lifecycle before preparing this meeting.',[],'meeting_brief',ctx)
+    # Keep the existing latest-note export for dependent follow-up drafts. The brief itself has one canonical writer.
+    await t.read('rm_meeting_notes',{'customer_id':client_id})
+    try:prepared=await preparation.prepare(UUID(str(chosen['appointment_id'])),t.base)
+    except MeetingStoreError as error:
+        if error.code!='P0002':raise
+        return {**clarify('Open this meeting workspace and agree its intended outcome before preparing the saved brief.',[],
+            'meeting_brief',ctx),'meeting_workspace':str(chosen['appointment_id'])}
+    reply=saved_brief_reply(prepared,ctx)
+    bundle=ev.Bundle()
+    for source in reply['sources']:
+        bundle.add(ev.Evidence(source['id'],source['title'],'record',source['record'],source['as_of'],client_id))
+    await t.show(reply['sections'],bundle)
+    sharing=[{'category':category,'shared':prepared.card.consent[category]} for category in ASK_LABELS]
+    return with_asks(reply,ask_cards(sharing,client_id,t.name(client_id),chosen))
 
 
 async def _ticket_ref(t: Turn,plan,client_id,profile) -> tuple[str|None,dict|None]:

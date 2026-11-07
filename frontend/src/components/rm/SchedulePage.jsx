@@ -6,6 +6,7 @@ import Icon from '../Icon';
 import {DECLINE_REASONS,FORMAT_WORDS,MOVE_REASONS,WEEKDAY_NAMES,dayCells,decisionBody,decisionNotice,freeTimes,groupByDate,idKeeper,isNewRequest,meetingsPerWeek,
   moveNotice,needsAnswer,plusMinutes,requestLabel,rmDelete,rmGet,rmPost,rmPut,sgtInput,sgtInstant,slotProblemText,takeScheduleTab,topicLabel,weekStart} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
+import MeetingReminders from '../meetings/MeetingReminders';
 
 const HOURS=Array.from({length:29},(_,i)=>`${String(7+Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`);
 const TABS=[['appointments','Appointments'],['requests','Requests'],['availability','Availability and hours']];
@@ -29,7 +30,7 @@ export default function SchedulePage({token,onAsk,today}) {
     setError('');
     try {
       const auth=await token();
-      const [a,v,r]=await Promise.all([rmGet('/appointments',auth),rmGet('/availability',auth),rmGet(`/meeting-requests?status=${view}`,auth)]);
+      const [a,v,r]=await Promise.all([rmGet('/appointments?future_days=40',auth),rmGet('/availability',auth),rmGet(`/meeting-requests?status=${view}`,auth)]);
       setAppointments(a.data);setAvailability(v);setRequests(r.data);
       if(view==='open')setToAnswer(r.data.filter(needsAnswer).length);
     } catch(failure) {setError(failure.message);}
@@ -68,6 +69,7 @@ export default function SchedulePage({token,onAsk,today}) {
     {notice&&<p className="chat-toast" role="status"><Icon name="check"/>{notice}</p>}
     {!appointments&&!error&&<p className="loading" role="status">Loading your schedule…</p>}
     {tab==='appointments'&&<MeetingProposal token={token} onScheduled={()=>load()}/>}
+    <MeetingReminders token={token} onOpen={setWorkspace}/>
     {workspace&&<MeetingWorkspace meetingId={workspace} token={token} onClose={()=>setWorkspace(null)}/>}
     {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
     {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={setWorkspace} onBrief={setBriefFor}/>}
@@ -96,7 +98,7 @@ function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,o
     {over.map(a=><p key={a.customer_id+a.date} className="rmw-warn" role="status"><Icon name="alert"/>{a.client} has {perWeek.get(`${a.customer_id}|${weekStart(a.date)}`)} meetings in the week of {formatDate(weekStart(a.date))}, above the limit of {limit}. They were booked before the limit applied; consider combining them.</p>)}
     {groupByDate(appointments).map(group=><section key={group.date} className="rmw-day-group">
       <h3>{dayTitle(group.date,today)}</h3>
-      <ul className="rmw-appointments">{group.items.map(a=><li key={a.appointment_id} className={`rmw-appointment ${a.status}`} data-testid="rm-appointment">
+      <ul className="rmw-appointments">{group.items.map(a=><li key={a.appointment_id} className={`rmw-appointment ${a.status}`} data-testid="rm-appointment" data-appointment-id={a.appointment_id}>
         <span className="rmw-time">{timeOf(a.when)}</span>
         <span className="meeting-icon"><Icon name={a.format==='phone'?'support':a.format==='video'?'chat':'pin'}/></span>
         <div className="rmw-appointment-main"><strong>{a.client}</strong>
@@ -104,7 +106,7 @@ function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,o
         <span className={`ticket-status ${a.status==='held'?'waiting_on_client':'resolved'}`}>{a.status==='held'?'Held':'Confirmed'}</span>
         {a.status==='confirmed'&&<div className="rmw-appointment-actions" style={{display:'flex',flexWrap:'wrap',gap:8}}>
           <button className="bank-chat-logout" data-testid="rm-open-meeting-workspace" disabled={busy} onClick={()=>onWorkspace(a.appointment_id)}>Notes and follow-up</button>
-          {!a.past&&<button className="primary-button small" data-testid="rm-brief" onClick={()=>onBrief(a)}><Icon name="spark"/>Briefing</button>}
+          {!a.past&&<button className="primary-button small" data-testid="rm-brief" disabled={busy} onClick={()=>onBrief(a)}><Icon name="spark"/>Briefing</button>}
           {!a.past&&<button className="bank-chat-logout" data-testid="rm-move" aria-expanded={moving===a.appointment_id} disabled={busy}
             onClick={()=>setMoving(moving===a.appointment_id?null:a.appointment_id)}><Icon name="clock"/>Move</button>}</div>}
         {moving===a.appointment_id&&<MoveForm a={a} free={freeTimes(availability,[a.starts_at])} busy={busy} onMove={onMove} onClose={()=>setMoving(null)}/>}

@@ -3,10 +3,9 @@ import Icon from '../Icon';
 import RmAnswer from '../rm/RmAnswer';
 import {briefNotice,newId,rmGet,rmPost} from '../../lib/rm';
 
-// Brief Writer (0118): the saved, versioned pre-meeting brief of one confirmed meeting. It is written by the copilot's
-// meeting brief with the RM's own sign-in, and re-read against the client's consent every time it opens: a topic or
-// insight she withdrew shows as "Removed by client on <date>". The RM approves the exact version she read; a refresh
-// writes a new version that needs approving again. Nothing here is sent to the client.
+// The Briefing screen reads the same reference-only saved version as the meeting workspace and RM assistant.
+// Current records and consent are rechecked on open and approval. A refresh needs a separate exact-version review;
+// the internal briefing is never sent to the client.
 export default function MeetingBrief({meetingId,token,client,onClose,onAsk}) {
   const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(true),[status,setStatus]=useState('');
   const approvals=useRef(new Map());
@@ -43,11 +42,12 @@ export default function MeetingBrief({meetingId,token,client,onClose,onAsk}) {
     {error&&<p role="alert" className="rm-error">{error}</p>}
     {error&&onAsk&&m&&<button className="bank-chat-logout" onClick={()=>onAsk(`Brief me for my meeting on ${m.when}`,{intent:'meeting_brief',context:{client_id:m.customer_id,appointment_id:m.meeting_id}})}>
       Ask the assistant instead</button>}
+    {data?.legacy_brief_available&&<p className="rm-small">An earlier briefing is retained. Review the current version shown here before you act.</p>}
     {b&&<>
       <p className="rm-small" data-testid="meeting-brief-version">Version {b.version} · written {b.created} · {b.brief_status==='approved'?'approved by you':'not approved yet'}</p>
       {briefNotice(b).map(line=><p key={line} className="rmw-warn" role="status"><Icon name="alert"/>{line}</p>)}
       <RmAnswer reply={b} token={token} client={client}/>
-      {b.brief_status!=='approved'&&<div className="meeting-actions"><button className="primary-button" data-testid="meeting-brief-approve" disabled={busy} onClick={approve}>
+      {b.brief_status!=='approved'&&<div className="meeting-actions"><button className="primary-button" data-testid="meeting-brief-approve" disabled={busy||b.stale} onClick={approve}>
         <Icon name="check"/>Approve version {b.version}</button><span className="rm-small">Approving records that you reviewed this exact version.</span></div>}</>}
   </section>;
 }

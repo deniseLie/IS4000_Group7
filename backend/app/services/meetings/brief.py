@@ -1,19 +1,11 @@
-"""Brief Writer (architecture §15.4, migration 0118): one saved, versioned pre-meeting brief per confirmed meeting.
+"""RM briefing routes use the lifecycle's canonical saved brief and exact approval.
 
-prepare() runs the RM copilot's meeting brief for the appointment with the RM's own JWT (rm.records under rm_scope), so
-every rule of the copilot applies: the book check, consent-gated reads with the fixed `meeting_prep` purpose, record
-sections written by code, model points checked against their facts, every item cited. The restricted meeting worker
-never runs this (it has no RM JWT and reads no client records).
-
-What is stored (store()): the record sections, the checked points and the source titles. Items that rest only on a
-consent-gated read (topics from her chats, transaction insights, large movements) are not stored, and neither is the
-record behind a gated source; the section keeps the place they go (`gated_at`). view() re-reads those readers under her
-consent each time the brief is opened and puts the current items back, so a withdrawn grant or a removed topic is never
-shown from an old copy: it renders as "Removed by client on <date>", and an AI suggestion that rested only on gated
-sources that are no longer shared is dropped (and counted).
+The pure store/view/card helpers retain the 0118 historical copilot format. Existing copilot versions remain in
+meetings.copilot_briefs; they are never copied into the current reference-only plan or treated as its approval.
 """
 import asyncio
 from typing import Any
+from pydantic import JsonValue
 from uuid import UUID,uuid4
 from app.schemas.contracts import RequestContext
 from app.schemas.meetings import BriefCard,BriefItem,BriefSection
@@ -99,42 +91,34 @@ def view(brief: dict,bundle: ev.Bundle) -> dict:
         'context':content.get('context') or {}}  # status/intent/context: the shape RmAnswer renders
 
 
-async def read(meeting_id: UUID,ctx: RequestContext) -> dict:
-    """The meeting and its latest brief re-checked and re-read now (None when no brief is saved yet)."""
-    result=await records.rpc('rm_meeting_brief',{'p_meeting_id':str(meeting_id)},ctx,'rm.meeting_brief')
-    data=result['data']
-    if data.get('brief') is None:return {'meeting':data['meeting'],'brief':None}
-    bundle,_=await gated_bundle(ctx,data['meeting']['customer_id'])
-    return {'meeting':data['meeting'],'brief':view(data['brief'],bundle)}
+async def read(meeting_id: UUID,ctx: RequestContext) -> dict[str,JsonValue]:
+    """Read the same current reference-only brief used by the lifecycle and copilot."""
+    from app.services.meetings import brief_workspace
+    return await brief_workspace.read(meeting_id,ctx)
 
 
-async def prepare(meeting_id: UUID,ctx: RequestContext,regenerate: bool=False,say=None,show=None) -> dict:
-    """The current brief, or a new version written now: when none exists, when its records changed (stale), or on request."""
-    from app.services.rm import graph  # the copilot graph; imported here so the worker never loads it
-    current=await read(meeting_id,ctx)
-    brief=current['brief']
-    if brief is not None and not regenerate and not brief['stale']:return current
-    meeting=current['meeting']
-    async def quiet(*_):return None
-    req=RmAssistantRequest(message='Prepare the briefing for this meeting.',intent='meeting_brief',
-        context=RmContext(client_id=meeting['customer_id'],appointment_id=meeting_id))
-    reply=await graph.respond(req,ctx,say or quiet,show)
-    if reply.get('status')!='ok' or reply.get('intent')!='meeting_brief' or not reply.get('sections'):
-        raise BriefUnavailable('The briefing could not be prepared for this meeting.')
-    _,points=await gated_bundle(ctx,meeting['customer_id'])
-    await records.rpc('rm_meeting_brief_save',{'p_meeting_id':str(meeting_id),'p_content':store(reply),
-        'p_point_ids':[str(p['point_id']) for p in points][:50],'p_command_id':str(uuid4())},ctx,'rm.meeting_brief_save')
-    return await read(meeting_id,ctx)
+async def prepare(meeting_id: UUID,ctx: RequestContext) -> dict[str,JsonValue]:
+    """Prepare a current reference-only version; changed sources produce a new unapproved draft."""
+    from app.services.meetings import brief_workspace
+    return await brief_workspace.prepare(meeting_id,ctx)
 
 
-async def approve(meeting_id: UUID,brief_id: UUID,version: int,command_id: UUID,ctx: RequestContext) -> dict:
-    return await records.rpc('rm_meeting_brief_approve',{'p_meeting_id':str(meeting_id),'p_brief_id':str(brief_id),'p_version':version,
-        'p_command_id':str(command_id)},ctx,'rm.meeting_brief_approve')
+async def refresh(meeting_id: UUID,ctx: RequestContext) -> dict[str,JsonValue]:
+    """Create a new immutable version for a fresh exact review."""
+    from app.services.meetings import brief_workspace
+    return await brief_workspace.refresh(meeting_id,ctx)
 
 
-async def upcoming(ctx: RequestContext) -> list[dict]:
-    """The RM's confirmed meetings in the next 14 days with where each brief stands."""
-    return (await records.rpc('rm_meeting_briefs',{},ctx,'rm.meeting_briefs'))['data']
+async def approve(meeting_id: UUID,brief_id: UUID,version: int,command_id: UUID,ctx: RequestContext) -> dict[str,JsonValue]:
+    """Approve the exact canonical version and current sources from either RM screen."""
+    from app.services.meetings import brief_workspace
+    return await brief_workspace.approve(meeting_id,brief_id,version,command_id,ctx)
+
+
+async def upcoming(ctx: RequestContext) -> list[dict[str,JsonValue]]:
+    """Index upcoming appointments by their canonical brief version and current source status."""
+    from app.services.meetings import brief_workspace
+    return await brief_workspace.upcoming(ctx)
 
 
 def card(meeting_id: UUID,viewed: dict,as_of: Any) -> BriefCard:

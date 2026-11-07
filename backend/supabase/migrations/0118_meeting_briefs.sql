@@ -8,9 +8,10 @@
 --   * On open, rm_meeting_brief re-checks consent and deletions: a withdrawn grant or a removed topic is returned with
 --     its date, and the brief renders it as "Removed by client on <date>". `stale` says notes or tasks changed since.
 --   * Approval: the RM approves an exact version (rm_meeting_brief_approve); a newer version needs a new approval.
--- Owned by the meeting side. Numbered 0118 (a free number) because 0125 is the meeting team's zoom_my_notes on hosted.
+-- Owned by the meeting side. Numbered 0118 (a free number) because 0125 is the meeting team's zoom_my_notes on hosted, and
+-- named meetings.copilot_briefs because the meeting team's own meetings.briefs (a different shape) already exists there.
 
-create table meetings.briefs (
+create table meetings.copilot_briefs (
   brief_id uuid primary key default gen_random_uuid(),
   meeting_id uuid not null references rm.appointments(appointment_id) on delete cascade,
   customer_id bigint not null references banking.customer_profiles(customer_id) on delete cascade,
@@ -25,8 +26,8 @@ create table meetings.briefs (
   approved_at timestamptz,
   unique (meeting_id,version)
 );
-alter table meetings.briefs enable row level security;  -- no policies: read and written only by the functions below
-revoke all on meetings.briefs from public,anon,authenticated;
+alter table meetings.copilot_briefs enable row level security;  -- no policies: read and written only by the functions below
+revoke all on meetings.copilot_briefs from public,anon,authenticated;
 
 -- The signed-in RM's upcoming or recent confirmed meeting with a client in her current book, or a refusal.
 create function rm.brief_meeting(p_meeting uuid) returns rm.appointments language plpgsql stable security definer set search_path='' as $$
@@ -40,7 +41,7 @@ begin
 end $$;
 
 -- Re-check of one brief: grants it used that are no longer active, topics it showed that the client removed since.
-create function rm.brief_recheck(b meetings.briefs) returns jsonb language plpgsql stable security definer set search_path='' as $$
+create function rm.brief_recheck(b meetings.copilot_briefs) returns jsonb language plpgsql stable security definer set search_path='' as $$
 declare withdrawn jsonb:='[]'; removed jsonb:='[]'; cat text; g consent.grants;
 begin
   for cat in select jsonb_object_keys(b.grants_used) loop
@@ -60,7 +61,7 @@ begin
       or exists(select 1 from rm.tasks k where k.customer_id=b.customer_id and k.advisor_id=b.advisor_id and k.created_at>b.created_at));
 end $$;
 
-create function rm.brief_json(b meetings.briefs) returns jsonb language sql stable security definer set search_path='' as $$
+create function rm.brief_json(b meetings.copilot_briefs) returns jsonb language sql stable security definer set search_path='' as $$
   select jsonb_build_object('brief_id',b.brief_id,'meeting_id',b.meeting_id,'customer_id',b.customer_id,'version',b.version,'status',b.status,
     'content',b.content,'grants_used',b.grants_used,'created_at',b.created_at,'created_text',rm.sgt(b.created_at),
     'approved_at',b.approved_at)||rm.brief_recheck(b)
@@ -71,21 +72,21 @@ create function public.rm_meeting_briefs() returns jsonb language plpgsql volati
 declare advisor uuid:=rm.current_advisor();
 begin
   if advisor is null then raise exception 'relationship managers only' using errcode='42501'; end if;
-  return rm.result(null,'rm.meeting_briefs','meetings.briefs',(select coalesce(jsonb_agg(jsonb_build_object(
+  return rm.result(null,'rm.meeting_briefs','meetings.copilot_briefs',(select coalesce(jsonb_agg(jsonb_build_object(
       'meeting_id',a.appointment_id,'customer_id',a.customer_id,'client',rm.display_name(p.full_name),'starts_at',a.starts_at,'when',rm.sgt(a.starts_at),
       'format',a.format,'purpose',a.purpose,'brief_version',b.version,'brief_status',b.status,'brief_created',rm.sgt(b.created_at),
       'stale',case when b.brief_id is null then null else (rm.brief_recheck(b)->>'stale')::boolean end) order by a.starts_at),'[]')
     from rm.appointments a join banking.customer_profiles p using(customer_id)
-    left join lateral (select * from meetings.briefs x where x.meeting_id=a.appointment_id order by x.version desc limit 1) b on true
+    left join lateral (select * from meetings.copilot_briefs x where x.meeting_id=a.appointment_id order by x.version desc limit 1) b on true
     where a.advisor_id=advisor and a.status='confirmed' and a.starts_at>clock_timestamp() and a.starts_at<clock_timestamp()+interval '14 days'
       and rm.in_book(advisor,a.customer_id)));
 end $$;
 
 create function public.rm_meeting_brief(p_meeting_id uuid) returns jsonb language plpgsql volatile security definer set search_path='' as $$
-declare a rm.appointments:=rm.brief_meeting(p_meeting_id); b meetings.briefs;
+declare a rm.appointments:=rm.brief_meeting(p_meeting_id); b meetings.copilot_briefs;
 begin
-  select * into b from meetings.briefs where meeting_id=a.appointment_id order by version desc limit 1;
-  return rm.result(a.customer_id,'rm.meeting_brief','meetings.briefs',jsonb_build_object('meeting',jsonb_build_object('meeting_id',a.appointment_id,
+  select * into b from meetings.copilot_briefs where meeting_id=a.appointment_id order by version desc limit 1;
+  return rm.result(a.customer_id,'rm.meeting_brief','meetings.copilot_briefs',jsonb_build_object('meeting',jsonb_build_object('meeting_id',a.appointment_id,
       'customer_id',a.customer_id,'when',rm.sgt(a.starts_at),'starts_at',a.starts_at,'format',a.format,'purpose',a.purpose,'topics',to_jsonb(coalesce(a.topics,'{}'))),
     'brief',case when b.brief_id is null then null else rm.brief_json(b) end));
 end $$;
@@ -93,9 +94,9 @@ end $$;
 -- Save a new version. grants_used comes from the active grants here, never from the caller; point ids must be hers.
 create function public.rm_meeting_brief_save(p_meeting_id uuid,p_content jsonb,p_point_ids uuid[],p_command_id uuid) returns jsonb
 language plpgsql volatile security definer set search_path='' as $$
-declare a rm.appointments:=rm.brief_meeting(p_meeting_id); advisor uuid:=rm.current_advisor(); b meetings.briefs; used jsonb:='{}'; cat text;
+declare a rm.appointments:=rm.brief_meeting(p_meeting_id); advisor uuid:=rm.current_advisor(); b meetings.copilot_briefs; used jsonb:='{}'; cat text;
 begin
-  select * into b from meetings.briefs where command_id=p_command_id;
+  select * into b from meetings.copilot_briefs where command_id=p_command_id;
   if found then
     if b.meeting_id<>p_meeting_id then raise exception 'command id already used for another meeting' using errcode='23505'; end if;
     return jsonb_build_object('brief_id',b.brief_id,'version',b.version,'replayed',true);
@@ -108,11 +109,11 @@ begin
   foreach cat in array array['transaction_insights','chat_topics'] loop
     used:=used||jsonb_build_object(cat,(select g.grant_id from rm.active_consent(advisor,a.customer_id) g where cat=any(g.categories) limit 1));
   end loop;
-  perform pg_advisory_xact_lock(hashtext('meetings.briefs'),hashtext(p_meeting_id::text));
-  insert into meetings.briefs(meeting_id,customer_id,advisor_id,version,content,grants_used,point_ids,command_id)
-    values(a.appointment_id,a.customer_id,advisor,coalesce((select max(version) from meetings.briefs where meeting_id=a.appointment_id),0)+1,
+  perform pg_advisory_xact_lock(hashtext('meetings.copilot_briefs'),hashtext(p_meeting_id::text));
+  insert into meetings.copilot_briefs(meeting_id,customer_id,advisor_id,version,content,grants_used,point_ids,command_id)
+    values(a.appointment_id,a.customer_id,advisor,coalesce((select max(version) from meetings.copilot_briefs where meeting_id=a.appointment_id),0)+1,
       p_content,used,coalesce(p_point_ids,'{}'),p_command_id) returning * into b;
-  perform audit.record('action','action.meeting_brief_saved','success','meetings.briefs',b.brief_id::text,
+  perform audit.record('action','action.meeting_brief_saved','success','meetings.copilot_briefs',b.brief_id::text,
     jsonb_build_object('meeting_id',a.appointment_id,'version',b.version,'grants_used',used,'topics',cardinality(b.point_ids)),
     p_actor_type=>'staff',p_actor_id=>auth.uid()::text,p_customer_id=>a.customer_id);
   return jsonb_build_object('brief_id',b.brief_id,'version',b.version,'replayed',false);
@@ -121,20 +122,20 @@ end $$;
 -- The RM approves the exact version she read; approving an older version than the latest is refused.
 create function public.rm_meeting_brief_approve(p_meeting_id uuid,p_brief_id uuid,p_version int,p_command_id uuid) returns jsonb
 language plpgsql volatile security definer set search_path='' as $$
-declare a rm.appointments:=rm.brief_meeting(p_meeting_id); b meetings.briefs;
+declare a rm.appointments:=rm.brief_meeting(p_meeting_id); b meetings.copilot_briefs;
 begin
-  select * into b from meetings.briefs where meeting_id=a.appointment_id order by version desc limit 1 for update;
+  select * into b from meetings.copilot_briefs where meeting_id=a.appointment_id order by version desc limit 1 for update;
   if not found or b.brief_id<>p_brief_id or b.version<>p_version then
     raise exception 'approval references a replaced brief; read the latest version first' using errcode='P1001'; end if;
   if b.status='approved' then return jsonb_build_object('brief_id',b.brief_id,'version',b.version,'status','approved','replayed',true); end if;
-  update meetings.briefs set status='approved',approved_at=clock_timestamp() where brief_id=b.brief_id;
-  perform audit.record('action','action.meeting_brief_approved','success','meetings.briefs',b.brief_id::text,
+  update meetings.copilot_briefs set status='approved',approved_at=clock_timestamp() where brief_id=b.brief_id;
+  perform audit.record('action','action.meeting_brief_approved','success','meetings.copilot_briefs',b.brief_id::text,
     jsonb_build_object('meeting_id',a.appointment_id,'version',b.version,'command_id',p_command_id),
     p_actor_type=>'staff',p_actor_id=>auth.uid()::text,p_customer_id=>a.customer_id);
   return jsonb_build_object('brief_id',b.brief_id,'version',b.version,'status','approved','replayed',false);
 end $$;
 
-revoke all on function rm.brief_meeting(uuid),rm.brief_recheck(meetings.briefs),rm.brief_json(meetings.briefs) from public,anon,authenticated;
+revoke all on function rm.brief_meeting(uuid),rm.brief_recheck(meetings.copilot_briefs),rm.brief_json(meetings.copilot_briefs) from public,anon,authenticated;
 revoke all on function public.rm_meeting_briefs(),public.rm_meeting_brief(uuid),public.rm_meeting_brief_save(uuid,jsonb,uuid[],uuid),
   public.rm_meeting_brief_approve(uuid,uuid,int,uuid) from public,anon;
 grant execute on function public.rm_meeting_briefs(),public.rm_meeting_brief(uuid),public.rm_meeting_brief_save(uuid,jsonb,uuid[],uuid),

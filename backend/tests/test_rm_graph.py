@@ -7,7 +7,7 @@ import functools
 import json
 from datetime import timedelta
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID,uuid4
 import pytest
 from app.core.config import settings
 from app.core.observability import span_sink
@@ -833,7 +833,7 @@ def test_the_other_requests_and_client_intents_still_answer(records, model, monk
 
 
 # Answer speed (docs/planning/rm-answer-speed.md): code writes the record sections, the model only the judgement ---------
-MEETING = {'appointment_id': 'a1', 'status': 'confirmed', 'when': 'Mon 9 Nov 2026, 10:00 am', 'format': 'video', 'purpose': 'Home loan review',
+MEETING = {'appointment_id': str(uuid4()), 'status': 'confirmed', 'when': 'Mon 9 Nov 2026, 10:00 am', 'format': 'video', 'purpose': 'Home loan review',
     'starts_at': '2026-11-09T10:00:00+08:00'}
 NOTES = {'data': {'notes': [
     {'note_id': 'n2', 'met_on': '2026-10-20', 'met_on_text': '20 Oct 2026', 'format': 'video', 'written_by_current_rm': True, 'author': 'Sophie Lim (DEMO)',
@@ -854,56 +854,55 @@ def brief_rows(data: dict, shares: dict[int, bool]):
     data['rows'].update(consent_rows(shares), rm_client_profile=with_meeting, rm_meeting_notes=NOTES)
 
 
-def test_a_meeting_brief_is_code_sections_and_one_small_model_call(records, model, monkeypatch):
-    calls, data = records
-    seen, state = model
-    brief_rows(data, {1002: True})
-    state['cite'] = ['note-2026-10-20']
-    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Michelle'}])
-    reply, spans = traced('Brief me on Michelle')
-    assert [c['title'] for c in seen] == ['rm_brief_points'] and seen[0]['prompt'].startswith('v6+') and 'TASK: the judgement parts of a meeting briefing' in seen[0]['system']
-    evidence = evidence_in(seen[0])
-    # The model sees the latest note only (the older one is counted in its section), and no calendar rows beyond the meeting.
-    assert 'note-2026-10-20' in evidence and 'note-2026-06-02' not in evidence and 'violet harbour' not in evidence
-    assert '"appointments"' not in evidence and 'selected-appointment' in evidence and LINE in evidence
-    assert [s['heading'] for s in reply['sections']] == BRIEF_HEADINGS and reply['status'] == 'ok'
-    history = next(s for s in reply['sections'] if s['heading'] == 'History and commitments')
-    assert [i['source_ids'] for i in history['items']][-2:] == [['note-2026-06-02'], ['notes-withheld']]
-    assert 'Send the rate sheet (recorded, not necessarily completed)' in str(history) and '1 earlier note is recorded' in str(history)
-    told = next(s for s in reply['sections'] if s['heading'] == 'What the client has told us')
-    assert any(i['kind'] == 'suggestion' and 'Not confirmed by the client' in i['text'] for i in told['items'])  # an inferred topic
-    assert any('Prefers calls after 5pm' in i['text'] for i in told['items'])  # her shared handover note, under consent
-    points = [s for s in reply['sections'] if s['heading'] in BRIEF_HEADINGS[5:8]]
-    assert all(i['kind'] == 'suggestion' and i['source_ids'] == ['note-2026-10-20'] for s in points for i in s['items'])
-    assert {'note-2026-06-02', 'note-2026-10-20', 'selected-appointment'} <= {s['id'] for s in reply['sources']}  # every citation shown
-    assert reply['context']['appointment_id'] == 'a1' and 'consent_asks' not in reply
-    agent = next(a for n, a in spans if n == 'agent')
-    assert 'latest_note' in agent['export_names']  # R22's follow-ups still get the note the brief read
-    assert {n for n, a in calls if a == 'rm_client'} >= {'rm_client_profile', 'rm_meeting_notes', 'rm_shared_summary', 'rm_cash_events',
-        'rm_transaction_insights', 'rm_talking_points'}
+@pytest.fixture
+def saved_brief(monkeypatch):
+    """Graph-only seam fixture; real writer/storage/consent behavior is exercised in test_meeting_completion.py."""
+    from datetime import datetime,timezone
+    from app.schemas.meeting_preparation import PreparedBrief
+    from app.schemas.meetings import BriefCard,BriefItem,BriefSection
+    from app.services.meetings import preparation
+    meeting=UUID(MEETING['appointment_id'])
+    prepared=PreparedBrief(card=BriefCard(meeting_id=meeting,version=3,status='draft',
+        sections=[BriefSection(heading='Saved scoped records',items=[BriefItem(label='record',text='A current saved meeting record.',
+            sources=['fixture:record'],category=None)])],documents=[],consent={'transaction_insights':True,'chat_topics':True,'meeting_recording':False},
+        withheld=0,as_of=datetime.now(timezone.utc)),brief_id=uuid4(),revision=1,content_hash='b'*64,sources_changed=False,decision='draft',review_note=None)
+    rows: dict[UUID,PreparedBrief]={meeting:prepared}
+    calls: list[tuple[UUID,RequestContext]]=[]
+    async def prepare(meeting_id: UUID,ctx: RequestContext) -> PreparedBrief:
+        calls.append((meeting_id,ctx))
+        return rows[meeting_id]
+    monkeypatch.setattr(settings,'meetings_enabled',True)
+    monkeypatch.setattr(preparation,'prepare',prepare)
+    return rows,calls
 
 
-def test_a_brief_without_consent_has_gaps_ask_cards_and_no_shared_note(records, model, monkeypatch):
-    calls, data = records
-    seen, state = model
-    brief_rows(data, {1009: False})
-    data['consent'] = False
-    state['point'] = 'She has SGD 9,999.00 spare.'  # a figure in no record: withheld, and the record sections still stand
-    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Mei Ling'}])
-    reply = run('Brief me on Mei Ling', None)
-    evidence = evidence_in(seen[0])
-    assert 'shared-note' not in evidence and 'Prefers calls' not in evidence and 'planning' not in evidence and '5200' not in evidence
-    assert 'shared-note' not in json.dumps(reply) and 'Prefers calls' not in json.dumps(reply)
-    told = next(s for s in reply['sections'] if s['heading'] == 'What the client has told us')
-    assert {i['text'] for i in told['items']} >= {'The client has not shared topics from their chats with you.',
-        'No handover note is shared with you under active consent.', 'The client has not shared transaction insights with you.'}
-    assert [s['heading'] for s in reply['sections']] == [h for h in BRIEF_HEADINGS if h not in BRIEF_HEADINGS[5:8]]
-    assert reply['validation']['withheld'] == 3 and reply['status'] == 'ok'
-    assert [(a['category'], a['reason'], a['meeting_id']) for a in reply['consent_asks']] == [('transaction_insights', 'meeting_prep', 'a1'),
-        ('chat_topics', 'meeting_prep', 'a1')]
+def test_a_meeting_brief_reuses_the_saved_version_without_a_second_writer(records,model,monkeypatch,saved_brief):
+    calls,data=records;seen,_=model;rows,prepared_calls=saved_brief
+    brief_rows(data,{1002:True})
+    plan(monkeypatch,[{'intent':'meeting_brief','client_name':'Michelle'}])
+    reply,spans=traced('Brief me on Michelle');prepared=rows[UUID(MEETING['appointment_id'])]
+    assert seen==[] and reply['status']=='ok'
+    assert reply['meeting_brief']['brief_id']==str(prepared.brief_id) and reply['meeting_brief']['version']==prepared.card.version
+    assert reply['meeting_brief']['content_hash']==prepared.content_hash
+    assert [item['text'] for section in reply['sections'] for item in section['items']]==[item.text for section in prepared.card.sections for item in section.items]
+    assert reply['context']['appointment_id']==MEETING['appointment_id'] and 'consent_asks' not in reply
+    assert [meeting for meeting,_ in prepared_calls]==[prepared.card.meeting_id]
+    agent=next(a for n,a in spans if n=='agent');assert 'latest_note' in agent['export_names']
+    assert {name for name,agent in calls if agent=='rm_client'}=={'rm_client_profile','rm_meeting_notes'}
 
 
-def test_r22_follow_ups_read_only_the_note_the_brief_read_and_code_lists_its_items(records, model, monkeypatch):
+def test_a_saved_brief_preserves_consent_request_cards_without_loading_withheld_records(records,model,monkeypatch,saved_brief):
+    _,data=records;seen,_=model;rows,_=saved_brief;meeting=UUID(MEETING['appointment_id']);prepared=rows[meeting]
+    rows[meeting]=prepared.model_copy(update={'card':prepared.card.model_copy(update={'consent':{'transaction_insights':False,'chat_topics':False,'meeting_recording':False}})})
+    brief_rows(data,{1009:False});data['consent']=False
+    plan(monkeypatch,[{'intent':'meeting_brief','client_name':'Mei Ling'}])
+    reply=run('Brief me on Mei Ling',None)
+    assert seen==[] and 'shared-note' not in json.dumps(reply) and 'Prefers calls' not in json.dumps(reply)
+    assert [(a['category'],a['reason'],a['meeting_id']) for a in reply['consent_asks']]==[
+        ('transaction_insights','meeting_prep',MEETING['appointment_id']),('chat_topics','meeting_prep',MEETING['appointment_id'])]
+
+
+def test_r22_follow_ups_read_only_the_note_the_brief_read_and_code_lists_its_items(records, model, monkeypatch, saved_brief):
     calls, data = records
     seen, state = model
     brief_rows(data, {1002: True})
@@ -912,10 +911,10 @@ def test_r22_follow_ups_read_only_the_note_the_brief_read_and_code_lists_its_ite
     monkeypatch.setattr(handlers, '_categories', categories)
     plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Michelle'}, {'intent': 'actions_from_note', 'client_name': 'Michelle', 'depends_on': 1}])
     reply, spans = traced('Brief me on Michelle, then propose follow-ups from her latest note')
-    assert [c['title'] for c in seen] == ['rm_brief_points', 'rm_actions']
-    evidence = json.loads(evidence_in(seen[1]))
+    assert [c['title'] for c in seen] == ['rm_actions']
+    evidence = json.loads(evidence_in(seen[0]))
     assert [e['id'] for e in evidence] == ['note-2026-10-20', 'request-types']  # no profile, no older note, no consent-gated record
-    assert 'Selected note: note-2026-10-20' in seen[1]['system'] and 'violet harbour' not in seen[1]['system']
+    assert 'Selected note: note-2026-10-20' in seen[0]['system'] and 'violet harbour' not in seen[0]['system']
     doc = reply['documentation']
     assert doc['note_id'] == 'n2' and doc['from_note'] and doc['draft']['interaction'] == {'met_on': '2026-10-20', 'format': 'video', 'title': 'Home loan check-in'}
     assert [(i['category'], i['text'], i['certainty']) for i in doc['draft']['items']] == [('commitment', 'Send the rate sheet', 'confirmed'),
@@ -1021,28 +1020,17 @@ def test_a_meeting_history_is_one_section_per_note_and_a_question_goes_to_the_mo
     assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: answer the RM' in seen[0]['system'] and 'violet harbour' in evidence_in(seen[0])
 
 
-def test_a_brief_streams_its_record_sections_before_the_model_call_and_never_a_withheld_point(records, model, monkeypatch):
-    calls, data = records
-    seen, state = model
-    brief_rows(data, {1002: True})
-    plan(monkeypatch, [{'intent': 'meeting_brief', 'client_name': 'Michelle'}])
-    parts: list[tuple[int, dict]] = []
+def test_a_saved_brief_streams_the_same_sections_it_returns_without_a_second_model_call(records,model,monkeypatch,saved_brief):
+    _,data=records;seen,_=model;rows,_=saved_brief
+    brief_rows(data,{1002:True});plan(monkeypatch,[{'intent':'meeting_brief','client_name':'Michelle'}])
+    parts=[]
     async def say(text):pass
-    async def show(part):parts.append((len(seen), json.loads(json.dumps(part, default=str))))
-    def streamed(message):
-        parts.clear();seen.clear()
-        return asyncio.run(graph.respond(RmAssistantRequest(message=message), rm_ctx(), say, show))
-    reply = streamed('Brief me on Michelle')
-    assert [(n, p['task_id'], [s['heading'] for s in p['sections']]) for n, p in parts] == [
-        (0, 't1', ['The meeting', 'Who the client is', 'History and commitments', 'Open matters', 'What the client has told us', 'Gaps to check']),
-        (1, 't1', ['Conversation starters', 'Suggested discussion points', 'Questions to ask'])]  # records before the model, points after it
-    assert {s['id'] for s in parts[0][1]['sources']} >= {'selected-appointment', 'note-2026-10-20', 'note-2026-06-02'}
-    final = {s['heading']: s['items'] for s in reply['sections']}
-    assert all(final[s['heading']] == s['items'] for _, p in parts for s in p['sections'])  # the answer repeats what streamed
-    state['point'] = 'She has SGD 9,999.00 spare.'  # every point withheld: nothing after the model call is streamed
-    streamed('Brief me on Michelle')
-    assert [n for n, _ in parts] == [0] and '9,999' not in json.dumps([p for _, p in parts])
-    asyncio.run(graph.respond(RmAssistantRequest(message='Brief me on Michelle'), rm_ctx(), say))  # show stays optional
+    async def show(part):parts.append(json.loads(json.dumps(part,default=str)))
+    reply=asyncio.run(graph.respond(RmAssistantRequest(message='Brief me on Michelle'),rm_ctx(),say,show))
+    assert seen==[] and len(parts)==1 and parts[0]['task_id']=='t1'
+    assert parts[0]['sections']==reply['sections'] and parts[0]['sources']==reply['sources']
+    assert reply['meeting_brief']['brief_id']==str(rows[UUID(MEETING['appointment_id'])].brief_id)
+    asyncio.run(graph.respond(RmAssistantRequest(message='Brief me on Michelle'),rm_ctx(),say))  # streaming remains optional
 
 
 def test_a_one_request_message_is_planned_by_rule_and_anything_else_by_the_model():

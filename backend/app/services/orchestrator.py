@@ -664,7 +664,9 @@ def after_gather(state: Turn) -> list[Send] | str:
 # ---- Confirmation turns ----
 
 def receipt_source(command_id: UUID) -> Source:
-    return Source(id=f'action-receipt-{command_id}', title='Recorded action receipt', url=None, version='v1', publisher='DemoBank action ledger')
+    # Keep UUID groups separate from card-number patterns in saved replies.
+    identifier: str = str(command_id).replace('-', '_')
+    return Source(id=f'action-receipt-{identifier}', title='Recorded action receipt', url=None, version='v1', publisher='DemoBank action ledger')
 
 
 async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str | None = None) -> str:

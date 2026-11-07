@@ -35,6 +35,7 @@ class Flow(NamedTuple):
 def flow(local_data_api,native_api_client,monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings,'meetings_enabled',True)
+    monkeypatch.setattr(settings,'meetings_checkpoint_signing_key',SecretStr('native-meeting-checkpoint-signing-key-'*2))
     user='meeting_test_'+uuid4().hex
     meeting=uuid4()
     with psycopg.connect(local_data_api.database_uri,autocommit=True) as db:
@@ -99,7 +100,7 @@ def test_gateway_to_native_transcript_approval_and_both_owners(flow,initiator):
 def test_notice_withdrawal_and_export_limits_at_real_http_boundary(flow):
     start(flow,'client')
     assert flow.http.post(f'/meetings/{flow.meeting}/transcript-import',headers=headers(flow,'client'),json=export_body()).status_code==403
-    for text in ['\n'.join('RM: Statement.' for _ in range(101)),'RM: '+('x'*1048576),'\n'.join('RM: '+('x'*1800) for _ in range(10))]:
+    for text in ['\n'.join('RM: Statement.' for _ in range(1001)),'RM: '+('x'*1048576),'\n'.join('RM: '+('x'*1800) for _ in range(80))]:
         r=flow.http.post(f'/meetings/{flow.meeting}/transcript-import',headers=headers(flow,'rm'),json={**export_body(),'text':text});assert r.status_code==422,r.text[:300]
     post(flow,'rm','/transcript-import',export_body());post(flow,'client','/transcript-revoke',{'command_id':str(uuid4())})
     with pytest.raises(psycopg.ProgrammingError,match='recording permission changed') as denied:flow.worker.context(claim_transcript(flow))
@@ -109,6 +110,7 @@ def test_notice_withdrawal_and_export_limits_at_real_http_boundary(flow):
 
 @pytest.mark.parametrize('filename,text,expected_cues',[
     ('hundred.txt','\n'.join('RM: Statement.' for _ in range(100)),100),
+    ('thousand.txt','\n'.join('RM: Statement.' for _ in range(1000)),1000),
     ('subsecond.vtt','WEBVTT\n\n1\n00:00:00.001 --> 00:00:00.100\n<v RM>Hello.</v>\n\n2\n00:00:00.100 --> 00:00:00.200\n<v Other>Thanks.</v>\n',2),
 ])
 def test_supported_export_boundaries_through_gateway_and_sql(flow,filename,text,expected_cues):

@@ -23,6 +23,13 @@ class Model(BaseModel):
     model_config=ConfigDict(extra='forbid')
 
 
+class AppointmentWindow(BaseModel):
+    """Explicit calendar window; the default retains the existing fourteen-day read."""
+    model_config=ConfigDict(extra='ignore')
+    past_days: int=Field(default=0,ge=0,le=30)
+    future_days: int=Field(default=13,ge=0,le=62)
+
+
 class RmTurn(Model):
     role: Literal['user','assistant']
     content: str=Field(max_length=6000)
