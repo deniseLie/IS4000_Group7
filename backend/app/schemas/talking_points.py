@@ -1,6 +1,6 @@
 """Talking points (migration 0108; RM copilot build plan phase 4). The client's side of the pipeline: her ledger actions
 (insight.delete, insight.mute and insight.resume run at once with a receipt; since 0110 a delete is undone within 7 days
-by insight.restore; insight.share is offered in chat and waits for her yes), what she sees under Data sharing > Topics from your chats (her points as list values; since 0142 no words are kept)
+by insight.restore; insight.share is offered in chat and waits for her yes), what she sees under Data sharing > Chat insights (her points as list values; since 0142 no words are kept)
 and the status both lanes check first. The RM side only ever gets schemas/meetings.TalkingPoint (list values, dates and ids)."""
 from typing import Annotated,Literal
 from uuid import UUID
@@ -81,10 +81,13 @@ class InsightShareResult(BaseModel):
 
 
 class MyTalkingPoint(TalkingPoint):
-    """Her own view of one point: the RM-side fields plus the 24-hour hold. Never her words (0142)."""
+    """Her own view of one point: the RM-side fields plus the 24-hour hold and, since 0143, on hold (she said the plan is
+    off: shown to her, marked, and not to her RM). Never her words (0142)."""
     model_config=ConfigDict(extra='ignore')
     visible_from: AwareDatetime
     pending: StrictBool
+    on_hold: StrictBool=False
+    on_hold_at: AwareDatetime | None=None
 
 
 class Pause(BaseModel):

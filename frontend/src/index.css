@@ -2327,7 +2327,7 @@ button.cell.past:disabled{opacity:.35}
 .sharing-row-text small,.sharing-list small,.sharing-switch small,.sharing-topic small{color:var(--muted);font-size:12px;line-height:1.5}
 .sharing-go{display:inline-flex;flex:none;color:var(--faint,var(--muted))}.sharing-go svg{width:16px;height:16px;transform:rotate(-90deg)}
 .sharing-pill{flex:none;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:var(--canvas);color:var(--muted)}
-.sharing-pill.on{background:#edf6ef;color:#1f6b3a}.sharing-pill.wait{display:inline-block;margin-top:4px;background:#fdf5e4;color:#8a5a00;white-space:normal}
+.sharing-pill.on{background:#edf6ef;color:#1f6b3a}.sharing-pill.held{display:inline-block;margin-top:4px;white-space:normal}.sharing-pill.wait{display:inline-block;margin-top:4px;background:#fdf5e4;color:#8a5a00;white-space:normal}
 .sharing-list>li{display:grid;gap:2px;padding:12px 16px;font-size:13px;line-height:1.5}
 .sharing-ask{display:grid;gap:8px;margin:0 0 14px;padding:12px 14px;border:1px solid #f0dfb5;border-radius:10px;background:#fdf5e4;color:#5c3d00;font-size:13px}
 .sharing-ask p{margin:0;line-height:1.5}.sharing-ask .panel-actions{margin:0}

@@ -168,7 +168,7 @@ export function rowLine(card,sharing,rm,format,topics=null) {
     const shown=topics?.points?.length??null,count=n=>`${n} topic${n===1?'':'s'}`;
     if(grant)return join(shown===null?null:count(shown),until);
     const own=topics?.points?.filter(p=>p.origin==='confirmed').length||0;
-    return own?`Only topics you shared yourself (${own})`:`${who} doesn't see topics from your chats`;
+    return own?`Only insights you shared yourself (${own})`:`${who} doesn't see your chat insights`;
   }
   if(card.code==='transaction_insights')return grant?join(scopeText(card.code,grant.scope,sharing.accounts),until):`${who} can't see your spending`;
   return grant?join(until):card.description;
@@ -180,7 +180,7 @@ export const DELETE_ALL_NOTE='This sends a request to our data protection team. 
 
 // Who looked (0112): rows of ids, codes and dates only; the words come from here.
 const ALWAYS={profile_basics:'your profile',products:'your products',requests_and_meetings:'your requests and meetings',compliance_status:'your document review status'};
-const GATED_WORDS={transaction_insights:'your transaction insights',chat_topics:'topics from your chats',meeting_recording:'your meeting recording'};
+const GATED_WORDS={transaction_insights:'your transaction insights',chat_topics:'your chat insights',meeting_recording:'your meeting recording'};
 export function parseAccessLog(value) {
   if(!Array.isArray(value?.data)||value.data.length>200)throw invalid();
   return {call_id:id(value.call_id),as_of:timestamp(value.as_of),rows:value.data.map(r=>{
@@ -199,7 +199,7 @@ export function accessLine(row,rm) {
   // 0110: a brief re-checks whether the topics it used are still shown (ids and dates only, never the topics themselves).
   if(row.tool==='rm.point_status')return `${who}'s meeting brief checked that the topics it uses are still shared.`;
   if(row.outcome==='not_shared')return `${who} looked for ${what}${why}, and saw only that you have not shared it.`;
-  return `${who} saw ${what}${why}${row.basis==='client_shared'?' (topics you shared yourself)':row.basis==='always_shared'?' (always shared)':''}.`;
+  return `${who} saw ${what}${why}${row.basis==='client_shared'?' (insights you shared yourself)':row.basis==='always_shared'?' (always shared)':''}.`;
 }
 // The same look within the same minute is one line with a count (a brief reads each record once per section).
 export function accessGroups(rows,rm) {

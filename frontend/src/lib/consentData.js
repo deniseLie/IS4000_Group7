@@ -62,5 +62,5 @@ export function parseConsentRecords(value) {
   return {call_id:id(value.call_id),as_of:timestamp(value.as_of),requests,grants,requests_total:data.requests_total,grants_total:data.grants_total};
 }
 // The RM copilot categories (0105) read in plain words; she grants them on the v2 cards (ConsentCards), not through these v1 requests.
-const COPILOT_CATEGORIES={transaction_insights:'Transaction insights',chat_topics:'Topics from your chats',meeting_recording:'Meeting recordings'};
+const COPILOT_CATEGORIES={transaction_insights:'Transaction insights',chat_topics:'Chat insights',meeting_recording:'Meeting recordings'};
 export function consentCategoryText(categories) {return categories.map(item=>CONSENT_CATEGORIES[item]||COPILOT_CATEGORIES[item]||item).join(', ');}

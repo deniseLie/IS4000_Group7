@@ -140,7 +140,7 @@ def test_on_hold_hides_the_point_from_the_rm_keeps_it_on_her_page_and_her_next_m
     assert apply(database,back,'update','home_loan','exploring','an HDB resale flat in a few months',timeframe='within_3m',kind='hdb_resale')['on_hold'] is False
     assert row(database,'home_loan')==('planning','within_3m','hdb_resale',[],False)
     [point]=shown(database)['data']
-    assert TalkingPoint.model_validate(point).line()=='Home loan · planning · HDB resale · within 3 months · inferred from chat'
+    assert TalkingPoint.model_validate(point).line()=='Property financing · planning · HDB resale · within 3 months · inferred from chat'
     # Update or on hold needs a point she has.
     for action in ('update','on_hold'):
         assert apply(database,chat.say('No more insurance plans for us'),action,'insurance','planning','insurance')=={'recorded':False,'reason':'no_point','point_id':None}

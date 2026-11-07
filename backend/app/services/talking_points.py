@@ -130,7 +130,7 @@ async def status(ctx: RequestContext) -> TopicStatus:
 
 
 async def mine(ctx: RequestContext) -> CustomerEnvelope[MyTalkingPoints]:
-    """Her own points (list values, never her words), removed points, mutes and pause (Data sharing > Topics from your chats)."""
+    """Her own points (list values, never her words), removed points, mutes and pause (Data sharing > Chat insights)."""
     return await _read('insights.read','customer_read_talking_points',{},MINE,ctx)
 
 

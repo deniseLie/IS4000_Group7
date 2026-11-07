@@ -17,6 +17,10 @@ test('every topic reads exactly as the RM side renders it (schemas/meetings.Talk
   assert.equal(line({...point(),topic:'investments',stage:'exploring',timeframe:'within_3m',concerns:['fees'],origin:'confirmed'}),
     'Investments · exploring · within 3 months · asks about fees · shared by the client');
   assert.equal(line({...point(),timeframe:'unknown',origin:'confirmed'}),'Property financing · planning · shared by the client');
+  assert.equal(line(point({kind:'hdb_resale',concerns:['lock_in','rates']})),  // 0143: the kind after the stage, concerns in words
+    'Property financing · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat');
+  assert.equal(line(point({topic:'fixed_deposit',kind:'renewal',timeframe:'unknown',concerns:['down_payment']})),
+    'Time deposit · planning · renewal · asks about down payment · inferred from chat');
 });
 
 test('her view is read strictly: the line must match, only list values pass and no words are kept',()=>{
@@ -27,19 +31,24 @@ test('her view is read strictly: the line must match, only list values pass and 
   const old=parseTalkingPoints(mine([withLine(point({evidence:[{quote:'I’m thinking of buying a condo next year',recorded_at:'2026-11-05T09:00:00+08:00'}]}))]));
   assert.equal('evidence' in old.points[0],false);  // a server before 0142: her words are dropped, never shown
   for(const bad of [{...withLine(point()),line:'Property financing · ready'},withLine(point({topic:'savings'})),withLine(point({stage:'keen'})),
-    withLine(point({concerns:['tax']}))])
-    assert.throws(()=>parseTalkingPoints(mine([bad])));
+    withLine(point({concerns:['tax']})),withLine(point({kind:'etf'})),withLine(point({kind:'condo'})),withLine(point({on_hold:'yes'}))])
+    assert.throws(()=>parseTalkingPoints(mine([bad])));  // a kind of another topic, an unlisted kind, a non-boolean on hold
   assert.throws(()=>parseTalkingPoints(mine([withLine(point()),withLine(point())])));  // one row per point
+  assert.deepEqual([view.points[0].kind,view.points[0].on_hold,view.points[0].on_hold_at],[null,false,null]);  // a server before 0143
+  const held=parseTalkingPoints(mine([withLine(point({kind:'hdb_resale',concerns:['lock_in'],pending:false,on_hold:true,on_hold_at:'2026-11-08T10:00:00+08:00'}))])).points[0];
+  assert.deepEqual([held.kind,held.on_hold,held.on_hold_at,held.concerns],['hdb_resale',true,'2026-11-08T10:00:00+08:00',['lock_in']]);
   assert.equal(parseTalkingPoints(mine([],{pause:{pause_id:id(3),until:'2027-01-04T09:00:00+08:00'},muted:['insurance']})).pause.until,'2027-01-04T09:00:00+08:00');
 });
 
 test('she reads each topic in plain words with the same facts as the RM line',()=>{
-  assert.equal(plainLine(point()),"You're planning a home loan in the next 12 months.");
-  assert.equal(plainLine(point({stage:'curious',timeframe:'unknown'})),'You asked about home loans.');
-  assert.equal(plainLine(point({topic:'fixed_deposit',stage:'curious',timeframe:'unknown',concerns:['rates']})),'You asked about fixed deposits. You mentioned rates.');
+  assert.equal(plainLine(point()),"You're planning to finance a property in the next 12 months.");
+  assert.equal(plainLine(point({stage:'curious',timeframe:'unknown'})),'You asked about property financing.');
+  assert.equal(plainLine(point({topic:'fixed_deposit',stage:'curious',timeframe:'unknown',concerns:['rates']})),'You asked about time deposits. You mentioned rates.');
+  assert.equal(plainLine(point({kind:'hdb_resale',concerns:['lock_in','rates']})),
+    "You're planning to finance a property (HDB resale) in the next 12 months. You mentioned lock-in and rates.");
   assert.equal(plainLine(point({topic:'investments',stage:'exploring',timeframe:'within_3m',concerns:['fees','rates','timing']})),
     "You're looking into investing, with the next 3 months in mind. You mentioned fees, rates and timing.");
-  assert.equal(plainLine(point({topic:'fixed_deposit',stage:'ready',timeframe:'now'})),"You're ready to place a fixed deposit now.");
+  assert.equal(plainLine(point({topic:'fixed_deposit',stage:'ready',timeframe:'now'})),"You're ready to place a time deposit now.");
   assert.equal(plainLine(point({topic:'insurance',stage:'concern',timeframe:'unknown',concerns:['fees']})),'You raised a concern about your insurance. You mentioned fees.');
   assert.equal(plainLine(point({topic:'investments',stage:'planning',timeframe:'later'})),"You're planning to invest later on.");
   for(const topic of ['home_loan','investments','fixed_deposit','insurance'])for(const stage of ['curious','exploring','planning','ready','concern'])
@@ -96,7 +105,7 @@ test('RM Today lists only confirmed topics whose line matches, newest notice mar
 });
 
 test('the chat line and the consent history read in plain words',()=>{
-  assert.equal(chatTopicsNote('Sophie'),'Topics from this chat may be shared with Sophie for your meetings.');
-  assert.equal(chatTopicsNote(null),'Topics from this chat may be shared with your relationship manager for your meetings.');
-  assert.equal(consentCategoryText(['profile','chat_topics','transaction_insights']),'Basic profile, Topics from your chats, Transaction insights');
+  assert.equal(chatTopicsNote('Sophie'),'Insights from this chat may be shared with Sophie for your meetings.');
+  assert.equal(chatTopicsNote(null),'Insights from this chat may be shared with your relationship manager for your meetings.');
+  assert.equal(consentCategoryText(['profile','chat_topics','transaction_insights']),'Basic profile, Chat insights, Transaction insights');
 });

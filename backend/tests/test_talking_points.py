@@ -316,7 +316,7 @@ def test_insight_types_are_registered_and_only_relationship_offers_a_share() -> 
 def test_the_hold_or_a_pause_is_a_gap_on_the_rm_side_never_which_topic_or_why() -> None:
     base={'shared':True,'grant_id':'g1','as_of':'2026-11-05T09:00:00+08:00','pending':True}
     item=ev.talking_points_evidence({**base,'data':[]},1002)
-    assert item.data=={'points':0,'pending':True,'gap':item.data['gap'],'meaning':'No topics from the client\'s chats are available yet.'}
+    assert item.data=={'points':0,'pending':True,'gap':item.data['gap'],'meaning':'No client chat insights are available yet.'}
     assert 'do not guess which topics or why' in item.data['gap']
     row={'point_id':str(uuid4()),'topic':'investments','stage':'exploring','timeframe':'unknown','concerns':[],'origin':'confirmed',
         'first_seen':'2026-11-02','last_seen':'2026-11-04'}

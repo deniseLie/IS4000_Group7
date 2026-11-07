@@ -115,8 +115,8 @@ test('the top level reads one row per category: a status and one line of what is
   assert.equal(rowLine(topics,view,'Sophie',day,null),'until 2027-05-03');  // topics could not be read: no count, never a guess
   assert.equal(rowLine(insights,view,'Sophie',day),"Sophie can't see your spending");
   assert.equal(rowLine({...insights,grant:grant({scope:{accounts:'all',lookback_months:6}})},view,'Sophie',day),'All your accounts and cards · last 6 months · until 2027-05-03');
-  assert.equal(rowLine({...topics,grant:null},view,'Sophie',day,mine(2)),'Only topics you shared yourself (1)');  // her own shares stay without the consent
-  assert.equal(rowLine({...topics,grant:null},view,'Sophie',day,mine(0)),"Sophie doesn't see topics from your chats");
+  assert.equal(rowLine({...topics,grant:null},view,'Sophie',day,mine(2)),'Only insights you shared yourself (1)');  // her own shares stay without the consent
+  assert.equal(rowLine({...topics,grant:null},view,'Sophie',day,mine(0)),"Sophie doesn't see your chat insights");
   assert.equal(rowLine({...topics,grant:grant({until:'meeting'})},view,'Sophie',day,mine(0)),'0 topics · until your meeting ends');
   assert.equal(rowLine(recording,view,'Sophie',day),'Part of every confirmed meeting');
 });
