@@ -389,6 +389,8 @@ python -m evaluation.talking_points --conversations --live --version v2
 
 The gate (no false on hold, false points not above v1, final state clearly above v1) passed, so v2 is the default since 8 Nov. v1 missed what follow-ups add (CV01, CV02), never put a plan on hold (CV03) and found no kind in a new chat (CV11). v2's lower recall is one case: TP27 recorded the insurance but not the home loan. TP04 is missed by both (no word from the home-loan list in the quote). These are synthetic English cases scored by code, not proof of accuracy on real chats; a message with no topic word in a new chat changes nothing (CV12).
 
+Since 0145 (care pause retired) the care cases reach the model instead of stopping at the care check. A live v2 run on 8 Nov recorded nothing for C01–C04 (the model proposed no change for any of them) and CV09 still matched, with 2 model calls instead of 1. Lane 2 (a rule, no model) now offers *Let Sophie know* on C04 ("I was retrenched last month, should I still buy the condo next year?"), which the care check used to stop; the offline run counts it as a false prompt.
+
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.

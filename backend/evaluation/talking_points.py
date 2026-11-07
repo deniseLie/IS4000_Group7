@@ -1,13 +1,13 @@
 """Talking points evaluation (0108, build plan phase 4; lane 1 v2 since 0143): precision and recall per topic for lane 1
 on hand-labelled messages, and the final state of hand-labelled conversations.
 
-Offline (default): python -m evaluation.talking_points   (code only: care, the pre-filter and lane 2's rule; no model calls)
+Offline (default): python -m evaluation.talking_points   (code only: the pre-filter and lane 2's rule; no model calls)
 Live (opt-in):     python -m evaluation.talking_points --live --output talking-points-results.json
 Version:           --version v1|v2 (default: prompts.VERSIONS['talking_points'], the version in use)
 Conversations:     python -m evaluation.talking_points --conversations [--live] [--version v1|v2]
 
 Each single-message case runs the steps `talking_points.after_reply` runs, without a database: the guardrail on her
-(redacted) history, the care pause, the code pre-filter, then (live only) the real model call through `llm_gateway.call`
+(redacted) history, the code pre-filter, then (live only) the real model call through `llm_gateway.call`
 (TALKING_POINTS_MODEL, else LLM_MODEL; no retry) and the code validators. v2 runs each case with an empty state (no points,
 no active topic; her previous message as the earlier message). A case's prediction is the set of topics a point would be
 recorded for. Offline, a case the pre-filter passes has no prediction, so only the pre-filter is scored (positives it lets
@@ -16,12 +16,13 @@ Let-your-RM-know offer on a case labelled with no topic is a false prompt.
 
 Cases in talking_points_cases.json are synthetic and labelled by hand: `expect` maps each topic that should be recorded
 to its stage (empty: nothing should be stored). Groups: positive, multi, previous (her earlier message as context),
-negative, sensitive, care and injection.
+negative, sensitive, care (job loss, debt, bereavement: since 0145 no pause, so they reach the model like any message and
+the prompt and the sensitive-word filter must keep them out) and injection.
 
 Conversation cases (talking_points_conversations.json) are a starting state (`start`, `muted`), her messages in one or
 more chats (`chats`: a new chat starts with no active topic) and the expected final state: `expect` per topic (stage,
 timeframe, kind, on_hold, concerns_has), `unchanged_from` n (the final state equals the state after her first n
-messages; 0 is the start), `paused` and `allow_on_hold`. Each turn runs as `after_reply` does (guardrail, care, the gate,
+messages; 0 is the start) and `allow_on_hold`. Each turn runs as `after_reply` does (guardrail, the gate,
 the model, the validators) and applies the kept changes in memory with `talking_points_state.apply` (the SQL's rules),
 the carry-over window of 4 turns per chat included. v1 runs the same turns as v1 does (her previous message only, every
 point an add). Scored: final-state match per case, false points (a topic she never planned), false on hold (an on hold
@@ -61,8 +62,8 @@ def assessed(case: dict):
     return assess([*([case['previous']] if case.get('previous') else []),case['message']])
 
 
-def empty_state(points: dict[str,dict] | None=None,active=(),muted=(),paused: bool=False) -> TopicState:
-    return TopicState(chat_topics=True,paused=paused,has_rm=True,rm_first_name='Sophie',muted=list(muted),prompted=[],meeting_topics=[],
+def empty_state(points: dict[str,dict] | None=None,active=(),muted=()) -> TopicState:
+    return TopicState(chat_topics=True,paused=False,has_rm=True,rm_first_name='Sophie',muted=list(muted),prompted=[],meeting_topics=[],
         points=list((points or {}).values()),active_topics=list(active))
 
 
@@ -84,7 +85,6 @@ async def model(version: str,message: str,previous: list[str],state: TopicState)
 async def classify(case: dict,live: bool,version: str='v1') -> dict:
     """What lane 1 would record for this case: {'gate', 'topics' (None offline when the model would be asked), 'stages', 'dropped'}."""
     risk=assessed(case)
-    if risk.care:return {'gate':'care','topics':[],'stages':{},'dropped':{}}
     reason=tp.prefilter(risk.redacted_message,risk)
     if reason:return {'gate':reason,'topics':[],'stages':{},'dropped':{}}
     if not live:return {'gate':'model','topics':None,'stages':{},'dropped':{}}
@@ -99,7 +99,7 @@ async def classify(case: dict,live: bool,version: str='v1') -> dict:
 def lane_two(case: dict) -> str | None:
     """The topic a Let-your-RM-know offer would name (the code rule, before her status is read), or None."""
     risk=assessed(case)
-    if risk.care or risk.fixed_response is not None or risk.risk_flags:return None
+    if risk.fixed_response is not None or risk.risk_flags:return None
     found=tp.share_candidate(risk.redacted_message)
     return found.topic if found else None
 
@@ -157,7 +157,7 @@ async def replay(case: dict,live: bool,version: str) -> dict:
     """Her messages in order, as after_reply runs them, with the state kept in memory: the final state, what each turn did
     (gate, model call, applied changes) and every on hold applied."""
     points={p['topic']:dict(p) for p in case.get('start',[])}
-    muted,paused,snapshots,turns,holds,errors=list(case.get('muted',[])),False,[json.loads(json.dumps(points))],[],[],[]
+    muted,snapshots,turns,holds,errors=list(case.get('muted',[])),[json.loads(json.dumps(points))],[],[],[]
     for chat_no,chat in enumerate(case['chats']):
         said,recorded=[],[]  # her messages in this chat; the topics recorded on each of her turns in it
         for text in chat:
@@ -165,9 +165,7 @@ async def replay(case: dict,live: bool,version: str) -> dict:
             message=risk.redacted_message or text
             active=sorted({t for topics in recorded[-WINDOW:] for t in topics if t in points}) if version=='v2' else []
             step={'chat':chat_no,'gate':None,'called':False,'applied':[],'skipped':[]}
-            if risk.care:paused,step['gate']=True,'care'
-            elif paused:step['gate']='paused'
-            else:step['gate']=(v2.gate(message,risk,active=active) if version=='v2' else tp.prefilter(message,risk)) or 'model'
+            step['gate']=(v2.gate(message,risk,active=active) if version=='v2' else tp.prefilter(message,risk)) or 'model'
             topics=set()
             if step['gate']=='model' and live:
                 step['called']=True
@@ -185,7 +183,7 @@ async def replay(case: dict,live: bool,version: str) -> dict:
             said.append(message)
             turns.append(step)
             snapshots.append(json.loads(json.dumps(points)))
-    return {'final':points,'paused':paused,'turns':turns,'holds':holds,'snapshots':snapshots,'errors':errors}
+    return {'final':points,'turns':turns,'holds':holds,'snapshots':snapshots,'errors':errors}
 
 
 def judge(case: dict,result: dict) -> dict:
@@ -202,7 +200,6 @@ def judge(case: dict,result: dict) -> dict:
                 if not set(value)<=set(point['concerns']):problems.append(f'{topic}.concerns: {point["concerns"]}')
             elif point.get(field)!=value:problems.append(f'{topic}.{field}: {point.get(field)!r}')
     if 'unchanged_from' in case and final!=result['snapshots'][case['unchanged_from']]:problems.append('changed')
-    if case.get('paused') and not result['paused']:problems.append('not paused')
     false_on_hold=sorted({t for t in result['holds'] if t not in case.get('allow_on_hold',[])})
     return {'match':not problems and not false_points and not false_on_hold,'problems':problems,'false_points':false_points,'false_on_hold':false_on_hold}
 

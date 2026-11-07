@@ -1,5 +1,5 @@
 """Talking points over real temporary PostgreSQL (migration 0108, RM copilot build plan phase 4): RLS and the client-only
-evidence (turns only since 0142), recording (consent recheck, her exact words, idempotency, merge), the 24-hour hold, the care pause, the consent
+evidence (turns only since 0142), recording (consent recheck, her exact words, idempotency, merge), the 24-hour hold, the care pause and its retirement (0145), the consent
 gate and its audits, her controls with receipts, lane 2 sharing with the notice and its limits, withdrawal, reassignment
 and one client per call. Synthetic data only.
 
@@ -7,6 +7,7 @@ Run from backend/: TEST_DATABASE_LOCAL=1 ../.venv/bin/python -m pytest tests/tes
 """
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID,uuid4
 import pytest
@@ -15,6 +16,8 @@ from tests.database_support import SqlRow,set_customer
 from tests.test_meeting_requests import MICHELLE_GRANT,act
 from tests.test_meeting_seam import SOPHIE,as_rm
 from tests.test_offer_groups import sqlstate
+
+RETIRE_PAUSE=Path(__file__).parents[1]/'supabase'/'migrations'/'0145_retire_care_pause.sql'
 
 if TYPE_CHECKING:
     from psycopg import Connection
@@ -121,7 +124,7 @@ def test_recording_rechecks_her_words_and_merges_into_one_point_per_topic(databa
     assert database.execute('select count(*) from insights.talking_points where customer_id=1001').fetchone()==(0,)
 
 
-def test_the_rm_sees_inferred_points_only_under_consent_after_the_hold_and_not_while_paused(database: 'Connection[SqlRow]') -> None:
+def test_the_rm_sees_inferred_points_only_under_consent_and_after_the_hold(database: 'Connection[SqlRow]') -> None:
     turn=saved_turn(database,'Thinking about a fixed deposit')
     held=record(database,turn,'fixed_deposit','exploring','fixed deposit')['point_id']
     shown=rm_points(database)
@@ -131,19 +134,26 @@ def test_the_rm_sees_inferred_points_only_under_consent_after_the_hold_and_not_w
     owner(database).execute("update insights.talking_points set visible_from=now()-interval '1 minute' where point_id=%s",(held,))
     after=rm_points(database)
     assert sorted(p['topic'] for p in after['data'])==['fixed_deposit','home_loan'] and after['pending'] is False
-    # A care signal pauses product topics; a confirmed point still shows.
-    set_customer(database,1002)
-    database.execute('select public.customer_pause_suggestions(%s)',(saved_turn(database,'I just lost my job, should I still take a loan?'),))
+
+
+def test_the_care_pause_is_retired_an_open_pause_ends_and_none_can_be_set(database: 'Connection[SqlRow]') -> None:
+    owner(database)
+    assert database.execute("select to_regprocedure('public.customer_pause_suggestions(uuid)')").fetchone()==(None,)  # 0145 dropped the setter
+    pause=database.execute("insert into insights.opportunity_pauses(customer_id,until) values(1002,now()+interval '60 days') returning pause_id").fetchone()[0]
     owner(database).execute("insert into insights.talking_points(customer_id,topic,stage,origin,visible_from,expires_at) "
         "values(1002,'insurance','planning','confirmed',now(),now()+interval '90 days')")
-    paused=rm_points(database)
+    paused=rm_points(database)  # a pause opened before 0145 hid her inferred insights; a confirmed one still showed
     assert [(p['topic'],p['origin']) for p in paused['data']]==[('insurance','confirmed')] and paused['pending'] is True
-    owner(database)
-    assert database.execute("select details from audit.events where action='data.suggestions_paused' order by event_id desc limit 1").fetchone()==({'days':60},)
-    assert database.execute('select count(*) from insights.talking_points where customer_id=1002').fetchone()==(3,)  # nothing deleted, only hidden
-    # A paused client: recording stops too.
     set_customer(database,1002)
     assert record(database,saved_turn(database,'Ready to invest'),'investments','ready','invest')['reason']=='paused'
+    owner(database).execute(RETIRE_PAUSE.read_text(encoding='utf-8'))  # what 0145 does on a project that still has one
+    assert database.execute('select ended_at is not null from insights.opportunity_pauses where pause_id=%s',(pause,)).fetchone()==(True,)
+    assert database.execute("select actor_type,actor_id,customer_id,details from audit.events where action='data.suggestions_resumed' "
+        "and resource_id=%s",(str(pause),)).fetchone()==('system','migration_0145',1002,{'reason':'care_pause_retired'})
+    assert sorted(p['topic'] for p in rm_points(database)['data'])==['home_loan','insurance']
+    set_customer(database,1002)
+    assert record(database,saved_turn(database,'Ready to invest'),'investments','ready','invest')['reason'] is None
+    assert refused(database,'insight.resume',{'topic':None})=='22023'  # nothing is paused
 
 
 def test_without_chat_topics_only_her_shared_points_reach_the_rm_audited_as_client_shared(database: 'Connection[SqlRow]') -> None:
@@ -188,14 +198,10 @@ def test_her_controls_run_at_once_and_leave_receipts(database: 'Connection[SqlRo
     assert muted['receipt']['result']=={'topic':'investments','status':'muted','removed':1}
     assert record(database,saved_turn(database,'Ready to invest'),'investments','ready','invest')['reason']=='muted'
     assert propose(database,'insight.resume',{'topic':'investments'})['receipt']['result']=={'topic':'investments','status':'resumed'}
-    set_customer(database,1002)
-    database.execute('select public.customer_pause_suggestions(%s)',(saved_turn(database,'I was retrenched'),))
-    assert propose(database,'insight.resume',{'topic':None})['receipt']['result']=={'topic':None,'status':'resumed'}
     owner(database)
-    assert database.execute('select count(*) from insights.opportunity_pauses where customer_id=1002 and ended_at is null').fetchone()==(0,)
     assert database.execute("""select array_agg(c.type order by c.type) from actions.commands c join actions.receipts r using(command_id)
         where c.customer_id=1002 and c.type like 'insight.%%' and r.outcome='succeeded'""").fetchone()==(
-        ['insight.delete','insight.mute','insight.resume','insight.resume'],)
+        ['insight.delete','insight.mute','insight.resume'],)
     assert refused(database,'insight.resume',{'topic':None})=='22023'  # nothing is paused any more
 
 
@@ -213,7 +219,7 @@ def test_sharing_creates_a_confirmed_point_on_todays_list_with_a_notice_that_nam
     owner(database)
     assert database.execute("select details from audit.events where action='data.read' and resource_id=%s",(today['call_id'],)).fetchone()[0]=={
         'tool':'rm.shared_topics','result_count':2,'basis':'client_shared','command_ids':[shared['command']['command_id']]}
-    # One prompt per topic per 30 days; a muted topic or a pause refuses the offer.
+    # One prompt per topic per 30 days; a muted topic refuses the offer.
     assert refused(database,'insight.share',{'topic':'home_loan','stage':'ready','timeframe':'now'})=='22023'
     propose(database,'insight.mute',{'topic':'insurance'})
     assert refused(database,'insight.share',{'topic':'insurance','stage':'planning','timeframe':'unknown'})=='22023'

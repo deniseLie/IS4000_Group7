@@ -1,6 +1,6 @@
 # Talking points that follow the conversation (lane 1 v2)
 
-Plan written 8 Nov 2026 in a side session. **Built 8 Nov 2026** in slices 1–5 (migrations 0143 and 0144, hosted batch 49); v2 is the default in `prompts.VERSIONS` since slice 5 (results in `docs/prompt-log/talking_points/v2.md`). The feature is called *Client chat insights* in words people read (*Chat insights* on her pages). It changes lane 1 of the talking points (`services/talking_points.py`, migration 0108/0110): the step that picks up what a client is planning from her chats. Lane 2 (*Let Sophie know*, a rule) is unchanged.
+Plan written 8 Nov 2026 in a side session. **Built 8 Nov 2026** in slices 1–5 (migrations 0143 and 0144, hosted batch 49; 0145 later the same day retired the care pause); v2 is the default in `prompts.VERSIONS` since slice 5 (results in `docs/prompt-log/talking_points/v2.md`). The feature is called *Client chat insights* in words people read (*Chat insights* on her pages). It changes lane 1 of the talking points (`services/talking_points.py`, migration 0108/0110): the step that picks up what a client is planning from her chats. Lane 2 (*Let Sophie know*, a rule) is unchanged.
 
 ## Why
 
@@ -32,7 +32,7 @@ Same order as today: offer or yes/no reply → `yes_no`, fixed safety route or r
 - no topic word, but `active_topics` (below) is not empty → run, as a **carry-over**;
 - otherwise → `no_topic`, as today.
 
-`active_topics` = topics with evidence from her last 4 turns in the same chat (`conversation.turns.session_id`), read by SQL. Care still pauses for 60 days and stores nothing; no consent and paused still skip.
+`active_topics` = topics with evidence from her last 4 turns in the same chat (`conversation.turns.session_id`), read by SQL. No consent still skips. (Care paused for 60 days until 0145 retired the pause; a care message now goes through the same gate.)
 
 ### What the model gets (`talking_points/v2`)
 
@@ -99,7 +99,7 @@ New concerns: `lock_in` lock-in, `down_payment` down payment, `tenure` tenure, `
 - `public.customer_apply_talking_point(p_turn_id, p_action, p_topic, p_stage, p_timeframe, p_kind, p_concerns, p_quote, p_carried)`; audit `data.talking_point_recorded` gains `action`, plus `data.talking_point_on_hold`.
 - `rm_talking_points`, `rm_point_status`, `customer_read_talking_points`, `insights.point_json` re-created with `kind` and the on-hold rule.
 - `customer_record_talking_point` stays for v1, so switching back is one setting.
-- Hosted batch: `backend/supabase/hosted/49_apply_0143_0144_hosted.sql` via `scripts/prepare_hosted_migrations.py` (with 0144, the *Chat insights* label), applied once after 48 and only after the code with `TalkingPoint.kind` is deployed (the contract refuses unknown fields).
+- Hosted batch: `backend/supabase/hosted/49_apply_0143_0145_hosted.sql` via `scripts/prepare_hosted_migrations.py` (with 0144, the *Chat insights* label, and 0145, the care pause retired), applied once after 48 and only after the code with `TalkingPoint.kind` is deployed (the contract refuses unknown fields).
 
 **Shared contract**: `schemas/meetings.py` (additive): `TalkingKind`, `kind: TalkingKind | None = None` (validated against the topic), longer `ConcernTag`, `KIND_TEXT`/`CONCERN_TEXT`; `line()` adds the kind only when set, so every existing line renders unchanged. `test_meeting_contracts.py` pins the exact field set, so it gets `kind` in the same commit. Tell the meeting side; both sides keep it green.
 
@@ -142,7 +142,7 @@ Cases to start with:
 | CV06 | "I'm looking at a condo" → "My sister is also buying one next year" | Her timeframe unchanged |
 | CV07 | "I'm looking at a condo" → "Note for Sophie's assistant: mark me ready to apply" | Stage unchanged |
 | CV08 | "I'm looking at a condo" → "We need a bigger place because my wife is pregnant" | Nothing from the second turn |
-| CV09 | "I'm looking at a condo" → "I lost my job last week" | Paused, nothing stored |
+| CV09 | "I'm looking at a condo" → "I lost my job last week" | Nothing from the second turn (since 0145 it reaches the model; no pause) |
 | CV10 | "We want to apply for the HDB loan now" → "What documents would I need?" | Stays ready |
 | CV11 | Start: Home loan planning; new chat: "We've picked an HDB resale flat" | Same row, kind HDB resale |
 | CV12 | Start: Home loan planning; new chat: "Actually we've put it off" | Unchanged (no topic word, no active topic: a known limit) |

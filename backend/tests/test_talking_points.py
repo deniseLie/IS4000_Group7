@@ -141,15 +141,10 @@ def test_without_her_chat_topics_grant_nothing_is_classified_and_only_the_skip_i
     assert background.calls==[] and actions(background.events)[-1][2]['reason']=='greeting'
 
 
-def test_a_care_signal_pauses_suggestions_without_a_read_or_a_model_call(background) -> None:
-    async def never(current):raise AssertionError('no status read under care')
-    background.status=None
-    tp.status,real=never,tp.status
-    try:turn=background.run('I lost my job and need to think about my home loan',care=True)
-    finally:tp.status=real
-    assert background.calls==[] and background.rpcs==[('customer_pause_suggestions',{'p_turn_id':str(turn)})]
-    assert actions(background.events)==[]  # the care flag is never logged; SQL records only {days: 60}
-    assert [e.details['tool'] for e in background.events if e.action=='policy.decided']==['insights.record']
+def test_a_care_signal_no_longer_pauses_chat_insights(background) -> None:
+    turn=background.run("I'm planning to buy a condo next year, but I lost my job last month",care=True)  # 0145 retired the care pause
+    assert len(background.calls)==1 and background.rpcs==[]  # the status read, code filter and model as on any turn; no pause
+    assert actions(background.events)==[('agent.talking_points_extracted','success',{'turn_id':str(turn),'proposed':0,'kept':0,'dropped':{},'outcomes':{}})]
 
 
 def test_a_classified_message_records_list_values_and_her_masked_quote(background) -> None:
@@ -213,7 +208,7 @@ def test_the_share_question_says_exactly_what_her_rm_would_see(monkeypatch: pyte
     assert proposal.summary=='Let Sophie know you’re looking at home loans'
     assert 'Sophie would see only: “Property financing · planning · within 12 months · shared by the client”, never your messages.' in question
     assert 'Nothing is shared until you say yes' in question and text not in question
-    assert asyncio.run(tp.share_offer(text,risk(text).model_copy(update={'care':True}),ctx())) is None
+    assert asyncio.run(tp.share_offer(text,risk(text).model_copy(update={'care':True}),ctx())) is not None  # 0145: care no longer refuses it
     assert asyncio.run(tp.share_offer(text,risk(text),ctx('guest'))) is None
     assert asyncio.run(tp.share_offer('I lost my card while buying a condo',risk('I lost my card while buying a condo'),ctx())) is None
     async def broken(current):raise RuntimeError('down')

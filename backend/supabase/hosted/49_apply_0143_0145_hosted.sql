@@ -381,5 +381,43 @@ begin
   end if;
 end $apply_0144$;
 
+do $apply_0145$
+declare previous supabase_migrations.schema_migrations; script text:=$source_0145$-- Released source SHA256: 5f10b54b3626f9e6f32058da77abd1d0d14fe99e419161297d853903c274bca8
+-- Client chat insights without the care pause (8 Nov 2026). Synthetic data only.
+-- Since 0108 a care signal in her chat (job loss, debt, bereavement, serious illness, pressure about money) paused chat
+-- insights for 60 days: public.customer_pause_suggestions opened a row in insights.opportunity_pauses, and while it was
+-- open nothing new was recorded, her inferred insights were hidden from her RM and Data sharing showed a Resume line.
+-- The pause is retired: the app no longer calls it after a reply or refuses a share offer on care, and her page has no
+-- Resume line. This ends every open pause (audited per pause, system actor) so nothing stays hidden without a way back,
+-- and drops the setter so no pause can be opened again. The table, insights.paused() and the paused checks in the
+-- released readers stay unchanged (always false with no open pause); insight.resume keeps undoing a mute. Her care flag
+-- (guardrail.CARE, AnswerEvent.care: only Talk to a person under her answer) is unchanged and no longer touches insights.
+
+do $$
+declare p insights.opportunity_pauses;
+begin
+  for p in update insights.opportunity_pauses set ended_at=clock_timestamp()
+      where ended_at is null and until>clock_timestamp() returning * loop
+    perform audit.record('data','data.suggestions_resumed','success','insights.opportunity_pauses',p.pause_id::text,
+      jsonb_build_object('reason','care_pause_retired'),p_customer_id=>p.customer_id,p_actor_type=>'system',p_actor_id=>'migration_0145');
+  end loop;
+end $$;
+
+drop function if exists public.customer_pause_suggestions(uuid);
+$source_0145$;
+begin
+  select * into previous from supabase_migrations.schema_migrations where version='0145';
+  if found then
+    if previous.name is distinct from 'retire_care_pause' or previous.statements is distinct from array[script] then
+      raise exception 'migration 0145 is recorded with different SQL; inspect history before proceeding';
+    end if;
+    raise notice 'migration 0145 already applied with identical SQL';
+  else
+    execute script;
+    insert into supabase_migrations.schema_migrations(version,name,statements)
+      values('0145','retire_care_pause',array[script]);
+  end if;
+end $apply_0145$;
+
 commit;
 select version,name from supabase_migrations.schema_migrations order by version;

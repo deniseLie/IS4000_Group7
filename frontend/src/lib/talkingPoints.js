@@ -1,6 +1,6 @@
 // Client chat insights (talking points in the code; 0108, build plan phase 4): Data sharing → Chat insights. Each reads in plain words with
 // the same facts as the line her relationship manager reads (list values only). Her words are never shown or kept (0142).
-// Delete, Don't suggest this again and Resume are automatic actions with a receipt; Let her know is a chat offer. Since 0143 a
+// Delete, Don't suggest this again and Allow again are automatic actions with a receipt; Let her know is a chat offer. Since 0143 a
 // point may name a kind (KINDS, = schemas/meetings.KINDS) and be on hold (she said the plan is off: her RM does not see it).
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY=/^\d{4}-\d\d-\d\d$/;
@@ -155,4 +155,3 @@ export function sharedTopicRows(rows,now=Date.now()) {
 }
 
 export function chatTopicsNote(rm) {return `Insights from this chat may be shared with ${rm||'your relationship manager'} for your meetings.`;}
-export function pauseNote(until,format) {return `Topic suggestions are paused until ${format(until)}.`;}

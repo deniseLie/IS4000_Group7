@@ -15,6 +15,7 @@ from tests.database_support import SqlRow,set_customer
 from tests.test_meeting_requests import act
 from tests.test_meeting_seam import as_rm
 from tests.test_offer_groups import sqlstate
+from tests.test_talking_points_db import propose
 
 if TYPE_CHECKING:
     from psycopg import Connection
@@ -164,10 +165,9 @@ def test_sql_repeats_the_checks_and_never_changes_a_point_she_shared(database: '
     assert shared['receipt']['outcome']=='succeeded'
     assert row(database,'home_loan')==('planning','within_12m',None,[],False)
     assert apply(database,chat.say('Is the lock-in two years?'),'update','home_loan','ready','the lock-in',concerns=['lock_in'],carried=True)['reason']=='confirmed'
-    # Consent, a pause and a mute are rechecked as in v1.
-    set_customer(database,1002)
-    database.execute('select public.customer_pause_suggestions(%s)',(chat.say('I lost my job last week'),))
-    assert apply(database,chat.say('Should I still invest in ETFs?'),'add','investments','curious','invest in ETFs',kind='etf')['reason']=='paused'
+    # A mute is rechecked as in v1 (0145 retired the care pause).
+    propose(database,'insight.mute',{'topic':'investments'})
+    assert apply(database,chat.say('Should I still invest in ETFs?'),'add','investments','curious','invest in ETFs',kind='etf')['reason']=='muted'
 
 
 def test_v1_recording_caps_concerns_and_clears_on_hold(database: 'Connection[SqlRow]') -> None:
