@@ -14,7 +14,7 @@ from app.schemas.chat import ChatRequest,Message
 from app.schemas.contracts import AgentOutput,AgentResult,PlanTask,Principal,RequestContext
 from app.schemas.meetings import TalkingPoint
 from app.schemas.talking_points import InsightShareResult,TopicStatus
-from app.services import audit,authorization,llm_gateway,offers,orchestrator,talking_points as tp
+from app.services import audit,authorization,llm_gateway,offers,orchestrator,prompts,talking_points as tp
 from app.services.actions.registry import EXECUTORS
 from app.services.agents import registry,runner
 from app.services.guardrail import assess_request
@@ -93,7 +93,9 @@ def test_the_model_sees_only_her_redacted_messages() -> None:
 
 @pytest.fixture
 def background(monkeypatch: pytest.MonkeyPatch):
-    """Runs lane 1 with stubbed reads, writes and model; returns what it did."""
+    """Runs lane 1 v1 (kept for switching back in prompts.VERSIONS; v2 is in test_talking_points_state) with stubbed reads,
+    writes and model; returns what it did."""
+    monkeypatch.setitem(prompts.VERSIONS,'talking_points','v1')
     seen=SimpleNamespace(calls=[],rpcs=[],events=[],status=status(),reply=lambda p:result([]))
     async def call(prompt,system,messages,schema,model=None,retries=None):
         seen.calls.append({'prompt':prompt['id'],'messages':messages,'model':model,'retries':retries})

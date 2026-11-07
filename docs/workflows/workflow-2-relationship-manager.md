@@ -87,7 +87,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 
 - **What she gets**: topic lines only, for example *Home loan · planning · within 12 months*. Each is labelled *Inferred from chat* (AI suggestion) or *Shared by the client*. She never sees the client's words, and no RM role or `rm_*` function can read the quotes table.
 - **Client overview and meeting brief** read `rm_talking_points` as a fixed read (purpose `client_view` or `meeting_prep`, set by code). Inferred topics come back only while the client's grant covers `chat_topics`, after a 24-hour hold, and outside a 60-day care pause. A topic still on hold or paused becomes a gap ("some topics are not available yet"), never which topic or why. Topics the client shared herself always come back; without the grant the read is audited with `basis: client_shared`.
-- **Today → Topics clients shared with you**: confirmed topics from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
+- **Today → Client chat insights shared with you**: confirmed insights (topics she shared herself) from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
 - Reassigning the client ends access at once (book check first); one client per call.
 
 ## Consent v2: what clients share and asking for more (build plan phase 6, 0109–0113)
@@ -143,7 +143,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 4. **Sophie's Today**: sign in as `demo.sophie@example.com`. Today shows:
    - *Do first*, with each item's score reasons;
    - the requests to answer (Mei Ling's and Michelle's);
-   - *Topics clients shared with you* (Michelle's home loan).
+   - *Client chat insights shared with you* (Michelle's home loan).
 5. **Plan my day**: one cited answer in the code's rank order (R24).
 6. **Answer a request**: in the copilot, "Accept Mei Ling's Monday 4:30 pm time". Sophie approves the card (R25). Then she accepts Michelle's request in Schedule → Requests. Michelle's Meetings shows it confirmed, with an Inbox notice.
 7. **Availability**: "Block Friday afternoon" gives a card, which Sophie approves (R26). Michelle's free times no longer include it.

@@ -126,8 +126,11 @@ def test_extract_applies_each_kept_change_through_the_sql_function(monkeypatch) 
     assert counts=={'proposed':2,'kept':1,'dropped':{'not_active':1},'outcomes':{'recorded':1},'actions':{'update':1},'carried':1}
 
 
+def test_v2_is_the_lane_one_default() -> None:
+    assert prompts.VERSIONS['talking_points']=='v2' and v2.version()=='v2'  # the evaluation gate passed (prompt log v2)
+
+
 def test_after_reply_on_v2_reads_the_state_and_audits_counts_only(monkeypatch) -> None:
-    monkeypatch.setitem(prompts.VERSIONS,'talking_points','v2')
     seen=SimpleNamespace(sent=[],rpcs=[],events=[],state=state([HOME],active=['home_loan']))
     async def call(prompt,system,messages,schema,model=None,retries=None):
         seen.sent.append(json.loads(messages[0][1]))
@@ -158,3 +161,32 @@ def test_after_reply_on_v2_reads_the_state_and_audits_counts_only(monkeypatch) -
     asyncio.run(v2.tp.after_reply(ctx,turn,history,assess_request(ChatRequest(messages=history,mode='personal'))))
     assert len(seen.sent)==1 and [(e.action,e.details) for e in seen.events if e.category=='agent']==[
         ('agent.talking_points_skipped',{'reason':'no_topic','turn_id':str(turn),'version':'v2'})]
+
+
+def test_on_v2_no_grant_or_a_pause_skips_and_a_model_failure_is_logged_with_ids_only(monkeypatch) -> None:
+    seen=SimpleNamespace(models=[],events=[],state=state(),reply=None)
+    async def call(prompt,system,messages,schema,model=None,retries=None):
+        seen.models.append((model,retries))
+        raise seen.reply
+    async def read(current,turn_id):return seen.state
+    async def rpc(current,name,params):raise AssertionError('nothing is applied')
+    async def flush(self):seen.events.extend(self.events)
+    monkeypatch.setattr(llm_gateway,'call',call)
+    monkeypatch.setattr(v2,'state',read)
+    monkeypatch.setattr(v2.tp,'_rpc',rpc)
+    monkeypatch.setattr(data_api,'connect',lambda current:nullcontext(None))
+    monkeypatch.setattr(audit.AuditBatch,'flush',flush)
+    monkeypatch.setattr(v2.settings,'talking_points_model','synthetic/small-model')
+    text='We want a home loan for an HDB resale flat'
+    history=[Message(role='user',content=text)]
+    ctx=RequestContext(session_id=uuid4(),case_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),customer_id=1002,jwt='synthetic-test-token'))
+    run=lambda:asyncio.run(v2.tp.after_reply(ctx,uuid4(),history,assess_request(ChatRequest(messages=history,mode='personal'))))
+    agent=lambda:[(e.action,e.outcome,e.details.get('reason')) for e in seen.events if e.category=='agent']
+    seen.state=state().model_copy(update={'chat_topics':False});run()
+    seen.state=state().model_copy(update={'paused':True});run()
+    assert seen.models==[] and agent()==[('agent.talking_points_skipped','success','no_consent'),('agent.talking_points_skipped','success','paused')]
+    seen.state,seen.reply=state(),llm_gateway.LLMTimeout('slow');run()
+    seen.reply=RuntimeError(text);run()  # any other failure: the reply is already sent, nothing raises
+    assert seen.models==[('synthetic/small-model',0)]*2  # its own model setting, never retried
+    assert agent()[2:]==[('agent.talking_points_extracted','failed','timeout'),('agent.talking_points_extracted','failed','RuntimeError')]
+    assert text not in json.dumps([e.details for e in seen.events])

@@ -366,6 +366,29 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 
 **Not checked live:** the section streaming in the browser. Unit and frontend tests cover it (`test_rm_graph.py`, `rm.test.js`); `targets.play_rm` reads only the `answer` event. Admin → Latency should show `first_section_ms` for these requests.
 
+## Client chat insights: lane 1 v1 against v2 (8 Nov 2026)
+
+Client chat insights (`talking_points` in the code) are what the background step picks up from her chats for her RM (plan `docs/planning/stateful-talking-points.md`). One live run each, `anthropic/claude-haiku-5.5` on OpenRouter, details and dataset hashes in `docs/prompt-log/talking_points/v2.md`:
+
+```bash
+python -m evaluation.talking_points --live --version v1          # 61 single messages
+python -m evaluation.talking_points --live --version v2
+python -m evaluation.talking_points --conversations --live --version v1   # 15 conversations, final state per topic
+python -m evaluation.talking_points --conversations --live --version v2
+```
+
+| Measure | v1 | v2 |
+|---|---|---|
+| Conversations: final state matched | 11 of 15 | 15 of 15 |
+| Conversations: false points / false on hold | 0 / – | 0 / 0 |
+| Conversations: model calls (per conversation) | 16 (1.07) | 27 (1.8) |
+| Single messages: false points | 0 | 0 |
+| Single messages: precision / recall | 1.000 / 0.969 | 1.000 / 0.938 |
+| Single messages: stage agreement | 0.935 | 0.967 |
+| Negative, sensitive, care and injection cases recording nothing they should not | 31 of 31 | 31 of 31 |
+
+The gate (no false on hold, false points not above v1, final state clearly above v1) passed, so v2 is the default since 8 Nov. v1 missed what follow-ups add (CV01, CV02), never put a plan on hold (CV03) and found no kind in a new chat (CV11). v2's lower recall is one case: TP27 recorded the insurance but not the home loan. TP04 is missed by both (no word from the home-loan list in the quote). These are synthetic English cases scored by code, not proof of accuracy on real chats; a message with no topic word in a new chat changes nothing (CV12).
+
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.

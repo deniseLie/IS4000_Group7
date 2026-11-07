@@ -1,6 +1,6 @@
 # Talking points that follow the conversation (lane 1 v2)
 
-Plan written 8 Nov 2026 in a side session; not built. It changes lane 1 of the talking points (`services/talking_points.py`, migration 0108/0110): the step that picks up what a client is planning from her chats. Lane 2 (*Let Sophie know*, a rule) is unchanged.
+Plan written 8 Nov 2026 in a side session. **Built 8 Nov 2026** in slices 1–5 (migrations 0143 and 0144, hosted batch 49); v2 is the default in `prompts.VERSIONS` since slice 5 (results in `docs/prompt-log/talking_points/v2.md`). The feature is called *Client chat insights* in words people read (*Chat insights* on her pages). It changes lane 1 of the talking points (`services/talking_points.py`, migration 0108/0110): the step that picks up what a client is planning from her chats. Lane 2 (*Let Sophie know*, a rule) is unchanged.
 
 ## Why
 
@@ -99,7 +99,7 @@ New concerns: `lock_in` lock-in, `down_payment` down payment, `tenure` tenure, `
 - `public.customer_apply_talking_point(p_turn_id, p_action, p_topic, p_stage, p_timeframe, p_kind, p_concerns, p_quote, p_carried)`; audit `data.talking_point_recorded` gains `action`, plus `data.talking_point_on_hold`.
 - `rm_talking_points`, `rm_point_status`, `customer_read_talking_points`, `insights.point_json` re-created with `kind` and the on-hold rule.
 - `customer_record_talking_point` stays for v1, so switching back is one setting.
-- Hosted batch: `backend/supabase/hosted/49_apply_0143_hosted.sql` via `scripts/prepare_hosted_migrations.py`, applied once after 48 and only after the code with `TalkingPoint.kind` is deployed (the contract refuses unknown fields).
+- Hosted batch: `backend/supabase/hosted/49_apply_0143_0144_hosted.sql` via `scripts/prepare_hosted_migrations.py` (with 0144, the *Chat insights* label), applied once after 48 and only after the code with `TalkingPoint.kind` is deployed (the contract refuses unknown fields).
 
 **Shared contract**: `schemas/meetings.py` (additive): `TalkingKind`, `kind: TalkingKind | None = None` (validated against the topic), longer `ConcernTag`, `KIND_TEXT`/`CONCERN_TEXT`; `line()` adds the kind only when set, so every existing line renders unchanged. `test_meeting_contracts.py` pins the exact field set, so it gets `kind` in the same commit. Tell the meeting side; both sides keep it green.
 
