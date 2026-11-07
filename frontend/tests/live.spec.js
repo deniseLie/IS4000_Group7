@@ -9,7 +9,7 @@ async function ask(page,question,testInfo) {
  await expect(page.getByRole('button',{name:'Send',exact:true})).toBeVisible({timeout:80000});
  const bubble=page.locator('.bank-chat-message.assistant').last();
  await expect(bubble).toHaveAttribute('data-response-origin','ai');
- await expect(bubble).toHaveAttribute('data-prompt-version',/^v2\+/);
+ await expect(bubble).toHaveAttribute('data-prompt-version',/^v3\+/);
  await expect(bubble).toContainText('AI-generated');
  const result={answer:await bubble.locator('.answer-text').innerText(),
    sources:await bubble.locator('[data-source-id]').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.sourceId}))),

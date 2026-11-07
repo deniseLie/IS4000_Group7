@@ -105,7 +105,7 @@ New concerns: `lock_in` lock-in, `down_payment` down payment, `tenure` tenure, `
 
 **Backend**:
 - `schemas/talking_points_state.py`: `TopicState`, `StatePoint`; `schemas/talking_points.py`: `on_hold`, `on_hold_at` on her points (`kind` comes with the contract).
-- `services/talking_points_state.py`: `gate`, `model_input`, `SCHEMA`, `OFF`, `validate`, `apply` (a pure function with the SQL rules, for the evaluation and unit tests), `state`, `extract` calling the new RPC; `version()` reads lane 1's `talking_points.PROMPT` (default `v1` until the gate below passes). `services/talking_points.after_reply` picks the version.
+- `services/talking_points_state.py`: `gate`, `model_input`, `SCHEMA`, `OFF`, `validate`, `apply` (a pure function with the SQL rules, for the evaluation and unit tests), `state`, `extract` calling the new RPC; `version()` reads `prompts.VERSIONS['talking_points']` (default `v1` until the gate below passes). `services/talking_points.after_reply` picks the version.
 - `prompts/talking_points/v2/system.md` and `docs/prompt-log/talking_points/v2.md` (from `TEMPLATE.md`); pin the v2 id in `test_prompts.py` once released. v1 is not edited.
 
 **Frontend**: `components/TalkingPoints.jsx`, `lib/talkingPoints.js` (on-hold row; the line comes from the API). No RM UI change: `brief_facts.topic_items` already prints the point's `line`.

@@ -77,7 +77,7 @@ function groupOf(command) {
   const kind=command.type.split('.')[0];
   return kind==='card'?'Cards':['compliance','document'].includes(kind)?'Compliance':['consent','agenda','rm','insight'].includes(kind)?'Data sharing':['appointment','meeting'].includes(kind)?'Appointments':['requests','ticket'].includes(kind)?'Requests':'Support';
 }
-// Plain-language card heading and summary; the exact recorded fields stay one click away under "Full details".
+// Plain-language card heading and summary; the exact recorded fields stay one click away under "Details".
 function plainTitle(command) {
   const t=command.target;
   switch(command.type) {

@@ -123,10 +123,16 @@ async def prompt_page(window: str=WINDOW,ctx: RequestContext=Depends(admin)) -> 
 
 
 def agents_of(days: int,source: str,side: str='all') -> dict[str,Any]:
-    rows,steps,exps=together((quality.requests,source,days),(quality.steps,source,days),(quality.experiment_runs,))
+    loads=[(quality.requests,source,days),(quality.steps,source,days),(quality.experiment_runs,)]
+    if side=='all' and source in ('all','live'):loads.append((quality.meeting_steps,days))
+    rows,steps,exps,*workflow=together(*loads)
+    meeting_steps=workflow[0] if workflow else []
+    meeting_catalogue=[{'agent':spec.name,'purpose':spec.purpose,'tools':[tool._asdict() for tool in spec.tools]}
+        for spec in registry.MEETING_SPECS.values()] if side=='all' else []
     since=quality.now()-timedelta(days=days)
-    return {**insights.agents(rows,steps,[e for e in exps if e['started_at']>=since],{n:s.prompt for n,s in registry.SPECS.items()},prompts.in_use(),side),
-        'window_days':days,'source':source,'capped':capped(rows,steps)}
+    return {**insights.agents(rows,[*steps,*meeting_steps],[e for e in exps if e['started_at']>=since],{n:s.prompt for n,s in registry.SPECS.items()},prompts.in_use(),side),
+        'meeting_catalogue':meeting_catalogue,'window_days':days,'source':source,
+        'capped':capped(rows,steps) or len(meeting_steps)>=quality.MAX_REQUESTS}
 
 
 def latency_of(days: int,source: str) -> dict[str,Any]:

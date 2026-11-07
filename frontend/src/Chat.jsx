@@ -57,7 +57,7 @@ const HELP_ROUTES={
   compliance:['Your review is handled by the compliance team','Your relationship manager can pass your question to the compliance team. Your documents, checks and the bank’s questions are on Compliance review.',['Open Compliance review','compliance'],['Send to my relationship manager','send']],
 };
 const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Advice, fees or something else for my relationship manager']];
-// Guests can open every page's address too; they see a sign-in prompt instead of records (Actions is a drawer once signed in).
+// Guests can open every page's address too; they see a sign-in prompt instead of records.
 function pageFromHash(session) {const page=location.hash.slice(1);return PAGES.includes(page)||!session&&page==='actions'?page:'chat';}
 // The header badge says the data is fictional and each answer carries its own "General info, not advice" note.
 const DISCLAIMER = 'Demo AI assistant. AI answers can contain errors. Never share your PIN, password or OTP.';
@@ -397,7 +397,7 @@ export default function Chat({session,onSignIn}) {
     else if(action==='compliance')navigate('compliance');
     else {
       navigate('chat');
-      // Fraud starts the assistant's urgent report straight away; she still confirms the details before it is sent (CR12).
+      // Fraud gets the fixed urgent card steps and one urgent request to her RM, recorded only when she confirms (2b).
       if(action==='charge')send(null,'I don’t recognise a charge on my card');
       else if(action==='lost')send(null,'I lost my card');
     }
@@ -417,7 +417,7 @@ export default function Chat({session,onSignIn}) {
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of complex banking needs.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
-    {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
+    {icon:'loan',title:'Financing options',detail:'Property financing and borrowing against investments.',question:'Which financing does DemoBank offer?'},
   ];
 
   function openInlineRequest(prefill={},index=null) {
@@ -461,10 +461,9 @@ export default function Chat({session,onSignIn}) {
     // A bank decision/status enquiry can only read an existing ticket; it must
     // never offer to start another card limit application.
     if(intent==='status' && message.response_origin==='validation')return null;
-    // CR12: entering fraud support is not filing a report. The authenticated
-    // workflow identifies the exact charges and asks for explicit confirmation
-    // before any urgent fraud ticket can be recorded. This button is shown only
-    // on the latest fraud response; confirmation offers have their own one-tap reply.
+    // CR12: entering fraud support is not filing a report. Since 2b a signed-in fraud reply carries the urgent RM
+    // request as an offer with its own Confirm; this button shows only on the latest fraud reply without one
+    // (lib/fraudEntry.js).
     if(canStartFraudReport({message,signedIn:!!session&&mode==='personal',latest:index===messages.length-1}))return <button type="button" className="primary-button rm-handoff" data-testid="fraud-report-entry" onClick={()=>send(null,'I suspect an unauthorised card transaction. Please help me identify the affected card and charge so I can review and confirm an urgent fraud report.')}>Report suspicious transaction<Icon name="arrow"/></button>;
     if(intent==='status')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See verified request status<Icon name="arrow"/></button>;
     if(!concept&&(intent==='card_limit_change'||isLimitWorkflowReply(message))&&!message.error&&message.source_check!=='rejected'&&!/Answer withheld|couldn’t confirm|couldn't verify/i.test(message.content)) {

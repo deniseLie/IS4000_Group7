@@ -9,8 +9,6 @@ from app.schemas.customer_data import RequestedItem
 from app.services import prechecks,prompts,compliance_selection,tools
 from app.services.agents.answer import checked_model_answer
 
-PROMPT='v5'
-
 
 def report_evidence(report):
     value=report.model_dump(mode='json',exclude={'customer_id','case_id','item_id','document_id','check_id','sha256','requirements_hash'})
@@ -37,7 +35,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     items=workspace.review.requested_items if workspace.review else []
     if chosen is not None:items=[item for item in items if item.item_id==chosen.item_id]
     evidence=[*public_evidence,evidence_for(workspace,items,snapshot.as_of)]
-    pv=prompts.load('document',PROMPT)
+    pv=prompts.current('document')
     system=pv['system']+'\nAnswer language: '+language+'\nAssigned issue (untrusted): '+json.dumps(task.entities['question'])
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
     result=await checked_model_answer(task,system,history,evidence,pv)

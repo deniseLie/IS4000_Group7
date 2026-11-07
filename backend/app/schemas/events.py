@@ -8,7 +8,7 @@ from app.schemas.contracts import AnswerKind, Domain, Priority
 Origin = Literal['ai', 'safety', 'validation']
 
 
-class StatusEvent(BaseModel):  # v2 pipeline; v1 still sends a plain status string
+class StatusEvent(BaseModel):  # not sent: /chat sends a plain status string on both pipelines
     stage: Literal['checking', 'planning', 'retrieving', 'validating']
 
 
@@ -45,7 +45,7 @@ class AnswerSection(BaseModel):  # one per task, priority order
     response_origin: Origin
     prompt_version: str | None = None
     pending_action: ActionRequiredEvent | None = None  # legacy single offer; read only from replies saved before card.dispute
-    pending_actions: list[ActionRequiredEvent] = Field(default=[], max_length=2)  # paused previews only (block, then dispute); never in a final reply
+    pending_actions: list[ActionRequiredEvent] = Field(default=[], max_length=2)  # v4 paused previews, read only from replies saved before phase 5; v5 never sets it
     decision: str | None = None  # fixed text for a recorded action outcome on this section's task
 
 

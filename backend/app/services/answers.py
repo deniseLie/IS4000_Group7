@@ -12,8 +12,8 @@ from app.core import data_api
 from app.services.privacy import redact
 from app.services.guardrail import assess_request,DELEGATE_CLAIM
 from app.services.source_checks import check_sources, numbers
-from app.services.llm import llm
-from app.services import kb,prompts
+from app.services.llm import llm,answer_prompt
+from app.services import kb
 
 EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
 
@@ -148,7 +148,7 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
         sources['customer-records']={'id':'customer-records','title':'Your authenticated synthetic records','url':None,'version':'Current request'}
     decide(info,'llm')
     result['source_check']='rejected'
-    result['prompt_version']=prompts.current()['id']
+    result['prompt_version']=answer_prompt()['id']
     raw=await llm.answer(history,evidence,req.language)
     answer,ids,reason=validate(raw,evidence)
     if reason=='source_check':

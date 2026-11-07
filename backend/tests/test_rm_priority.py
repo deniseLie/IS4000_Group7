@@ -106,3 +106,13 @@ def test_span_facts_are_codes_and_counts_only():
     assert facts=={'scored':2,'scored_kinds':{'request':1,'meeting_request':1},'factors':{'urgent':1,'waiting':2,'respond_by_passed':1},'top_score':51}
     assert not any(word in json.dumps(facts) for word in ('Michelle','Mei Ling','Urgent card','TCK-'))
     assert p.facts([])=={'scored':0,'scored_kinds':{},'factors':{},'top_score':0}
+
+
+def test_a_lombard_collateral_alert_scores_above_a_plain_maturity() -> None:
+    # 0116: rm.check_collateral's milestone (title prefix priority.COLLATERAL) is a reason to call the client today.
+    items=p.rank(today=TODAY,now=NOW,followups=[
+        {'item_key':'milestone:m:2026-11-12','customer_id':1002,'client':'Michelle Ng (DEMO)','kind':'milestone','title':'Time deposit ****4410 matures','due_on':'2026-11-12'},
+        {'item_key':'milestone:c:2026-11-05','customer_id':1002,'client':'Michelle Ng (DEMO)','kind':'milestone','title':'Lombard collateral below its lending value','due_on':'2026-11-05'}])
+    assert [x['key'] for x in items]==['milestone:c:2026-11-05','milestone:m:2026-11-12']
+    assert items[0]['parts']==[{'code':'collateral','points':40,'reason':'Lombard collateral below its lending value'}] and items[0]['do_first']
+    assert items[1]['parts']==[] and not items[1]['do_first']

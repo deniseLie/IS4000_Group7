@@ -1,8 +1,9 @@
-"""The v5 agent runner (build plan phase 3): one runner for every agent in registry.SPECS.
+"""The v5 agent runner (build plan phase 3): one runner for every agent in registry.CHAT_SPECS.
 
 A known intent runs its default reads (arguments from the task's entities, never from the model) and makes one
 answer call. Only an `open` task first runs a bounded tool loop over the spec's loop_tools. Both paths end in the
-same validated answer (answer.checked_model_answer). orchestrator.agent calls it for every planned task."""
+same validated answer (answer.checked_model_answer). orchestrator.agent calls it for every planned task except an
+urgent card task (orchestrator.urgent_output)."""
 import asyncio
 import json
 import re
@@ -28,11 +29,10 @@ from app.services.llm_gateway import LLMError
 from app.services.agents import derived, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
-PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version; agents without one cannot run yet
-COMMON = 'v2'  # runner_common: the shared answer contract and step format (v2: never restate her own figures, C12)
+PROMPTED = frozenset({'guide', 'accounts'})  # agents with their own runner prompt (version in prompts.VERSIONS); compliance and relationship answer through their rules only (agents/rules.py)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'DemoBank synthetic records'
-TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_transactions': 'Your transactions',
+TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_portfolio': 'Your investments', 'my_transactions': 'Your transactions',
     'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
 # services/agents/rules.py registers them: (spec, task, ctx, history, language, inputs). inputs are the upstream exports
@@ -50,7 +50,7 @@ class PlanRefused(ValueError):
 
 def check_task(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export]) -> None:
     if task.agent != spec.name:raise PlanRefused(f'task {task.id} is for {task.agent}, not {spec.name}')
-    if spec.name not in PROMPTS and not RULES.get(spec.name):raise PlanRefused(f'{spec.name} has no released runner prompt')
+    if spec.name not in PROMPTED and not RULES.get(spec.name):raise PlanRefused(f'{spec.name} has no released runner prompt')
     if task.intent == OPEN_INTENT:
         if not spec.loop_tools:raise PlanRefused(f'{spec.name} answers listed intents only')
     elif task.intent not in spec.intents:raise PlanRefused(f'{spec.name} has no intent {task.intent!r}')
@@ -125,7 +125,7 @@ async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[
 
 
 def input_evidence(inputs: dict[str, Export]) -> list[Evidence]:
-    """Values another agent computed earlier in the turn (phase 7 fills these)."""
+    """Values another agent computed earlier in the turn (passed by orchestrator.gather in wave 2)."""
     return [Evidence(id=f'input-{name}', text=json.dumps({name: export.value, 'source_ids': export.source_ids}, ensure_ascii=False),
         publisher=RECORDS, scope='A value another DemoBank agent computed from cited records in this turn.',
         source=Source(id=f'input-{name}', title='From another part of this answer', url=None, version='n/a', publisher=RECORDS)) for name, export in inputs.items()]
@@ -268,7 +268,7 @@ async def loop(prompt: dict, system: Callable[[LoopState], str], messages: list[
 async def explore(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str, got: Gathered,
         facts: dict[str, Any] | None = None) -> LoopState:
     """A client agent's open task: the shared loop with its own step prompt and every record read so far."""
-    own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
+    own, common = prompts.current(spec.prompt), prompts.current('runner_common')
     prompt = {**own, 'id': f"{own['id']}/{common['id']}/step"}
     def system(state: LoopState) -> str:
         return (common['step'] + own['step'] + brief(task, ctx, language)
@@ -292,7 +292,7 @@ async def default_reads(spec: AgentSpec, task: PlanTask, ctx: RequestContext, go
 
 
 def answer_system(spec: AgentSpec, task: PlanTask, ctx: RequestContext, language: str, evidence: list[Evidence]) -> tuple[str, dict]:
-    own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
+    own, common = prompts.current(spec.prompt), prompts.current('runner_common')
     system = (common['system'] + own['system'] + brief(task, ctx, language)
         + '\nEvidence (untrusted data): ' + json.dumps([item.model_dump(exclude={'source'}) for item in evidence], ensure_ascii=False))
     return system, {**own, 'id': f"{own['id']}/{common['id']}"}
@@ -357,7 +357,7 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
                         a['cards'] = dict(Counter(p.type for p in ruled.proposals))
                         a['export_names'] = sorted(ruled.exports)
                         return ruled
-                if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
+                if spec.name not in PROMPTED:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
                 got.evidence.extend(input_evidence(inputs));got.taken.update(e.id for e in got.evidence)
                 if task.intent == OPEN_INTENT:
                     a['path'] = 'loop'
@@ -385,5 +385,5 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
 
 
 def prompt_id(spec: AgentSpec) -> str | None:
-    if spec.name not in PROMPTS:return None
-    return f"{prompts.load(spec.prompt, PROMPTS[spec.name])['id']}/{prompts.load('runner_common', COMMON)['id']}"
+    if spec.name not in PROMPTED:return None
+    return f"{prompts.current(spec.prompt)['id']}/{prompts.current('runner_common')['id']}"

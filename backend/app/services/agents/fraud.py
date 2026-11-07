@@ -12,7 +12,7 @@ from app.services.agents import fraud_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
-PROMPT='v7'
+PROMPT='v7'  # retired with the Security agent (build plan 2b): respond() runs only in tests, so fraud is not in prompts.VERSIONS
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
 URGENT='If you do not recognise a charge, contact your bank now through the official fraud line on the back of your card or its official app. Never share your PIN, password, one-time code or full card number.'
 

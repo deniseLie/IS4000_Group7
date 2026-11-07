@@ -4,7 +4,7 @@
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY=/^\d{4}-\d\d-\d\d$/;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
-export const TOPICS={home_loan:'Home loan',investments:'Investments',fixed_deposit:'Fixed deposit',insurance:'Insurance'};
+export const TOPICS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance'};
 export const STAGES=['curious','exploring','planning','ready','concern'];
 export const TIMEFRAMES={now:'now',within_3m:'within 3 months',within_12m:'within 12 months',later:'later'};
 export const CONCERNS=['rates','fees','eligibility','timing'];
@@ -28,7 +28,7 @@ function concerns(value) {
   return [...value];
 }
 
-// The one rendering (schemas/meetings.TalkingPoint.line): 'Home loan · planning · within 12 months · inferred from chat'.
+// The one rendering (schemas/meetings.TalkingPoint.line): 'Property financing · planning · within 12 months · inferred from chat'.
 export function line(point) {
   return [TOPICS[point.topic],point.stage,...(point.timeframe&&point.timeframe!=='unknown'?[TIMEFRAMES[point.timeframe]]:[]),
     ...(point.concerns?.length?[`asks about ${point.concerns.join(', ')}`]:[]),ORIGINS[point.origin]].join(' · ');
@@ -121,7 +121,7 @@ export function parseInsightResult(type,target,value) {
   return {point_id:id(value.point_id),topic:target.topic,stage:stage(value.stage),timeframe:timeframe(value.timeframe),origin:'confirmed',notified:value.notified};
 }
 
-// Activity wording: one sentence per recorded change.
+// Actions page wording: one sentence per recorded change.
 export function insightSentence(type,target) {
   const name=target.topic?TOPICS[target.topic]:null;
   if(type==='insight.delete')return name?`Deleted the ${name.toLowerCase()} topic from what your relationship manager sees`:'Deleted a topic from what your relationship manager sees';

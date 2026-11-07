@@ -3,7 +3,7 @@ import {formatDate,formatDateTime} from '../lib/format';
 
 // Data sharing → Topics from your chats (0108, redesign 8 Nov): each topic her relationship manager can use for her
 // meetings, in plain words with the same facts the RM reads. Never her words (0142). Delete (Undo for 7 days), Don't
-// suggest this again and Resume are automatic actions with a receipt in Activity.
+// suggest this again and Resume are automatic actions with a receipt in Actions.
 export default function TalkingPoints({data,rm,busy,saving,act}) {
   const Rm=rm[0].toUpperCase()+rm.slice(1),off=busy||saving;
   const run=(type,target,message)=>act(type,target,message,'talking-points');

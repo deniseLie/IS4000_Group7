@@ -7,10 +7,12 @@ orchestrator and over stdio by external MCP clients (python -m scripts.mcp_serve
 """
 import inspect
 from collections import Counter
-from collections.abc import Awaitable,Callable
+from collections.abc import Awaitable,Callable,Iterator
+from contextlib import contextmanager
 from datetime import date,timedelta
 from contextvars import ContextVar
 from typing import Any
+from uuid import UUID
 from zoneinfo import ZoneInfo
 from pydantic import JsonValue
 from app.core import data_api
@@ -18,10 +20,11 @@ from app.core.config import settings
 from app.core.observability import span
 from app.schemas.contracts import RequestContext,ToolView
 from app.schemas.knowledge import KnowledgeQuery
+from app.schemas.meeting_agents import MeetingAccess
 from app.schemas.relationship import SlotsQuery
 from app.services import customer_data,document_templates,external,kb,prechecks
 from app.services.agents import fraud_records,registry
-from app.services.authorization import PolicyDenied,require_tool
+from app.services.authorization import PolicyDenied,require_permission,require_tool
 from app.services.rm import records as rm_records
 
 SGT=ZoneInfo('Asia/Singapore')
@@ -102,6 +105,14 @@ async def my_loans() -> dict[str,Any]:
     """The signed-in customer's own loans and next payments."""
     result=await customer_data.get_loans(_ctx())
     return {'items':result.data,'call_id':str(result.call_id)}
+
+
+async def my_portfolio() -> dict[str,Any]:
+    """The signed-in customer's own investment portfolio (0116), one row per holding; her time deposit is a cash holding."""
+    result=await customer_data.get_portfolio(_ctx())
+    p=result.data
+    items=[{**h,'mandate':p['mandate'],'as_of':p['as_of'],'portfolio_total':p['total_value']} for h in p['holdings']] if p else []
+    return {'items':items,'call_id':str(result.call_id)}
 
 
 async def travel_flags() -> dict[str,Any]:
@@ -246,7 +257,7 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
-    'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'travel_flags':travel_flags,
+    'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'my_portfolio':my_portfolio,'travel_flags':travel_flags,
     'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
     **external.TOOLS,  # public data, codes only; an agent may call those named in its spec's `external`
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
@@ -299,6 +310,20 @@ def shaped(result: dict[str,Any],view: ToolView) -> dict[str,Any]:
         if view.max_rows and isinstance(records,list):records=records[:view.max_rows]
         out[key]=project(records,view.fields) if view.fields is not None else records
     return out
+
+
+@contextmanager
+def meeting_call(name: str,meeting: UUID | None,ctx: MeetingAccess) -> Iterator[dict[str,str|bool]]:
+    """Gate a code-selected meeting connector with the shared policy and metadata-only tool tracing."""
+    tool = name if name in registry.MEETING_TOOLS else 'unregistered_tool'
+    with span('meeting.tool_call','tool',tool=tool,agent=ctx.agent,side='meeting',transport='direct') as facts:
+        try:
+            require_permission(ctx.principal,name,{'meeting_id':str(meeting)} if meeting is not None else None,ctx)
+        except PolicyDenied as error:
+            facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1])
+            raise
+        facts['allowed']=True
+        yield facts
 
 
 async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:

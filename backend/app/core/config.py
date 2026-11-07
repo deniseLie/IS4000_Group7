@@ -30,8 +30,13 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
     meetings_enabled: bool = False  # meeting lifecycle (services/meetings, 0105); explicit opt-in for the hybrid meeting lifecycle
+    meeting_model_token_budget: int = 200000
     zoom_oauth_directory: Path | None = None
+    zoom_capture_enabled: bool = False
+    zoom_webhook_secret: SecretStr | None = Field(default=None,repr=False)
+    zoom_ingress_database_url: SecretStr | None = Field(default=None,repr=False)
     meetings_database_url: SecretStr | None = Field(default=None,repr=False)
+    meetings_checkpoint_signing_key: SecretStr | None = Field(default=None,min_length=43,repr=False)
     run_meeting_worker_in_api: bool = False
     meeting_import_max_bytes: int = Field(default=2200000,ge=65536,le=8000000)
     document_precheck_signing_key: SecretStr | None = Field(default=None,repr=False)
@@ -43,9 +48,7 @@ class Settings(BaseSettings):
     document_ocr_mean_confidence: float=Field(default=90,ge=0,le=100)
     worker_database_url: SecretStr | None = Field(default=None,repr=False)
     cors_origins: list[str] = ["http://localhost:5173"]
-
-    prompt_version: str = "v3"
-    prompt_versions: dict[str, str] = {'planner':'v5','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
+    # Prompt versions are not settings: services/prompts.VERSIONS is the one table.
 
     # LLM Gateway limits (services/llm_gateway.py)
     llm_timeout_s: float = 30
@@ -59,6 +62,10 @@ class Settings(BaseSettings):
     # Talking points (0108, lane 1): the classifier's model; unset uses the agent model (LLM_MODEL), so a small or
     # self-hosted model can be chosen. Same provider, key and base URL.
     talking_points_model: str | None = None  # an empty value also means LLM_MODEL
+    # Meeting agents (Brief Writer, Minutes Writer, Proposal Drafter) send strict nested JSON schemas ($defs, anyOf,
+    # const, null). Some providers reject those; set a model that supports them (e.g. openai/gpt-4.1-mini on
+    # OpenRouter). Unset or empty uses LLM_MODEL. Same provider, key and base URL.
+    meeting_model: str | None = None
 
     # API Gateway Layer (core/gateway.py)
     jwt_audience: str = "authenticated"

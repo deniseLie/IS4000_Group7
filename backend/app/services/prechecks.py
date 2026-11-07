@@ -1,4 +1,5 @@
-"""Signed, durable notice-grounded preliminary document checks; no raw extracted values leave memory."""
+"""Signed, durable preliminary document checks: fixed template rules by default (PRECHECK_MODE=template, document_templates),
+notice-grounded otherwise (notice_checks); no raw extracted values leave memory."""
 import hashlib
 import hmac
 from datetime import datetime,timezone,timedelta

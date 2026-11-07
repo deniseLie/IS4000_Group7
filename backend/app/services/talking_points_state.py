@@ -10,7 +10,7 @@ change whose quote has no topic word counts only for an active topic. On hold ne
 on hold silently hides a lead from her RM, so wording the pattern misses leaves the point as it is.
 
 `apply` is the SQL's rules as a pure function on an in-memory state, for the evaluation and the unit tests. Which version
-runs is talking_points.PROMPT (`version`); v1 stays in services/talking_points.py."""
+runs is prompts.VERSIONS['talking_points'] (`version`); v1 stays in services/talking_points.py."""
 import json
 import re
 from collections import Counter
@@ -48,8 +48,8 @@ SCHEMA={'title':'talking_point_changes','description':'Changes her latest messag
 
 
 def version() -> str:
-    """The lane 1 prompt in use (talking_points.PROMPT): "v2" switches lane 1 to this module."""
-    return tp.PROMPT
+    """The lane 1 prompt in use (prompts.VERSIONS, the one table): "v2" switches lane 1 to this module."""
+    return prompts.VERSIONS['talking_points']
 
 
 def gate(message: str,risk: RiskAssessment,offer_reply: bool=False,active: list[str]|tuple=()) -> str | None:

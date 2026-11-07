@@ -1,4 +1,5 @@
-// Workflow 3 (David): in-chat relationship steps. Pure helpers are unit-tested; every change still goes through the Action Service.
+// RM introduction, chat intent routing and meeting formats (Chat.jsx, Meetings.jsx). The other helpers are left from the
+// removed Workflow 3 pages; every change still goes through the Action Service.
 import {confirmAction,createActionCase,proposeAction,rejectAction} from './actions.js';
 import {loadConsentRecords} from './consent.js';
 import {formatDate} from './format.js';

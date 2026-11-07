@@ -42,6 +42,14 @@ function loan(value) {
     principal:number(value?.principal),outstanding:number(value?.outstanding),next_amount:number(value?.next_amount),
     next_payment:nullable(value?.next_payment,day),status:choice(value?.status,['active','paid_off'])};
 }
+// 0116: her advised or managed portfolio by holding, or null when she has none.
+function portfolio(value) {
+  if(value===null)return null;
+  return {mandate:choice(value?.mandate,['advised','managed']),currency:match(value?.currency,/^[A-Z]{3}$/),as_of:day(value?.as_of),total_value:number(value?.total_value),
+    holdings:rows(value?.holdings,holding=>({holding_id:match(holding?.holding_id,/^holding_[1-9][0-9]{0,17}$/),
+      asset_class:choice(holding?.asset_class,['cash','bonds','equities','funds','alternatives']),description:text(holding?.description),
+      currency:match(holding?.currency,/^[A-Z]{3}$/),market_value:number(holding?.market_value)}),'holding_id')};
+}
 function transaction(value) {
   const result={txn_id:match(value?.txn_id,/^txn_[1-9][0-9]{0,17}$/),date:day(value?.date),description:text(value?.description),
     amount:number(value?.amount),currency:match(value?.currency,/^[A-Z]{3}$/),status:choice(value?.status,['posted','pending','failed']),
@@ -87,7 +95,7 @@ async function body(response) {
   return value;
 }
 const RESOURCES={profile,accounts:value=>rows(value,account,'account_id'),cards:value=>rows(value,card,'card_id'),
-  loans:value=>rows(value,loan,'loan_id'),compliance:review,advisor,documents:value=>rows(value,documentRecord,'document_id')};
+  loans:value=>rows(value,loan,'loan_id'),portfolio,compliance:review,advisor,documents:value=>rows(value,documentRecord,'document_id')};
 // Pages read only the sections they show; each section stays a separate audited read.
 export async function loadSections(token,paths,signal) {
   const headers={Authorization:`Bearer ${token}`};

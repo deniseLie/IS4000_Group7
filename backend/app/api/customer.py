@@ -67,6 +67,11 @@ async def loans(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolRe
     return await read_result(lambda:customer_data.get_loans(ctx),request,ctx,'customer.get_loans')
 
 
+@router.get('/portfolio',response_model=ToolResult)
+async def portfolio(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
+    return await read_result(lambda:customer_data.get_portfolio(ctx),request,ctx,'customer.get_portfolio')
+
+
 @router.get('/compliance',response_model=ToolResult)
 async def compliance(request: Request,ctx: RequestContext=Depends(get_ctx)) -> ToolResult:
     return await read_result(lambda:customer_data.get_compliance_case(ctx),request,ctx,'compliance.get_case')

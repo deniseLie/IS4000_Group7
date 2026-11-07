@@ -87,8 +87,8 @@ Today the per-agent and per-prompt facts sit only in the child spans. Fetching e
 | `core/observability.Trace` | `agents: list[dict]`: one entry per agent run with `{agent, intent, path, status, outcome, ms, tool_calls}` | `runner.run_agent` and `rm/graph.agent` append to it in their `finally` |
 | `api/chat.py` root `chat` run | `agents`, `agent_status`, `plan_route`, `tasks`, `model_calls`, `tokens`, `prompt_ids` (distinct `llm` prompt ids), `model`, `first_section_ms`, `app_version` | `trace.llm_calls`, `trace.agents`, the planner span attrs, time of the first `section` event; `APP_VERSION` env (git sha) |
 | `api/rm.py` root `rm_assistant` run | The same summary, plus `outcome`, `route` and `error_type`. Today it carries only `request_id`/`session_id`. | same |
-| `services/prompts.py` | `in_use()`: `{family: version}` for **every** prompt actually configured. This covers planner, runner agents (`runner.PROMPTS`), `runner_common`, the v4 domain prompts, `rm_planner`, `rm_assistant`, `answer` and the judge. | settings and the runner constants |
-| `evaluation/langsmith_run.py` experiment metadata | `prompts_in_use` (from `in_use()`; `settings.prompt_versions` alone misses the v5 runner prompts), `dataset_tag` (`sha-…`), `case_count`, `case_ids_hash`, `partial` (when `--case` was used), `app_version` | the runner |
+| `services/prompts.py` | `in_use()`: `{family: version}` for **every** prompt actually configured: the `VERSIONS` table (planner, runner agents, `runner_common`, the v4 domain prompts, `rm_planner`, `rm_assistant`, `answer`, …) plus the meeting side's own pins. | `prompts.VERSIONS` and the meeting modules |
+| `evaluation/langsmith_run.py` experiment metadata | `prompts_in_use` (from `in_use()`: every agent's pinned version), `dataset_tag` (`sha-…`), `case_count`, `case_ids_hash`, `partial` (when `--case` was used), `app_version` | the runner |
 | `evaluation/targets.py` outputs | `prompt_ids` that ran in each case | the span sink it already reads |
 
 Older runs do not have these fields. The dashboard shows "not recorded" for them, never zero.

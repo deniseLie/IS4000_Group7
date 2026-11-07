@@ -209,7 +209,7 @@ def test_the_share_question_says_exactly_what_her_rm_would_see(monkeypatch: pyte
     assert (proposal.agent,proposal.type,proposal.task_id,proposal.target)==('relationship','insight.share','share',
         {'topic':'home_loan','stage':'planning','timeframe':'within_12m'})
     assert proposal.summary=='Let Sophie know you’re looking at home loans'
-    assert 'Sophie would see only: “Home loan · planning · within 12 months · shared by the client”, never your messages.' in question
+    assert 'Sophie would see only: “Property financing · planning · within 12 months · shared by the client”, never your messages.' in question
     assert 'Nothing is shared until you say yes' in question and text not in question
     assert asyncio.run(tp.share_offer(text,risk(text).model_copy(update={'care':True}),ctx())) is None
     assert asyncio.run(tp.share_offer(text,risk(text),ctx('guest'))) is None
@@ -254,7 +254,7 @@ def test_compose_offers_one_share_when_the_reply_has_no_other_offer(composed) ->
     [proposal]=composed.saved
     assert (proposal.agent,proposal.type,proposal.target['topic'])==('relationship','insight.share','home_loan')
     assert [o.type for o in reply.offer.offers]==['insight.share']
-    assert reply.answer.startswith('Home loans are explained in the guide.') and 'Sophie would see only: “Home loan · planning' in reply.answer
+    assert reply.answer.startswith('Home loans are explained in the guide.') and 'Sophie would see only: “Property financing · planning' in reply.answer
     assert [s.task_id for s in reply.sections]==['t1','share'] and not reply.sections[-1].needs_human
 
 
@@ -285,7 +285,7 @@ def test_insight_actions_are_typed_on_the_ledger() -> None:
         {'point_id':point_id,'topic':'home_loan','stage':'planning','timeframe':'within_12m','origin':'confirmed','notified':True}))
     assert isinstance(shared.receipt.result,InsightShareResult)
     assert asyncio.run(orchestrator.outcome_text(shared,ctx()))==orchestrator.SHARED.format(
-        line='Home loan · planning · within 12 months · shared by the client')
+        line='Property financing · planning · within 12 months · shared by the client')
     deleted=ActionOutcome.model_validate(outcome('insight.delete',{'point_id':point_id,'topic':'home_loan'},
         {'point_id':point_id,'topic':'home_loan','status':'deleted'}))
     assert deleted.receipt.result.status=='deleted'

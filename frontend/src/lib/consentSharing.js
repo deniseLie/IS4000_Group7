@@ -227,7 +227,7 @@ export function askLine(ask,format) {
   return `${who} asked to see your ${ask.category_label.toLowerCase()} ${why}.`;
 }
 
-// Ledger records in Activity: a v2 grant (no request_id), and her answer to an ask.
+// Ledger records on the Actions page: a v2 grant (no request_id), and her answer to an ask.
 export function parseGrantV2Target(value) {
   if(!value||!SWITCHABLE.includes(value.category)||!Object.hasOwn(UNTIL,value.until)||value.purpose!=='rm_brief')throw invalid();
   return {category:value.category,recipient:id(value.recipient),scope:parseScope(value.category,value.scope),notice_version:notice(value.notice_version),until:value.until,

@@ -1,9 +1,9 @@
 """Run the DemoBank tools as an MCP server over stdio (F21), for an external MCP client such as the MCP Inspector.
 
-  python -m scripts.mcp_server                       # guest: knowledge_search and request_categories only
-  DEMOBANK_ACCESS_TOKEN=<customer JWT> python -m scripts.mcp_server   # also my_tickets, my_cards, my_transactions
+  python -m scripts.mcp_server                       # guest: the public tools (knowledge, request types, document templates, holidays, FX)
+  DEMOBANK_ACCESS_TOKEN=<customer JWT> python -m scripts.mcp_server   # customer: also every my_* tool
 
-Needs SUPABASE_URL and SUPABASE_ANON_KEY (root .env) and the optional `mcp` package. The token is a normal
+Needs SUPABASE_URL and SUPABASE_ANON_KEY (root .env). The token is a normal
 signed-in customer's Supabase access token; it is verified exactly like the API gateway does, RLS applies and
 each tool call writes its own audit batch. Nothing here can change banking records.
 """

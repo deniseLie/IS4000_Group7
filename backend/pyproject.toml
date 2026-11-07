@@ -24,6 +24,8 @@ dependencies = [
     "PyJWT[crypto]==2.15.1",
     "psycopg[binary]==3.3.6",
     "pypdf==6.21.1",
+    "reportlab==5.1.0",
+    "filelock>=4.2.9,<5",
     "defusedxml==0.7.1",
     "psutil==7.2.2",
     "Pillow==13.0.0",
@@ -32,6 +34,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+fontbuild = ["fonttools>=4.60,<5"]
 dbtest = ["pgserver==0.1.4"]
 mcp = []  # kept so existing `pip install ./backend[mcp]` commands still work; mcp is now a core dependency
 
@@ -39,8 +42,8 @@ mcp = []  # kept so existing `pip install ./backend[mcp]` commands still work; m
 include = ["app*", "evaluation*", "scripts*"]
 
 [tool.setuptools.package-data]
-app = ["prompts/*/v*/*.md"]
-evaluation = ["*cases.json", "judge/v*.md"]
+app = ["prompts/*/v*/*.md", "assets/fonts/*.ttf", "assets/fonts/OFL.txt"]
+evaluation = ["*cases.json", "judge/v*.md", "judge/meeting-*.md"]
 scripts = ["*.swift"]
 
 [tool.pytest.ini_options]

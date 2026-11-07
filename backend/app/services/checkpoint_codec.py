@@ -17,12 +17,14 @@ from app.schemas.contracts import AgentResult,RiskAssessment,Task,TaskPlan
 from app.schemas.events import AnswerEvent,AnswerSection,Source
 from app.schemas.fraud import DisputeProposal,FraudProposal
 from app.schemas.workflows import PendingReview,ResponseMeta
+from app.schemas.meeting_reviews import LifecycleState
+from app.schemas.meetings import MeetingStatus
 from app.services.privacy import redact
 
 MODELS: dict[str,type[BaseModel]]={model.__name__:model for model in (
     ChatRequest,Message,RiskAssessment,Task,TaskPlan,AgentResult,Evidence,PlannedIssue,AnswerEvent,AnswerSection,Source,
-    FraudProposal,DisputeProposal,PendingReview,ResponseMeta)}
-PRIVATE_KEYS={'jwt','authorization','api_key','guest_token','service_role_key','checkpoint_signing_key'}
+    FraudProposal,DisputeProposal,PendingReview,ResponseMeta,LifecycleState,MeetingStatus)}
+PRIVATE_KEYS={'jwt','authorization','api_key','guest_token','service_role_key','checkpoint_signing_key','meetings_checkpoint_signing_key'}
 TOKEN=re.compile(r'\b(?:eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]+|sk-or-v1-[A-Za-z0-9_-]+)\b')
 UUID_TEXT=re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
 MAX_BYTES=524288
@@ -33,7 +35,7 @@ class CheckpointIntegrityError(ValueError):
 
 
 def check_text(value: str) -> str:
-    private=[os.environ.get(name,'') for name in ('LLM_API_KEY','SUPABASE_SERVICE_ROLE_KEY','CHECKPOINT_SIGNING_KEY')]
+    private=[os.environ.get(name,'') for name in ('LLM_API_KEY','SUPABASE_SERVICE_ROLE_KEY','CHECKPOINT_SIGNING_KEY','MEETINGS_CHECKPOINT_SIGNING_KEY')]
     if TOKEN.search(value) or any(len(key)>=12 and key in value for key in private):
         raise CheckpointIntegrityError('Checkpoint state contains a credential; keep authentication outside saved state')
     # Canonical UUID identifiers can contain digit/hyphen runs that resemble card numbers.

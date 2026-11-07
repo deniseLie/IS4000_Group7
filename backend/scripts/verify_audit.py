@@ -1,5 +1,6 @@
-"""Audit chain check (system-architecture.md §6, F3, migration 0005). Calls public.audit_verify_chain, compares the result
-with the anchor recorded last time (docs/evaluation/evidence/audit-anchor.json, kept in git so it lives outside the database),
+"""Audit chain check (docs/architecture.md §6, F3, migration 0005). Calls public.audit_verify_chain, compares the result
+with the anchor recorded last time (docs/evaluation/evidence/audit-anchor.json, written by the first --record and meant to be kept in git, outside the database;
+not committed yet),
 and with --record saves the current head as the new anchor. Prints counts and hashes only.
 
 Needs SUPABASE_URL, SUPABASE_ANON_KEY and a login file: JSON {"email","password"} or a list of them (first is used),

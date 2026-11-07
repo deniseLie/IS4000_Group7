@@ -310,9 +310,21 @@ def test_agent_and_latency_routes(monkeypatch):
     monkeypatch.setattr(quality,'requests',lambda source,days:[req(1,trace='t1')])
     monkeypatch.setattr(quality,'steps',lambda source,days:[step('agent','t1',agent='guide',intent='faq',path='reads',status='ok')])
     monkeypatch.setattr(quality,'experiment_runs',lambda:[])
+    monkeypatch.setattr(quality,'meeting_steps',lambda days:[
+        step('agent','m1',agent='minutes_writer',intent='draft_minutes',path='workflow',side='meeting',status='ok'),
+        step('tool_call','m1',tool='meeting_job_context',agent='minutes_writer',allowed=False,reason='meeting_claim_or_consent_changed',side='meeting'),
+    ])
     body=client.get('/admin/agents?window=7d&source=live',headers=ADMIN).json()
     assert body['agents'][0]['agent']=='guide' and body['agents'][0]['prompt']=='guide' and body['source']=='live' and not body['capped']
-    assert client.get('/admin/agents?side=rm',headers=ADMIN).json()['agents']==[] and client.get('/admin/agents?side=staff',headers=ADMIN).status_code==422
+    writer=body['agents'][1]
+    assert (writer['agent'],writer['side'],writer['runs'],writer['tool_refusals'],writer['share'])==('minutes_writer','meeting',1,1,None)
+    meeting_agents={row['agent']:row for row in body['meeting_catalogue']}
+    assert len(meeting_agents)==4 and not meeting_agents['minutes_overview']['tools']
+    assert any(tool['actor']=='claimed_worker' for tool in meeting_agents['minutes_writer']['tools'])
+    assert any(tool['tool']=='meeting_job_context' for tool in body['tools'])
+    rm=client.get('/admin/agents?side=rm',headers=ADMIN).json()
+    assert rm['agents']==[] and rm['meeting_catalogue']==[] and rm['tools']==[]
+    assert client.get('/admin/agents?side=staff',headers=ADMIN).status_code==422
     assert client.get('/admin/failures?side=client',headers=ADMIN).json()['side']=='client'
     body=client.get('/admin/latency?window=24h',headers=ADMIN).json()
     assert body['surfaces']['all']['n']==1 and body['window_days']==1 and body['source']=='all'

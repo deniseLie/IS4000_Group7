@@ -129,7 +129,7 @@ def test_external_source_host_constraints(database: 'Connection[SqlRow]', url: s
 
 
 @pytest.mark.parametrize('query,expected',[('wats the monthly fee for a savings acc?','savings-fees'),
- ('i got locked out of the app on my phone','app-login-recovery'),('can i get a car loan','car-loans'),
+ ('i got locked out of the app on my phone','app-login-recovery'),('can i get a car loan','loans'),
  ('theres a $2400 charge i dont recognise','unrecognised-charge')])
 def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', query: str, expected: str) -> None:
     database.execute('set local role anon')
@@ -138,14 +138,20 @@ def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', que
 
 
 @pytest.mark.parametrize('query,expected',[('can i get a home loan','home-loans'),('refinance my mortgage','home-loans'),
- ('how do i apply for a personal loan','personal-loans'),('which loans do you offer','loans')])
+ ('buying a condo financing','home-loans'),('documents needed for a mortgage','home-loans'),('which loans do you offer','loans'),
+ ('how do i apply for a personal loan','loans'),('borrow against my investments','lombard-financing'),
+ ('what happens if my portfolio falls lombard','lombard-financing')])
 def test_loan_guidance_is_searchable(database: 'Connection[SqlRow]', query: str, expected: str) -> None:
-    # CR16: home and personal loans (0086) join car loans; the general article v2 (0087) replaces v1, which stays citable.
+    # 0115: private-client financing (property financing v2, Lombard) replaces personal and car loans; earlier versions stay citable.
     database.execute('set local role anon')
     rows=search(database,query,[],4)
     assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
-    assert database.execute("select version from kb.articles where article_id='loans' and status='published'").fetchall()==[(2,)]
-    assert database.execute("select article_id from public.kb_get_section('loans',1,'main')").fetchall()==[('loans',)]
+    assert database.execute("select article_id,version from kb.articles where article_id in ('loans','home-loans','lombard-financing') and status='published' order by 1").fetchall()==[
+        ('home-loans',2),('loans',3),('lombard-financing',1)]
+    assert database.execute("select article_id from kb.articles where article_id in ('personal-loans','car-loans') and status='published'").fetchall()==[]
+    for article,version in [('loans',1),('loans',2),('car-loans',1),('personal-loans',1)]:
+        assert database.execute("select article_id from public.kb_get_section(%s,%s,'main')" if article!='car-loans' else
+            "select article_id from public.kb_get_section(%s,%s,'products')",(article,version)).fetchall()==[(article,)]
 
 
 def test_revised_guidance_publishes_v2_and_keeps_v1_citations(database: 'Connection[SqlRow]') -> None:

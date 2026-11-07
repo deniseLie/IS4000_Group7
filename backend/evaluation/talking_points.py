@@ -3,7 +3,7 @@ on hand-labelled messages, and the final state of hand-labelled conversations.
 
 Offline (default): python -m evaluation.talking_points   (code only: care, the pre-filter and lane 2's rule; no model calls)
 Live (opt-in):     python -m evaluation.talking_points --live --output talking-points-results.json
-Version:           --version v1|v2 (default: talking_points.PROMPT, the version in use)
+Version:           --version v1|v2 (default: prompts.VERSIONS['talking_points'], the version in use)
 Conversations:     python -m evaluation.talking_points --conversations [--live] [--version v1|v2]
 
 Each single-message case runs the steps `talking_points.after_reply` runs, without a database: the guardrail on her

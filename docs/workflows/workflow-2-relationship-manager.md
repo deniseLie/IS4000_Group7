@@ -1,6 +1,6 @@
 # Workflow 2 – Relationship manager (Sophie)
 
-**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
+**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Since then: meeting requests, the three-agent copilot, Today's ranking and talking points (build plan 2a–5b, `0106`–`0108`), consent v2 (`0109`–`0114`), and the meeting side's notes and follow-up (`0120`–`0124`, below). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
 
 ## Who she is
 
@@ -13,12 +13,14 @@ flowchart LR
   UI[RM workspace<br/>RmWorkspace.jsx] -->|/rm/*, JWT| API[api/rm.py<br/>app_metadata role=rm]
   UI -->|POST /rm/assistant SSE| AS[services/rm/graph.py<br/>v5 RM graph, phase 9]
   AS --> BC[Book check: rm_match_clients<br/>outside book = refused + audited, no model]
-  AS --> PL[Planner model<br/>rm_planner/v5: up to 5 tasks]
+  AS --> PL[Planner: rule plan or<br/>rm_planner/v5: up to 5 tasks]
   AS --> RS[Per agent: deterministic resolution<br/>client, ticket, meeting, note]
   RS --> AG[RM Client / Requests / Calendar<br/>handlers.py or the open loop, own spec's tools only]
   AG --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
   TL --> DB[(SQL: rm.current_advisor + rm.in_book<br/>audit every read and refusal)]
-  AG --> LLM[Answer model<br/>rm_assistant/v5 + task file]
+  AG --> BF[Client reports: record sections<br/>by code, brief_facts.py]
+  BF -->|section events| UI
+  AG --> LLM[Answer model<br/>rm_assistant/v6 + task file]
   LLM --> CK[Item-level checks<br/>services/rm/checks.py]
   CK --> UI
   UI -->|approve| W[Write RPCs: documentation, tasks,<br/>service requests, client messages, availability]
@@ -45,7 +47,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 | RM1 Sign-in and client book | Login → RM workspace; *My clients*; `rm_book`, `rm_match_clients` | Refused lookups audited; active client always shown |
 | RM2 360° overview | *My clients* → client; assistant "overview of …" | Sources and as-of on every block; gaps listed; client-stated vs AI labelled |
 | RM3 Meeting history | Assistant "summarise past meetings with …" | Previous RM's notes included, private ones withheld; asks which meeting when ambiguous |
-| RM4 Meeting briefing | *Schedule* → Prepare briefing; "Brief me for my 10am with David" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
+| RM4 Meeting briefing | *Schedule* → Prepare briefing; "Brief me for my meeting with Michelle" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
 | RM5 Interaction documentation | Paste notes in the assistant (or *Document a call* on a client) | Facts, decisions, commitments, requests separately; confirmed vs tentative; corrections by chat keep the source notes; saved only on approval |
 | RM6 Service requests | Documentation → *Review request form* | Prefilled from notes, missing fields and open duplicates checked in SQL, verification tick, reference after creation |
 | RM7 Ticket inbox | *Ticket inbox*; "What needs my attention today?" | *My tickets* (draft a reply, summarise, details) vs *Specialist tickets* (status only: no summarise or reply, the owning team deals with the client); "Received 26 hours ago", "Due …" / "Overdue · was due …"; priority filter |
@@ -73,6 +75,14 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Prioritise with assistant** (`priorities`) uses the same score: *Do first*, *Coming up* (ranked items, then later follow-ups and recorded commitments) and *Specialist-managed*.
 - Spans carry only codes and counts (`scored`, `scored_kinds`, `factors`, `top_score`, `feeds`). QA1 R24–R27 (`docs/evaluation/test-cases.md`) cover Plan my day, accepting a client's time, blocking Friday afternoon and the prioritised list.
 
+## Client reports and streaming (RM answer speed, 6 Nov, rm_assistant v6)
+
+- **Code writes the records, the model the judgement.** The meeting brief, client overview, handover brief and meeting history are built from the records by `services/rm/brief_facts.py` (each item cites its record; lists stop at 5 and count the rest). The model gets a bounded extract (latest note, first 3 open tickets, no account numbers) and writes only the summary and the points: conversation starters, discussion points and questions for a brief, points worth raising for an overview, introductory topics and outdated records for a handover, gaps for a history. `checks.check_sections` checks them against the extract.
+- **A question is not a report.** "When is her review due?" is answered from the full records; a button, report wording without a question mark, or just her name asks for the report (`handlers.wants_report`).
+- **Rule plans.** "Brief me on Michelle", "overview of David", *plan my day*, or a brief then follow-ups from the latest note are planned without the planner model when the words taken as the client are only her book name (`graph.rule_plan`).
+- **Streaming.** `POST /rm/assistant` sends `section` events between `status` and `answer`: the record sections once read, then the checked points. The assistant and Clients pages show them in the pending reply (`lib/rm.js` `partialReply`). Not yet checked live in the browser.
+- Plan, slices and live results: [rm-answer-speed.md](../planning/rm-answer-speed.md), [evaluation §9](../evaluation/README.md#9-rm-answer-speed-6-nov-2026-rm_assistantv6) (R22 from a failed 139 s run to a 48 s pass at the default limits).
+
 ## Topics from her clients' chats (build plan phase 4, 0108)
 
 - **What she gets**: topic lines only, for example *Home loan · planning · within 12 months*. Each is labelled *Inferred from chat* (AI suggestion) or *Shared by the client*. She never sees the client's words, and no RM role or `rm_*` function can read the quotes table.
@@ -87,6 +97,10 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - The client sees every read of her shared data in an access log built from the audit trail (ids, codes and dates only).
 - A client's *Delete all my data* opens a `data_deletion` ticket for the data protection team (10 business days); it is not routed to the RM.
 
+## Meeting notes and follow-up (meeting side, 0120–0124)
+
+With `MEETINGS_ENABLED=true`, Schedule → Appointments lets the RM propose a time for the client to accept, then open its meeting workspace. The calendar loads the same 40-day horizon as the proposal slots; availability and working-hour controls retain their 14-day view. Briefing, the RM assistant and the meeting workspace use one canonical Brief Writer version with current-source checks and exact approval. The Minutes Writer drafts from imported transcript evidence or RM recollections; minutes, selected follow-ups and client recap sharing require separate approvals. [Architecture §15](../architecture.md#15-meeting-lifecycle-seam-rm-copilot-target-hybrid-slice-implemented) describes the agent boundaries, consent, durable graph, Zoom API intake and operating limits.
+
 ## Layout (Nov 2026 redesign)
 
 - **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.
@@ -99,6 +113,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 - **Client-stated preferences** tied to their notes; **maturities and reviews** (Michelle's fixed deposit ****4410, Mei Ling's ****9051, Grace's check-in, Hafiz's account review, David's annual review).
 - **Appointments** relative to the day 0090 is applied: next Tuesday 10:00 David (local only), next Wednesday 14:30 Michelle (video), next Thursday 11:00 Grace (phone, no purpose recorded), the Monday after next 16:00 Hafiz, and a **held** (unconfirmed) Friday slot for Grace.
 - **Tasks**: "Send Michelle fixed deposit options" (due in 5 days) and an **overdue** task for Hafiz's fee review.
+- Since `0093`, Grace, Hafiz and David belong to Priya: their meetings with Sophie are cancelled and her open tasks for them closed, so Sophie's book is Michelle and Mei Ling.
 - **Mei Ling** (1007): request to Rachel with a bank update, a chat question about a renewal rate that the assistant handed to the RM, a consented handover note, and two notes whose consent expired or was revoked.
 
 ## Demo script (about 10 minutes)
@@ -135,7 +150,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 8. **Overview**: My clients → Michelle → *Ask for an overview*. The overview shows transaction insights and her topics (home loan, confirmed), and every line is cited.
 9. **Brief** (needs 5a): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available.
 10. **Reply**: Ticket inbox → one of Michelle's requests → *Draft a reply* → edit → tick → *Approve and send*.
-11. **Consent change**: as Michelle, open Data sharing → *What Sophie sees* and withdraw the grant. Once batches `36`–`40` (consent v2) are on hosted, she switches off the transaction insights and chat topics cards instead.
+11. **Consent change**: as Michelle, open Data sharing and switch off the transaction insights and chat topics cards (consent v2; batches `36`–`40` are on hosted since 5 Nov).
 12. **The gap**: as Sophie, open Michelle's overview again.
     - Transaction insights and chat topics are listed as not shared.
     - Inferred topics are deleted; the topic she shared herself stays.
@@ -162,7 +177,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 
 ## Known limits
 
-- Audio recordings and speech recognition (RM5 stretch) are not built; notes are typed or pasted.
+- Audio recordings and speech recognition (RM5 stretch) are not built; notes are typed or pasted, or a Zoom text transcript is imported on the meeting side.
 - Checks are conservative format checks (figures, dates, references, wording), not proof that each sentence is true.
 - RM MFA (aal2) is not required in the demo; the support role keeps its aal2 requirement.
-- The live model has not been run against R01–R10 from this environment; run `qa1_rm_cases.json` on the hosted project and record the results.
+- QA1 RM last ran on the hosted project on 5 Nov (16 of 17; R24–R27 pass); re-run `qa1_rm_cases.json` after changes and record the results.

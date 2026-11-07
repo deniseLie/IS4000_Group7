@@ -10,7 +10,7 @@ from pydantic import Field,JsonValue,TypeAdapter
 from app.core import data_api
 from app.core.observability import span
 from app.schemas.contracts import RequestContext,ToolResult
-from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,CustomerEnvelope,CustomerLoan,
+from app.schemas.customer_data import (BankAccount,ComplianceCase,CreditCard,CustomerEnvelope,CustomerLoan,CustomerPortfolio,
     CustomerProfile,CustomerTransaction,RelationshipAssignment,TransactionQuery)
 from app.schemas.relationship import AvailableSlot,RelationshipRequest,SlotsQuery
 from app.schemas.appointments import AppointmentRecord
@@ -31,6 +31,7 @@ PROFILE=TypeAdapter(CustomerEnvelope[CustomerProfile])
 ACCOUNTS=TypeAdapter(CustomerEnvelope[Annotated[list[BankAccount],Field(max_length=200)]])
 CARDS=TypeAdapter(CustomerEnvelope[Annotated[list[CreditCard],Field(max_length=200)]])
 LOANS=TypeAdapter(CustomerEnvelope[Annotated[list[CustomerLoan],Field(max_length=200)]])
+PORTFOLIO=TypeAdapter(CustomerEnvelope[CustomerPortfolio | None])
 TRANSACTIONS=TypeAdapter(CustomerEnvelope[Annotated[list[CustomerTransaction],Field(max_length=200)]])
 CASE=TypeAdapter(CustomerEnvelope[ComplianceCase | None])
 ASSIGNMENT=TypeAdapter(CustomerEnvelope[RelationshipAssignment | None])
@@ -103,6 +104,11 @@ async def get_credit_cards(ctx: RequestContext) -> ToolResult:
 
 async def get_loans(ctx: RequestContext) -> ToolResult:
     return _result(await _read('customer.get_loans','customer_read_loans',{},LOANS,ctx))
+
+
+async def get_portfolio(ctx: RequestContext) -> ToolResult:
+    """0116: her portfolio by holding (Overview), or None when she has none."""
+    return _result(await _read('customer.get_portfolio','customer_read_portfolio',{},PORTFOLIO,ctx))
 
 
 async def get_compliance_case(ctx: RequestContext) -> ToolResult:

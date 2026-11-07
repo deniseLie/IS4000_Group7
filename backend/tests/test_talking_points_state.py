@@ -127,7 +127,7 @@ def test_extract_applies_each_kept_change_through_the_sql_function(monkeypatch) 
 
 
 def test_after_reply_on_v2_reads_the_state_and_audits_counts_only(monkeypatch) -> None:
-    monkeypatch.setattr(v2.tp,'PROMPT','v2')
+    monkeypatch.setitem(prompts.VERSIONS,'talking_points','v2')
     seen=SimpleNamespace(sent=[],rpcs=[],events=[],state=state([HOME],active=['home_loan']))
     async def call(prompt,system,messages,schema,model=None,retries=None):
         seen.sent.append(json.loads(messages[0][1]))

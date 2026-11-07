@@ -1,4 +1,5 @@
-// CR12: an entry into a confirmation-first report workflow, never a claim that a report was filed.
+// CR12: an entry into urgent card help, never a claim that a report was filed. The patterns below match pre-2b reply
+// wording; since 2b a signed-in fraud reply carries its urgent RM request as an offer instead.
 // The action appears only for the newest authenticated fraud reply. Explicit confirmation
 // controls and recorded receipts have their own UI, so we must not offer duplicate actions.
 export function canStartFraudReport({message,signedIn,latest}) {

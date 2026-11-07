@@ -6,7 +6,7 @@ import {initials} from '../lib/format';
 function label(page) {return page.locked?`${page.label} (sign in required)`:page.badge>0?`${page.label}, ${page.badge} ${page.badgeLabel||'unread'}`:undefined;}
 function marker(page) {return page.locked?<span className="nav-lock"><Icon name="lock"/></span>:page.badge>0?<span className="nav-badge" aria-hidden="true">{page.badge}</span>:null;}
 
-// The profile at the bottom opens the account menu (records, data sharing, saved chats, Actions, sign out).
+// Client view: the profile at the bottom opens the account menu (records, data sharing, saved chats, Actions, sign out).
 export default function Sidebar({session,name,current,pages,menu,onSignOut,onSignIn,subtitle='Demo client · signed in'}) {
   // name is null while it loads: a placeholder holds its place instead of generic text that later changes
   const profile=<>{session&&name?<span className="session-avatar initials" aria-hidden="true">{initials(name)}</span>:<span className="session-avatar"><Icon name="user"/></span>}
@@ -25,7 +25,7 @@ export default function Sidebar({session,name,current,pages,menu,onSignOut,onSig
   </aside>;
 }
 
-// Narrow screens: the same pages as a bottom tab bar (Actions stays in the account menu there).
+// Narrow screens: the same pages as a bottom tab bar (Actions is a tab there; the account menu drops it).
 export function TabBar({current,pages}) {
   return <nav className="tab-bar" aria-label="Pages" style={pages.length!==5?{gridTemplateColumns:`repeat(${pages.length},minmax(0,1fr))`}:undefined}>{pages.map(page=><button key={page.view} data-testid={`tab-${page.view}`} aria-label={label(page)} aria-current={page.view===current?'page':undefined} onClick={page.onSelect}>
     <span className="tab-icon"><Icon name={page.icon}/>{marker(page)}</span><span>{page.short}</span></button>)}</nav>;

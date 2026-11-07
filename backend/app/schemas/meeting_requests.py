@@ -10,7 +10,7 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StringConstraints,
 
 MeetingTopic=Literal['home_loan','investments','fixed_deposit','insurance','term_sheet','compliance_review','account_review',
     'card_review','other']  # = rm.meeting_topics() (0106)
-TOPIC_LABEL: dict[str,str]={'home_loan':'Home loan','investments':'Investments','fixed_deposit':'Fixed deposit','insurance':'Insurance',
+TOPIC_LABEL: dict[str,str]={'home_loan':'Property financing','investments':'Investments','fixed_deposit':'Time deposit','insurance':'Insurance',
     'term_sheet':'Loan terms (term sheet)','compliance_review':'Compliance review','account_review':'Account review',
     'card_review':'Card review','other':'Something else'}
 MeetingFormat=Literal['video','phone','in_person']

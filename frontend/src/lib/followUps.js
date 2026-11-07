@@ -24,7 +24,7 @@ const TOPICS=[
   {key:'limit',match:/\blimit\b/i,ask:[
     ['What documents do I need for a higher limit?',false],['What is the status of my request?',true],['When is my card payment due?',true]]},
   {key:'loans',match:/\b(?:loans?|mortgages?|borrow\w*|refinanc\w*|property|condo|hdb|house)\b/i,ask:[
-    ['Which loans does DemoBank offer?',false],['What do I need to apply for a home loan?',false],['What is the difference between a secured and unsecured loan?',false]]},
+    ['Which financing does DemoBank offer?',false],['How is property financing arranged?',false],['Can I borrow against my investments?',false]]},
   {key:'investments',match:/\b(?:invest\w*|unit trusts?|funds?|portfolio|stocks?|shares|bonds?|wealth|retirement)\b/i,ask:[
     ['What is a unit trust?',false],['What are the risks of investing?',false]]},
   {key:'cards',match:/\b(?:card|credit|minimum payment|interest|annual fee)\b/i,ask:[
@@ -45,7 +45,7 @@ export function topicOf(question,message) {
   return TOPICS.find(topic=>topic.match.test(message?.content||''))?.key||null;
 }
 
-// The fraud charge list (CR12) asks for a plain yes; offer it as a one-tap reply instead of other suggestions.
+// The fraud charge list (CR12; saved chats from before 2b only) asks for a plain yes; offer it as a one-tap reply instead of other suggestions.
 export const CONFIRM_REPORT='Yes, report it';
 export function followUps({question,message,signedIn,asked=[]}) {
   if(!message||message.role!=='assistant'||!message.content)return [];
@@ -53,7 +53,7 @@ export function followUps({question,message,signedIn,asked=[]}) {
   // A charge list to confirm keeps its button even when another part of the reply was withheld (CR12).
   if(signedIn&&message.content.includes(`“${CONFIRM_REPORT}”`))return [CONFIRM_REPORT];
   if(message.error||message.response_origin==='validation'||message.source_check==='rejected')return [];
-  // CR12: the lost-card offer asks before reporting.
+  // CR12: the lost-card offer asks before reporting (saved chats from before 2b only).
   if(signedIn&&message.content.includes('Reply “Yes, report my card”'))return ['Yes, report my card','No'];
   // CR8: a handover preview offers its choices as one tap each; nothing is sent until she picks one.
   if(signedIn&&message.content.includes('Here’s what I’d send to your relationship manager:')) {

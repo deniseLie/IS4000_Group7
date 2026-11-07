@@ -11,8 +11,9 @@ from pydantic import Field, JsonValue, model_validator
 from app.schemas.contracts import Contract
 
 MeetingStage = Literal['requested', 'scheduled', 'preparing', 'brief_review', 'brief_approved', 'awaiting_transcript',
-    'minutes_review', 'done', 'cancelled', 'failed']
-MeetingEventType = Literal['meeting.scheduled', 'meeting.rescheduled', 'meeting.cancelled', 'brief.requested', 'transcript.ready']  # = 0105 check
+    'minutes_review', 'following_up', 'done', 'cancelled', 'failed']
+MeetingEventType = Literal['meeting.scheduled', 'meeting.rescheduled', 'meeting.cancelled', 'brief.requested',
+    'meeting.started', 'meeting.ended', 'transcript.ready', 'transcript.fetch', 'transcript.discover', 'lifecycle.changed']
 ConsentCategory = Literal['transaction_insights', 'chat_topics', 'meeting_recording']  # = rm.consent_active (0105)
 BriefLabel = Literal['record', 'client_said', 'ai_suggestion', 'gap']
 ApprovalStep = Literal['brief', 'minutes']
@@ -42,7 +43,7 @@ ConcernTag = Literal['rates', 'fees', 'eligibility', 'timing', 'lock_in', 'down_
 TalkingKind = Literal['hdb_bto', 'hdb_resale', 'private_property', 'landed', 'refinance', 'etf', 'unit_trust', 'stocks', 'bonds', 'robo',
     'new_deposit', 'renewal', 'life', 'home', 'travel']
 TalkingOrigin = Literal['inferred', 'confirmed']  # inferred from chat, or shared by the client herself
-TOPIC_NAME = {'home_loan': 'Home loan', 'investments': 'Investments', 'fixed_deposit': 'Fixed deposit', 'insurance': 'Insurance'}
+TOPIC_NAME = {'home_loan': 'Property financing', 'investments': 'Investments', 'fixed_deposit': 'Time deposit', 'insurance': 'Insurance'}  # labels since 0117 (codes unchanged)
 KINDS = {'home_loan': ('hdb_bto', 'hdb_resale', 'private_property', 'landed', 'refinance'),
     'investments': ('etf', 'unit_trust', 'stocks', 'bonds', 'robo'), 'fixed_deposit': ('new_deposit', 'renewal'), 'insurance': ('life', 'home', 'travel')}
 KIND_TEXT = {'hdb_bto': 'HDB BTO', 'hdb_resale': 'HDB resale', 'private_property': 'private property', 'landed': 'landed', 'refinance': 'refinancing',
@@ -77,8 +78,8 @@ class TalkingPoint(Contract):
 
     def line(self) -> str:
         """The one rendering every reader uses (RM copilot, meeting brief, the client's Data sharing page):
-        'Home loan · planning · within 12 months · inferred from chat', with the kind after the stage when she named one
-        ('Home loan · planning · HDB resale · within 12 months · asks about rates, lock-in · inferred from chat')."""
+        'Property financing · planning · within 12 months · inferred from chat', with the kind after the stage when she
+        named one ('Property financing · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat')."""
         parts = [TOPIC_NAME[self.topic], self.stage]
         if self.kind is not None:
             parts.append(KIND_TEXT[self.kind])
@@ -100,12 +101,16 @@ class MeetingEvent(Contract):
     payload: dict[str, JsonValue] = Field(default_factory=dict)  # ids, codes and dates only (at most 4 KB in SQL)
     dedupe_key: str | None = Field(default=None, min_length=1, max_length=200)
     created_at: datetime | None = None
+    claim_token: UUID | None = None
+    attempts: int | None = Field(default=None,ge=1,le=5)
+    available_at: datetime | None = None
 
 
 class BriefItem(Contract):
     label: BriefLabel
     text: str = Field(min_length=1, max_length=1000)
     sources: list[Source] = Field(default_factory=list, max_length=10)
+    category: ConsentCategory | None = None
 
     @model_validator(mode='after')
     def cited(self):
@@ -154,7 +159,7 @@ class MinutesDraft(Contract):
     summary: str = Field(min_length=1, max_length=4000)
     decisions: list[str] = Field(default_factory=list, max_length=20)
     action_items: list[ActionItem] = Field(default_factory=list, max_length=20)
-    client_recap: str | None = Field(default=None, max_length=4000)  # sent only after the RM approves it
+    client_recap: str | None = Field(default=None, max_length=5000)  # sent only after the RM approves it
     withheld: int = Field(default=0, ge=0)
 
 
@@ -162,6 +167,12 @@ class Decision(Contract):
     """The RM's answer at an approval pause (brief or minutes)."""
     outcome: Literal['approve', 'changes', 'reject']
     note: str | None = Field(default=None, min_length=1, max_length=1000)
+    version: int | None = Field(default=None,ge=1)
+    revision: int | None = Field(default=None,ge=1)
+    content_hash: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
+    command_id: UUID | None = None
+    draft_id: UUID | None = None
+    consent_epoch: int | None = Field(default=None,ge=1)
 
     @model_validator(mode='after')
     def changes_say_what(self):

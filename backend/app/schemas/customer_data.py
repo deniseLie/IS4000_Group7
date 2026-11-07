@@ -65,6 +65,25 @@ class CustomerLoan(BaseModel):
     status: Literal['active','paid_off']
 
 
+class PortfolioHolding(BaseModel):
+    model_config=ConfigDict(extra='ignore')
+    holding_id: Annotated[str,StringConstraints(strict=True,pattern=r'^holding_[1-9][0-9]{0,17}$')]
+    asset_class: Literal['cash','bonds','equities','funds','alternatives']
+    description: Text
+    currency: Currency
+    market_value: Money
+
+
+class CustomerPortfolio(BaseModel):
+    """0116: her advised or managed portfolio by holding; lending values stay with the bank and her RM."""
+    model_config=ConfigDict(extra='ignore')
+    mandate: Literal['advised','managed']
+    currency: Currency
+    as_of: date
+    total_value: Money
+    holdings: Annotated[list[PortfolioHolding],Field(min_length=1,max_length=200)]
+
+
 class CustomerTransaction(BaseModel):
     model_config=ConfigDict(extra='ignore')
     txn_id: TransactionId

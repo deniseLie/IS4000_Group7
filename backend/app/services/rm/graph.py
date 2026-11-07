@@ -46,7 +46,6 @@ from app.services.rm import evidence as ev
 from app.services.rm import handlers,priority
 from app.services.rm.handlers import Say,Show,capability_refusal,clarify,refusal,today
 
-PLANNER_VERSION='v5'
 MAX_TASKS=5
 SEVERAL='Here are the parts of your request in order. Review each draft or proposal on its own: nothing goes to a client and nothing is saved or created until you approve it.'
 FEEDS={'today':('schedule','meeting_requests','reviews'),'priorities':('meeting_requests',)}  # intent -> the intents it ranks
@@ -88,7 +87,7 @@ def plan_schema() -> dict:
 
 
 async def model_plan(rt: RmRuntime,message: str) -> list[dict]:
-    pv=prompts.load('rm_planner',PLANNER_VERSION)
+    pv=prompts.current('rm_planner')
     rt.prompt_ids.append(pv['id'])
     c=rt.req.context
     name=lambda cid:next((x['name'] for x in rt.book if x['customer_id']==cid),None)
@@ -273,7 +272,7 @@ def status_of(reply: dict) -> str:
 
 async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> dict:
     rt,task=runtime.context,item['task']
-    spec=registry.SPECS[task.agent]
+    spec=registry.RM_SPECS[task.agent]
     e,inputs=task.entities,item.get('inputs') or {}
     turn=handlers.Turn(rt.req,rt.ctx.model_copy(update={'agent':spec.name}),rt.say,base=rt.ctx,book=rt.book,on_section=rt.show,task_id=task.id)
     turn.inputs,feed=inputs,bool(e.get('feed'))

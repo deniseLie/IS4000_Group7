@@ -43,7 +43,7 @@ def test_topics_retrieve_primary_sources(database,question,expected):
 @pytest.mark.parametrize('question,expected',[
  ('wats the monthly fee for a savings acc?','savings-fees'),
  ('i got locked out of the app on my phone','app-login-recovery'),
- ('can i get a car loan','car-loans'),
+ ('can i get a car loan','loans'),
  ('theres a $2400 charge i dont recognise','unrecognised-charge'),
 ])
 def test_workflow_one_questions_retrieve_demo_guidance(database,question,expected):
@@ -53,22 +53,24 @@ def test_workflow_one_questions_retrieve_demo_guidance(database,question,expecte
 
 @pytest.mark.parametrize('question,expected',[
  ('can i get a home loan','home-loans'),('what do i need to refinance my mortgage','home-loans'),
- ('how do i apply for a personal loan','personal-loans'),('can i borrow for a renovation with a cash loan','personal-loans'),
+ ('can i borrow against my investments','lombard-financing'),('what is a lombard loan','lombard-financing'),
+ ('how do i apply for a personal loan','loans'),('can i borrow for a renovation with a cash loan','loans'),
 ])
 def test_loan_questions_retrieve_their_product_guidance(database,question,expected):
-    # CR16 (0086): every DemoBank loan type has its own demo article; the bank decides and no terms are invented.
-    # Ranking floors are in test_retrieval_eval.py; here the article only has to reach the model.
+    # 0115: private-client financing (property financing, Lombard); personal and car loans are not offered. The bank
+    # decides and no terms are invented. Ranking floors are in test_retrieval_eval.py; here the article only has to reach the model.
     assert expected in found(database,question)
     text,url=article(database,expected)
     assert url is None and not answers.URL.search(text)
-    assert 'final decision' in text and 'not supplied in this demo' in text
-    assert set(re.findall(r'[0-9]+',text))<={'21'}
+    assert 'final decision' in text or 'Only the bank can decide' in text
+    if expected!='loans':assert 'not supplied in this demo' in text
+    assert set(re.findall(r'[0-9]+',text))<={'1','2','3','4'}
 
-def test_unclear_loan_question_names_the_loan_types_and_asks_which(database):
+def test_unclear_loan_question_names_the_financing_types_and_asks_which(database):
     assert 'loans' in found(database,'i want a loan')
     text,_=article(database,'loans')
-    assert all(kind in text for kind in ('home loans','personal loans','loans to buy a new or used car')) and 'ask which one' in text
-    assert 'cannot see loan applications' in text and 'relationship manager' in text
+    assert all(kind in text for kind in ('property financing','borrowing against your investments','does not offer personal loans or car loans'))
+    assert 'ask which one' in text and 'cannot see applications' in text and 'relationship manager' in text
 
 def test_part_b_guidance_has_no_invented_times_and_names_the_fraud_team(database):
     assert 'transfer-timing' in found(database,"my rent transfer still says pending, will it make it")

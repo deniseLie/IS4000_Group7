@@ -10,7 +10,7 @@ import {displayName,firstName,formatDate,formatDateTime,initials} from '../lib/f
 // Data sharing (redesign 8 Nov 2026): the top level answers one question, what her relationship manager can see, with
 // one row per category (a status and one line); each row opens its detail one tap down, where she switches it, changes
 // it and, for chat topics, sees each topic in plain words with Delete. Her words are never shown (0142). Every change is
-// one ledger action she confirms here; the receipt is in Activity.
+// one ledger action she confirms here; the receipt is in Actions.
 const ICONS={transaction_insights:'card',chat_topics:'chat',meeting_recording:'mic'};
 const cap=text=>text[0].toUpperCase()+text.slice(1);
 
@@ -59,7 +59,7 @@ export default function SharingPage({onReviewActions,initial=null}) {
   const status=<>
     {busy&&<p className="loading" role="status">{sharing?'Updating…':'Loading your data sharing…'}</p>}
     {error&&<p role="alert" className="sharing-alert" data-testid="sharing-error">{error}</p>}
-    {done&&<p role="status" className="sharing-done" data-testid="sharing-done">{done} <button type="button" className="sharing-link" onClick={onReviewActions}>See the receipt in Activity</button></p>}
+    {done&&<p role="status" className="sharing-done" data-testid="sharing-done">{done} <button type="button" className="sharing-link" onClick={onReviewActions}>See the receipt in Actions</button></p>}
   </>;
   const back=<button type="button" className="sharing-back" data-testid="sharing-back" onClick={()=>open('list')}><Icon name="chevron"/>Data sharing</button>;
   if(view!=='list') return <section className="app-page-body sharing-page page-enter" aria-label="Data sharing" data-testid="sharing-page" data-view={view} ref={top}>

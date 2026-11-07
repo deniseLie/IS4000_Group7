@@ -1,5 +1,5 @@
 // Admin dashboard (AI engineering view): LangSmith evaluations and traces, read through the backend (the LangSmith key
-// stays server-side). Only the page link depends on this check; the backend verifies the signed token on every call.
+// stays server-side). lib/roles.js isAdmin picks the workspace (App.jsx); the backend verifies the signed token on every call.
 const API=import.meta.env?.VITE_API_URL||'/api';
 export {ADMIN_ROLE,isAdmin} from './roles.js';
 

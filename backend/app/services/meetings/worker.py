@@ -1,7 +1,7 @@
 """Restricted meeting queue/retention runner. Start with python -m app.services.meetings.worker.
 
 MEETINGS_DATABASE_URL must name a non-owner LOGIN in demobank_meetings. No service key or RM JWT is accepted.
-Transcript jobs use the separate Minutes Writer graph. Unsupported pre-meeting events fail explicitly.
+The parent lifecycle graph routes events. Preparation requests wait for the assigned RM; the runner has no banking readers.
 """
 import asyncio
 import logging
@@ -12,30 +12,24 @@ from app.core.config import settings
 from app.schemas.meeting_lifecycle import Claim
 from app.services.llm_gateway import LLMError
 from app.services.meetings.database import WorkerDatabase
-from app.services.meetings.graph import process_transcript
-
-
-async def dispatch(database: WorkerDatabase,claim: Claim) -> None:
-    if claim.event_type=='transcript.ready':
-        await process_transcript(database,claim)
-        return
-    if claim.event_type=='brief.requested':
-        await asyncio.to_thread(database.reject,claim,'brief_not_available')
-        return
-    await asyncio.to_thread(database.apply_lifecycle,claim)
-    await asyncio.to_thread(database.finish,claim)
+from app.services.meetings.lifecycle import dispatch
+from app.services.meetings.my_notes import MyNotesError
+from app.services.meetings.zoom import ZoomFailure
 
 
 async def run(database: WorkerDatabase) -> None:
+    if settings.meetings_checkpoint_signing_key is None:raise RuntimeError('Configure the stable private MEETINGS_CHECKPOINT_SIGNING_KEY before starting the meeting worker')
     await asyncio.to_thread(database.verify_identity)
     while True:
         await asyncio.to_thread(database.purge_transcripts)
+        await asyncio.to_thread(database.schedule_due)
+        await asyncio.to_thread(database.schedule_graph_updates)
         claim=await asyncio.to_thread(database.claim)
         if claim is None:
             await asyncio.sleep(settings.worker_poll_seconds)
             continue
         try:await dispatch(database,claim)
-        except (LLMError,ValidationError,psycopg.ProgrammingError) as error:
+        except (LLMError,ValidationError,psycopg.ProgrammingError,psycopg.DataError,psycopg.IntegrityError,MyNotesError,ZoomFailure,PermissionError,ValueError) as error:
             log_event('meeting_job_failed',level=logging.WARNING,event_id=claim.event_id,error_type=type(error).__name__,sqlstate=getattr(error,'sqlstate',None))
 
 
