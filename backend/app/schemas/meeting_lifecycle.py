@@ -136,8 +136,28 @@ class Approval(Model):
     command_id: UUID
 
 
+class FollowupEdit(Model):
+    """0141: what the RM changed on one follow-up before sending it (the approved minutes stay as they are)."""
+    text: Annotated[str, Field(min_length=3, max_length=300, pattern=r'\S')] | None = None
+    owner: Literal['rm', 'client'] | None = None
+    due_on: date | None = None
+
+
 class SelectedActions(Approval):
     action_ids: tuple[UUID, ...] = Field(min_length=1, max_length=10)
+    edits: dict[UUID, FollowupEdit] | None = None
+
+    @model_validator(mode='after')
+    def edits_selected(self) -> 'SelectedActions':
+        if self.edits and not set(self.edits) <= set(self.action_ids):
+            raise ValueError('edits must name selected action IDs')
+        return self
+
+    def edit_params(self) -> JsonValue:
+        """Only the fields she set; due_on is sent (as null) when she cleared it."""
+        if not self.edits:
+            return None
+        return {str(k): {f: (v.isoformat() if isinstance(v, date) else v) for f, v in e.model_dump(exclude_unset=True).items()} for k, e in self.edits.items()}
 
     @field_validator('action_ids')
     @classmethod
@@ -145,6 +165,10 @@ class SelectedActions(Approval):
         if len(set(value)) != len(value):
             raise ValueError('action_ids must be distinct')
         return value
+
+
+class RecapShare(Approval):
+    text: Annotated[str, Field(min_length=10, max_length=2000, pattern=r'\S')] | None = None  # 0141: the recap as she edited it
 
 
 class Completion(Model):

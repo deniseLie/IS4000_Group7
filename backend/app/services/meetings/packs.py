@@ -3,8 +3,11 @@ import asyncio,json
 from uuid import UUID
 from langgraph.graph import START,END,StateGraph
 from psycopg.types.json import Jsonb
+from app.core.config import settings
 from app.schemas.contracts import RequestContext
 from app.schemas.meeting_packs import PackGraphState,PackInputs,PackPlan,PackRequest,PackView,ProductChoice,ProposalContext,StoredPack
+from app.core.observability import span
+from app.services.agents.registry import PROPOSAL_DRAFTER
 from app.services.meetings.database import ApplicationDatabase
 from app.services.meetings.preparation import caller
 from app.services.llm_gateway import call
@@ -26,20 +29,21 @@ async def read(meeting: UUID,ctx: RequestContext) -> PackView|None:
 async def draft(meeting: UUID,body: PackRequest,ctx: RequestContext) -> PackView:
     database=ApplicationDatabase(ctx);claims=caller(ctx)
     amounts=[{**amount.model_dump(mode='json'),'label':redact(amount.label)[0]} for amount in body.amounts]
-    frame=PackInputs.model_validate(await asyncio.to_thread(database.call,'meeting_pack_inputs',{'p_meeting_id':meeting,'p_amounts':Jsonb(amounts)},claims))
+    frame=PackInputs.model_validate(await asyncio.to_thread(database.agent_call,PROPOSAL_DRAFTER.name,'meeting_pack_inputs',meeting,{'p_meeting_id':meeting,'p_amounts':Jsonb(amounts)},claims))
     existing=await read(meeting,ctx)
     if existing is not None and existing.document_id==body.command_id:
         if existing.amounts!=frame.amounts:raise ValueError('This pack command was already used with different stated amounts; use a new command ID')
         return existing
     async def compose(state: PackGraphState) -> dict[str,PackPlan]:
-        prompt=load('proposal_drafter','v1')
-        result=await call({'agent':'proposal_drafter','id':prompt['id']},prompt['system'],[('user',safe_context(frame).model_dump_json())],PackPlan.model_json_schema())
-        plan=PackPlan.model_validate(result.data)
-        if not set(plan.product_ids)<={item.item_id for item in frame.catalogue}:raise ValueError('Proposal Drafter selected a catalogue item outside the agreed agenda')
-        return {'plan':plan}
+        prompt=load(PROPOSAL_DRAFTER.prompt,PROPOSAL_DRAFTER.version)
+        with span('meeting.agent','agent',agent=PROPOSAL_DRAFTER.name,intent='draft_pack',side='meeting',path='workflow',prompt_version=prompt['id']):
+            result=await call({'agent':PROPOSAL_DRAFTER.prompt,'id':prompt['id']},prompt['system'],[('user',safe_context(frame).model_dump_json())],PackPlan.model_json_schema(),model=settings.meeting_model or None)
+            plan=PackPlan.model_validate(result.data)
+            if not set(plan.product_ids)<={item.item_id for item in frame.catalogue}:raise ValueError('Proposal Drafter selected a catalogue item outside the agreed agenda')
+            return {'plan':plan}
     async def save(state: PackGraphState) -> dict[str,UUID]:
         if state.plan is None:raise RuntimeError('Pack graph reached storage without a checked plan')
-        result=await asyncio.to_thread(database.call,'meeting_save_pack',{'p_meeting_id':meeting,'p_revision':frame.revision,'p_source_hash':frame.source_hash,
+        result=await asyncio.to_thread(database.agent_call,PROPOSAL_DRAFTER.name,'meeting_save_pack',meeting,{'p_meeting_id':meeting,'p_revision':frame.revision,'p_source_hash':frame.source_hash,
             'p_amounts':Jsonb(amounts),'p_plan':Jsonb(state.plan.model_dump(mode='json')),'p_command_id':body.command_id},claims)
         return {'document_id':StoredPack.model_validate(result).document_id}
     graph=StateGraph(PackGraphState);graph.add_node('compose_client_safe_plan',compose);graph.add_node('insert_current_catalogue_terms',save)

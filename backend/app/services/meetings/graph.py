@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from psycopg import ProgrammingError
 from psycopg.types.json import Jsonb
 
+from app.services.agents.registry import MINUTES_WRITER
 from app.services.llm_gateway import LLMError,LLMBudgetExceeded
 from app.services.meetings.database import ApplicationDatabase, WorkerDatabase
 from app.schemas.meeting_lifecycle import Claim,Claims,DraftReceipt,GraphState,NotesContext
@@ -26,7 +27,7 @@ from app.services.meetings.chunks import generate_queued
 def notes_graph(context: NotesContext, database: ApplicationDatabase, claims: Claims, command_id: UUID) -> CompiledStateGraph:
     async def draft(state: GraphState) -> dict[str, UUID]:
         content = await generate(context)
-        receipt = DraftReceipt.model_validate(await asyncio.to_thread(database.call, 'meeting_save_reviewed_draft', {
+        receipt = DraftReceipt.model_validate(await asyncio.to_thread(database.agent_call, MINUTES_WRITER.name, 'meeting_save_reviewed_draft', context.meeting_id, {
             'p_meeting_id': context.meeting_id, 'p_source_id': context.source_id, 'p_source_hash': context.source_hash,
             'p_revision': context.revision, 'p_consent_epoch': context.consent_epoch,
             'p_content': Jsonb(content.model_dump(mode='json')), 'p_command_id': command_id,'p_review_id':context.review_id}, claims))

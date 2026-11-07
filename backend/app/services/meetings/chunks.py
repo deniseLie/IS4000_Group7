@@ -3,6 +3,7 @@ import asyncio
 from app.core.config import settings
 from app.core.observability import log_event
 from app.schemas.meeting_lifecycle import Claim,JobContext,MinutesContent
+from app.services.agents.registry import MINUTES_WRITER
 from app.services.llm_gateway import LLMBudgetExceeded
 from app.services.meetings.database import WorkerDatabase
 from app.services.meetings.writer import PROMPT,chunks,merge,propose
@@ -10,7 +11,7 @@ from app.services.prompts import load
 
 
 async def generate_queued(context: JobContext,database: WorkerDatabase,claim: Claim) -> MinutesContent:
-    pieces: list[MinutesContent]=[];spent=0;prompt=load('minutes_writer',PROMPT)['id']
+    pieces: list[MinutesContent]=[];spent=0;prompt=load(MINUTES_WRITER.prompt,PROMPT)['id']
     for index,cues in enumerate(chunks(context.cues)):
         await asyncio.to_thread(database.renew,claim)
         ids=tuple(cue.cue_id for cue in cues)

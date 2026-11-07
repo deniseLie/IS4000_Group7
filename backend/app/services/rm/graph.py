@@ -272,7 +272,7 @@ def status_of(reply: dict) -> str:
 
 async def agent(item: orchestrator.AgentInput,runtime: Runtime[RmRuntime]) -> dict:
     rt,task=runtime.context,item['task']
-    spec=registry.SPECS[task.agent]
+    spec=registry.RM_SPECS[task.agent]
     e,inputs=task.entities,item.get('inputs') or {}
     turn=handlers.Turn(rt.req,rt.ctx.model_copy(update={'agent':spec.name}),rt.say,base=rt.ctx,book=rt.book,on_section=rt.show,task_id=task.id)
     turn.inputs,feed=inputs,bool(e.get('feed'))

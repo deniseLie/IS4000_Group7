@@ -11,7 +11,7 @@ NOTE_FIELDS = {'goal': ('Goal', 'Scope'), 'change': ('Change from previous', 'Be
 ORDER = ('system', 'format', 'public_only')  # digest order; keeps the ids of released answer prompts unchanged
 
 # The one place a prompt version is chosen: prompt family -> released version. To change one, add app/prompts/<family>/vN
-# with its prompt-log entry and edit the version here. The meeting side (services/meetings/**) pins its own (in_use adds them).
+# with its prompt-log entry and edit the version here. The meeting agents keep theirs in registry.MEETING_SPECS (in_use adds them).
 VERSIONS = {
     'answer': 'v3',  # the v1 pipeline's one model call (llm.answer_request)
     'planner': 'v10',  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3)
@@ -43,11 +43,10 @@ def current(agent):
     return load(agent, VERSIONS[agent])
 
 def in_use():
-    """{family: version} for every prompt the running code loads: VERSIONS plus the meeting side's own pins.
-    The admin dashboard compares it with what actually ran (llm runs)."""
-    from app.services.meetings import writer,preparation
-    found = {**VERSIONS, 'minutes_writer': writer.PROMPT, 'minutes_overview': writer.OVERVIEW_PROMPT, 'brief_writer': preparation.PROMPT,
-        'proposal_drafter': 'v1'}
+    """{family: version} for every prompt the running code loads: VERSIONS plus the meeting agents' versions, which the
+    meeting side keeps in registry.MEETING_SPECS. The admin dashboard compares it with what actually ran (llm runs)."""
+    from app.services.agents import registry
+    found = {**VERSIONS, **{spec.prompt: spec.version for spec in registry.MEETING_SPECS.values()}}
     return {family: version for family, version in sorted(found.items()) if version}
 
 def released():

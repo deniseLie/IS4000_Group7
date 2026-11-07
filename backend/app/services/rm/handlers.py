@@ -372,7 +372,7 @@ def not_listed(ranked: list[dict],followups: list[dict]=()) -> dict|None:
     if ranked:lines.append(f"{len(ranked)} lower-ranked {'item is' if len(ranked)==1 else 'items are'} not listed here: "
         f"{counted([x['kind'] for x in ranked],RANKED_WORDS)}. Your Today page and Ticket inbox show them.")
     if followups:lines.append(f"{len(followups)} more {'follow-up is' if len(followups)==1 else 'follow-ups are'} not listed here: "
-        f"{counted([f.get('kind') for f in followups],FOLLOWUP_WORDS)}. Your Follow-ups page shows them.")
+        f"{counted([f.get('kind') for f in followups],FOLLOWUP_WORDS)}. See all on your Today page shows them.")
     return {'heading':'Not listed here','items':[{'text':t,'kind':'gap','owner':'none','source_ids':[]} for t in lines]} if lines else None
 
 

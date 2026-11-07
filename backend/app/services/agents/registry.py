@@ -1,15 +1,16 @@
 """Domain registry and the tool boundaries to enforce as each shared service is integrated.
 
-TOOLS is the v4 allow-list (permission names per agent). SPECS is the v5 agent catalogue (architecture §5.6.1, §14.8):
+TOOLS is the v4 allow-list (permission names per agent). CHAT_SPECS is the v5 chat catalogue (architecture §5.6.1, §14.8):
 one AgentSpec per target agent is the single source for its tools, field views, limits, intents and default reads,
 loop tools and offers. authorization.decide and tools.call both read it. The client specs run on /chat since phase 5, but
 the rules in agents/rules.py still call the v4 responders under their v4 names (retail, compliance, document,
-relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from SPECS (ENFORCED).
+relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from CHAT_SPECS (ENFORCED).
 The three RM specs (Client, Requests, Calendar; build plan 3a) run on the RM graph (services/rm/graph.py) for a verified
-`rm` login; the client planner never sees them (CLIENT_SPECS).
+`rm` login; the client planner never sees them (CLIENT_SPECS). SPECS also includes the separate meeting workflow.
 """
 from types import MappingProxyType
 from app.schemas.contracts import QUESTION, AgentName, AgentSpec, Domain, Read, TargetAgent, ToolView
+from app.schemas.meeting_agents import MeetingAgent, MeetingAgentSpec, MeetingTool
 
 AGENT_FOR: dict[Domain, AgentName] = {'retail':'retail','smalltalk':'retail','fraud':'fraud',
     'compliance':'compliance','document':'document','relationship':'relationship'}
@@ -193,9 +194,36 @@ RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_as
 # cards the RM approves one by one through the /rm write routes (rm.send_client_update, rm.save_interaction,
 # rm.create_tasks, /rm/meeting-requests/{id}/decide, /rm/availability/...). No write tool is a model-facing tool.
 
-SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,COMPLIANCE,RELATIONSHIP,RM_CLIENT,RM_REQUESTS,RM_CALENDAR)})
-CLIENT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in SPECS.items() if s.role!='rm'})
-RM_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in SPECS.items() if s.role=='rm'})
+CHAT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,COMPLIANCE,RELATIONSHIP,RM_CLIENT,RM_REQUESTS,RM_CALENDAR)})
+
+# Fixed connectors for the separate meeting workflow. The model never chooses or invokes them.
+BRIEF_WRITER = MeetingAgentSpec('brief_writer', 'brief_writer', 'v4',
+    'Select references from the assigned RM’s currently permitted preparation records.', (
+        MeetingTool('meeting_preparation_inputs', 'assigned_rm', 'read'),
+        MeetingTool('meeting_save_brief', 'assigned_rm', 'draft_write'),
+    ))
+PROPOSAL_DRAFTER = MeetingAgentSpec('proposal_drafter', 'proposal_drafter', 'v1',
+    'Draft a discussion pack from the agreed agenda and approved catalogue.', (
+        MeetingTool('meeting_pack_inputs', 'assigned_rm', 'read'),
+        MeetingTool('meeting_save_pack', 'assigned_rm', 'draft_write'),
+    ))
+MINUTES_WRITER = MeetingAgentSpec('minutes_writer', 'minutes_writer', 'v5',
+    'Draft minutes for one meeting from reviewed RM notes or a consented redacted transcript.', (
+        MeetingTool('meeting_notes_context', 'assigned_rm', 'read'),
+        MeetingTool('meeting_save_reviewed_draft', 'assigned_rm', 'draft_write'),
+        MeetingTool('meeting_job_context', 'claimed_worker', 'read'),
+        MeetingTool('meeting_save_job_draft', 'claimed_worker', 'draft_write'),
+    ))
+MINUTES_OVERVIEW = MeetingAgentSpec('minutes_overview', 'minutes_overview', 'v2',
+    'Consolidate supported statements already selected by Minutes Writer.', ())
+MEETING_SPECS: MappingProxyType[MeetingAgent, MeetingAgentSpec] = MappingProxyType({
+    s.name:s for s in (BRIEF_WRITER, PROPOSAL_DRAFTER, MINUTES_WRITER, MINUTES_OVERVIEW)
+})
+MEETING_TOOLS = frozenset(tool.name for spec in MEETING_SPECS.values() for tool in spec.tools)
+SPECS: MappingProxyType[TargetAgent | MeetingAgent, AgentSpec | MeetingAgentSpec] = MappingProxyType({**CHAT_SPECS, **MEETING_SPECS})
+
+CLIENT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in CHAT_SPECS.items() if s.role!='rm'})
+RM_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({n:s for n,s in CHAT_SPECS.items() if s.role=='rm'})
 INTENT_AGENT: MappingProxyType[str, TargetAgent] = MappingProxyType({i:s.name for s in RM_SPECS.values() for i in s.intents})  # RM intents are unique
 # Build plan 3a: each RM data tool has exactly one owning agent; another RM agent may hold it only as a BORROWED fixed read.
 RM_OWNER: MappingProxyType[str, TargetAgent] = MappingProxyType({**{t:'rm_client' for t in ('rm_client_profile','rm_meeting_notes','rm_shared_summary',
@@ -206,7 +234,7 @@ BORROWED: MappingProxyType[TargetAgent, frozenset[str]] = MappingProxyType({'rm_
 # Reads SQL answers only under the client's consent (rm.consent_active, 0106; rm_brief for the shared note and handover):
 # fixed reads of the Client agent only, never in loop_tools, their purpose set by the intent.
 CONSENT_GATED=frozenset({'rm_transaction_insights','rm_talking_points','rm_cash_events','rm_shared_summary','rm_handover_sources'})
-ENFORCED = frozenset(SPECS) - frozenset(TOOLS)  # guide, accounts and the RM agents; the rest once the v4 responders move into specs
+ENFORCED = frozenset(CHAT_SPECS) - frozenset(TOOLS)  # guide, accounts and the RM agents; the rest once the v4 responders move into specs
 # A condition or for_each export only this intent computes: a link that names it sets the upstream task's intent
 # (orchestrator.export_intents), so a declared link is not skipped as unknown because the planner chose another intent.
 EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'trip_due_dates','due_dates':'trip_due_dates',
@@ -215,7 +243,7 @@ EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'t
 
 def spec_for(agent: str | None) -> AgentSpec | None:
     """The enforced v5 spec for this backend-assigned agent, or None (no agent, or a v4 agent)."""
-    return SPECS[agent] if agent in ENFORCED else None
+    return CHAT_SPECS[agent] if agent in ENFORCED else None
 
 
 def permissions(spec: AgentSpec) -> frozenset[str]:

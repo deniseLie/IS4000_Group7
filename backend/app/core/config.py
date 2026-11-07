@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Talking points (0108, lane 1): the classifier's model; unset uses the agent model (LLM_MODEL), so a small or
     # self-hosted model can be chosen. Same provider, key and base URL.
     talking_points_model: str | None = None  # an empty value also means LLM_MODEL
+    # Meeting agents (Brief Writer, Minutes Writer, Proposal Drafter) send strict nested JSON schemas ($defs, anyOf,
+    # const, null). Some providers reject those; set a model that supports them (e.g. openai/gpt-4.1-mini on
+    # OpenRouter). Unset or empty uses LLM_MODEL. Same provider, key and base URL.
+    meeting_model: str | None = None
 
     # API Gateway Layer (core/gateway.py)
     jwt_audience: str = "authenticated"

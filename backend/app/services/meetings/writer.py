@@ -7,14 +7,14 @@ import asyncio,json
 from typing import NamedTuple
 from uuid import UUID,uuid5
 from app.core.config import settings
-from app.core.observability import log_event
+from app.core.observability import log_event,span
 from app.schemas.meeting_chunks import MinutesSelection
 from app.schemas.meeting_lifecycle import Action,Cue,EvidenceClaim,GenerationContext,MinutesContent,MinutesProposal,ProposedAction
+from app.services.agents.registry import MINUTES_OVERVIEW, MINUTES_WRITER
 from app.services.llm_gateway import LLMResult,LLMTimeout,call
 from app.services.prompts import load
 
-PROMPT='v5'
-OVERVIEW_PROMPT='v2'
+PROMPT=MINUTES_WRITER.version
 
 class Piece(NamedTuple):
     content: MinutesContent
@@ -56,18 +56,19 @@ def estimated_charge(system: str,payload: str,schema: dict[str,object]) -> int:
 
 
 async def model_step(prompt: dict[str,str],system: str,payload: str,schema: dict[str,object]) -> LLMResult:
-    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],schema),timeout=240)
+    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],schema,model=settings.meeting_model or None),timeout=240)
     except TimeoutError as error:raise LLMTimeout('Meeting model step exceeded 240 seconds; persisted completed chunks can be resumed') from error
     log_event('meeting_model_completed',prompt_version=prompt['id'],input_tokens=result.input_tokens,output_tokens=result.output_tokens,model=result.model,latency_ms=result.latency_ms)
     return result
 
 
 async def propose(context: GenerationContext) -> Piece:
-    prompt=load('minutes_writer',PROMPT);system=prompt['system']
+    prompt=load(MINUTES_WRITER.prompt,PROMPT);system=prompt['system']
     payload=json.dumps({'source_kind':context.source_kind,'review_note':context.review_note,'cues':[cue.model_dump(mode='json') for cue in context.cues]},ensure_ascii=False)
-    result=await model_step(prompt,system,payload,MinutesProposal.model_json_schema())
-    proposal=MinutesProposal.model_validate(result.data)
-    content=bind_action_ids(proposal,context.source_id)
+    with span('meeting.agent','agent',agent=MINUTES_WRITER.name,intent='draft_minutes',side='meeting',path='workflow',prompt_version=prompt['id']):
+        result=await model_step(prompt,system,payload,MinutesProposal.model_json_schema())
+        proposal=MinutesProposal.model_validate(result.data)
+        content=bind_action_ids(proposal,context.source_id)
     charged=(result.input_tokens+result.output_tokens) if result.input_tokens is not None and result.output_tokens is not None else estimated_charge(system,payload,MinutesProposal.model_json_schema())
     return Piece(content,result.input_tokens,result.output_tokens,max(1,charged))
 
@@ -121,7 +122,7 @@ async def merge(pieces: tuple[MinutesContent,...],context: GenerationContext) ->
     decisions=distinct_claims(tuple(item for piece in pieces for item in piece.decisions))
     charged=0;input_tokens=None;output_tokens=None
     if len(pieces)>1:
-        prompt=load('minutes_overview',OVERVIEW_PROMPT);groups=claim_groups(summaries);decision_groups=claim_groups(decisions)
+        prompt=load(MINUTES_OVERVIEW.prompt,MINUTES_OVERVIEW.version);groups=claim_groups(summaries);decision_groups=claim_groups(decisions)
         if len(decision_groups)>10:raise ValueError('The complete meeting exceeds the ten distinct supported decisions allowed for RM approval')
         decision_quotes={' '.join(item.quote.split()) for item in decisions}
         uncovered=tuple(group for group in groups if ' '.join(summaries[group[0]].quote.split()) not in decision_quotes)
@@ -132,11 +133,12 @@ async def merge(pieces: tuple[MinutesContent,...],context: GenerationContext) ->
         schema=MinutesSelection.model_json_schema()
         if len(groups)<=4:schema['properties']['summary_indices']['minItems']=len(groups)
         schema['properties']['decision_indices'].update(minItems=len(decision_groups),maxItems=len(decision_groups))
-        result=await model_step(prompt,prompt['system'],payload,schema)
-        input_tokens=result.input_tokens;output_tokens=result.output_tokens
-        charged=(input_tokens+output_tokens) if input_tokens is not None and output_tokens is not None else estimated_charge(prompt['system'],payload,schema)
-        selected=MinutesSelection.model_validate(result.data)
-        summaries=selected_summaries(summaries,groups,selected);decisions=selected_decisions(decisions,decision_groups,selected);title=selected.title
+        with span('meeting.agent','agent',agent=MINUTES_OVERVIEW.name,intent='consolidate_minutes',side='meeting',path='workflow',prompt_version=prompt['id']):
+            result=await model_step(prompt,prompt['system'],payload,schema)
+            input_tokens=result.input_tokens;output_tokens=result.output_tokens
+            charged=(input_tokens+output_tokens) if input_tokens is not None and output_tokens is not None else estimated_charge(prompt['system'],payload,schema)
+            selected=MinutesSelection.model_validate(result.data)
+            summaries=selected_summaries(summaries,groups,selected);decisions=selected_decisions(decisions,decision_groups,selected);title=selected.title
     proposal=MinutesProposal(title=title,summary=summaries,decisions=decisions,actions=distinct_actions(pieces))
     if sum(len(item.text) for item in proposal.summary)+len(proposal.summary)-1>2000:raise ValueError('The complete-call summary exceeds the RM note limit of 2000 characters')
     return Piece(bind_action_ids(proposal,context.source_id),input_tokens,output_tokens,charged)

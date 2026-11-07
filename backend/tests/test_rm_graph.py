@@ -801,7 +801,7 @@ def test_priorities_explain_the_top_ten_and_five_other_follow_ups(records, model
     assert all(e['record']['kind'] == 'specialist_ticket' for e in evidence if e['id'].startswith('followup-'))  # ranked ones never reappear
     assert [i['text'] for i in reply['sections'][-1]['items']] == [
         '6 lower-ranked items are not listed here: 3 client requests, 1 confirmed meeting, 1 task and 1 milestone. Your Today page and Ticket inbox show them.',
-        '2 more follow-ups are not listed here: 2 specialist-managed tickets. Your Follow-ups page shows them.']
+        '2 more follow-ups are not listed here: 2 specialist-managed tickets. See all on your Today page shows them.']
     agent = next(a for n, a in spans if n == 'agent' and a['intent'] == 'priorities')
     assert (agent['scored'], agent['ranked_shown'], agent['not_shown'], agent['followups_not_shown']) == (16, 10, 6, 2)
 
@@ -810,7 +810,7 @@ def test_the_not_listed_line_counts_only_and_is_left_off_a_question_or_a_short_q
     assert handlers.not_listed([], []) is None
     one = handlers.not_listed([{'kind': 'task', 'client': 'Michelle Tan (DEMO)', 'title': 'zebra lantern'}], [{'kind': 'commitment'}, {'kind': 'unknown'}])
     assert [i['text'] for i in one['items']] == ['1 lower-ranked item is not listed here: 1 task. Your Today page and Ticket inbox show them.',
-        '2 more follow-ups are not listed here: 1 recorded commitment and 1 other item. Your Follow-ups page shows them.']
+        '2 more follow-ups are not listed here: 1 recorded commitment and 1 other item. See all on your Today page shows them.']
     ok = {'status': 'ok', 'sections': [{'heading': 'Do first', 'items': []}]}
     assert handlers.with_rest(ok, one)['sections'][-1] == one and handlers.with_rest(ok, None) == ok
     for reply in ({'status': 'clarify', 'sections': []}, {'status': 'unverified', 'sections': []}):assert handlers.with_rest(reply, one) == reply

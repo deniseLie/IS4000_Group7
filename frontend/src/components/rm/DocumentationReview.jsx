@@ -108,7 +108,7 @@ export default function DocumentationReview({documentation,token,onChange,latest
       <strong><Icon name="check"/>All done for this {existingNote?'note':'call'}. Nothing else needs your approval.</strong>
       <ul>
         {!existingNote&&<li>Interaction saved to {documentation.client}’s record ({edits.met_on}{edits.title?` · ${edits.title}`:''}). Find it under My clients → Meetings & notes.</li>}
-        {created.length>0&&<li>{created.length} task{created.length===1?'':'s'} created: {created.map(a=>tasks[a.id]?.title||a.title).join('; ')}. They appear in Follow-ups.</li>}
+        {created.length>0&&<li>{created.length} task{created.length===1?'':'s'} created: {created.map(a=>tasks[a.id]?.title||a.title).join('; ')}. They appear on Today.</li>}
         {requests.map(a=><li key={a.id}>Request {decisions[a.id].reference} sent to the {decisions[a.id].owner_team}. {documentation.client} sees it in My requests.</li>)}
         {notDone.length>0&&<li>Not created: {notDone.map(a=>a.title).join('; ')}.</li>}
         {!actionable.length&&<li>No tasks or requests were proposed from these notes.</li>}

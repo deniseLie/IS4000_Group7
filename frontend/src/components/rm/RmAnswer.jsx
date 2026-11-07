@@ -83,7 +83,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       :reply.summary&&<p className={report?'rm-report-summary':'rm-answer-summary'}>{reply.summary}</p>}
     {reply.edited&&!editing&&<p className="rm-validation"><Icon name="info"/>You edited this report. Edited points are yours, not the assistant’s; the numbers show the records the original point used.</p>}
     {reply.status==='denied'&&<p className="rm-denied" role="alert" data-testid="rm-access-denied"><Icon name="lock"/>Client-book and specialist access restrictions apply. No action was taken.</p>}
-    {reply.meeting_workspace&&<div className="meeting-actions"><button type="button" className="bank-chat-logout" data-testid="rm-open-saved-brief" onClick={()=>setMeetingOpen(true)}>Open meeting workspace</button>
+    {reply.meeting_workspace&&<div className="meeting-actions"><button type="button" className="bank-chat-logout" data-testid="rm-open-saved-brief" onClick={()=>setMeetingOpen(true)}>Open the meeting</button>
       {reply.meeting_brief&&<p className="rm-small" data-testid="rm-saved-brief-version">Saved brief version {reply.meeting_brief.version} · {reply.meeting_brief.sources_changed?'needs review':reply.meeting_brief.decision.replaceAll('_',' ')}</p>}</div>}
     {meetingOpen&&reply.meeting_workspace&&<MeetingWorkspace meetingId={reply.meeting_workspace} token={token} onClose={()=>setMeetingOpen(false)}/>}
     {(reply.sections||[]).map((section,index)=><section className="rm-answer-section" key={index}>

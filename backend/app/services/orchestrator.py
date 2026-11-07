@@ -3,7 +3,7 @@ gather →] compose, and planner → act → compose when the client answers an 
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
 urgent card and login wording, an explicit request for a person, greetings), then one planner/v10 call, then the rule
-overrides and a plan check against registry.SPECS. Each task runs on its agent through runner.run_agent, except an
+overrides and a plan check against registry.CHAT_SPECS. Each task runs on its agent through runner.run_agent, except an
 urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
 offer from code, never the model (build plan 2b: there is no Security agent). Agents never
 write: what they propose is saved by compose as one offer group, and only a later confirmation (act) runs it. There is
@@ -375,14 +375,14 @@ def for_guest(tasks: list[PlanTask]) -> tuple[list[PlanTask], dict[str, str]]:
 
 
 def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
-    """The plan check against SPECS: guests get only Guide (for_guest); an unknown intent becomes `open`, or the agent's
+    """The plan check against CHAT_SPECS: guests get only Guide (for_guest); an unknown intent becomes `open`, or the agent's
     first intent. Accounts tasks learn whether Relationship also has a task (with_relationship)."""
     plan: list[PlanTask] = []
     ids: dict[str, str] = {}
     merged: dict[str, str] = {}
     if req.mode != 'personal':tasks, merged = for_guest(tasks[:MAX_TASKS])
     for item in tasks[:MAX_TASKS]:
-        spec = registry.SPECS[item.agent]
+        spec = registry.CHAT_SPECS[item.agent]
         intent = item.intent if item.intent in spec.intents or (item.intent == OPEN_INTENT and spec.loop_tools) else \
             OPEN_INTENT if spec.loop_tools else next(iter(spec.intents))
         entities = {k: v for k, v in ((k, entity_value(k, v)) for k, v in item.entities.items()) if v is not None and k != WITH_RELATIONSHIP}
@@ -401,16 +401,16 @@ def checked(tasks: list[PlanTask], req: ChatRequest) -> list[PlanTask]:
 def unlinked(item: PlanTask, up: PlanTask | None, by_id: dict[str, PlanTask] | None = None) -> str | None:
     """Why a dependency is not declared by the specs (a code for the planner span), or None when it is. Each extra
     upstream in inputs_from (build plan 3b) passes the same checks and must export something the receiver imports."""
-    exports = registry.SPECS[up.agent].exports if up else {}
+    exports = registry.CHAT_SPECS[up.agent].exports if up else {}
     if item.depends_on is None:return None
     if up is None or up.id == item.id:return 'no_upstream'
     if up.depends_on is not None:return 'chained_upstream'
-    if (registry.SPECS[up.agent].role == 'rm') != (registry.SPECS[item.agent].role == 'rm'):return 'other_side'
+    if (registry.CHAT_SPECS[up.agent].role == 'rm') != (registry.CHAT_SPECS[item.agent].role == 'rm'):return 'other_side'
     if item.condition is not None and exports.get(item.condition) != 'bool':return 'condition_not_bool_export'
     if item.for_each is not None and not exports.get(item.for_each, '').startswith('list['):return 'for_each_not_list_export'
     for extra in ((by_id or {}).get(u) for u in item.inputs_from):
         if why := unlinked(item.model_copy(update={'condition': None, 'for_each': None, 'inputs_from': []}), extra):return why
-        if not registry.SPECS[item.agent].imports & registry.SPECS[extra.agent].exports.keys():return 'imports_nothing'
+        if not registry.CHAT_SPECS[item.agent].imports & registry.CHAT_SPECS[extra.agent].exports.keys():return 'imports_nothing'
     return None
 
 
@@ -421,7 +421,7 @@ def export_intents(tasks: list[PlanTask], facts: dict | None = None) -> list[Pla
     wanted = {t.depends_on: registry.EXPORT_INTENT[n] for t in tasks for n in (t.condition, t.for_each) if t.depends_on and n in registry.EXPORT_INTENT}
     out: list[PlanTask] = []
     for item in tasks:
-        if (intent := wanted.get(item.id)) and item.intent != intent and intent in registry.SPECS[item.agent].intents:
+        if (intent := wanted.get(item.id)) and item.intent != intent and intent in registry.CHAT_SPECS[item.agent].intents:
             if facts is not None:facts.setdefault('intent_set', []).append({'task': item.id, 'from': item.intent, 'to': intent})
             item = item.model_copy(update={'intent': intent})
         out.append(item)
@@ -566,7 +566,7 @@ async def agent(item: AgentInput, runtime: Runtime[TurnContext]) -> dict:
         output = await urgent_output(current, runtime.context.request)
         if (collected := evidence_sink.get()) is not None:collected.extend(Evidence.model_validate(d) for d in output.evidence)
         return {'outputs': [output]}
-    try:output = await runner.run_agent(registry.SPECS[current.agent], current, item.get('inputs') or {}, runtime.context.request,
+    try:output = await runner.run_agent(registry.CHAT_SPECS[current.agent], current, item.get('inputs') or {}, runtime.context.request,
         item['history'], item['language'])
     except runner.PlanRefused as error:
         log_event('plan_refused', agent=current.agent, intent=current.intent, reason=str(error)[:120])
@@ -587,7 +587,7 @@ def skipped(item: PlanTask, text: str, reason: str, facts: dict) -> AgentOutput:
 def items_of(export: Export, name: str, agent: TargetAgent) -> list:
     """A list export in its declared order (the spec's sort field; dates by value)."""
     values = export.value if isinstance(export.value, list) else []
-    key = registry.SPECS[agent].sort_by.get(name)
+    key = registry.CHAT_SPECS[agent].sort_by.get(name)
     return sorted(values, key=lambda v: str(v.get(key, '')) if key and isinstance(v, dict) else str(v))
 
 
@@ -621,8 +621,8 @@ def next_wave(state: Turn, facts: dict) -> dict:
         if item.depends_on is None:
             done = outputs.get(item.id)
             hand = done.suggested if done is not None and done.status == 'out_of_scope' and not item.rerouted else None
-            if hand is not None and hand in registry.SPECS[item.agent].hands_to:
-                spec = registry.SPECS[hand]
+            if hand is not None and hand in registry.CHAT_SPECS[item.agent].hands_to:
+                spec = registry.CHAT_SPECS[hand]
                 item = item.model_copy(update={'agent': hand, 'intent': OPEN_INTENT if spec.loop_tools else next(iter(spec.intents)),
                     'entities': {}, 'rerouted': True})
                 log_event('task_rerouted', task=item.id, agent=hand)
@@ -635,7 +635,7 @@ def next_wave(state: Turn, facts: dict) -> dict:
             extra.append(skipped(item, UPSTREAM_UNKNOWN, 'upstream_unavailable', facts));tasks.append(item);continue
         if item.condition and up.exports[item.condition].value is not True:
             extra.append(skipped(item, CONDITION_FALSE.get(item.condition, CONDITION_FALSE_ANY), 'condition_false', facts));tasks.append(item);continue
-        given = [(u, {k: u.exports[k] for k in registry.SPECS[item.agent].imports & u.exports.keys()}) for u in ups]
+        given = [(u, {k: u.exports[k] for k in registry.CHAT_SPECS[item.agent].imports & u.exports.keys()}) for u in ups]
         inputs = {k: v for _, part in reversed(given) for k, v in part.items()}  # a name two upstreams export: depends_on's
         own = agent_history(history, item, True)
         if not item.for_each:

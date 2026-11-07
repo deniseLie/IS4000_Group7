@@ -17,24 +17,28 @@ from psycopg.types.json import Jsonb
 from postgrest.exceptions import APIError
 from pydantic import JsonValue, SecretStr, TypeAdapter
 from app.core import data_api
-from app.schemas.contracts import RequestContext
+from app.schemas.contracts import Principal, RequestContext
+from app.schemas.meeting_agents import MeetingAgent, MeetingRmAccess, MeetingWorkerAccess
 from app.schemas.meeting_lifecycle import Claim, Claims, JobContext, MinutesContent
 from app.schemas.zoom_capture import DiscoveryPermit,FetchPermit,FetchedEvidence
 from app.schemas.meeting_chunks import ChunkSlot
 from app.schemas.meeting_reviews import GraphRun
 from app.schemas.zoom_scheduling import Cancellation,ProviderMeeting,ScheduledMeeting
+from app.services.agents.registry import MINUTES_WRITER
 from app.services.meetings.zoom import HostedMeeting,Owner
+from app.services.authorization import PolicyDenied
+from app.services.tools import meeting_call
 
 Parameter: TypeAlias = str | int | bool | UUID | list[UUID] | Jsonb | None
 PUBLIC=frozenset({'meeting_start_workflow','meeting_document_call_start','meeting_document_call_end','meeting_submit_notes',
- 'meeting_notes_context','meeting_save_notes_draft','meeting_approve_minutes','meeting_create_followups','meeting_share_recap',
+ 'meeting_save_notes_draft','meeting_approve_minutes','meeting_create_followups','meeting_share_recap',
  'meeting_complete_followup','meeting_view','meeting_generation_receipt','meeting_save_generated_draft','meeting_import_transcript',
  'meeting_acknowledge_notice','meeting_transcript_revoke','meeting_identity','meeting_slots','meeting_rm_propose','meeting_appointment',
  'meeting_zoom_reserve','meeting_link','meeting_link_save','meeting_record_refusal','meeting_zoom_link_bind','meeting_zoom_evidence','meeting_zoom_map_speakers',
  'meeting_correct_call_times','meeting_reconcile_zoom_times','meeting_retry_job','meeting_recovery',
- 'meeting_preparation_inputs','meeting_current_brief','meeting_save_brief','meeting_decide_brief',
- 'meeting_pack_inputs','meeting_save_pack','meeting_approve_pack','meeting_share_pack','meeting_current_pack',
- 'meeting_review_minutes','meeting_regenerate_minutes','meeting_save_reviewed_draft','meeting_minutes_review','meeting_lifecycle_status','meeting_recap_document',
+ 'meeting_current_brief','meeting_decide_brief',
+ 'meeting_approve_pack','meeting_share_pack','meeting_current_pack',
+ 'meeting_review_minutes','meeting_regenerate_minutes','meeting_minutes_review','meeting_lifecycle_status','meeting_recap_document',
  'meeting_reminders','meeting_acknowledge_reminder','meeting_request_discovery','meeting_request_zoom'})
 
 class MeetingStoreError(RuntimeError):
@@ -70,6 +74,21 @@ class ApplicationDatabase:
     def call(self,name: str,parameters: Mapping[str,Parameter],claims: Claims) -> JsonValue:
         if name not in PUBLIC:raise ValueError('Function is outside the meeting API')
         if claims.sub!=self.ctx.principal.user_id:raise PermissionError('Meeting caller does not match the gateway session')
+        return self._execute(name,parameters)
+
+    def agent_call(self,agent: MeetingAgent,name: str,meeting: UUID,parameters: Mapping[str,Parameter],claims: Claims) -> JsonValue:
+        access=MeetingRmAccess(agent,self.ctx.principal,meeting,claims)
+        target=parameters.get('p_meeting_id')
+        try:
+            with meeting_call(name,target if isinstance(target,UUID) else None,access) as facts:
+                try:return self._execute(name,parameters)
+                except MeetingStoreError as error:
+                    if error.code=='42501':facts.update(allowed=False,reason='meeting_scope_denied')
+                    raise
+        except PolicyDenied as error:
+            raise MeetingStoreError('42501',str(error)) from error
+
+    def _execute(self,name: str,parameters: Mapping[str,Parameter]) -> JsonValue:
         wire=TypeAdapter(dict[str,JsonValue]).validate_python(json.loads(json.dumps(dict(parameters),default=serializable)))
         for attempt in range(3):
             try:
@@ -204,11 +223,19 @@ class WorkerDatabase:
             return TypeAdapter(JsonValue).validate_python(row[0])
 
     def context(self,claim: Claim) -> JobContext:
-        with psycopg.connect(self.uri.get_secret_value()) as db:
+        access=MeetingWorkerAccess(MINUTES_WRITER.name,Principal(kind='system'),claim)
+        with meeting_call('meeting_job_context',claim.meeting_id,access) as facts, psycopg.connect(self.uri.get_secret_value()) as db:
             db.execute('set local role demobank_meetings')
-            row=db.execute('select meetings.job_context(%s,%s)',(claim.event_id,claim.claim_token)).fetchone()
+            try:row=db.execute('select meetings.job_context(%s,%s)',(claim.event_id,claim.claim_token)).fetchone()
+            except psycopg.ProgrammingError as error:
+                if error.sqlstate in ('42501','P1001','P1002'):facts.update(allowed=False,reason='meeting_claim_or_consent_changed')
+                raise
             if row is None:raise RuntimeError('Meeting job context returned no row')
-            return JobContext.model_validate(row[0])
+            context=JobContext.model_validate(row[0])
+            if context.meeting_id!=claim.meeting_id:
+                facts.update(allowed=False,reason='meeting_scope_mismatch')
+                raise PolicyDenied('Meeting job context does not match the claimed meeting')
+            return context
 
     def renew(self,claim: Claim) -> None:
         with psycopg.connect(self.uri.get_secret_value()) as db:
@@ -244,10 +271,15 @@ class WorkerDatabase:
             return int(row[0])
 
     def save(self,claim: Claim,context: JobContext,content: MinutesContent) -> JsonValue:
-        with psycopg.connect(self.uri.get_secret_value()) as db:
+        access=MeetingWorkerAccess(MINUTES_WRITER.name,Principal(kind='system'),claim)
+        with meeting_call('meeting_save_job_draft',context.meeting_id,access) as facts, psycopg.connect(self.uri.get_secret_value()) as db:
             db.execute('set local role demobank_meetings')
-            row=db.execute('select meetings.save_job_draft(%s,%s,%s,%s,%s,%s)',(claim.event_id,claim.claim_token,context.source_hash,
-                context.revision,context.consent_epoch,Jsonb(content.model_dump(mode='json')))).fetchone()
+            try:
+                row=db.execute('select meetings.save_job_draft(%s,%s,%s,%s,%s,%s)',(claim.event_id,claim.claim_token,context.source_hash,
+                    context.revision,context.consent_epoch,Jsonb(content.model_dump(mode='json')))).fetchone()
+            except psycopg.ProgrammingError as error:
+                if error.sqlstate in ('42501','P1001','P1002'):facts.update(allowed=False,reason='meeting_claim_or_consent_changed')
+                raise
             if row is None:raise RuntimeError('Meeting draft save returned no row')
             return TypeAdapter(JsonValue).validate_python(row[0])
 

@@ -16,7 +16,8 @@ from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.gateway import current_ctx,get_ctx
 from app.schemas.contracts import RequestContext
-from app.schemas.meeting_lifecycle import (Approval,CallTime,Claims,Command,Completion,DraftReceipt,Notes,SelectedActions,Start,GraphState,NotesContext,Model)
+from app.schemas.meeting_lifecycle import (Approval,CallTime,Claims,Command,Completion,DraftReceipt,Notes,RecapShare,SelectedActions,Start,GraphState,NotesContext,Model)
+from app.services.agents.registry import MINUTES_WRITER
 from app.services.meetings.database import ApplicationDatabase,MeetingStoreError,Parameter
 from app.services.meetings.transcripts import ImportRequest,imported
 from app.services.meetings.zoom import Zoom,refreshed_token,ZoomFailure
@@ -55,11 +56,14 @@ def caller(ctx: Annotated[RequestContext,Depends(get_ctx)]) -> Claims:
 
 def call(name: str,params: Mapping[str,Parameter],claims: Claims) -> JsonValue:
     try:return db.call(name,params,claims)
-    except MeetingStoreError as error:
-        status={'42501':403,'P0002':404,'P1001':409,'23505':409}.get(error.code)
-        if status is None and error.code.startswith('22'):status=422
-        if status in (403,409):db.record_refusal(name,error.code,claims)
-        raise ApiError(status or 503,'meeting_store_error',str(error)) from error
+    except MeetingStoreError as error:raise store_error(name,error,claims) from error
+
+
+def store_error(name: str,error: MeetingStoreError,claims: Claims) -> ApiError:
+    status={'42501':403,'P0002':404,'P1001':409,'23505':409}.get(error.code)
+    if status is None and error.code.startswith('22'):status=422
+    if status in (403,409):db.record_refusal(name,error.code,claims)
+    return ApiError(status or 503,'meeting_store_error',str(error))
 
 @router.get('/meetings/capabilities')
 def capabilities(ctx: Annotated[RequestContext,Depends(get_ctx)]) -> dict[str,bool]:
@@ -115,16 +119,21 @@ def notes(meeting: UUID, body: Notes, claims: Annotated[Claims, Depends(caller)]
         'p_cues': Jsonb([{**cue.model_dump(mode='json'),'text':redact(cue.text)[0]} for cue in body.cues]), 'p_command_id': body.command_id}, claims)
 
 @router.post('/meetings/{meeting}/generate-notes-draft')
-async def generate_notes(meeting: UUID, body: Command, claims: Annotated[Claims, Depends(caller)]) -> DraftReceipt:
+async def generate_notes(meeting: UUID, body: Command, ctx: Annotated[RequestContext, Depends(get_ctx)], claims: Annotated[Claims, Depends(caller)]) -> DraftReceipt:
     from starlette.concurrency import run_in_threadpool
     from app.services.meetings.graph import notes_graph
-    context = NotesContext.model_validate(await run_in_threadpool(call, 'meeting_notes_context', {'p_meeting_id': meeting}, claims))
+    database = ApplicationDatabase(ctx)
+    try:
+        raw = await run_in_threadpool(database.agent_call, MINUTES_WRITER.name, 'meeting_notes_context', meeting, {'p_meeting_id': meeting}, claims)
+    except MeetingStoreError as error:
+        raise await run_in_threadpool(store_error, 'meeting_notes_context', error, claims) from error
+    context = NotesContext.model_validate(raw)
     params = {'p_meeting_id': meeting, 'p_source_id': context.source_id, 'p_source_hash': context.source_hash,
         'p_revision': context.revision, 'p_consent_epoch': context.consent_epoch, 'p_command_id': body.command_id}
     replay = await run_in_threadpool(call, 'meeting_generation_receipt', params, claims)
     if replay is not None:
         return DraftReceipt.model_validate(replay)
-    graph = notes_graph(context, db, claims, body.command_id)
+    graph = notes_graph(context, database, claims, body.command_id)
     from app.services.llm_gateway import LLMError
     try:
         await graph.ainvoke(GraphState(meeting_id=meeting, source_id=context.source_id, draft_id=None))
@@ -137,7 +146,7 @@ async def generate_notes(meeting: UUID, body: Command, claims: Annotated[Claims,
     except MeetingStoreError as error:
         if error.code in ('P1001', '23505'):
             raise HTTPException(409, detail={'code': error.code, 'message': str(error)}) from error
-        raise
+        raise await run_in_threadpool(store_error, 'meeting_save_reviewed_draft', error, claims) from error
     receipt = await run_in_threadpool(call, 'meeting_generation_receipt', params, claims)
     return DraftReceipt.model_validate(receipt)
 
@@ -147,12 +156,14 @@ def approve(meeting: UUID, body: Approval, claims: Annotated[Claims, Depends(cal
 
 @router.post('/meetings/{meeting}/followups')
 def followups(meeting: UUID, body: SelectedActions, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:
-    params = {**approval_params(meeting, body), 'p_action_ids': list(body.action_ids)}
+    edits = body.edit_params()  # 0141: her changes; free text is redacted like every other RM-typed field
+    if edits: edits = {k: {**e, **({'text': redact(e['text'])[0]} if e.get('text') else {})} for k, e in edits.items()}
+    params = {**approval_params(meeting, body), 'p_action_ids': list(body.action_ids), 'p_edits': edits}
     return call('meeting_create_followups', params, claims)
 
 @router.post('/meetings/{meeting}/share-recap')
-def share(meeting: UUID, body: Approval, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:
-    return call('meeting_share_recap', approval_params(meeting, body), claims)
+def share(meeting: UUID, body: RecapShare, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:
+    return call('meeting_share_recap', {**approval_params(meeting, body), 'p_text': redact(body.text)[0] if body.text else None}, claims)
 
 @router.post('/meetings/{meeting}/followups/{followup}/complete')
 def complete(meeting: UUID, followup: UUID, body: Completion, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:

@@ -12,13 +12,16 @@ from app.schemas.contracts import RequestContext
 from app.schemas.meeting_lifecycle import Claims
 from app.schemas.meetings import BriefCard,BriefItem,BriefSection
 from app.schemas.meeting_preparation import BriefGraphState,BriefPlan,BriefReference,BriefSelection,BriefSource,Heading,PlannedSection,PreparationInputs,PreparedBrief,StoredBrief
+from app.services.agents.registry import BRIEF_WRITER
 from app.services.meetings.database import ApplicationDatabase
 from app.services.llm_gateway import call
 from app.services.privacy import redact
 from app.services.prompts import load
 from app.core import auth
+from app.core.config import settings
+from app.core.observability import span
 
-PROMPT='v3'
+PROMPT=BRIEF_WRITER.version
 SCHEMA_OBJECT=TypeAdapter(dict[str,JsonValue])
 
 HEADINGS={'profile':'Profile and products','compliance':'Compliance status','requests':'Open requests','history':'Meeting history',
@@ -28,6 +31,7 @@ QUESTIONS={'confirm_goal':'Confirm the client’s goal for this item.','review_s
  'check_information':'Check whether this recorded information is still current.',
  'compare_product_terms':'Which available product terms, charges, risks and access to funds should we compare for the client’s goal?',
  'confirm_document_next_step':'For this outstanding document, what must the client provide next and which point needs clarification before bank review?',
+ 'discuss_funding_options':'Possible options to discuss for this goal, based on the points above (not advice; you advise): using the maturing time deposit, a Lombard loan against the portfolio, or property financing.',
  'review_collateral_next_step':'For the recorded collateral shortfall, which lending values and borrowing figures should the bank confirm, what options should we discuss, and who will confirm any required action and timing?'}
 
 
@@ -37,7 +41,7 @@ def caller(ctx: RequestContext) -> Claims:
 
 
 async def inputs(meeting: UUID,database: ApplicationDatabase,claims: Claims) -> PreparationInputs:
-    result=await asyncio.to_thread(database.call,'meeting_preparation_inputs',{'p_meeting_id':meeting},claims)
+    result=await asyncio.to_thread(database.agent_call,BRIEF_WRITER.name,'meeting_preparation_inputs',meeting,{'p_meeting_id':meeting},claims)
     return PreparationInputs.model_validate(result)
 
 
@@ -103,6 +107,16 @@ async def read(meeting: UUID,ctx: RequestContext) -> PreparedBrief|None:
     return None if stored is None else render(frame,stored)
 
 
+FUNDING_TOPICS=frozenset({'home_loan','investments'})
+
+
+def usable(selection: BriefSelection,frame: PreparationInputs) -> BriefSelection:
+    """The funding-options question only for a property-financing or investments agenda (SQL refuses it otherwise)."""
+    if FUNDING_TOPICS&set(frame.topics):return selection
+    items=tuple(item for item in selection.items if item.kind!='question' or item.question!='discuss_funding_options')
+    return selection.model_copy(update={'items':items}) if items else selection
+
+
 def selection_plan(selection: BriefSelection) -> BriefPlan:
     """Group a globally bounded model selection into the existing reference-only SQL storage contract."""
     groups: dict[Heading,list[BriefReference]]={};reference=TypeAdapter(BriefReference)
@@ -128,17 +142,18 @@ def selection_schema(sources: tuple[BriefSource,...]) -> dict[str,JsonValue]:
 
 async def generate(meeting: UUID,frame: PreparationInputs,database: ApplicationDatabase,claims: Claims,command: UUID,review_note: str|None) -> StoredBrief:
     async def choose(state: BriefGraphState) -> dict[str,BriefPlan]:
-        prompt=load('brief_writer',PROMPT)
+        prompt=load(BRIEF_WRITER.prompt,PROMPT)
         payload={'purpose':redact(frame.purpose)[0] if frame.purpose else None,'topics':frame.topics,'review_note':redact(review_note)[0] if review_note else None,
             'sources':[source.model_dump(mode='json',exclude={'grant_id'}) for source in live_sources(frame)],'gaps':[gap.model_dump() for gap in frame.gaps]}
-        result=await call({'agent':'brief_writer','id':prompt['id']},prompt['system'],[('user',json.dumps(payload,ensure_ascii=False))],selection_schema(live_sources(frame)))
-        plan=selection_plan(BriefSelection.model_validate(result.data));known={source.source_id for source in live_sources(frame)}
-        if any(item.source_id not in known for section in plan.sections for item in section.items):raise ValueError('Brief Writer selected an unavailable source reference')
-        return {'plan':plan}
+        with span('meeting.agent','agent',agent=BRIEF_WRITER.name,intent='prepare_brief',side='meeting',path='workflow',prompt_version=prompt['id']):
+            result=await call({'agent':BRIEF_WRITER.prompt,'id':prompt['id']},prompt['system'],[('user',json.dumps(payload,ensure_ascii=False))],selection_schema(live_sources(frame)),model=settings.meeting_model or None)
+            plan=selection_plan(usable(BriefSelection.model_validate(result.data),frame));known={source.source_id for source in live_sources(frame)}
+            if any(item.source_id not in known for section in plan.sections for item in section.items):raise ValueError('Brief Writer selected an unavailable source reference')
+            return {'plan':plan}
 
     async def save(state: BriefGraphState) -> dict[str,UUID]:
         if state.plan is None:raise RuntimeError('Brief graph reached storage without a validated reference plan')
-        value=await asyncio.to_thread(database.call,'meeting_save_brief',{'p_meeting_id':meeting,'p_revision':frame.revision,
+        value=await asyncio.to_thread(database.agent_call,BRIEF_WRITER.name,'meeting_save_brief',meeting,{'p_meeting_id':meeting,'p_revision':frame.revision,
             'p_source_hash':frame.source_hash,'p_plan':Jsonb(state.plan.model_dump(mode='json')),'p_command_id':command},claims)
         return {'brief_id':StoredBrief.model_validate(value).brief_id}
 

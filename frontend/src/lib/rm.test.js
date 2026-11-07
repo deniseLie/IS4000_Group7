@@ -302,3 +302,77 @@ test('a saved briefing says what changed: stale records, withdrawn sharing, remo
   assert.match(lines[3],/2 items were left out/);
   assert.equal(briefNotice({withdrawn:[{category:'chat_topics',on:'7 Nov 2026'}],removed_points:[{point_id:'p'}]}).length,1);  // the withdrawal covers it
 });
+
+test('the assistant home groups every starter by the moment of the day and suggests one next step per answer',async()=>{
+  const {STARTER_GROUPS,nextSteps}=await import('./rm.js');
+  assert.deepEqual(STARTER_GROUPS.map(g=>g.label),['Start my day','Before a meeting','After a meeting','Any time']);
+  for(const g of STARTER_GROUPS)for(const s of g.starters)assert.ok(s.message&&s.intent||s.draft||s.navigate,s.title);
+  assert.equal(nextSteps({status:'ok',intent:'meeting_brief'})[0].navigate,'schedule');
+  assert.deepEqual(nextSteps({status:'ok',intent:'today',clarification:{question:'Which?'}}),[]);
+  assert.deepEqual(nextSteps({status:'denied',intent:'today'}),[]);
+});
+
+test('first-time users see words, short meeting names and each repeated item once',async()=>{
+  const {humanize,meetingTitle,groupSame,stageWords}=await import('./rm.js');
+  assert.equal(humanize('Client: Michelle Ng. Preferred language: en. Employment: self_employed.'),'Client: Michelle Ng. Preferred language: English. Employment: self employed.');
+  assert.equal(humanize('Recorded date: Time deposit ****4410 matures on 11 Nov 2026'),'Time deposit ****4410 matures on 11 Nov 2026');
+  assert.equal(meetingTitle('Property financing options',['home_loan']),'Property financing options');
+  assert.equal(meetingTitle('I’m thinking of buying a condo next year, can I meet Sophie about property financing?',['home_loan']),'Property financing meeting');
+  assert.deepEqual(groupSame([{customer_id:1,title:'Urgent card'},{customer_id:1,title:'Urgent card'},{customer_id:2,title:'Urgent card'}]).map(x=>x.count),[2,1]);
+  assert.equal(stageWords('awaiting_transcript','provider'),'Waiting for the Zoom transcript');
+});
+
+test('my clients: one sentence per client, the client who needs you most first',async()=>{
+  const {clientStatus,byNeed}=await import('./rm.js');
+  const michelle={name:'Michelle Ng',urgent:true,open_rm_tickets:14,overdue:37,open_specialist_tickets:24};
+  const meiling={name:'Tan Mei Ling (DEMO)',open_rm_tickets:2,overdue:2,open_specialist_tickets:0,inherited_from:'Rachel Goh'};
+  assert.deepEqual(clientStatus(michelle),{tone:'urgent',headline:'An urgent request and 13 more waiting for you',detail:'37 requests past the promised date · 24 with bank teams'});
+  assert.equal(clientStatus(meiling).detail,'2 requests past the promised date · New to you: read Rachel’s handover brief');
+  assert.deepEqual(byNeed([meiling,michelle]).map(c=>c.name),['Michelle Ng','Tan Mei Ling (DEMO)']);
+});
+
+test('today: one ranked list, urgent first, meetings to document next, each meeting once, shared topics before the rest',async()=>{
+  const {todayList,awarenessList}=await import('./rm.js');
+  const priorities=[
+    {key:'meeting:m1',kind:'meeting',client:'Michelle Ng',customer_id:1,title:'Property financing options',do_first:true,ref:{appointment_id:'m1'},parts:[{reason:'Meeting in 2 days'}]},
+    {key:'ticket:T1',kind:'request',client:'Michelle Ng',customer_id:1,title:'Urgent card',do_first:true,ref:{reference:'T1',urgency:'urgent'},parts:[{reason:'Urgent request'},{reason:'2 days past target'}]},
+    {key:'ticket:T2',kind:'request',client:'Michelle Ng',customer_id:1,title:'Urgent card',do_first:true,ref:{reference:'T2',urgency:'urgent'},parts:[]},
+    {key:'task:9',kind:'task',client:'Tan Mei Ling',customer_id:2,title:'Your task: send rates',do_first:false,parts:[{reason:'Was due 3 Nov'}]}];
+  const reminders=[{reminder_id:'r1',kind:'preparation',meeting_id:'m1',client:'Michelle Ng'},{reminder_id:'r2',kind:'transcript',meeting_id:'m0',client:'Michelle Ng'}];
+  const toDocument=[{appointment_id:'m0',client:'Michelle Ng',purpose:'Periodic review',when:'Wed 4 Nov'}];
+  const shared=[{share_id:'s1',client:'Tan Mei Ling',customer_id:2,topic:'investments',line:'Exploring investments within 3 months'}];
+  const said='[Urgent card] Charge the client does not recognise. Client’s words: “why is there a SGD 3,850 charge?”';
+  const tickets=[{reference:'T1',customer_id:1,client:'Michelle Ng',category_label:'Urgent card',summary:said},{reference:'T2',customer_id:1,client:'Michelle Ng',category_label:'Urgent card',summary:said}];
+  const list=todayList({priorities,reminders,toDocument,shared,tickets});
+  assert.equal(todayList({priorities,reminders,toDocument,shared}).filter(x=>x.key.startsWith('ticket:')).length,2,'without the ticket text nothing is merged');
+  assert.deepEqual(list.map(x=>x.key),['ticket:T1','reminder:r2','meeting:m1','shared:s1','task:9']);
+  const {todayAction,slashActions,meetingSuggestions}=await import('./rm.js');
+  assert.equal(todayAction(list[1]).label,'Add transcript or notes');
+  assert.equal(todayAction(list[0]).label,'Draft a reply');
+  assert.equal(todayAction(list[4]).label,'Ask the assistant');
+  assert.ok(slashActions('/hand').some(a=>a.title==='Handover brief'));assert.deepEqual(slashActions('hi'),[]);
+  assert.equal(meetingSuggestions(3,'Michelle Ng').at(-1).label,'What’s still open for Michelle?');
+  assert.equal(list[0].why,'2 requests like this from Michelle · 2 days past target');
+  assert.equal(list[3].title,'exploring investments within 3 months');
+  assert.equal(list[4].title,'send rates');
+  const followups=[{item_key:'task:9',kind:'task'},{item_key:'spec:1',kind:'specialist_ticket',owner:'specialist'},{item_key:'c:1',kind:'commitment'}];
+  assert.deepEqual(awarenessList(followups,priorities).map(f=>f.item_key),['spec:1','c:1']);
+});
+
+test('ticket inbox: only the same client, type and words merge; the oldest leads; fraud and issues are flagged',async()=>{
+  const {ticketRows,ticketTitle,ticketIssues,possibleFraud,ticketParts,duplicateNote}=await import('./rm.js');
+  const card='[Urgent card] Charge the client does not recognise. Cards on record: card ending 7310 (active), card ending 5592 (active). Client’s words: “eh why is there a SGD 3,850 charge in London?? my transfer to lim interiors still says pending, also i got a weird OTP last night and now my app is locked”';
+  const fee=`[Urgent card] Charge the client does not recognise. Cards on record: card ending 7310 (active). Client’s words: “I want to talk to my RM about my annual fee, and also there's a SGD 3,850 charge in London I don't recognise”`;
+  const t=(reference,summary,age,extra={})=>({reference,summary,age_hours:age,customer_id:1002,client:'Michelle Ng',category_label:'Question for your relationship manager',urgency:'urgent',overdue:true,...extra});
+  const rows=ticketRows([t('TCK-001082',card,40),t('TCK-001079',card.replace('EH WHY','eh why'),50),t('TCK-001080',fee,49),t('TCK-9',  'Statement copy for October',2,{urgency:'normal',overdue:false})]);
+  assert.deepEqual(rows.map(r=>[r.lead.reference,r.count]),[['TCK-001079',2],['TCK-001080',1],['TCK-9',1]]);
+  assert.equal(rows[0].same[0].reference,'TCK-001082');
+  assert.equal(ticketTitle(rows[0].lead),'charge she doesn’t recognise · SGD 3,850');
+  assert.deepEqual(ticketIssues(rows[0].lead),['Card charge','Transfer pending','Unexpected OTP','App locked']);
+  assert.ok(possibleFraud(rows[0].lead));assert.ok(!possibleFraud(rows[1].lead));
+  assert.deepEqual(ticketIssues(rows[1].lead),['Annual fee','Card charge']);
+  assert.equal(ticketTitle(rows[1].lead),'annual fee · also a charge she doesn’t recognise (SGD 3,850)');
+  assert.equal(ticketParts(card).cards,'card ending 7310 (active), card ending 5592 (active)');
+  assert.equal(ticketTitle(rows[2].lead),'statement copy for October');
+  assert.equal(duplicateNote(rows[0].lead),'We have answered this under TCK-001079. Please see that request for our reply.');
+});
