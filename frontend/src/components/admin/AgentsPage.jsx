@@ -85,6 +85,28 @@ function Tools({tools,knowledge}) {
   </div>;
 }
 
+const MEETING_ACTOR={assigned_rm:'Assigned RM',claimed_worker:'Worker with this meeting’s transcript claim'};
+const MEETING_ACCESS={read:'Read',draft_write:'Save draft'};
+
+function MeetingCatalogue({agents}) {
+  return <section className="admin-card" data-testid="admin-meeting-catalogue">
+    <div className="admin-card-head">
+      <h2>Meeting workflow agents</h2>
+      <span className="admin-muted">The workflow selects these tools and checks permissions for the current meeting.</span>
+    </div>
+    <div className="admin-table-wrap"><table className="admin-table">
+      <thead><tr><th>Agent</th><th>Purpose</th><th>Permitted operations</th></tr></thead>
+      <tbody>{agents.map(agent=><tr key={agent.agent}>
+        <td className="admin-mono">{agent.agent}</td>
+        <td>{agent.purpose}</td>
+        <td>{agent.tools.length?<ul className="admin-plain">{agent.tools.map(tool=><li key={tool.name}>
+          <code>{tool.name}</code><br/><span className="admin-muted">{MEETING_ACCESS[tool.access]} · {MEETING_ACTOR[tool.actor]}</span>
+        </li>)}</ul>:'Tool-free'}</td>
+      </tr>)}</tbody>
+    </table></div>
+  </section>;
+}
+
 // How well each agent handles its requests, and how the orchestration around them behaves.
 export default function AgentsPage({onNavigate}) {
   const [range,setRange]=useState('7d');
@@ -116,8 +138,8 @@ export default function AgentsPage({onNavigate}) {
             <th className="num" title="Tool calls refused (outside the agent's tools, its limits or the RM's book) / consent-gated reads the client has not shared">Refused / gaps</th>
             <th className="num">Evidence</th><th className="num">p50 / p95</th><th>Prompt</th><th className="num">Eval pass</th></tr></thead>
           <tbody>{data.agents.map(agent=><tr key={agent.agent} data-testid={`admin-agent-${agent.agent}`}>
-            <td><strong>{agent.agent}</strong>{agent.side==='rm'&&<span className="admin-muted"> RM</span>}</td><td className="num">{agent.runs}</td>
-            <td className="num">{percent(agent.share)}</td><td><Mix counts={agent.outcomes} tones={OUTCOME_TONE}/></td>
+            <td><strong>{agent.agent}</strong>{agent.side==='rm'&&<span className="admin-muted"> RM</span>}{agent.side==='meeting'&&<span className="admin-muted"> Meeting</span>}</td><td className="num">{agent.runs}</td>
+            <td className="num">{agent.side==='meeting'?'—':percent(agent.share)}</td><td><Mix counts={agent.outcomes} tones={OUTCOME_TONE}/></td>
             <td><Mix counts={agent.paths}/></td>
             <td className="num" title={agent.refused?`${agent.refused} tool calls refused`:''}>{number(agent.tool_calls_per_loop)}{agent.refused?` (${agent.refused} refused)`:''}</td>
             <td><Mix counts={agent.stops} tones={{answered:'pass',cap:'withheld',malformed:'fail',timeout:'fail',error:'fail'}}/></td>
@@ -130,6 +152,7 @@ export default function AgentsPage({onNavigate}) {
         {data.fixed_routes.requests>0&&<p className="admin-muted">Fixed safety routes (no agent, no model): <Mix counts={data.fixed_routes.routes}/></p>}
       </section>
 
+      {data.meeting_catalogue?.length>0&&<MeetingCatalogue agents={data.meeting_catalogue}/>}
       <Planner data={data.planner} onNavigate={onNavigate}/>
       <Orchestration gather={data.gather} offers={data.offers}/>
       <Tools tools={data.tools} knowledge={data.knowledge}/>

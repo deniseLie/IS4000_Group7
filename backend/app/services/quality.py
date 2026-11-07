@@ -31,6 +31,7 @@ _client=None
 WINDOWS={'24h':1,'7d':7,'30d':30,'90d':90}  # days; source 'live' is the app's tracing project, 'eval' the requests inside experiments
 REQUESTS='or(eq(name, "chat"), eq(name, "rm_assistant"))'
 STEPS=('llm','agent','tool_call','kb.search','planner','gather','act','compose','embed','loop_step')
+MEETING_STEPS=('meeting.agent','meeting.tool_call')
 # Steps plus the model client's own runs (run_type llm), whose tokens add up to a request's total as /runs/query summed it.
 STEPS_AND_MODELS='or('+', '.join(f'eq(name, "{n}")' for n in STEPS)+', eq(run_type, "llm"))'
 MAX_REQUESTS,MAX_STEPS,MAX_TRACE=2000,20000,500  # bounded reads; the page says "sampled" when a cap is reached
@@ -331,6 +332,16 @@ def live_runs(days: int) -> tuple[list[dict],list[dict]]:
     for wider in (d for d in LIVE_DAYS if d>days):
         if hit:=fresh(('live_runs',wider)):return [r for r in hit[0] if r['started_at']>=since],[s for s in hit[1] if s['started_at']>=since]
     return cached(('live_runs',days),lambda:read_runs({'project_ids':[live_project()],'min_start_time':since.isoformat()},'live',root=True))
+
+
+def meeting_steps(days: int) -> list[dict[str,Any]]:
+    """Live workflow spans, including standalone worker runs and preparation outside chat requests."""
+    def load() -> list[dict[str,Any]]:
+        since=now()-timedelta(days=days)
+        run_filter='or('+', '.join(f'eq(name, "{name}")' for name in MEETING_STEPS)+')'
+        runs=query({'project_ids':[live_project()],'min_start_time':since.isoformat(),'filter':run_filter,'selects':STEP_SELECTS},MAX_REQUESTS)
+        return [dict(as_step(run),name=run.name.removeprefix('meeting.'),source='live') for run in runs]
+    return cached(('meeting_steps',days),load)
 
 
 def requests(source: str,days: int) -> list[dict[str,Any]]:

@@ -12,14 +12,16 @@ from app.schemas.contracts import RequestContext
 from app.schemas.meeting_lifecycle import Claims
 from app.schemas.meetings import BriefCard,BriefItem,BriefSection
 from app.schemas.meeting_preparation import BriefGraphState,BriefPlan,BriefReference,BriefSelection,BriefSource,Heading,PlannedSection,PreparationInputs,PreparedBrief,StoredBrief
+from app.services.agents.registry import BRIEF_WRITER
 from app.services.meetings.database import ApplicationDatabase
 from app.services.llm_gateway import call
 from app.services.privacy import redact
 from app.services.prompts import load
 from app.core import auth
 from app.core.config import settings
+from app.core.observability import span
 
-PROMPT='v4'  # v4: recorded dates and the funding-options question (storyline refinements, 0140)
+PROMPT=BRIEF_WRITER.version
 SCHEMA_OBJECT=TypeAdapter(dict[str,JsonValue])
 
 HEADINGS={'profile':'Profile and products','compliance':'Compliance status','requests':'Open requests','history':'Meeting history',
@@ -39,7 +41,7 @@ def caller(ctx: RequestContext) -> Claims:
 
 
 async def inputs(meeting: UUID,database: ApplicationDatabase,claims: Claims) -> PreparationInputs:
-    result=await asyncio.to_thread(database.call,'meeting_preparation_inputs',{'p_meeting_id':meeting},claims)
+    result=await asyncio.to_thread(database.agent_call,BRIEF_WRITER.name,'meeting_preparation_inputs',meeting,{'p_meeting_id':meeting},claims)
     return PreparationInputs.model_validate(result)
 
 
@@ -140,17 +142,18 @@ def selection_schema(sources: tuple[BriefSource,...]) -> dict[str,JsonValue]:
 
 async def generate(meeting: UUID,frame: PreparationInputs,database: ApplicationDatabase,claims: Claims,command: UUID,review_note: str|None) -> StoredBrief:
     async def choose(state: BriefGraphState) -> dict[str,BriefPlan]:
-        prompt=load('brief_writer',PROMPT)
+        prompt=load(BRIEF_WRITER.prompt,PROMPT)
         payload={'purpose':redact(frame.purpose)[0] if frame.purpose else None,'topics':frame.topics,'review_note':redact(review_note)[0] if review_note else None,
             'sources':[source.model_dump(mode='json',exclude={'grant_id'}) for source in live_sources(frame)],'gaps':[gap.model_dump() for gap in frame.gaps]}
-        result=await call({'agent':'brief_writer','id':prompt['id']},prompt['system'],[('user',json.dumps(payload,ensure_ascii=False))],selection_schema(live_sources(frame)),model=settings.meeting_model or None)
-        plan=selection_plan(usable(BriefSelection.model_validate(result.data),frame));known={source.source_id for source in live_sources(frame)}
-        if any(item.source_id not in known for section in plan.sections for item in section.items):raise ValueError('Brief Writer selected an unavailable source reference')
-        return {'plan':plan}
+        with span('meeting.agent','agent',agent=BRIEF_WRITER.name,intent='prepare_brief',side='meeting',path='workflow',prompt_version=prompt['id']):
+            result=await call({'agent':BRIEF_WRITER.prompt,'id':prompt['id']},prompt['system'],[('user',json.dumps(payload,ensure_ascii=False))],selection_schema(live_sources(frame)),model=settings.meeting_model or None)
+            plan=selection_plan(usable(BriefSelection.model_validate(result.data),frame));known={source.source_id for source in live_sources(frame)}
+            if any(item.source_id not in known for section in plan.sections for item in section.items):raise ValueError('Brief Writer selected an unavailable source reference')
+            return {'plan':plan}
 
     async def save(state: BriefGraphState) -> dict[str,UUID]:
         if state.plan is None:raise RuntimeError('Brief graph reached storage without a validated reference plan')
-        value=await asyncio.to_thread(database.call,'meeting_save_brief',{'p_meeting_id':meeting,'p_revision':frame.revision,
+        value=await asyncio.to_thread(database.agent_call,BRIEF_WRITER.name,'meeting_save_brief',meeting,{'p_meeting_id':meeting,'p_revision':frame.revision,
             'p_source_hash':frame.source_hash,'p_plan':Jsonb(state.plan.model_dump(mode='json')),'p_command_id':command},claims)
         return {'brief_id':StoredBrief.model_validate(value).brief_id}
 

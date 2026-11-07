@@ -39,12 +39,8 @@ def in_use():
         'retail': retail.PROMPT, 'compliance': compliance.PROMPT, 'relationship': relationship.PROMPT, 'document': document.PROMPT,
         'runner_common': runner.COMMON, 'rm_planner': graph.PLANNER_VERSION, 'rm_assistant': handlers.ASSISTANT_VERSION,
         'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT, 'talking_points': talking_points.PROMPT,
-        **{registry.SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()}}
-    from app.services.meetings import writer,preparation
-    found['minutes_writer']=writer.PROMPT
-    found['minutes_overview']=writer.OVERVIEW_PROMPT
-    found['brief_writer']=preparation.PROMPT
-    found['proposal_drafter']='v1'
+        **{registry.CHAT_SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()},
+        **{spec.prompt: spec.version for spec in registry.MEETING_SPECS.values()}}
     return {family: version for family, version in sorted(found.items()) if version}
 
 def released():

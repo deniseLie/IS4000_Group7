@@ -1,4 +1,4 @@
-"""The v5 agent runner (build plan phase 3): one runner for every agent in registry.SPECS.
+"""The v5 agent runner (build plan phase 3): one runner for every agent in registry.CHAT_SPECS.
 
 A known intent runs its default reads (arguments from the task's entities, never from the model) and makes one
 answer call. Only an `open` task first runs a bounded tool loop over the spec's loop_tools. Both paths end in the
