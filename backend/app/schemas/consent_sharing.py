@@ -30,8 +30,11 @@ class SharingGrant(Model):
 class SharingCategory(Model):
     code: Code
     label: Label
+    description: Label
     gated: StrictBool
+    default_on: StrictBool
     withdrawable: StrictBool
+    reason: Label | None=None
     max_months: StrictInt | None
     notice_version: str | None
     grant: SharingGrant | None

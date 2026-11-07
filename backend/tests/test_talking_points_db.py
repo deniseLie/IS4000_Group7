@@ -1,5 +1,5 @@
 """Talking points over real temporary PostgreSQL (migration 0108, RM copilot build plan phase 4): RLS and the client-only
-evidence, recording (consent recheck, her exact words, idempotency, merge), the 24-hour hold, the care pause, the consent
+evidence (turns only since 0142), recording (consent recheck, her exact words, idempotency, merge), the 24-hour hold, the care pause, the consent
 gate and its audits, her controls with receipts, lane 2 sharing with the notice and its limits, withdrawal, reassignment
 and one client per call. Synthetic data only.
 
@@ -98,17 +98,18 @@ def test_recording_rechecks_her_words_and_merges_into_one_point_per_topic(databa
     assert sqlstate(database,'select public.customer_record_talking_point(%s,%s,%s,%s,%s,%s)',
         (turn,'pension','planning','unknown',[],'unit trusts'))=='22023'  # not a listed topic
     owner(database)
-    assert database.execute('select quote from insights.talking_point_evidence where point_id=%s',(first['point_id'],)).fetchone()==(
-        'invest [amount] in unit trusts next year',)  # amounts are never stored
+    assert database.execute('select turn_id from insights.talking_point_evidence where point_id=%s',(first['point_id'],)).fetchone()==(turn,)
+    assert not database.execute("select exists(select 1 from information_schema.columns where table_schema='insights' "
+        "and table_name='talking_point_evidence' and column_name='quote')").fetchone()[0]  # 0142: her words are never kept
     point=database.execute('select stage,timeframe,concerns,visible_from>now()+interval \'23 hours\' from insights.talking_points where point_id=%s',
         (first['point_id'],)).fetchone()
     assert point==('planning','within_12m',['fees'],True)  # pending for 24 hours
-    # Merge: the stage only moves up, concerns add up, last_seen moves on, at most three quotes are kept.
+    # Merge: the stage only moves up, concerns add up, last_seen moves on, one evidence row per turn.
     for stage,quote in [('ready','ready to invest'),('curious','invest'),('exploring','unit trusts'),('exploring','invest more')]:
         record(database,saved_turn(database,f'I am {quote} now'),'investments',stage,quote,concerns=['rates'])
     owner(database)
     assert database.execute('select stage,concerns from insights.talking_points where point_id=%s',(first['point_id'],)).fetchone()==('ready',['fees','rates'])
-    assert database.execute('select count(*),count(quote) from insights.talking_point_evidence where point_id=%s',(first['point_id'],)).fetchone()==(5,3)
+    assert database.execute('select count(*) from insights.talking_point_evidence where point_id=%s',(first['point_id'],)).fetchone()==(5,)
     # Another client's turn, and a client without chat_topics.
     set_customer(database,1001)
     assert sqlstate(database,'select public.customer_record_talking_point(%s,%s,%s,%s,%s,%s)',(turn,'investments','planning','unknown',[],'invest'))=='42501'
@@ -177,7 +178,7 @@ def test_her_controls_run_at_once_and_leave_receipts(database: 'Connection[SqlRo
     result=deleted['receipt']['result']
     assert deleted['command']['state']=='succeeded' and {k:result[k] for k in ('point_id','topic','status')}=={'point_id':MICHELLE_POINT,'topic':'home_loan','status':'deleted'}
     owner(database)
-    # 0110: removed softly with a 7-day undo; her quotes stay for the undo until the purge (never shown to the RM)
+    # 0110: removed softly with a 7-day undo; its evidence row stays until the purge (never shown to the RM)
     assert database.execute("select deleted_reason,purge_after>now()+interval '6 days' from insights.talking_points where point_id=%s",
         (MICHELLE_POINT,)).fetchone()==('client',True)
     assert database.execute('select count(*) from insights.talking_point_evidence where point_id=%s',(MICHELLE_POINT,)).fetchone()==(1,)
@@ -247,13 +248,13 @@ def test_reassignment_ends_access_and_each_read_is_one_client(database: 'Connect
     assert record(database,saved_turn(database,'Planning to invest'),'investments','planning','invest')['reason']=='no_consent'
 
 
-def test_her_own_view_shows_the_hold_her_words_mutes_and_the_pause(database: 'Connection[SqlRow]') -> None:
+def test_her_own_view_shows_the_hold_mutes_and_the_pause_and_never_her_words(database: 'Connection[SqlRow]') -> None:
     record(database,saved_turn(database,'Planning to invest in ETFs'),'investments','planning','invest in ETFs')
     set_customer(database,1002)
     mine=database.execute('select public.customer_read_talking_points(1002)').fetchone()[0]
     data=mine['data']
     assert data['chat_topics'] is True and data['rm_first_name']=='Sophie' and data['muted']==[] and data['pause'] is None
     points={p['topic']:p for p in data['points']}
-    assert points['investments']['pending'] is True and points['investments']['evidence'][0]['quote']=='invest in ETFs'
-    assert points['home_loan']['pending'] is False and points['home_loan']['evidence'][0]['quote']=="I'm thinking of buying a condo next year"
+    assert points['investments']['pending'] is True and points['home_loan']['pending'] is False
+    assert 'evidence' not in points['investments'] and 'invest in ETFs' not in json.dumps(mine)  # 0142: no words in her view
     assert sqlstate(database,'select public.customer_read_talking_points(1001)',())=='42501'

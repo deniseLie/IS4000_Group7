@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {chatTopicsNote,insightSentence,line,parseInsightTarget,parseTalkingPoints,sharedTopicRows} from './talkingPoints.js';
+import {chatTopicsNote,insightSentence,line,parseInsightTarget,parseTalkingPoints,plainLine,sharedTopicRows} from './talkingPoints.js';
 import {parseAction} from './actions.js';
 import {offerLabels} from './offers.js';
 import {consentCategoryText} from './consentData.js';
 
 const id=n=>`12345678-1234-1234-1234-1234567890${String(n).padStart(2,'0')}`;
 const point=(extra={})=>({point_id:id(1),topic:'home_loan',stage:'planning',timeframe:'within_12m',concerns:[],origin:'inferred',
-  first_seen:'2026-11-05',last_seen:'2026-11-05',visible_from:'2026-11-06T09:00:00+08:00',pending:true,
-  evidence:[{quote:'I’m thinking of buying a condo next year',recorded_at:'2026-11-05T09:00:00+08:00'}],...extra});
+  first_seen:'2026-11-05',last_seen:'2026-11-05',visible_from:'2026-11-06T09:00:00+08:00',pending:true,...extra});
 const withLine=p=>({...p,line:line(p),topic_name:'Home loan'});
 const mine=(points=[withLine(point())],extra={})=>({call_id:id(9),as_of:'2026-11-05T09:00:00+08:00',
   data:{points,muted:[],pause:null,chat_topics:true,rm_first_name:'Sophie',...extra}});
@@ -20,17 +19,31 @@ test('every topic reads exactly as the RM side renders it (schemas/meetings.Talk
   assert.equal(line({...point(),timeframe:'unknown',origin:'confirmed'}),'Home loan · planning · shared by the client');
 });
 
-test('her view is read strictly: the line must match, quotes are bounded and only list values pass',()=>{
+test('her view is read strictly: the line must match, only list values pass and no words are kept',()=>{
   const view=parseTalkingPoints(mine());
   assert.equal(view.points[0].line,'Home loan · planning · within 12 months · inferred from chat');
   assert.equal(view.points[0].pending,true);
-  assert.equal(view.points[0].evidence[0].quote,'I’m thinking of buying a condo next year');
   assert.equal(view.rm_first_name,'Sophie');
+  const old=parseTalkingPoints(mine([withLine(point({evidence:[{quote:'I’m thinking of buying a condo next year',recorded_at:'2026-11-05T09:00:00+08:00'}]}))]));
+  assert.equal('evidence' in old.points[0],false);  // a server before 0142: her words are dropped, never shown
   for(const bad of [{...withLine(point()),line:'Home loan · ready'},withLine(point({topic:'savings'})),withLine(point({stage:'keen'})),
-    withLine(point({evidence:[{quote:'x'.repeat(201),recorded_at:'2026-11-05T09:00:00+08:00'}]})),withLine(point({concerns:['tax']}))])
+    withLine(point({concerns:['tax']}))])
     assert.throws(()=>parseTalkingPoints(mine([bad])));
   assert.throws(()=>parseTalkingPoints(mine([withLine(point()),withLine(point())])));  // one row per point
   assert.equal(parseTalkingPoints(mine([],{pause:{pause_id:id(3),until:'2027-01-04T09:00:00+08:00'},muted:['insurance']})).pause.until,'2027-01-04T09:00:00+08:00');
+});
+
+test('she reads each topic in plain words with the same facts as the RM line',()=>{
+  assert.equal(plainLine(point()),"You're planning a home loan in the next 12 months.");
+  assert.equal(plainLine(point({stage:'curious',timeframe:'unknown'})),'You asked about home loans.');
+  assert.equal(plainLine(point({topic:'fixed_deposit',stage:'curious',timeframe:'unknown',concerns:['rates']})),'You asked about fixed deposits. You mentioned rates.');
+  assert.equal(plainLine(point({topic:'investments',stage:'exploring',timeframe:'within_3m',concerns:['fees','rates','timing']})),
+    "You're looking into investing, with the next 3 months in mind. You mentioned fees, rates and timing.");
+  assert.equal(plainLine(point({topic:'fixed_deposit',stage:'ready',timeframe:'now'})),"You're ready to place a fixed deposit now.");
+  assert.equal(plainLine(point({topic:'insurance',stage:'concern',timeframe:'unknown',concerns:['fees']})),'You raised a concern about your insurance. You mentioned fees.');
+  assert.equal(plainLine(point({topic:'investments',stage:'planning',timeframe:'later'})),"You're planning to invest later on.");
+  for(const topic of ['home_loan','investments','fixed_deposit','insurance'])for(const stage of ['curious','exploring','planning','ready','concern'])
+    assert.doesNotMatch(plainLine(point({topic,stage})),/undefined|·|curious|exploring|inferred/);  // no codes, no RM wording
 });
 
 function insight(type,target,result,state='succeeded') {

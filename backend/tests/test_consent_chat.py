@@ -27,7 +27,7 @@ def sharing(active: tuple[str,...]=('transaction_insights',),rm: bool=True,meeti
     def card(code: str) -> dict:
         grant={'grant_id':str(GRANT),'legacy':False,'scope':None,'until':'date','basis':'consent','granted_at':NOW.isoformat(),
             'expires_at':(NOW+timedelta(days=30)).isoformat(),'until_meeting_id':None,'until_request_id':None,'renewal_due':False}
-        return {'code':code,'label':code.replace('_',' '),'gated':True,'withdrawable':True,'max_months':12,'notice_version':'v1',
+        return {'code':code,'label':code.replace('_',' '),'description':'What is shared.','gated':True,'default_on':False,'withdrawable':True,'max_months':12,'notice_version':'v1',
             'grant':grant if code in active else None}
     data={'rm':{'advisor_id':SOPHIE,'name':'Sophie Lim (DEMO)'} if rm else None,'categories':[card('transaction_insights'),card('chat_topics')],
         'accounts':[],'next_meeting':{'meeting_id':str(MEETING),'starts_at':(NOW+timedelta(days=3)).isoformat()} if meeting else None,

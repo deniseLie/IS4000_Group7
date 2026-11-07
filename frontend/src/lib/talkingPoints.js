@@ -1,5 +1,5 @@
-// Talking points (0108, build plan phase 4): Data sharing → What <RM> sees. Each topic shows the exact line her
-// relationship manager reads (list values only); her own words under "Why we think this" never leave her side.
+// Talking points (0108, build plan phase 4): Data sharing → Topics from your chats. Each topic reads in plain words with
+// the same facts as the line her relationship manager reads (list values only). Her words are never shown or kept (0142).
 // Delete, Don't suggest this again and Resume are automatic actions with a receipt; Let her know is a chat offer.
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY=/^\d{4}-\d\d-\d\d$/;
@@ -34,12 +34,28 @@ export function line(point) {
     ...(point.concerns?.length?[`asks about ${point.concerns.join(', ')}`]:[]),ORIGINS[point.origin]].join(' · ');
 }
 
+// Her view in plain words: the same facts as line(), without the list codes. 'You're planning a home loan in the next 12 months.'
+const ABOUT={home_loan:'home loans',investments:'investing',fixed_deposit:'fixed deposits',insurance:'insurance'};
+const PLAN={home_loan:'a home loan',investments:'to invest',fixed_deposit:'a fixed deposit',insurance:'to get insurance cover'};
+const ACT={home_loan:'apply for a home loan',investments:'start investing',fixed_deposit:'place a fixed deposit',insurance:'take up insurance cover'};
+const OWN={home_loan:'your home loan',investments:'your investments',fixed_deposit:'your fixed deposit',insurance:'your insurance'};
+const WHEN={now:'now',within_3m:'in the next 3 months',within_12m:'in the next 12 months',later:'later on'};
+const IN_MIND={now:', for right now',within_3m:', with the next 3 months in mind',within_12m:', with the next 12 months in mind',later:', with later on in mind'};
+function words(list) {return list.length<2?list.join(''):`${list.slice(0,-1).join(', ')} and ${list.at(-1)}`;}
+export function plainLine(point) {
+  const t=point.topic,known=point.timeframe&&point.timeframe!=='unknown';
+  const acting=point.stage==='planning'||point.stage==='ready';
+  const base={curious:`You asked about ${ABOUT[t]}`,exploring:`You're looking into ${ABOUT[t]}`,planning:`You're planning ${PLAN[t]}`,
+    ready:`You're ready to ${ACT[t]}`,concern:`You raised a concern about ${OWN[t]}`}[point.stage];
+  const when=known?(acting?` ${WHEN[point.timeframe]}`:IN_MIND[point.timeframe]):'';
+  return `${base}${when}.${point.concerns?.length?` You mentioned ${words(point.concerns)}.`:''}`;
+}
+
 function parsePoint(value) {
-  if(!value||!Object.hasOwn(ORIGINS,value.origin)||typeof value.pending!=='boolean'||!Array.isArray(value.evidence)||value.evidence.length>3)throw invalid();
+  if(!value||!Object.hasOwn(ORIGINS,value.origin)||typeof value.pending!=='boolean')throw invalid();
   const point={point_id:id(value.point_id),topic:topic(value.topic),stage:stage(value.stage),timeframe:timeframe(value.timeframe),
     concerns:concerns(value.concerns),origin:value.origin,first_seen:day(value.first_seen),last_seen:day(value.last_seen),
-    visible_from:timestamp(value.visible_from),pending:value.pending,
-    evidence:value.evidence.map(q=>{if(typeof q?.quote!=='string'||!q.quote.trim()||q.quote.length>200)throw invalid();return {quote:q.quote,recorded_at:timestamp(q.recorded_at)};})};
+    visible_from:timestamp(value.visible_from),pending:value.pending};
   if(value.line!==line(point))throw invalid();  // what she sees is exactly what her relationship manager reads
   return {...point,line:value.line};
 }

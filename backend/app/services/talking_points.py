@@ -7,7 +7,8 @@ is active (else only the skip is audited) and after a code pre-filter (greetings
 turns, mostly redacted or sensitive messages, no topic word). One strict-JSON call (`talking_points/v1`, model
 TALKING_POINTS_MODEL, no retry) classifies her redacted message, with her previous message as context; code keeps a point
 only when the quote is her exact words, holds a word from the topic's list, the topic is listed and not muted, and no
-sensitive word matches; amounts are masked. A model failure is logged with ids only; the reply is never affected.
+sensitive word matches; amounts are masked. The database checks the quote again and keeps only the turn (0142: her
+words are never stored). A model failure is logged with ids only; the reply is never affected.
 
 Lane 2, shared (`share_offer`, called by orchestrator.compose): a rule, never the model, offers one insight.share when
 her message names a topic and a planning cue and nothing rules it out (care, mute, pause, a prompt for that topic in the
@@ -128,7 +129,7 @@ async def status(ctx: RequestContext) -> TopicStatus:
 
 
 async def mine(ctx: RequestContext) -> CustomerEnvelope[MyTalkingPoints]:
-    """Her own points with her quotes, mutes and pause (Data sharing > What Sophie sees)."""
+    """Her own points (list values, never her words), removed points, mutes and pause (Data sharing > Topics from your chats)."""
     return await _read('insights.read','customer_read_talking_points',{},MINE,ctx)
 
 
