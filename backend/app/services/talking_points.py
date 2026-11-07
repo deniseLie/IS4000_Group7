@@ -8,7 +8,9 @@ turns, mostly redacted or sensitive messages, no topic word). One strict-JSON ca
 TALKING_POINTS_MODEL, no retry) classifies her redacted message, with her previous message as context; code keeps a point
 only when the quote is her exact words, holds a word from the topic's list, the topic is listed and not muted, and no
 sensitive word matches; amounts are masked. The database checks the quote again and keeps only the turn (0142: her
-words are never stored). A model failure is logged with ids only; the reply is never affected.
+words are never stored). A model failure is logged with ids only; the reply is never affected. With the talking_points
+prompt at v2, lane 1 reads her current points and this chat's active topics instead and proposes add, update or on hold
+(services/talking_points_state, migration 0143); the skip and extract audits then add the version, actions and carry-overs.
 
 Lane 2, shared (`share_offer`, called by orchestrator.compose): a rule, never the model, offers one insight.share when
 her message names a topic and a planning cue and nothing rules it out (care, mute, pause, a prompt for that topic in the
@@ -32,7 +34,7 @@ from app.services import audit,llm_gateway,offers,prompts
 from app.services.authorization import require_permission
 from app.services.customer_data import _read
 
-PROMPT='v1'
+PROMPT='v1'  # lane 1's prompt; 'v2' runs services/talking_points_state (0143)
 TOPICS=('home_loan','investments','fixed_deposit','insurance')
 STAGES=('curious','exploring','planning','ready','concern')
 TIMEFRAMES=('now','within_3m','within_12m','later','unknown')
@@ -150,7 +152,7 @@ async def _rpc(ctx: RequestContext,name: str,params: dict) -> dict:
 
 async def extract(ctx: RequestContext,turn_id: UUID,message: str,previous: str | None,muted: set[str]) -> dict:
     """One classification and the code checks; records the kept points under her JWT. Counts only come back."""
-    prompt=prompts.load('talking_points',PROMPT)
+    prompt=prompts.load('talking_points','v1')  # v1's own prompt, whatever PROMPT selects
     result=await llm_gateway.call(prompt,system_text(prompt),model_input(message,previous),SCHEMA,model=settings.talking_points_model or None,retries=0)
     kept,dropped=validate(result.data.get('points') or [],message,muted)
     recorded=Counter()
@@ -183,15 +185,21 @@ async def _after_reply(ctx: RequestContext,batch: audit.AuditBatch,turn_id: UUID
             else:
                 users=[m.content for m in history if m.role=='user']  # the saved history is redacted; the latest message by the guardrail
                 message,previous=risk.redacted_message or users[-1],(users[-2] if len(users)>1 else None)
-                current=await status(ctx)
-                reason=('no_consent' if not current.chat_topics else 'paused' if current.paused else prefilter(message,risk,offer_reply))
+                from app.services import talking_points_state as v2  # lane 1 v2 (0143); imports this module
+                stateful=v2.version()=='v2'
+                current=await (v2.state(ctx,turn_id) if stateful else status(ctx))
+                reason=('no_consent' if not current.chat_topics else 'paused' if current.paused else
+                    v2.gate(message,risk,offer_reply,current.active_topics) if stateful else prefilter(message,risk,offer_reply))
                 attrs['outcome']=reason or 'extracted'
-                if reason:batch.add('agent','agent.talking_points_skipped',details={'reason':reason,'turn_id':str(turn_id)},**ACTOR)
+                tag={'version':'v2'} if stateful else {}
+                if reason:batch.add('agent','agent.talking_points_skipped',details={'reason':reason,'turn_id':str(turn_id),**tag},**ACTOR)
                 else:
-                    counts=await extract(ctx,turn_id,message,previous,set(current.muted))
+                    counts=await (v2.extract(ctx,turn_id,message,v2.earlier_messages(history),current) if stateful else
+                        extract(ctx,turn_id,message,previous,set(current.muted)))
                     attrs.update(kept=counts['kept'],proposed=counts['proposed'])
                     batch.add('agent','agent.talking_points_extracted',details={'turn_id':str(turn_id),'proposed':counts['proposed'],
-                        'kept':counts['kept'],'dropped':counts['dropped'],'outcomes':counts['outcomes']},**ACTOR)
+                        'kept':counts['kept'],'dropped':counts['dropped'],'outcomes':counts['outcomes'],
+                        **({'actions':counts['actions'],'carried':counts['carried'],**tag} if stateful else {})},**ACTOR)
         except llm_gateway.LLMError as error:
             attrs['outcome']='model_failed'
             log_event('talking_points_failed',logging.WARNING,turn_id=str(turn_id),reason=error.reason)
