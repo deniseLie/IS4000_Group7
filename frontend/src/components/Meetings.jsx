@@ -100,11 +100,11 @@ export default function Meetings({rmName}) {
     {meetings&&!upcoming.length&&<p className="page-empty" data-testid="meetings-empty">No upcoming meetings.</p>}
     <ul className="meetings-list" data-testid="meetings-upcoming">{upcoming.map(item=><li key={item.appointment_id} className={`meeting ${item.status}`} data-appointment-id={item.appointment_id}>
       <span className="meeting-icon" aria-hidden="true"><Icon name="calendar"/></span>
-      <div><strong>{appointmentTime(item.starts_at)} – {slotTime(item.ends_at)}</strong><small>With {who} · {FORMATS[item.format]}</small>
+      <div><strong>{appointmentTime(item.starts_at)} – {slotTime(item.ends_at)}</strong><small>With {who} · {FORMATS[item.format]}{item.purpose?` · ${item.purpose.length>60?`${item.purpose.slice(0,57)}…`:item.purpose}`:''}</small>
         {item.status==='held'&&<small>Held until {formatTime(item.hold_expires_at)}. Not booked yet.</small>}</div>
       <span className={`act-pill ${item.status==='confirmed'?'ok':'wait'}`}>{LABEL[item.status]}</span>
       <div className="meeting-actions">
-        {item.status==='confirmed'&&<button className="bank-chat-logout" data-testid="open-meeting-workspace" disabled={busy} onClick={()=>setWorkspace(item.appointment_id)}>Notes and follow-up</button>}
+        {item.status==='confirmed'&&<button className="bank-chat-logout" data-testid="open-meeting-workspace" disabled={busy} onClick={()=>setWorkspace(item.appointment_id)}>Open meeting</button>}
         {item.status==='held'&&item.case_id&&<button className="primary-button" data-testid="confirm-meeting" disabled={busy} onClick={()=>decide(item,'appointment.confirm','Meeting booked. You will also see it in your Inbox.')}>Confirm booking</button>}
         <button className="bank-chat-logout" data-testid="cancel-meeting" disabled={busy} onClick={()=>decide(item,'appointment.cancel',item.status==='held'?'Time released.':'Meeting cancelled.')}>{item.status==='held'?'Release':'Cancel meeting'}</button>
       </div></li>)}</ul>

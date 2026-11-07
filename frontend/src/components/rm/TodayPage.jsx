@@ -1,124 +1,104 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
-import {FORMAT_WORDS,byRank,display,firstThings,keyOf,nextStep,openSchedule,rankIndex,reasonText,receivedText,requestsToAnswer,rmGet,todayView,topicLabel} from '../../lib/rm';
+import {FORMAT_WORDS,awarenessList,display,meetingTitle,openMeetingPage,todayAction,openSchedule,prepareMissingBriefs,ticketRows,requestsToAnswer,rmGet,todayList,todayView} from '../../lib/rm';
+import {meetingRequest} from '../../lib/meetingLifecycle';
+import {sharedTopicRows} from '../../lib/talkingPoints';
 import {formatDate} from '../../lib/format';
-import SharedTopics from './SharedTopics';
-import MeetingReminders from '../meetings/MeetingReminders';
-import MeetingWorkspace from '../meetings/MeetingWorkspace';
 import MeetingBrief from '../meetings/MeetingBrief';
-import {prepareMissingBriefs} from '../../lib/rm';
 
-const BOOK_QUESTIONS=['Which clients have a maturity or review in the next 30 days?','Who haven’t I met in the last 90 days?','Which clients have requests waiting for me?'];
+const SHOWN=5;
+const KIND_WORDS={specialist_ticket:'With a bank team',commitment:'Recorded commitment',review_deadline:'Compliance review',milestone:'Date on record',task:'Your task'};
 function timeOf(when) {return (when||'').split(', ').at(-1);}
+function daysAway(date,day) {const n=Math.round((Date.parse(date)-Date.parse(day))/86400000);return n===0?'today':n===1?'tomorrow':`in ${n} days`;}
 
-// The RM's start page: what needs her now, read straight from her records (no model call, nothing sent). Every item has
-// one obvious next step that opens the assistant with the right client, meeting or request already selected. Meeting
-// requests to answer open Schedule → Requests, where she decides. Build plan 3b: the order and the reasons come from
-// GET /rm/priorities (services/rm/priority.py, the assistant's score); the page never scores.
+// The RM's start page (Today redesign): her next meeting, then ONE ranked list mixing requests, meetings to document,
+// dates and topics clients shared, each with one sentence and one button. "See all" opens the whole list on this page
+// (it replaces the old Follow-ups page). Read straight from her records: no model call, nothing sent or changed here.
+// The order and reasons come from GET /rm/priorities (services/rm/priority.py); the page never scores.
 export default function TodayPage({token,onAsk,advisor,today}) {
-  const [data,setData]=useState(null),[error,setError]=useState(''),[question,setQuestion]=useState('');
-  const [workspace,setWorkspace]=useState(null);
-  const [briefFor,setBriefFor]=useState(null),[prepared,setPrepared]=useState(0);  // 0118: saved briefings
+  const [data,setData]=useState(null),[error,setError]=useState(''),[all,setAll]=useState(false);
+  const [briefFor,setBriefFor]=useState(null),[prepared,setPrepared]=useState(0);
   const preparation=useRef(null);
   async function load() {
     setError('');
     try {
       const auth=await token();
-      const [a,t,f,m,p]=await Promise.all([rmGet('/appointments?past_days=30',auth),rmGet('/tickets',auth),rmGet('/followups',auth),rmGet('/meeting-requests',auth),
-        rmGet('/priorities',auth)]);
-      setData({appointments:a.data,tickets:t.data,followups:f.data,meetingRequests:requestsToAnswer(m.data),ranked:rankIndex(p.items),first:firstThings(p.items)});
+      const optional=promise=>promise.catch(()=>null);  // shared topics and meeting reminders are extras: never block Today
+      const [a,t,f,m,p,s,r]=await Promise.all([rmGet('/appointments?past_days=30',auth),rmGet('/tickets',auth),rmGet('/followups',auth),rmGet('/meeting-requests',auth),
+        rmGet('/priorities',auth),optional(rmGet('/shared-topics',auth)),
+        optional(meetingRequest('/capabilities','GET',null,auth).then(c=>c.enabled?meetingRequest('/reminders','GET',null,auth):[]))]);
+      setData({appointments:a.data,tickets:t.data,followups:f.data,meetingRequests:requestsToAnswer(m.data),priorities:p.items||[],shared:sharedTopicRows(s?.data),reminders:r||[]});
     } catch(failure) {setError(failure.message);}
   }
   useEffect(()=>{load();if(!preparation.current)preparation.current=prepareMissingBriefs(token,()=>setPrepared(n=>n+1))
     .catch(failure=>setError(`${failure.message} Open that meeting’s briefing to retry.`));},[]);  // eslint-disable-line react-hooks/exhaustive-deps
   const day=today||new Date().toISOString().slice(0,10);
   const v=data?todayView(data,day):null;
+  const next=data?data.appointments.filter(a=>a.status==='confirmed'&&!a.past).sort((x,y)=>(x.starts_at||x.date).localeCompare(y.starts_at||y.date))[0]:null;
+  const list=data?todayList({priorities:data.priorities,reminders:data.reminders,toDocument:v.toDocument,shared:data.shared,tickets:data.tickets?.rm_owned}).filter(x=>!next||x.meeting!==next.appointment_id||x.doc):[];  // the next meeting is the card on top
+  const awareness=data?awarenessList(data.followups,data.priorities):[];
   const first=advisor?display(advisor.name).split(' ')[0]:'';
   const hour=Number(new Intl.DateTimeFormat('en-SG',{hour:'numeric',hour12:false,timeZone:'Asia/Singapore'}).format(new Date()));
   const greeting=hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';
-  // 0118: a confirmed meeting opens its saved briefing (prepared in the background for the next 7 days).
-  const brief=a=>setBriefFor(a);
-  const documentMeeting=a=>onAsk(`Notes from my ${FORMAT_WORDS[a.format].toLowerCase()} meeting with ${a.client} on ${a.when}: `,{context:{client_id:a.customer_id,appointment_id:a.appointment_id},prefill:true});
-  const ask=text=>text.trim()&&onAsk(text.trim(),{intent:'book_question'});
-  const step=x=>{const s=nextStep(x);return s.schedule?openSchedule(s.schedule):onAsk(s.message,{intent:s.intent,context:s.context});};
-  const why=(kind,row)=>{const text=data&&reasonText(data.ranked.get(keyOf(kind,row)));return text?<small className="rmw-why">{text}</small>:null;};
+  const toDocumentCount=list.filter(x=>x.doc).length;
+  const dates=v?v.soon.length+v.overdueTasks.length:0;
+  function act(x) {
+    const a=todayAction(x);
+    return {label:a.label,run:()=>a.meeting?openMeetingPage(a.meeting,x.client):a.schedule?openSchedule(a.schedule):onAsk(a.message,{intent:a.intent,context:a.context})};
+  }
+  const shown=all?list:list.slice(0,SHOWN);
   return <div className="app-page-body rmw-page rmw-today" data-testid="rm-today">
     <header className="page-header"><div><span className="eyebrow">{formatDate(day,{weekday:'long'})}</span><h1>{greeting}{first?`, ${first}`:''}</h1>
-      <p>What needs you today, straight from your records. Nothing here is sent or changed until you act.</p></div>
-      <div className="page-header-actions"><button className="bank-chat-logout" data-testid="rm-today-plan" onClick={()=>onAsk('What’s on today?',{intent:'today'})}><Icon name="spark"/>Plan my day</button>
-        <button className="bank-chat-logout" onClick={load}><Icon name="refresh"/>Refresh</button></div></header>
+      <p data-testid="rm-today-count">{!data?'Reading your records…':list.length?`${list.length} thing${list.length===1?' needs':'s need'} you today. Start at the top.`:'Nothing needs you right now.'}</p></div>
+      <div className="page-header-actions"><button className="bank-chat-logout" data-testid="rm-today-plan" onClick={()=>onAsk('What’s on today?',{intent:'today'})}><Icon name="spark"/>Ask the assistant</button>
+        <button className="icon-button" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh"/></button></div></header>
     {error&&<p role="alert" className="rm-error">{error}</p>}
-    <MeetingReminders token={token} onOpen={setWorkspace}/>
-    {workspace&&<MeetingWorkspace meetingId={workspace} token={token} onClose={()=>setWorkspace(null)}/>}
-    {!v&&!error&&<div className="loading-list" role="status" aria-label="Loading">{[0,1,2].map(k=><span key={k} className="skeleton-card"/>)}</div>}
-    {v&&<>
-      <div className="rmw-stats">
-        <Stat label="Requests waiting for you" value={v.requests.length} note={v.pastTarget.length?`${v.pastTarget.length} past target`:v.fresh.length?`${v.fresh.length} new today`:'all within target'} alert={v.pastTarget.length>0}/>
-        <Stat label="Meetings in the next 7 days" value={v.upcoming.length} note={v.today.length?`${v.today.length} today`:'none today'}/>
-        <Stat label="Meetings to document" value={v.toDocument.length} note="last 30 days" alert={v.toDocument.length>0}/>
-        <Stat label="Maturities and reviews" value={v.soon.length} note="next 14 days"/>
-      </div>
-
-      <form className="rmw-book-ask" onSubmit={e=>{e.preventDefault();ask(question);}}>
-        <label htmlFor="rm-book-question"><Icon name="spark"/>Ask across your book</label>
-        <div className="rmw-book-ask-row"><input id="rm-book-question" data-testid="rm-book-question" value={question} maxLength={300} placeholder="For example: who has a fixed deposit maturing this month?"
-          onChange={e=>setQuestion(e.target.value)}/><button className="primary-button" disabled={!question.trim()}>Ask</button></div>
-        <div className="rmw-book-chips">{BOOK_QUESTIONS.map(q=><button key={q} type="button" className="rmw-mini" onClick={()=>ask(q)}>{q}</button>)}</div>
-      </form>
-
-      {data.first.length>0&&<section className="rmw-card" data-testid="rm-today-first">
-        <div className="rmw-card-head"><h3><Icon name="alert"/>Do first</h3><p>Ranked from your records; each reason is part of the score.</p></div>
-        <ul className="rmw-list">{data.first.map(x=><li key={x.key}><div><strong>{x.client} · {x.title}</strong><small>{x.when}</small>
-          <small className="rmw-why">{reasonText(x)}</small></div>
-          <div className="rmw-list-actions"><button className="rmw-mini" onClick={()=>step(x)}><Icon name={x.kind==='meeting_request'?'calendar':'spark'}/>{nextStep(x).label}</button></div></li>)}</ul>
+    {!data&&!error&&<div className="loading-list" role="status" aria-label="Loading">{[0,1,2].map(k=><span key={k} className="skeleton-card"/>)}</div>}
+    {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
+    {data&&<>
+      {next&&<section className="rmw-card rm-nextmeet" data-testid="rm-today-next" aria-label="Next meeting">
+        <div><span className="eyebrow">Next meeting · {next.when} · {daysAway(next.date,day)}</span>
+          <strong>{next.client} · {meetingTitle(next.purpose,next.topics)}</strong>
+          <small className="rmw-why">{FORMAT_WORDS[next.format]||'Meeting'}{next.format==='video'?' call':''}{prepared>0?' · briefing prepared':''}</small></div>
+        <div className="rm-nextmeet-actions"><button className="bank-chat-logout" data-testid="rm-today-brief" onClick={()=>setBriefFor(next)}>Briefing</button>
+          <button className="primary-button" data-testid="rm-today-open-meeting" onClick={()=>openMeetingPage(next.appointment_id,next.client)}>Open meeting</button></div>
       </section>}
 
-      {prepared>0&&<p className="rmw-note" data-testid="rm-briefs-prepared"><Icon name="check"/>{prepared===1?'A briefing was':`${prepared} briefings were`} prepared for your upcoming meetings.</p>}
-      {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
-      <div className="rmw-today-grid">
-        <section className="rmw-card">
-          <div className="rmw-card-head"><h3><Icon name="calendar"/>Meetings</h3></div>
-          {data.meetingRequests.length>0&&<><h4 className="rmw-subhead">Meeting requests to answer</h4>
-            <ul className="rmw-list" data-testid="rm-today-meeting-requests">{byRank(data.meetingRequests,'meeting_request',data.ranked).map(r=><li key={r.request_id}><div><strong>{r.client}</strong>
-              <small>{r.topics.map(topicLabel).join(', ')}{r.overdue?<span className="rmw-late"> · overdue, was due {r.respond_by_text}</span>
-                :r.proposal_lapsed?' · your proposed time lapsed':` · respond by ${r.respond_by_text}`}{r.isNew&&<span className="rmw-chip info rmw-new">New</span>}</small>
-              {why('meeting_request',r)}</div>
-              <div className="rmw-list-actions"><button className="rmw-mini" data-testid="rm-today-answer" onClick={()=>openSchedule('requests')}><Icon name="calendar"/>Answer</button></div></li>)}</ul>
-            {v.upcoming.length>0&&<h4 className="rmw-subhead">Next 7 days</h4>}</>}
-          {!v.upcoming.length?<p className="rm-none">No confirmed meetings in the next 7 days.</p>:
-          <ul className="rmw-list">{byRank(v.upcoming,'appointment',data.ranked).map(a=><li key={a.appointment_id}><div><strong>{a.client}</strong>
-            <small>{a.date===day?'Today':formatDate(a.date,{weekday:'short',year:undefined})} · {timeOf(a.when)} · {FORMAT_WORDS[a.format]}{a.purpose?` · ${a.purpose}`:''}</small>
-            {why('appointment',a)}</div>
-            <div className="rmw-list-actions"><button className="rmw-mini" data-testid="rm-today-brief" onClick={()=>brief(a)}><Icon name="spark"/>Briefing</button></div></li>)}</ul>}
-          {v.toDocument.length>0&&<><h4 className="rmw-subhead">To document</h4>
-            <ul className="rmw-list">{v.toDocument.map(a=><li key={a.appointment_id}><div><strong>{a.client}</strong>
-              <small>{formatDate(a.date,{weekday:'short'})} · {timeOf(a.when)} · {FORMAT_WORDS[a.format]}{a.purpose?` · ${a.purpose}`:''}</small></div>
-              <div className="rmw-list-actions"><button className="rmw-mini" data-testid="rm-document-meeting" onClick={()=>documentMeeting(a)}><Icon name="document"/>Document this meeting</button></div></li>)}</ul></>}
+      <div className="rm-today-grid">
+        <section className="rmw-card rm-first" data-testid="rm-today-first" aria-label={all?'Everything that needs you':'Do first'}>
+          <div className="rm-first-head"><h2>{all?'Everything that needs you':'Do first'}</h2><span className="rm-small">most important at the top · one step each</span></div>
+          {!list.length&&<p className="rm-none">Nothing waiting for you. New requests, meetings and dates will appear here.</p>}
+          {shown.map(x=>{const a=act(x);return <div key={x.key} className="rm-now-row" data-testid="rm-today-item">
+            <span className={`rm-dot ${x.tone}`} aria-hidden="true"/>
+            <span className="rm-now-text"><span className="rm-type">{x.label}</span><strong>{x.client}</strong> · {x.title}{x.why&&<small className="rmw-why">{x.why}</small>}</span>
+            <button className="bank-chat-logout" onClick={a.run}>{a.label}</button></div>;})}
+          {list.length>SHOWN&&<button className="rm-plain rm-see-all" data-testid="rm-today-see-all" aria-expanded={all} onClick={()=>setAll(o=>!o)}>
+            {all?'Show only the top 5':`See all ${list.length} things that need you →`}</button>}
+          {all&&awareness.length>0&&<div className="rm-aware" data-testid="rm-today-awareness"><h3>For awareness</h3><p className="rm-small">On record but nothing for you to do yet: bank teams’ cases, commitments and later dates.</p>
+            {awareness.map(f=><div key={f.item_key} className="rm-now-row"><span className="rm-dot" aria-hidden="true"/>
+              <span className="rm-now-text"><span className="rm-type">{KIND_WORDS[f.kind]||'On record'}</span><strong>{f.client}</strong> · {String(f.title||'').replace(/^Your task: /,'')}
+                {f.due_text&&<small className="rmw-why">{f.overdue?'Was due':'Due'} {f.due_text}</small>}</span></div>)}</div>}
         </section>
 
-        <section className="rmw-card">
-          <div className="rmw-card-head"><h3><Icon name="clip"/>Requests waiting for you</h3></div>
-          {!v.requests.length?<p className="rm-none">Nothing waiting for you.</p>:
-          <ul className="rmw-list">{byRank(v.requests,'ticket',data.ranked).slice(0,6).map(t=><li key={t.reference}><div><strong>{t.client} · {t.category_label}</strong>
-            <small>{receivedText(t.age_hours)}{t.overdue?<span className="rmw-late"> · past target</span>:` · due ${t.target_sgt}`}{(t.age_hours??99)<24&&<span className="rmw-chip info rmw-new">New</span>}</small>
-            {why('ticket',t)}{t.summary&&<span className="rmw-clamp">{t.summary}</span>}</div>
-            <div className="rmw-list-actions"><button className="rmw-mini" onClick={()=>onAsk(`Draft a reply to ${t.client} about ${t.reference}`,{intent:'draft_message',context:{client_id:t.customer_id,ticket_ref:t.reference}})}><Icon name="chat"/>Draft a reply</button></div></li>)}</ul>}
-        </section>
-
-        <section className="rmw-card">
-          <div className="rmw-card-head"><h3><Icon name="bell"/>Coming up</h3></div>
-          {!v.soon.length&&!v.overdueTasks.length?<p className="rm-none">No maturities, reviews or overdue tasks in the next 14 days.</p>:
-          <ul className="rmw-list">{byRank([...v.overdueTasks,...v.soon],'followup',data.ranked).map(f=><li key={f.item_key}><div><strong>{f.client} · {f.title}</strong>
-            <small className={f.overdue?'rmw-late':''}>{f.overdue?'Overdue · was due ':'Due '}{f.due_text}</small>{why('followup',f)}</div>
-            <div className="rmw-list-actions"><button className="rmw-mini" onClick={()=>onAsk(`What do I need to know about ${f.client}'s ${f.title.replace(/^Your task: /,'')} (due ${f.due_text})?`,{intent:'client_overview',context:{client_id:f.customer_id}})}><Icon name="spark"/>Ask</button></div></li>)}</ul>}
-        </section>
-
-        <SharedTopics token={token} onAsk={onAsk}/>
+        <aside className="rm-today-side">
+          <section className="rmw-card" aria-label="This week"><h3>This week</h3>
+            {!v.upcoming.length?<p className="rm-none">No confirmed meetings in the next 7 days.</p>:
+              v.upcoming.slice(0,4).map(a=><div key={a.appointment_id} className="rm-week-row"><span className="rm-week-day">{a.date===day?'Today':formatDate(a.date,{weekday:'short',year:undefined,month:undefined})}<small>{timeOf(a.when)}</small></span>
+                <button className="rm-plain" onClick={()=>openMeetingPage(a.appointment_id,a.client)}>{a.client}<small>{meetingTitle(a.purpose,a.topics)}</small></button></div>)}
+            <button className="rm-plain rm-see-all" onClick={()=>openSchedule('appointments')}>Open Schedule →</button></section>
+          <section className="rm-counts" aria-label="Everything else">
+            <Count n={ticketRows(v.requests).length} label="client requests" onClick={()=>{location.hash='rm-tickets';}}/>
+            <Count n={toDocumentCount} label="meetings to document" onClick={()=>openSchedule('appointments')}/>
+            <Count n={dates} label="dates coming up" onClick={()=>setAll(true)}/>
+            <Count n={data.meetingRequests.length} label={`meeting request${data.meetingRequests.length===1?'':'s'} to answer`} onClick={()=>openSchedule('requests')}/>
+          </section>
+          <p className="rm-small">Client requests are also in Ticket inbox; meetings in Schedule.</p>
+        </aside>
       </div>
     </>}
   </div>;
 }
 
-function Stat({label,value,note,alert}) {
-  return <div className={`rmw-stat ${alert?'alert':''}`}><strong>{value}</strong><span>{label}</span><small>{note}</small></div>;
+function Count({n,label,onClick}) {
+  return <button type="button" className={`rm-count ${n?'':'zero'}`} onClick={onClick}><strong>{n}</strong><span>{label}</span></button>;
 }

@@ -82,6 +82,7 @@ RELEASED[('minutes_overview','v2')]='v2+69bbc872'
 RELEASED[('brief_writer','v1')]='v1+25e786cb'
 RELEASED[('brief_writer','v2')]='v2+74f98536'
 RELEASED[('brief_writer','v3')]='v3+8ff73d94'
+RELEASED[('brief_writer','v4')]='v4+03eb16f4'  # storyline: recorded dates, funding-options question (0140)
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

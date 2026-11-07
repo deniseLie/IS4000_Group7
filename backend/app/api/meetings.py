@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.gateway import current_ctx,get_ctx
 from app.schemas.contracts import RequestContext
-from app.schemas.meeting_lifecycle import (Approval,CallTime,Claims,Command,Completion,DraftReceipt,Notes,SelectedActions,Start,GraphState,NotesContext,Model)
+from app.schemas.meeting_lifecycle import (Approval,CallTime,Claims,Command,Completion,DraftReceipt,Notes,RecapShare,SelectedActions,Start,GraphState,NotesContext,Model)
 from app.services.meetings.database import ApplicationDatabase,MeetingStoreError,Parameter
 from app.services.meetings.transcripts import ImportRequest,imported
 from app.services.meetings.zoom import Zoom,refreshed_token,ZoomFailure
@@ -147,12 +147,14 @@ def approve(meeting: UUID, body: Approval, claims: Annotated[Claims, Depends(cal
 
 @router.post('/meetings/{meeting}/followups')
 def followups(meeting: UUID, body: SelectedActions, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:
-    params = {**approval_params(meeting, body), 'p_action_ids': list(body.action_ids)}
+    edits = body.edit_params()  # 0141: her changes; free text is redacted like every other RM-typed field
+    if edits: edits = {k: {**e, **({'text': redact(e['text'])[0]} if e.get('text') else {})} for k, e in edits.items()}
+    params = {**approval_params(meeting, body), 'p_action_ids': list(body.action_ids), 'p_edits': edits}
     return call('meeting_create_followups', params, claims)
 
 @router.post('/meetings/{meeting}/share-recap')
-def share(meeting: UUID, body: Approval, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:
-    return call('meeting_share_recap', approval_params(meeting, body), claims)
+def share(meeting: UUID, body: RecapShare, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:
+    return call('meeting_share_recap', {**approval_params(meeting, body), 'p_text': redact(body.text)[0] if body.text else None}, claims)
 
 @router.post('/meetings/{meeting}/followups/{followup}/complete')
 def complete(meeting: UUID, followup: UUID, body: Completion, claims: Annotated[Claims, Depends(caller)]) -> JsonValue:

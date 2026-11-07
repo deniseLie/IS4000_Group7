@@ -2,6 +2,7 @@
 // The backend checks the signed token's app_metadata role and the client book on every call; this module only decides
 // what the browser shows. Nothing here sends anything to a client: writes go out only from an explicit approval.
 import {readEvents,redact} from './chatTools.js';
+import {meetingTitle} from './meetingLifecycle.js';
 
 const API=import.meta.env?.VITE_API_URL||'/api';
 
@@ -413,3 +414,188 @@ export async function prepareMissingBriefs(token,onReady) {
   }
   return due.length;
 }
+
+// Assistant home and next steps (storyline UX pass) -----------------------------------------------------------------
+// The starters grouped by the moment of the RM's day, so she doesn't have to remember what the assistant can do.
+// message+intent sends at once; draft puts a sentence in the box for her to finish (a client name, her notes).
+export const STARTER_GROUPS=[
+  {label:'Start my day',starters:[
+    {icon:'sun',title:'Plan my day',detail:'What’s on today, in priority order?',message:'What’s on today?',intent:'today'},
+    {icon:'clip',title:'Ticket triage',detail:'What needs my attention today?',message:'What needs my attention today?',intent:'ticket_inbox'},
+    {icon:'bell',title:'Follow-up priorities',detail:'Who should I follow up with this week?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'}]},
+  {label:'Before a meeting',starters:[
+    {icon:'calendar',title:'Meeting requests',detail:'Which clients asked to meet?',message:'Which meeting requests are waiting for me?',intent:'meeting_requests'},
+    {icon:'spark',title:'Prepare a meeting',detail:'Brief me for my next meeting.',message:'What meetings do I have in the next two weeks?',intent:'schedule'},
+    {icon:'document',title:'Past meetings',detail:'What did we discuss last time?',draft:'What did I discuss with '}]},
+  {label:'After a meeting',starters:[
+    {icon:'document',title:'Document a call',detail:'Paste your call notes for a client.',draft:'Notes from my call today with '},
+    {icon:'chat',title:'Draft a message',detail:'A recap or reply for a client to review.',draft:'Draft a message to '},
+    {icon:'calendar',title:'Meeting page',detail:'Add the transcript or notes, approve minutes and follow-ups.',navigate:'schedule'}]},
+  {label:'Any time',starters:[
+    {icon:'people',title:'Ask across my book',detail:'Who has a maturity or review in the next 30 days?',message:'Which clients have a maturity or review in the next 30 days?',intent:'book_question'},
+    {icon:'user',title:'Summarise a client',detail:'An overview of one client.',draft:'Give me an overview of '},
+    {icon:'people',title:'Handover brief',detail:'For a client you took over from another RM.',draft:'Prepare a handover brief for '}]}];
+
+// One suggested next step after each kind of answer, so the RM is led through the flow instead of remembering it.
+const NEXT={
+  today:[{label:'Brief me for my next meeting',message:'What meetings do I have in the next two weeks?',intent:'schedule'}],
+  ticket_inbox:[{label:'Who should I follow up with?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'}],
+  priorities:[{label:'Plan my day',message:'What’s on today?',intent:'today'}],
+  meeting_requests:[{label:'Answer in Schedule → Requests',navigate:'schedule'}],
+  schedule:[{label:'Meeting requests waiting',message:'Which meeting requests are waiting for me?',intent:'meeting_requests'}],
+  meeting_brief:[{label:'After the call: open the meeting page',navigate:'schedule'}],
+  client_overview:[{label:'Brief me for her next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'},{label:'Draft a message',draft:'Draft a message to this client about '}],
+  meeting_history:[{label:'Brief me for the next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'}],
+  handover_brief:[{label:'Summarise this client',message:'Give me an overview of this client',intent:'client_overview'}],
+  book_question:[{label:'Plan my day',message:'What’s on today?',intent:'today'}]};
+export function nextSteps(reply) {
+  if(!reply||reply.status!=='ok'||reply.clarification)return [];
+  return NEXT[reply.intent]||[];
+}
+
+// Clarity pass (first-time users) -------------------------------------------------------------------------------------
+// Identical items (same client and title, e.g. three test tickets) shown once with a count.
+export function groupSame(items,key=x=>`${x.customer_id}|${x.title}`) {
+  const seen=new Map();
+  for(const x of items||[]){const k=key(x);if(seen.has(k))seen.get(k).count+=1;else seen.set(k,{...x,count:1});}
+  return [...seen.values()];
+}
+// Open one meeting's page on Schedule from another page (Today, the assistant).
+let pendingMeeting=null;
+export function openMeetingPage(id,client) {pendingMeeting={id,client};location.hash='rm-schedule';}
+export function takeMeeting() {const m=pendingMeeting;pendingMeeting=null;return m;}
+export {humanize,meetingTitle,clientWords,stageWords,topicName} from './meetingLifecycle.js';
+// What a ranked item is, said plainly, with its own colour; the reason line then skips what the label already says.
+export function itemLabel(x) {
+  if(x.kind==='request')return x.ref?.urgency==='urgent'||/urgent/i.test(x.title||'')?{text:'Urgent request',tone:'urgent'}:{text:'Client request',tone:'request'};
+  if(x.kind==='meeting_request')return {text:'Meeting request',tone:'request'};
+  if(x.kind==='meeting')return {text:'Meeting',tone:'meeting'};
+  if(x.kind==='review')return {text:'Compliance review',tone:'date'};
+  if(x.kind==='task')return {text:'Your task',tone:'date'};
+  if(x.kind==='milestone')return /collateral/i.test(x.title||'')?{text:'Alert',tone:'urgent'}:{text:'Coming up',tone:'date'};
+  return {text:'To do',tone:'request'};
+}
+export function itemTitle(x) {return x.title==='Urgent card'?'card problem (charge she doesn’t recognise)':String(x.title||'').replace(/^Your task: /,'');}
+export function itemWhy(x) {
+  const parts=(x.parts||[]).map(p=>p.reason).filter(r=>r!=='Urgent request');
+  if(x.count>1)parts.unshift(`${x.count} requests like this from ${String(x.client||'').split(' ')[0]}`);
+  return parts.join(' · ');
+}
+// My clients (option B): one coloured dot and one sentence per client, details underneath; who needs you most first.
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+export function clientStatus(c) {
+  const mine=c.open_rm_tickets||0,late=c.overdue||0,teams=c.open_specialist_tickets||0;
+  const headline=c.urgent?(mine>1?`An urgent request and ${mine-1} more waiting for you`:'An urgent request waiting for you')
+    :mine?`${plural(mine,'request')} waiting for you`:'Nothing waiting for you';
+  const tone=c.urgent?'urgent':mine?(late?'late':'open'):'clear';
+  const detail=[late&&`${plural(late,'request')} past the promised date`,teams&&`${teams} with bank teams`,
+    c.inherited_from&&`New to you: read ${display(c.inherited_from).split(' ')[0]}’s handover brief`].filter(Boolean).join(' · ');
+  return {tone,headline,detail};
+}
+export function byNeed(book) {
+  return [...(book||[])].sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||(b.open_rm_tickets||0)-(a.open_rm_tickets||0)||(b.overdue||0)-(a.overdue||0));
+}
+// Today (redesign): one ranked list mixing her ranked records, meetings to document or prepare, and topics clients
+// shared, each with one plain sentence and one button. Order: urgent first, then meetings that need minutes, the
+// rest of Do first, shared topics, then everything else in the backend's rank. A meeting appears once.
+export function todayList({priorities=[],reminders=[],toDocument=[],shared=[],tickets=[]}) {
+  const byRef=new Map((tickets||[]).map(t=>[t.reference,t]));
+  const same=x=>x.kind==='request'&&byRef.has(x.ref?.reference)?sameRequestKey(byRef.get(x.ref.reference)):`${x.customer_id}|${x.kind}|${x.title}|${x.key}`;
+  const ranked=groupSame(priorities,same).map(x=>({key:x.key,tone:itemLabel(x).tone,label:itemLabel(x).text,client:x.client,title:x.kind==='meeting'?meetingTitle(x.title):x.kind==='request'&&byRef.has(x.ref?.reference)?ticketTitle(byRef.get(x.ref.reference)):itemTitle(x),
+    why:itemWhy(x),source:x,first:!!x.do_first,meeting:x.kind==='meeting'?x.ref?.appointment_id:null}));
+  const seen=new Set();
+  const docs=[];
+  for(const r of reminders.filter(r=>r.kind!=='preparation')){if(seen.has(r.meeting_id))continue;seen.add(r.meeting_id);
+    docs.push({key:`reminder:${r.reminder_id}`,tone:'urgent',label:'Meeting to document',client:r.client,title:'call ended, minutes not written',why:'Add the transcript or your notes',meeting:r.meeting_id,doc:true});}
+  for(const a of toDocument){if(seen.has(a.appointment_id))continue;seen.add(a.appointment_id);
+    docs.push({key:`document:${a.appointment_id}`,tone:'urgent',label:'Meeting to document',client:a.client,title:`${meetingTitle(a.purpose,a.topics)} on ${a.when}, minutes not written`,why:'Add the transcript or your notes',meeting:a.appointment_id,doc:true});}
+  for(const r of reminders.filter(r=>r.kind==='preparation')){if(seen.has(r.meeting_id)||ranked.some(x=>x.meeting===r.meeting_id))continue;seen.add(r.meeting_id);
+    docs.push({key:`reminder:${r.reminder_id}`,tone:'meeting',label:'Meeting to prepare',client:r.client,title:'prepare for your meeting',why:'Review the briefing before you meet',meeting:r.meeting_id});}
+  const topics=shared.map(r=>({key:`shared:${r.share_id}`,tone:'shared',label:'Shared topic',client:r.client,title:r.line.replace(/^./,c=>c.toLowerCase()),
+    why:`${String(r.client||'').split(' ')[0]} shared this herself · a good conversation opener`,topic:r}));
+  const urgent=ranked.filter(x=>x.first&&x.tone==='urgent'),first=ranked.filter(x=>x.first&&x.tone!=='urgent'),rest=ranked.filter(x=>!x.first);
+  return [...urgent,...docs,...first,...topics,...rest];
+}
+// Records on file that are not ranked (specialist-managed tickets, recorded commitments, later dates): for awareness.
+export function awarenessList(followups,priorities) {
+  const keys=new Set((priorities||[]).map(x=>x.key));
+  return (followups||[]).filter(f=>!keys.has(keyOf('followup',f))&&!keys.has(f.item_key)&&!(f.kind==='rm_ticket'&&keys.has(`ticket:${f.source_id?.slice(7)}`))&&f.kind!=='meeting'&&f.kind!=='rm_ticket');
+}
+
+// The one button for a row of todayList, the same on Today and in the assistant's "Needs you now".
+export function todayAction(x) {
+  if(x.meeting)return x.doc?{label:'Add transcript or notes',meeting:x.meeting}:{label:'Open meeting',meeting:x.meeting};
+  if(x.topic)return {label:'Plan a follow-up',message:`What should I know about ${x.client} before I follow up on what she shared: ${x.topic.line}?`,intent:'client_overview',context:{client_id:x.topic.customer_id}};
+  const s=nextStep(x.source);
+  return s.label==='Ask'?{...s,label:'Ask the assistant'}:s;
+}
+// "/" in the composer lists every action (all starters), filtered by what follows the slash.
+export function slashActions(input) {
+  if(!String(input).startsWith('/'))return [];
+  const q=input.slice(1).trim().toLowerCase();
+  return STARTER_GROUPS.flatMap(g=>g.starters.map(s=>({...s,group:g.label}))).filter(s=>!q||`${s.title} ${s.detail}`.toLowerCase().includes(q));
+}
+// Suggestions above the composer while a meeting is pinned, matched to its step (0 Prepare … 3 Follow up).
+export function meetingSuggestions(step,client) {
+  const first=String(client||'the client').split(' ')[0];
+  if(step<=1)return [{label:'Brief me for this meeting',message:`Brief me for my meeting with ${client}`,intent:'meeting_brief'},
+    {label:`What did we discuss last time?`,message:`What did I discuss with ${client} last time?`,intent:'meeting_history'}];
+  if(step===2)return [{label:'Add the transcript or notes',meetingPage:true},{label:'Paste my notes here',draft:`Notes from my meeting with ${client}: `}];
+  return [{label:'Send follow-ups and recap',meetingPage:true},{label:'Draft hand-offs (specialist, compliance)',draft:`Document this meeting with ${client}: `},
+    {label:`What’s still open for ${first}?`,message:`What’s still open for ${client}?`,intent:'client_overview'}];
+}
+
+// Ticket inbox (redesign) -------------------------------------------------------------------------------------------
+// A ticket summary from the urgent hand-over reads "[Topic] What happened. Cards on record: … Client’s words: “…”".
+// Split it so the row shows a short title and the panel shows her words; any other summary is kept as it is.
+export function ticketParts(summary) {
+  const text=String(summary||'').trim();
+  const words=text.match(/Client[’']s words:\s*[“"]([\s\S]*?)[”"]?\s*$/)?.[1]?.trim()||'';
+  const body=text.replace(/Client[’']s words:[\s\S]*$/,'').trim();
+  const cards=body.match(/Cards on record:\s*([^]*?)\.\s*$/)?.[1]?.trim()||'';
+  const topic=body.match(/^\[([^\]]+)\]/)?.[1]||'';
+  const lead=body.replace(/^\[[^\]]+\]\s*/,'').replace(/Cards on record:[^]*$/,'').trim().replace(/\.$/,'');
+  return {topic,lead,cards,words};
+}
+// The row title: what it is about, in plain words, plus the first amount she mentions.
+export function ticketTitle(t) {
+  const {lead,words}=ticketParts(t.summary);
+  const base=(lead||t.category_label||'Request').replace(/\bthe client\b/gi,'she').replace(/\bdoes not\b/g,'doesn’t').replace(/^./,c=>c.toLowerCase());
+  const amount=(words||t.summary||'').match(/\b(?:SGD|USD|S\$)\s?[\d,]+(?:\.\d+)?/i)?.[0];
+  const money=amount&&!base.includes(amount)?amount.toUpperCase().replace(/^S\$/,'SGD '):'';
+  // She led with something else (e.g. her annual fee): say that first, so it doesn't read like the other request.
+  const issues=ticketIssues(t);
+  if(issues.length>1&&issues[0]!=='Card charge'&&issues.includes('Card charge'))return `${issues[0].toLowerCase()} · also a ${base}${money?` (${money})`:''}`;
+  return `${base}${money?` · ${money}`:''}`;
+}
+// Small tags for each problem she mentions (rule-based: no model).
+const ISSUES=[['Card charge',/charge|transaction|don.?t recogni|not recogni/i],['Transfer pending',/transfer[\s\S]{0,40}pending|pending[\s\S]{0,40}transfer/i],
+  ['App locked',/locked|lock(ed)? out|can.?t log ?in/i],['Unexpected OTP',/\botp\b|one.?time (pass|code)/i],['Annual fee',/annual fee/i],['Address change',/address/i]];
+// In the order she raised them (her words first; the hand-over line only fills in what she did not say).
+export function ticketIssues(t) {
+  const {words,lead}=ticketParts(t.summary);
+  const at=(re,text)=>{const m=re.exec(text);return m?m.index:-1;};
+  return ISSUES.map(([label,re])=>[label,at(re,words),at(re,lead)]).filter(([,w,l])=>w>=0||l>=0)
+    .sort((a,b)=>(a[1]<0?1e6+a[2]:a[1])-(b[1]<0?1e6+b[2]:b[1])).map(([label])=>label);
+}
+// Possible fraud: an unknown charge together with a code she didn't ask for or a locked account.
+export function possibleFraud(t) {const i=ticketIssues(t);return i.includes('Card charge')&&(i.includes('Unexpected OTP')||i.includes('App locked'));}
+// Two requests are the SAME only with the same client, the same request type and the same words (case, spaces and
+// punctuation ignored). Same type alone is not enough: a different question stays its own row.
+export function sameRequestKey(t) {
+  const {words}=ticketParts(t.summary);
+  const said=String(words||t.summary||'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  return `${t.customer_id}|${t.category_label||t.category||''}|${said}`;
+}
+// Waiting-for-you tickets merged into rows (oldest ticket leads: you reply there), most urgent first.
+const URGENCY_RANK={urgent:0,high:1,normal:2,low:3};
+export function ticketRows(tickets) {
+  const rows=new Map();
+  for(const t of tickets||[]){const k=sameRequestKey(t);const row=rows.get(k);
+    if(!row)rows.set(k,{key:k,lead:t,same:[]});
+    else if((t.age_hours??0)>(row.lead.age_hours??0)){row.same.push(row.lead);row.lead=t;}else row.same.push(t);}
+  return [...rows.values()].map(r=>({...r,count:r.same.length+1,overdue:[r.lead,...r.same].some(x=>x.overdue)}))
+    .sort((a,b)=>(URGENCY_RANK[a.lead.urgency]??9)-(URGENCY_RANK[b.lead.urgency]??9)||(b.overdue-a.overdue)||((b.lead.age_hours??0)-(a.lead.age_hours??0)));
+}
+// The note that closes a duplicate (sent only when she approves it in the panel).
+export function duplicateNote(lead) {return `We have answered this under ${lead.reference}. Please see that request for our reply.`;}

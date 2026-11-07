@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import RmAnswer from './RmAnswer';
-import {FORMAT_WORDS,STATUS_WORDS,askAssistant,display,filterBook,partialReply,requestContext,rmGet} from '../../lib/rm';
+import {FORMAT_WORDS,STATUS_WORDS,askAssistant,byNeed,clientStatus,display,filterBook,partialReply,requestContext,rmGet} from '../../lib/rm';
 import {formatDate,formatMoney,initials} from '../../lib/format';
 
 const GAP_WORDS={no_open_compliance_review:'No open compliance review recorded',no_upcoming_appointment:'No upcoming appointment',
@@ -32,7 +32,7 @@ export default function ClientsPage({token,onAsk}) {
   if(selected)return <ClientOverview customerId={selected} token={token} onAsk={onAsk} onBack={()=>setSelected(null)}/>;
   return <div className="app-page-body rmw-page" data-testid="rm-clients">
     <header className="page-header"><div><span className="eyebrow">Relationship manager</span><h1>My clients</h1>
-      <p>All clients assigned to you{book?` (${book.length})`:''}. Open a client to see their records, requests and meetings.</p></div></header>
+      <p>{book?`${book.length} clients`:'Your clients'}. Clients who need you most are at the top.</p></div></header>
     <form className="rm-search" role="search" onSubmit={submit}><Icon name="search"/>
       <input aria-label="Search your clients" data-testid="rm-client-search" placeholder="Search by client name" value={query} maxLength={80} autoComplete="off"
         onChange={e=>{setQuery(e.target.value);setNotice('');}}/>
@@ -40,16 +40,14 @@ export default function ClientsPage({token,onAsk}) {
     {error&&<p role="alert">{error}</p>}
     {!book&&!error&&<p className="loading" role="status">Loading your book…</p>}
     {book&&query&&!shown.length&&<p className="chat-notice-bar" role="status"><Icon name="lock"/><span>{notice||`No client in your book matches “${query.trim()}”. Press Enter to check; names outside your book are never shown.`}</span></p>}
-    <ul className="rm-book">{shown.map(c=><li key={c.customer_id}><button type="button" data-testid="rm-client" onClick={()=>setSelected(c.customer_id)}>
+    <ul className="rm-book">{byNeed(shown).map(c=>{const st=clientStatus(c);return <li key={c.customer_id}><button type="button" data-testid="rm-client" onClick={()=>setSelected(c.customer_id)}>
       <span className="session-avatar initials" aria-hidden="true">{initials(c.name)}</span>
-      <span className="rm-book-main"><strong>{c.name}</strong><small>{c.income_range} · client since {formatDate(c.assigned_since)}</small>
-        <span className="rm-book-tags">{c.inherited_from&&<span className="rmw-chip">Inherited from {display(c.inherited_from)}</span>}
-          {c.urgent&&<span className="rmw-chip alert">Urgent ticket</span>}{c.overdue>0&&<span className="rmw-chip alert">{c.overdue} past target</span>}
-          {c.open_rm_tickets>0&&<span className="rmw-chip info">{c.open_rm_tickets} for you</span>}
-          {c.open_specialist_tickets>0&&<span className="rmw-chip">{c.open_specialist_tickets} with specialists</span>}</span></span>
+      <span className="rm-book-main"><strong>{display(c.name)}<small className="rm-book-since"> · {c.inherited_from?`yours since ${formatDate(c.assigned_since)}, from ${display(c.inherited_from)}`:`client since ${formatDate(c.assigned_since)}`}</small></strong>
+        <span className="rm-book-status"><span className={`rm-dot ${st.tone}`} aria-hidden="true"/><span><b>{st.headline}</b></span></span>
+        {st.detail&&<small className="rm-book-detail">{st.detail}</small>}</span>
       <span className="rm-book-side"><small>Next meeting</small><strong>{c.next_appointment||'None booked'}</strong>{c.review_due&&<small>Review due {formatDate(c.review_due)}</small>}</span>
       <Icon name="chevron"/>
-    </button></li>)}</ul>
+    </button></li>;})}</ul>
   </div>;
 }
 
@@ -84,11 +82,12 @@ export function ClientOverview({customerId,token,onAsk,onBack}) {
           <span className="rmw-chip">Your client since {formatDate(rel.assigned_since)}</span>
           {rel.inherited&&<span className="rmw-chip info">Inherited from {rel.previous_advisor}</span>}</div></div>
       <div className="rmw-client-actions">
+        <button className="bank-chat-logout" data-testid="rm-client-summary" onClick={()=>ask(`Give me an overview of ${p.name}`,'client_overview')}><Icon name="spark"/>Summarise client</button>
         <button className="bank-chat-logout" onClick={()=>ask(`Draft a message to ${p.name}`,'draft_message')}><Icon name="chat"/>Draft a message</button>
         <button className="bank-chat-logout" data-testid="rm-document-call" onClick={()=>onAsk(`Notes from my call today with ${p.name}: `,{context:{client_id:customerId},prefill:true})}><Icon name="document"/>Document a call</button>
         {rel.inherited&&<button className="bank-chat-logout" data-testid="rm-handover" onClick={()=>ask(`Prepare a handover brief for ${p.name}`,'handover_brief')}><Icon name="people"/>Handover brief</button>}
         {next?<button className="primary-button" onClick={()=>ask(`Brief me for my meeting with ${p.name} on ${next.when}`,'meeting_brief',{appointment_id:next.appointment_id})}><Icon name="spark"/>Prepare briefing</button>
-          :<button className="primary-button" onClick={()=>ask(`Give me an overview of ${p.name}`,'client_overview')}><Icon name="spark"/>Ask the assistant</button>}
+          :null}
       </div>
     </header>
     <nav className="page-tabs rmw-client-tabs" role="tablist">{TABS.map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}
@@ -124,7 +123,6 @@ export function ClientOverview({customerId,token,onAsk,onBack}) {
           <ul className="rmw-quotes">{data.preferences.map((f,i)=><li key={i}><q>{f.preference}</q><small>{f.recorded_text}</small></li>)}</ul>
           {data.shared_note_available&&<p className="rm-small"><Icon name="lock"/>A handover note is shared with you under the client’s consent. A briefing will use it.</p>}</Card>
       </div>
-      <AiOverview name={p.name} customerId={customerId} token={token} onAsk={onAsk}/>
     </div>}
 
     {tab==='requests'&&<div className="rmw-grid two">
@@ -168,33 +166,4 @@ function NoteRow({note:n,onAsk}) {
         {n.commitments?.length>0&&<button type="button" className="rmw-mini" onClick={()=>onAsk(`Turn the ${n.met_on_text} note into follow-up tasks`,'actions_from_note')}><Icon name="check"/>Turn into tasks</button>}</div>
     </div>}
   </li>;
-}
-
-// An AI overview generated on request (never automatically), from the same records; shown as a short report.
-function AiOverview({name,customerId,token,onAsk}) {
-  const [reply,setReply]=useState(null),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[error,setError]=useState('');
-  const [parts,setParts]=useState([]);  // the record sections, streamed before the model's points
-  const request=useRef(null);
-  useEffect(()=>()=>request.current?.abort(),[]);
-  async function generate() {
-    setBusy(true);setError('');setStatus('Reading the records…');setParts([]);
-    const controller=new AbortController();request.current=controller;
-    try {
-      const message=`Give me an overview of ${name}`;
-      setReply(await askAssistant({message,history:[],intent:'client_overview',context:requestContext({client_id:customerId})},await token(),setStatus,
-        controller.signal,part=>setParts(previous=>[...previous,part])));
-    } catch(failure) {if(failure.name!=='AbortError')setError(failure.message);}
-    finally {setBusy(false);setStatus('');setParts([]);}
-  }
-  return <section className="rmw-card rmw-ai" data-testid="rm-ai-overview">
-    <div className="rmw-card-head"><h3><Icon name="spark"/>AI client overview</h3>
-      {reply&&<button className="link-button" disabled={busy} onClick={generate}><Icon name="refresh"/>Refresh</button>}</div>
-    {!reply&&!busy&&<><p className="rm-small">A summary of {name}’s records with sources, open matters and gaps. Generated only when you ask.</p>
-      <button className="primary-button" onClick={generate}><Icon name="spark"/>Generate overview</button></>}
-    {busy&&<p className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{status}</p>}
-    {busy&&parts.length>0&&<RmAnswer reply={partialReply(parts)} client={name} compact latest={false} token={token}/>}
-    {error&&<p role="alert" className="rm-error">{error}</p>}
-    {reply&&!busy&&<><RmAnswer reply={reply} client={name} compact latest={false} token={token}/>
-      <button className="bank-chat-logout" onClick={()=>onAsk(`Give me an overview of ${name}`,{intent:'client_overview',context:{client_id:customerId}})}>Continue in the assistant<Icon name="arrow"/></button></>}
-  </section>;
 }

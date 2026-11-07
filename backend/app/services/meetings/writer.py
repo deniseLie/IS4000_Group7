@@ -56,7 +56,7 @@ def estimated_charge(system: str,payload: str,schema: dict[str,object]) -> int:
 
 
 async def model_step(prompt: dict[str,str],system: str,payload: str,schema: dict[str,object]) -> LLMResult:
-    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],schema),timeout=240)
+    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],schema,model=settings.meeting_model or None),timeout=240)
     except TimeoutError as error:raise LLMTimeout('Meeting model step exceeded 240 seconds; persisted completed chunks can be resumed') from error
     log_event('meeting_model_completed',prompt_version=prompt['id'],input_tokens=result.input_tokens,output_tokens=result.output_tokens,model=result.model,latency_ms=result.latency_ms)
     return result

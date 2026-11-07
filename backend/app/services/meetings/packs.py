@@ -3,6 +3,7 @@ import asyncio,json
 from uuid import UUID
 from langgraph.graph import START,END,StateGraph
 from psycopg.types.json import Jsonb
+from app.core.config import settings
 from app.schemas.contracts import RequestContext
 from app.schemas.meeting_packs import PackGraphState,PackInputs,PackPlan,PackRequest,PackView,ProductChoice,ProposalContext,StoredPack
 from app.services.meetings.database import ApplicationDatabase
@@ -33,7 +34,7 @@ async def draft(meeting: UUID,body: PackRequest,ctx: RequestContext) -> PackView
         return existing
     async def compose(state: PackGraphState) -> dict[str,PackPlan]:
         prompt=load('proposal_drafter','v1')
-        result=await call({'agent':'proposal_drafter','id':prompt['id']},prompt['system'],[('user',safe_context(frame).model_dump_json())],PackPlan.model_json_schema())
+        result=await call({'agent':'proposal_drafter','id':prompt['id']},prompt['system'],[('user',safe_context(frame).model_dump_json())],PackPlan.model_json_schema(),model=settings.meeting_model or None)
         plan=PackPlan.model_validate(result.data)
         if not set(plan.product_ids)<={item.item_id for item in frame.catalogue}:raise ValueError('Proposal Drafter selected a catalogue item outside the agreed agenda')
         return {'plan':plan}

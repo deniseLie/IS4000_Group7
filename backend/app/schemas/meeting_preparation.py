@@ -7,7 +7,7 @@ from app.schemas.meeting_lifecycle import Hash,Model,Text
 from app.schemas.meetings import BriefCard,BriefLabel,ConsentCategory,TalkingPoint
 
 Heading=Literal['profile','compliance','requests','history','shared_topics','transaction_insights','questions']
-Question=Literal['confirm_goal','review_status','clarify_next_step','discuss_shared_topic','check_information','compare_product_terms','confirm_document_next_step','review_collateral_next_step']
+Question=Literal['confirm_goal','review_status','clarify_next_step','discuss_shared_topic','check_information','compare_product_terms','confirm_document_next_step','review_collateral_next_step','discuss_funding_options']
 
 class HiddenInput(Model):
     model_config=ConfigDict(hide_input_in_errors=True)

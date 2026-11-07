@@ -25,7 +25,7 @@ export default function MeetingReminders({token,onOpen}){
           ?'Review the saved brief, current records and discussion pack before the meeting.'
           :'The transcript deadline has passed. Check My Notes capture, import the saved export, or document your recollection.'}</p>
         {item.error_code&&<p className="rmw-warn">{item.error_code.replaceAll('_',' ')}. Review recovery controls in the meeting workspace.</p>}</div>
-      <div className="meeting-actions"><button type="button" className="primary-button small" data-testid="meeting-reminder-open" disabled={busy} onClick={()=>onOpen(item.meeting_id)}>Open meeting</button>
+      <div className="meeting-actions"><button type="button" className="primary-button small" data-testid="meeting-reminder-open" disabled={busy} onClick={()=>onOpen(item.meeting_id,item.client)}>Open meeting</button>
         <button type="button" className="bank-chat-logout" data-testid="meeting-reminder-acknowledge" disabled={busy} onClick={()=>acknowledge(item.reminder_id)}>Dismiss reminder</button></div>
     </li>)}</ul></section>;
 }
