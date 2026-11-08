@@ -11,7 +11,7 @@ import {displayName,firstName,formatDate,formatDateTime,initials} from '../lib/f
 // one row per category (a status and one line); each row opens its detail one tap down, where she switches it, changes
 // it and, for chat topics, sees each topic in plain words with Delete. Her words are never shown (0142). Every change is
 // one ledger action she confirms here and takes effect at once; the receipt is in Actions. Nothing here sends a request to
-// a team (0147 removed Delete all my data).
+// a team (0147).
 const ICONS={transaction_insights:'card',chat_topics:'chat',meeting_recording:'mic'};
 const cap=text=>text[0].toUpperCase()+text.slice(1);
 
