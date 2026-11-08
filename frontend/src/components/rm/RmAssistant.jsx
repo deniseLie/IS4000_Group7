@@ -152,7 +152,7 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
         {messages.map((m,i)=><div key={i} data-testid={`rm-message-${m.role}`} className={`bank-chat-message ${m.role}`}>
           {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
           <div className={`bank-chat-bubble ${m.error?'error':''}`}>
-            {m.role==='assistant'&&!(m.reply?.sections?.length&&m.reply.status!=='denied')&&<div className="answer-heading">RM assistant{m.reply?.origin==='access_check'&&<small className="answer-origin">Access check</small>}</div>}
+            {m.role==='assistant'&&<div className="answer-heading">RM assistant{m.reply?.origin==='access_check'?<small className="answer-origin">Access check</small>:m.reply?.origin==='ai'&&<small className="answer-origin">AI-generated</small>}</div>}
             {m.role==='user'&&<span className="answer-text">{m.content}</span>}
             {m.pending&&<span className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{status}</span>}
             {/* Like the client side: the three dots stay until the whole answer is ready (no part-by-part preview). */}

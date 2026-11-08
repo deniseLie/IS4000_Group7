@@ -2951,3 +2951,13 @@ button.answer-source-row{cursor:pointer}button.answer-source-row:hover{border-co
 .mrem-actions .bank-chat-logout,.rm-today-row .bank-chat-logout{min-width:124px;justify-content:center}
 .mrem-actions .link-button{border:0;background:none;padding:4px 2px;min-height:0;box-shadow:none;color:var(--muted);font-size:13px;font-weight:500;text-decoration:none}
 .mrem-actions .link-button:hover{color:var(--ink);text-decoration:underline}
+
+/* RM assistant answers sit in the same white card as the client assistant's (every answer, not only reports), and each
+   point's source is a small number that opens that source in the list below, instead of a long cut-off title. */
+.bank-chat-bubble>.rm-answer:not(.compact),.answer-section,.answer-sections.numbered{padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 1px 2px #0000000a}
+.answer-sections.numbered{padding:6px 18px 14px}
+.answer-sections.numbered>.answer-section{padding:14px 0;border:0;border-radius:0;background:none;box-shadow:none}
+.answer-section[data-priority="P0"]{background:#fffafa}
+.bank-chat-bubble>.rm-answer .doc-section{margin:0}
+.bank-chat-bubble>.rm-answer .doc-section+.doc-section,.bank-chat-bubble>.rm-answer .rm-answer-section+.rm-answer-section{margin-top:6px}
+.doc-src.num{min-width:20px;max-width:none;padding:0 6px;border-radius:999px;text-align:center;font-size:11px;font-weight:600;line-height:18px;align-self:center}

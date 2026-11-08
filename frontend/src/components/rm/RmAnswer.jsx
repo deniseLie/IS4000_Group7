@@ -59,7 +59,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       <textarea aria-label="Edit point" rows={Math.max(1,Math.ceil(w.text.length/90))} value={w.text} disabled={w.removed}
         onChange={e=>setItem(si,ii,{text:e.target.value})}/>
       <button type="button" className="rmw-mini" onClick={()=>setItem(si,ii,{removed:!w.removed})}>{w.removed?'Keep':'Remove'}</button></li>;}
-    const refs=(item.source_ids||[]).filter(id=>number.has(id)).map(id=>({key:id,id,title:sources[number.get(id)-1].title,onClick:()=>show(id)}));
+    const refs=(item.source_ids||[]).filter(id=>number.has(id)).map(id=>({key:id,id,n:number.get(id),title:sources[number.get(id)-1].title,onClick:()=>show(id)}));
     return <li key={ii} className="doc-li"><Point kind={item.kind==='client_stated'?'client_said':item.kind==='suggestion'?'ai_suggestion':item.kind||'record'} edited={item.edited}
       tail={item.owner==='specialist'&&<span className="rm-owner"> (specialist team)</span>} sources={refs}>{item.text}</Point></li>;
   }
