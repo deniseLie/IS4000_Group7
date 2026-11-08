@@ -1,5 +1,7 @@
 """Meeting connectors: caller-JWT Data API for the UI; restricted SQL login for the worker.
 
+The meeting agents' reads (tools.MEETING_READS) are MCP tools/calls through the in-process server (agent_read); their
+drafts (agent_call) and every worker call stay direct, so the worker's private login never reaches MCP.
 The worker URL must name its provisioned LOGIN role, a member of demobank_meetings, never an owner/service login.
 No database credentials or caller tokens are placed in graph state or model messages.
 """
@@ -27,7 +29,7 @@ from app.schemas.zoom_scheduling import Cancellation,ProviderMeeting,ScheduledMe
 from app.services.agents.registry import MINUTES_WRITER
 from app.services.meetings.zoom import HostedMeeting,Owner
 from app.services.authorization import PolicyDenied
-from app.services.tools import meeting_call
+from app.services.tools import MEETING_READS,meeting_call,meeting_read
 
 Parameter: TypeAlias = str | int | bool | UUID | list[UUID] | Jsonb | None
 PUBLIC=frozenset({'meeting_start_workflow','meeting_document_call_start','meeting_document_call_end','meeting_submit_notes',
@@ -54,6 +56,10 @@ def serializable(value: object) -> JsonValue:
     raise TypeError('Unsupported meeting RPC parameter: '+type(value).__name__)
 
 
+def wire(parameters: Mapping[str,Parameter]) -> dict[str,JsonValue]:
+    return TypeAdapter(dict[str,JsonValue]).validate_python(json.loads(json.dumps(dict(parameters),default=serializable)))
+
+
 def require_runtime_login(uri: SecretStr,group: str) -> None:
     """Refuse owners, administration flags and any membership outside the one required runtime group."""
     if group not in ('demobank_meetings','demobank_meeting_ingress'):raise ValueError('Unknown meeting runtime group')
@@ -77,7 +83,21 @@ class ApplicationDatabase:
         if claims.sub!=self.ctx.principal.user_id:raise PermissionError('Meeting caller does not match the gateway session')
         return self._execute(name,parameters)
 
+    async def agent_read(self,agent: MeetingAgent,name: str,meeting: UUID,parameters: Mapping[str,Parameter],claims: Claims) -> JsonValue:
+        """A meeting agent's read as an MCP tools/call (tools.meeting_read): the tool checks the meeting policy, then reads
+        with the caller's JWT (read below). A refusal is a 42501 MeetingStoreError, as for agent_call."""
+        try:return await meeting_read(name,wire(parameters),self.ctx,MeetingRmAccess(agent,self.ctx.principal,meeting,claims))
+        except PolicyDenied as error:
+            raise MeetingStoreError('42501',str(error)) from error
+
+    def read(self,name: str,parameters: Mapping[str,Parameter]) -> JsonValue:
+        """The SQL reader behind a meeting read tool, run by the tool after the meeting policy; never a UI call."""
+        if name not in MEETING_READS:raise ValueError('Function is not a meeting agent read')
+        return self._execute(name,parameters)
+
     def agent_call(self,agent: MeetingAgent,name: str,meeting: UUID,parameters: Mapping[str,Parameter],claims: Claims) -> JsonValue:
+        """A meeting agent's draft write, gated and traced off MCP (meeting_call); its reads go through agent_read."""
+        if name in MEETING_READS:raise ValueError('Meeting agent reads go through agent_read (MCP)')
         access=MeetingRmAccess(agent,self.ctx.principal,meeting,claims)
         target=parameters.get('p_meeting_id')
         try:
@@ -90,10 +110,10 @@ class ApplicationDatabase:
             raise MeetingStoreError('42501',str(error)) from error
 
     def _execute(self,name: str,parameters: Mapping[str,Parameter]) -> JsonValue:
-        wire=TypeAdapter(dict[str,JsonValue]).validate_python(json.loads(json.dumps(dict(parameters),default=serializable)))
+        body=wire(parameters)
         for attempt in range(3):
             try:
-                with data_api.connect(self.ctx) as db:return TypeAdapter(JsonValue).validate_python(db.rpc(name,wire).execute().data)
+                with data_api.connect(self.ctx) as db:return TypeAdapter(JsonValue).validate_python(db.rpc(name,body).execute().data)
             except APIError as error:
                 code=data_api.database_code(error)
                 if attempt==2 or code not in data_api.TRANSIENT_CODES:

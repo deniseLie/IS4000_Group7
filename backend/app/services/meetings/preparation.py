@@ -41,7 +41,7 @@ def caller(ctx: RequestContext) -> Claims:
 
 
 async def inputs(meeting: UUID,database: ApplicationDatabase,claims: Claims) -> PreparationInputs:
-    result=await asyncio.to_thread(database.agent_call,BRIEF_WRITER.name,'meeting_preparation_inputs',meeting,{'p_meeting_id':meeting},claims)
+    result=await database.agent_read(BRIEF_WRITER.name,'meeting_preparation_inputs',meeting,{'p_meeting_id':meeting},claims)
     return PreparationInputs.model_validate(result)
 
 

@@ -5,7 +5,10 @@ spec (require_tool, bounded, shaped) and sends the call through the Model Contex
 these functions in-process (one shared client per event loop), and over stdio to external MCP clients
 (python -m scripts.mcp_server). Policy (require_permission), JWT + RLS and audit run inside the tool, never in the caller
 or the model. Writes are not tools: actions, offers, approved RM writes, uploads and insight actions call their services.
+The meeting agents' reads (MEETING_READS) are MCP tools too, sent by meeting_read with the RM's context and the agent's
+MeetingAccess; their drafts and the meeting worker's lease-fenced calls stay direct (meeting_call).
 """
+import asyncio
 import inspect
 from collections import Counter
 from collections.abc import Awaitable,Callable,Iterator
@@ -32,6 +35,7 @@ from app.services.rm import records as rm_records
 SGT=ZoneInfo('Asia/Singapore')
 
 TOOL_CTX: ContextVar[RequestContext | None]=ContextVar('tool_ctx',default=None)
+MEETING_ACCESS: ContextVar[MeetingAccess | None]=ContextVar('meeting_access',default=None)  # set per call for a meeting read
 
 
 class ToolContextMissing(PermissionError):
@@ -302,7 +306,38 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
     'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts,'rm_transaction_insights':rm_transaction_insights,
     'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests}
-SERVED=MappingProxyType(dict(TOOLS))  # the MCP server's tool list and schemas; a call runs TOOLS[name] (tests may swap one)
+
+
+# Meeting agents' reads (architecture §15): fixed connectors the code selects, never a model. Each is the assigned RM's
+# own meeting record, read with her JWT after the meeting policy (registry.MEETING_TOOLS, require_permission); SQL checks
+# the live assignment and consent again. Served in-process only: not in TOOLS (so never through call() or the stdio server).
+async def _meeting_rpc(name: str,p_meeting_id: UUID,args: dict[str,Any]) -> dict[str,JsonValue]:
+    access,ctx=MEETING_ACCESS.get(),_ctx()
+    if access is None:raise ToolContextMissing('Meeting tools run only with a meeting agent access set by the backend')
+    require_permission(ctx.principal,name,{'meeting_id':str(p_meeting_id)},access)
+    from app.services.meetings.database import ApplicationDatabase
+    return {'data':await asyncio.to_thread(ApplicationDatabase(ctx).read,name,{'p_meeting_id':p_meeting_id,**args})}
+
+
+async def meeting_preparation_inputs(p_meeting_id: UUID) -> dict[str,JsonValue]:
+    """Brief Writer: the assigned RM's currently permitted preparation records for one meeting, as cited references."""
+    return await _meeting_rpc('meeting_preparation_inputs',p_meeting_id,{})
+
+
+async def meeting_pack_inputs(p_meeting_id: UUID,p_amounts: list[dict[str,JsonValue]]) -> dict[str,JsonValue]:
+    """Proposal Drafter: one meeting's agreed agenda, approved catalogue and the RM's stated amounts (labels redacted)."""
+    from psycopg.types.json import Jsonb
+    return await _meeting_rpc('meeting_pack_inputs',p_meeting_id,{'p_amounts':Jsonb(p_amounts)})
+
+
+async def meeting_notes_context(p_meeting_id: UUID) -> dict[str,JsonValue]:
+    """Minutes Writer: one meeting's reviewed RM notes, with their source hash, revision and consent epoch."""
+    return await _meeting_rpc('meeting_notes_context',p_meeting_id,{})
+
+
+MEETING_READS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'meeting_preparation_inputs':meeting_preparation_inputs,
+    'meeting_pack_inputs':meeting_pack_inputs,'meeting_notes_context':meeting_notes_context}
+SERVED=MappingProxyType({**TOOLS,**MEETING_READS})  # the MCP server's tool list and schemas; a call runs TOOLS[name] or MEETING_READS[name] (tests may swap one)
 
 
 def project(value: Any,fields: frozenset[str]) -> Any:
@@ -352,7 +387,8 @@ def shaped(result: dict[str,Any],view: ToolView) -> dict[str,Any]:
 
 @contextmanager
 def meeting_call(name: str,meeting: UUID | None,ctx: MeetingAccess) -> Iterator[dict[str,str|bool]]:
-    """Gate a code-selected meeting connector with the shared policy and metadata-only tool tracing."""
+    """Gate a code-selected meeting connector that stays off MCP (an agent's draft write, or the worker's lease-fenced
+    call on its private login) with the shared policy and metadata-only tool tracing. Reads go through meeting_read."""
     tool = name if name in registry.MEETING_TOOLS else 'unregistered_tool'
     with span('meeting.tool_call','tool',tool=tool,agent=ctx.agent,side='meeting',transport='direct') as facts:
         try:
@@ -362,6 +398,24 @@ def meeting_call(name: str,meeting: UUID | None,ctx: MeetingAccess) -> Iterator[
             raise
         facts['allowed']=True
         yield facts
+
+
+async def meeting_read(name: str,args: dict[str,JsonValue],ctx: RequestContext,access: MeetingAccess) -> JsonValue:
+    """A meeting agent's read as an MCP tools/call (app/mcp_server.py): the RM's RequestContext and the agent's access go
+    in the call's one-time `_meta` key, never in the arguments; the tool runs the meeting policy, then the SQL reader with
+    her JWT. Same span and refusal facts as meeting_call, with transport=mcp."""
+    if name not in MEETING_READS:raise KeyError(f'Unknown meeting read {name}')
+    from app.mcp_server import call_in_process
+    from app.services.meetings.database import MeetingStoreError
+    with span('meeting.tool_call','tool',tool=name,agent=access.agent,side='meeting',transport='mcp') as facts:
+        facts['allowed']=True
+        try:result=await call_in_process(name,args,ctx,access)
+        except PolicyDenied as error:
+            facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1]);raise
+        except MeetingStoreError as error:
+            if error.code=='42501':facts.update(allowed=False,reason='meeting_scope_denied')
+            raise
+    return result['data']
 
 
 async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
