@@ -10,7 +10,7 @@ import inspect
 from collections import Counter
 from collections.abc import Awaitable,Callable,Iterator
 from contextlib import contextmanager
-from datetime import date,timedelta
+from datetime import date,datetime,timedelta
 from contextvars import ContextVar
 from types import MappingProxyType
 from typing import Any
@@ -288,6 +288,42 @@ async def rm_book_facts() -> dict[str,Any]:
     return await rm_records.book_facts(_ctx())
 
 
+ZOOM_LIVE={'not_configured':'not_configured','not_authorised':'not_authorised'}  # any other ExternalError reason: unavailable
+
+
+def sgt_words(value: datetime) -> str:
+    """'Thu 12 Nov 2026, 10:00 am', as rm.sgt writes times (portable: no %-d on Windows)."""
+    local=value.astimezone(SGT)
+    return f"{local:%a} {local.day} {local:%b %Y}, {local.hour%12 or 12}:{local:%M} {'am' if local.hour<12 else 'pm'}"
+
+
+async def zoom_meeting_check(appointment_id: UUID) -> dict[str,Any]:
+    """Read only: whether one of the signed-in relationship manager's appointments (in her book) has a Zoom link that
+    still matches the booked time, and whether Zoom has that meeting, at that time, waiting or started. Codes only: never
+    the join link, Zoom ids or anyone's name. Needs the RM's own sign-in."""
+    ctx=_ctx()
+    if ctx.principal.kind!='customer' or ctx.principal.jwt is None:raise PolicyDenied('Tool access denied: rm_login_required')
+    record=await rm_records.zoom_check(ctx,appointment_id)  # her book first (refused and audited), before Zoom or the cache
+    row=record['data']
+    now=datetime.now(SGT)
+    out: dict[str,JsonValue]={'meeting':row['meeting'],'format':row['format'],'status':row['status'],'link':row['link'],
+        'zoom_time_matches':None,'call':None,'live':'not_checked','checked_at':sgt_words(now)}
+    if row['link']=='set_up':
+        starts,ends=datetime.fromisoformat(str(row['starts_at'])),datetime.fromisoformat(str(row['ends_at']))
+        try:meeting=await external.zoom_meeting('zoom_meeting_check',int(row['provider_id']))
+        except external.ExternalError as error:
+            if error.reason=='not_found':out.update(link='missing_in_zoom',live='ok')
+            else:out['live']=ZOOM_LIVE.get(error.reason,'unavailable')
+        else:
+            from app.services.meetings.zoom import ours
+            if not ours(meeting.topic,appointment_id):out.update(link='missing_in_zoom',live='ok')  # the number is not this meeting
+            else:
+                out.update(live='ok',zoom_time_matches=meeting.start_time==starts.replace(microsecond=0)
+                    and meeting.duration*60==int((ends-starts).total_seconds()),
+                    call='in_progress' if meeting.status=='started' else 'not_started' if starts>now else 'not_running')
+    return {'data':out,'call_id':str(record.get('call_id')),'as_of':str(record.get('as_of'))}
+
+
 TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'knowledge_article':knowledge_article,
     'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
@@ -301,7 +337,8 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
     'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts,'rm_transaction_insights':rm_transaction_insights,
-    'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests}
+    'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests,
+    'zoom_meeting_check':zoom_meeting_check}  # RM only; reads Zoom with the bank's own login (registry.ZOOM_EXTERNAL)
 SERVED=MappingProxyType(dict(TOOLS))  # the MCP server's tool list and schemas; a call runs TOOLS[name] (tests may swap one)
 
 
@@ -410,4 +447,6 @@ def result_facts(name: str,args: dict[str,Any],result: Any) -> dict[str,JsonValu
             purpose=args.get('purpose'))
     if name=='rm_talking_points' and isinstance(rows,list):
         out['origins']=dict(Counter(str(r.get('origin')) for r in rows if isinstance(r,dict)))
+    if name=='zoom_meeting_check' and isinstance(rows,dict):
+        out.update({k:rows.get(k) for k in ('link','call','live','zoom_time_matches')})
     return out

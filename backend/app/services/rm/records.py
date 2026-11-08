@@ -75,6 +75,9 @@ async def review_status(ctx):return await rpc('rm_review_status',{},ctx,'rm.revi
 async def appointments(ctx,start: date|None=None,end: date|None=None):
     return await rpc('rm_appointments',{'p_from':_d(start),'p_to':_d(end)},ctx,'rm.appointments')
 async def availability(ctx):return await rpc('rm_availability',{},ctx,'rm.availability')
+async def zoom_check(ctx,appointment_id: UUID):
+    """0150: one of her appointments in her book, with its Zoom link state and (for the tool only) the Zoom meeting number."""
+    return await rpc('rm_zoom_check',{'p_appointment_id':str(appointment_id)},ctx,'rm.zoom_check')
 async def tasks(ctx,customer_id: int|None=None):return await rpc('rm_tasks',{'p_customer_id':customer_id},ctx,'rm.tasks')
 async def followups(ctx):return await rpc('rm_followups',{},ctx,'rm.followups')
 async def cash_events(ctx,customer_id: int):return await rpc('rm_cash_events',{'p_customer_id':customer_id},ctx,'rm.cash_events')

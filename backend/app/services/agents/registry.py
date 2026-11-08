@@ -45,7 +45,9 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
         'rm_transaction_insights','rm_talking_points','rm_meeting_requests')},  # the gated ones also check rm.consent_active (0106)
 })
 
-EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
+PUBLIC_EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
+ZOOM_EXTERNAL=frozenset({'zoom_meeting_check'})  # tools.zoom_meeting_check: her book first (0150), then Zoom with the bank's login
+EXTERNAL=PUBLIC_EXTERNAL|ZOOM_EXTERNAL
 KB=ToolView()
 ASK=Read(tool='knowledge_search',entities={'query':QUESTION})
 CARD_FIELDS=frozenset({'last4','name','network','status','currency','limit','outstanding','minimum_payment','due_date','unfreeze_blocked_reason'})
@@ -199,13 +201,14 @@ RM_REQUESTS=AgentSpec(name='rm_requests',role='rm',scope='rm_book',prompt='rm_as
     imports=frozenset({'clients_due','latest_note','client_ref','reviews_due','meetings_next_7d','requests_to_answer'}))
 
 RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_assistant',
-    answers="The RM's calendar: her appointments, free times and working hours, clients' meeting requests, and cards to "
-        'accept a requested time, propose another, decline, block time or change her hours (each applied only on Approve). '
-        'Never client financial data.',
+    answers="The RM's calendar: her appointments, free times and working hours, clients' meeting requests, whether a meeting's "
+        'Zoom link is set up and matches the booked time (read from Zoom), and cards to accept a requested time, propose '
+        'another, decline, block time or change her hours (each applied only on Approve). Never client financial data.',
     tools={'rm_appointments':WHOLE,'rm_availability':WHOLE,'rm_meeting_requests':TEXT},  # purposes are the client's own words
     intents={'schedule':(Read(tool='rm_appointments'),),'meeting_requests':(Read(tool='rm_meeting_requests'),),
         'decide_request':(Read(tool='rm_meeting_requests'),Read(tool='rm_availability')),'availability_change':(Read(tool='rm_availability'),)},
-    loop_tools=frozenset({'rm_appointments','rm_availability','rm_meeting_requests'}),
+    loop_tools=frozenset({'rm_appointments','rm_availability','rm_meeting_requests','zoom_meeting_check'}),
+    external=ZOOM_EXTERNAL,  # read only; the meeting is picked by code (rm/handlers.h_open), never a model-supplied id
     exports={'meetings_next_7d':'list[meeting_ref]','requests_to_answer':'list[meeting_ref]'},sort_by={'meetings_next_7d':'starts_at','requests_to_answer':'respond_by'},
     imports=frozenset({'needs_meeting','topics','client_ref'}))
 # No RM agent makes ledger offers: drafts, documentation, proposed tasks or requests and calendar decisions are review

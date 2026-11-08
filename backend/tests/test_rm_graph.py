@@ -453,6 +453,41 @@ def test_a_loop_names_clients_as_in_the_book_and_never_reaches_outside_it(record
     assert next(a for n, a in spans if n == 'agent')['stop'] == 'answered' and reply['status'] == 'ok'
 
 
+MICHELLE_MEETING, MEI_LING_MEETING = str(uuid4()), str(uuid4())
+
+
+def test_the_calendar_loop_checks_zoom_for_the_meeting_code_picks_never_a_model_supplied_id(records, model, monkeypatch):
+    calls, data = records
+    seen, state = model
+    day = handlers.today() + timedelta(days=1)
+    rows = [{'appointment_id': MICHELLE_MEETING, 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'starts_at': f'{day}T10:00:00+08:00',
+        'when': 'x', 'format': 'video', 'status': 'confirmed'},
+        {'appointment_id': MEI_LING_MEETING, 'customer_id': 1009, 'client': 'Mei Ling Goh (DEMO)', 'starts_at': f'{day}T14:00:00+08:00',
+        'when': 'y', 'format': 'video', 'status': 'confirmed'}]
+    data['rows']['rm_appointments'] = {'data': rows, 'as_of': 'now'}
+    checked = []
+    @functools.wraps(tools.TOOLS['zoom_meeting_check'])
+    async def zoom(appointment_id):
+        checked.append((str(appointment_id), tools.TOOL_CTX.get().agent))
+        return {'data': {'meeting': 'Thu 12 Nov 2026, 10:00 am', 'format': 'video', 'status': 'confirmed', 'link': 'set_up',
+            'zoom_time_matches': True, 'call': 'not_started', 'live': 'ok', 'checked_at': 'Sun 8 Nov 2026, 12:00 pm'}, 'as_of': 'now'}
+    async def down(appointment_id):raise handlers.external.ExternalError('zoom_meeting_check', 'timeout')
+    monkeypatch.setitem(tools.TOOLS, 'zoom_meeting_check', zoom)
+    state['steps'] = [step(('zoom_meeting_check', {'client': 'Michelle', 'when': 'tomorrow 10am', 'appointment_id': MEI_LING_MEETING}),
+        ('zoom_meeting_check', {'client': 'Mei Ling', 'when': '7:15am'}))]  # no meeting of hers then: code refuses, nothing is guessed
+    state['cite'] = ['zoom-check']
+    plan(monkeypatch, [{'intent': 'open', 'agent': 'rm_calendar'}])
+    reply, spans = traced("Is tomorrow's Zoom with Michelle set up?")
+    assert checked == [(MICHELLE_MEETING, 'rm_calendar')]  # the model's id was ignored
+    loop = next(a for n, a in spans if n == 'loop_step')
+    assert {(r['tool'], r['reason']) for r in loop['refused']} == {('zoom_meeting_check', 'which_meeting')}
+    assert '"link": "set_up"' in evidence_in(seen[-1]) and [s['id'] for s in reply['sources']] == ['zoom-check']
+    monkeypatch.setitem(tools.TOOLS, 'zoom_meeting_check', functools.wraps(zoom)(down))
+    state['steps'], state['cite'] = [step(('zoom_meeting_check', {'client': 'Michelle', 'when': 'tomorrow'}))], ['zoom_meeting_check-unavailable']
+    reply, _ = traced("Is tomorrow's Zoom with Michelle set up?")
+    assert '"checked": false' in evidence_in(seen[-1]) and reply['status'] == 'ok'  # said not checked, nothing filled in
+
+
 def test_accepting_a_client_time_is_a_card_built_from_the_records_without_a_model_call(records, model, monkeypatch):
     calls, data = records
     seen, _ = model

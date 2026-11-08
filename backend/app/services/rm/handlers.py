@@ -34,7 +34,7 @@ from difflib import SequenceMatcher
 from typing import Any
 from app.schemas.contracts import RequestContext
 from app.schemas.rm import BOOK_WIDE,NEEDS_CLIENT,RmAssistantRequest
-from app.services import llm_gateway,prompts,tools
+from app.services import external,llm_gateway,prompts,tools
 from app.services.agents import registry,runner
 from app.services.authorization import PolicyDenied
 from app.services.privacy import redact
@@ -1257,7 +1257,9 @@ TOOL_HELP={'rm_client_profile':'{"client": "<name in your book>"}: one client\'s
     'rm_ticket':'{"reference": "TCK-…"}: one ticket','rm_followups':'{}: deadlines, tickets, tasks and meetings across the book',
     'request_categories':'{}: the request types and what each needs','knowledge_article':'{"article_id": "<id>"}: one approved article',
     'rm_appointments':'{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}: your appointments (default the next 14 days)',
-    'rm_availability':'{}: your working hours and free times for 14 days','rm_meeting_requests':'{"status": "open" | "scheduled" | "closed"}: clients\' meeting requests'}
+    'rm_availability':'{}: your working hours and free times for 14 days','rm_meeting_requests':'{"status": "open" | "scheduled" | "closed"}: clients\' meeting requests',
+    'zoom_meeting_check':'{"client": "<name in your book>", "when": "<day or time, e.g. Thursday 10am>"}: whether that meeting\'s Zoom link is set up '
+        'and matches the booked time, and whether Zoom shows the call waiting or started (read live from Zoom)'}
 STOPPED={'cap':'I can’t answer that fully: I reached the limit of {limit} reads for one question. Here is what I found; ask a narrower question for the rest.',
     'malformed':'I can’t answer that fully: I could not finish looking it up. Here is what I found so far.'}
 
@@ -1278,6 +1280,9 @@ def loop_items(name: str,args: dict,result: dict,message: str) -> list[ev.Eviden
     if name=='rm_appointments':return [ev.appointments_evidence(result)]
     if name=='rm_availability':return [ev.availability_evidence(result)]
     if name=='rm_meeting_requests':return ev.meeting_requests_bundle(result).items
+    if name=='zoom_meeting_check':
+        return [ev.Evidence('zoom-check',f"Zoom check for the meeting on {result['data']['meeting']}, checked {result['data']['checked_at']}",
+            'calendar',result['data'],as_of)]
     if name=='request_categories':return [ev.Evidence('request-types','Request types the RM can raise for a client','guidance',result.get('items') or [],None)]
     if name=='knowledge_article':
         rows=result.get('items') or []
@@ -1296,9 +1301,21 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
         value=[{k:v for k,v in x.items() if k!='customer_id'} if isinstance(x,dict) else x for x in export.value] if isinstance(export.value,list) else export.value
         bundle.add(ev.Evidence(f'input-{name}','From another part of this answer','record',{name:value,'computed_from':export.source_ids},None))
     await t.say('Looking through your records…')
+    async def meeting(call: runner.Call) -> str:
+        """The appointment a step names by client and day or time, picked by code from her own calendar (30 days back to
+        14 ahead); a model-supplied appointment id is never used."""
+        name,when=call.args.get('client'),call.args.get('when')
+        ids=[c['customer_id'] for c in t.book if names_match(name,c['name'])] if isinstance(name,str) and name.strip() else [client_id] if client_id else []
+        if len(ids)>1:raise runner.StepRefused('which_client')
+        if isinstance(name,str) and name.strip() and not ids:raise runner.StepRefused('not_in_book')
+        rows=(await t.read('rm_appointments',{'start':(today()-timedelta(days=30)).isoformat(),'end':(today()+timedelta(days=14)).isoformat()}))['data']
+        found=match_appointments(rows,when if isinstance(when,str) else '',ids[0] if ids else None)
+        if len(found)!=1:raise runner.StepRefused('which_meeting')
+        return str(found[0]['appointment_id'])
     async def run(call: runner.Call) -> list[ev.Evidence]:
         params=inspect.signature(tools.TOOLS[call.tool]).parameters
-        args={k:v for k,v in call.args.items() if k in params and k!='customer_id'}
+        args={k:v for k,v in call.args.items() if k in params and k not in ('customer_id','appointment_id')}
+        if 'appointment_id' in params:args['appointment_id']=await meeting(call)
         if 'customer_id' in params:
             name=call.args.get('client')
             ids=[c['customer_id'] for c in t.book if names_match(name,c['name'])] if isinstance(name,str) and name.strip() else [client_id] if client_id else []
@@ -1306,8 +1323,11 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
             args['customer_id']=ids[0]
         try:result=await t.read(call.tool,args)
         except (RmDenied,PolicyDenied) as error:raise runner.StepRefused('not_in_book' if isinstance(error,RmDenied) else 'limit') from error
+        except external.ExternalError:  # an external read that could not answer is said so, never filled in
+            return [bundle.get(i) for i in ev.merge(bundle,[ev.Evidence(f'{call.tool}-unavailable','Not checked','record',
+                {'checked':False,'meaning':'This could not be checked right now, so say it was not checked.'},None)])]
         found=[bundle.get(i) for i in ev.merge(bundle,loop_items(call.tool,args,result,t.message))]
-        if spec.tools[call.tool].free_text:hidden.update(e.id for e in found)
+        if spec.tools.get(call.tool,registry.WHOLE).free_text:hidden.update(e.id for e in found)  # an external tool has no view
         return found
     def system(state: runner.LoopState) -> str:
         shown=[e.for_model() if e.id not in hidden else {'id':e.id,'title':e.title,'kind':e.kind,'record':'(written by people: hidden from this step; the answer step reads it)'}

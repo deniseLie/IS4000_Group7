@@ -10,7 +10,7 @@ import pytest
 from app.core.config import settings
 from app.schemas.contracts import Principal, RequestContext
 from app.services import audit, external, tools
-from app.services.agents.registry import EXTERNAL, CHAT_SPECS
+from app.services.agents.registry import EXTERNAL, PUBLIC_EXTERNAL, CHAT_SPECS
 from app.services.authorization import PolicyDenied
 
 SAMPLES=Path(__file__).parent/'fixtures'/'external'
@@ -106,7 +106,7 @@ def test_failed_calls_are_audited_as_failed(served):
 def test_agents_reach_only_the_external_tools_in_their_spec(served):
     routes,_=served
     routes['/v1/latest']=(200,RATES)
-    assert all(spec.external<=EXTERNAL for spec in CHAT_SPECS.values()) and EXTERNAL==set(external.TOOLS)<=set(tools.TOOLS)
+    assert all(spec.external<=EXTERNAL for spec in CHAT_SPECS.values()) and PUBLIC_EXTERNAL==set(external.TOOLS)<=set(tools.TOOLS) and EXTERNAL<=set(tools.TOOLS)
     ctx=lambda agent:RequestContext(session_id=uuid4(),agent=agent,principal=Principal(kind='customer',user_id=uuid4(),customer_id=1001,jwt='synthetic'))
     result,_=run(tools.call('fx_rate',{'base':'SGD','quote':'JPY'},ctx('accounts')))
     assert result['rate']==RATES['rates']['JPY']

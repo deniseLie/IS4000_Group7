@@ -55,12 +55,21 @@ def served(name: str,function: Callable[...,Awaitable[dict[str,Any]]]) -> Callab
     return run
 
 
+def annotations(name: str) -> Any:
+    """Every tool is read-only; the external ones (public data, Zoom) also reach outside UBS Connect (open world)."""
+    from mcp.types import ToolAnnotations
+    from app.services.agents.registry import EXTERNAL
+    return ToolAnnotations(read_only_hint=True,destructive_hint=False,open_world_hint=name in EXTERNAL)
+
+
 @lru_cache(maxsize=1)
 def build_server():
     from mcp.server.mcpserver import MCPServer
     server=MCPServer('demobank-tools',instructions='UBS Connect coursework tools. Every call is permission-checked and audited; '
-        'personal tools need a signed-in customer. Tools read records only; they never change banking data.')
-    for name,function in tools.SERVED.items():server.tool(name=name,description=(function.__doc__ or name).strip())(served(name,function))
+        'personal tools need a signed-in customer, RM tools (rm_*, zoom_meeting_check) a signed-in relationship manager. '
+        'Tools read records only; they never change banking data or Zoom meetings.')
+    for name,function in tools.SERVED.items():
+        server.tool(name=name,description=(function.__doc__ or name).strip(),annotations=annotations(name))(served(name,function))
     return server
 
 

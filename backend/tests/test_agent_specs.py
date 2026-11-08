@@ -160,7 +160,8 @@ def test_every_rm_data_tool_has_exactly_one_owning_agent():
         assert all(registry.RM_OWNER[t]!=name for t in borrowed)
     assert set(registry.BORROWED)=={'rm_requests'}  # the Client and Calendar agents read only their own class
     assert set(rm['rm_calendar'].tools)=={'rm_appointments','rm_availability','rm_meeting_requests'}  # never client financial data
-    assert all(rm[name].loop_tools<={t for t in rm[name].tools if registry.RM_OWNER.get(t)==name} for name in rm)  # loops read their own class
+    assert all(rm[name].loop_tools<={t for t in rm[name].tools if registry.RM_OWNER.get(t)==name}|rm[name].external for name in rm)  # loops read their own class
+    assert {name:spec.external for name,spec in rm.items() if spec.external}=={'rm_calendar':registry.ZOOM_EXTERNAL}  # and Calendar its Zoom check
 
 
 def test_no_loop_reaches_a_consent_gated_or_write_tool():
