@@ -84,7 +84,7 @@ flowchart TB
       R2["RM Requests"]
       R3["RM Calendar"]
     end
-    TOOLS["Tool layer · tools.call<br/>policy, field views, limits<br/>+ external tool gateway"]
+    TOOLS["Tool layer · tools.call → in-process MCP<br/>policy, field views, limits<br/>+ external tool gateway"]
     subgraph SVC["Shared Services"]
       direction LR
       S1["Knowledge"]
@@ -125,7 +125,7 @@ flowchart TB
   API -.->|every event| AUDIT --> DB
 ```
 
-Lines that are deliberately **not** drawn: every component writes audit events and LangSmith spans (shown once as the dotted `API → Audit` line); Notification pushes inbox items to the Web Client through Supabase Realtime; inside Shared Services, Customer Data does every read and the Action Service every write, both asking Authorisation & Consent first; with `TOOL_TRANSPORT=mcp` tool calls pass through the in-process MCP server (`app/mcp_server.py`); `/admin` reads LangSmith runs, not the database. The Background Worker does **not** start orchestrator turns (§5.10), and the meeting worker never holds an RM's JWT (§15.3).
+Lines that are deliberately **not** drawn: every component writes audit events and LangSmith spans (shown once as the dotted `API → Audit` line); Notification pushes inbox items to the Web Client through Supabase Realtime; inside Shared Services, Customer Data does every read and the Action Service every write, both asking Authorisation & Consent first; every tool call passes through the in-process MCP server (`app/mcp_server.py`, §5.13); `/admin` reads LangSmith runs, not the database. The Background Worker does **not** start orchestrator turns (§5.10), and the meeting worker never holds an RM's JWT (§15.3).
 
 The second entry point (`REST`) matters: the Web Client reads records and starts most changes directly (card freeze and unfreeze, meeting requests, consent grants, checklist marks, document upload and submit, requests and tickets), and the RM approves drafts and calendar cards through `/rm/*`. These calls go through the same gateway, Customer Data, Action Service (or `rm_*` SQL functions) and audit path as chat, but no agent or model is involved.
 
@@ -150,7 +150,6 @@ Communication inside `api` is plain function calls. Network hops: browser ↔ AP
 | `PIPELINE` | `v1` \| `v2` | `v1` is the original single-path `make_answer` flow; `v2` is the orchestrator and agents described here. Personal v2 chat requires saved conversations |
 | `CONVERSATION_STORE` | `off` \| `database` | Saved conversations and server-side history |
 | `CLIENT_INTENT_ROUTING` | `adaptive` \| `rules` | `adaptive`: a planner model call for anything the rules do not decide; `rules`: a clear single-topic English question is planned by rules (`simple_task`) first |
-| `TOOL_TRANSPORT` | `direct` \| `mcp` | Agent tool calls as function calls, or through the in-process MCP server |
 | `CHAT_TRANSPORT` | `api` \| `codex` \| `claude` | OpenRouter via LangChain, or the local Codex or Claude Code CLI (read in `llm_gateway.py`) |
 | `EMBEDDING_API_KEY` | key \| empty | Hybrid knowledge search when set; keyword search when empty or the provider fails. Knowledge always comes from audited Postgres `kb` sections (no switch since `0102`) |
 | `VALIDATION_HANDOFF` | off \| `1` | With `1`, a withheld section in a signed-in saved chat offers one `general_support` handoff (read in `rm_handover.py`) |
@@ -510,7 +509,11 @@ The request summary (`observability.request_facts`) adds side, role, tool calls,
 
 ### 5.13 Agent tools
 
-A tool is a function in `services/tools.py` that the runner calls through `tools.call` (policy, caller JWT and RLS, the agent's field view and limits, audit); `TOOL_TRANSPORT=mcp` routes it through `app/mcp_server.py`. Each agent's tools are in its `AgentSpec` (§5.6.1) and their permission names in `registry.TOOL_PERMISSION`; Compliance and Relationship rules still use the v4 allow-lists in `registry.TOOLS`. External tools (`public_holidays`, `fx_rate`) are in `services/external.py` (§14.4).
+A tool is a function in `services/tools.py`. Every read that feeds a model or an agent's rules is one, and agents, rules and the loaders call it only through `tools.call`: the agent's spec first (`require_tool`, `bounded` limits, `shaped` field view), then policy, the caller's JWT and RLS, and audit inside the tool. Every call is a real MCP `tools/call` to the in-process server `app/mcp_server.py`, on one client shared by the event loop (the `tool_call` span says `transport=mcp`; there is no transport setting since 8 Nov 2026). The server runs the tool inline in the caller's task, so the caller's span, audit batch and trace apply. It finds the caller's `RequestContext` per call from a one-time key in the request's `_meta` (never a tool argument, never the JWT), refuses a call without one, and hands the tool's own exception back to the caller. It is read-only: actions, offers, approved RM writes, uploads and insight actions call their services directly.
+
+The tools: knowledge (`knowledge_search`, `knowledge_article`); her records (`my_profile`, `my_accounts`, `my_cards`, `my_loans`, `my_transactions`, `my_portfolio`, `my_tickets`, `my_rm`, `my_appointments`, `my_consents`, `my_compliance_case`, `my_document_checks`, `free_slots`, `travel_flags`, and since 8 Nov 2026 `my_requests`, `my_introduction`, `my_consent_sharing`, `my_meeting_requests`, `my_talking_points`, `my_topic_status`, `my_topic_state`); `request_categories` and `document_templates`; external (`public_holidays`, `fx_rate` in `services/external.py`, §14.4); and the RM tools (`rm_*`). Every record tool returns `call_id` and `as_of`. A rule validates a result with `tools.snapshot` (`CustomerEnvelope[model]`); `retail_records` and `relationship_records` build `RetailRecords` and `RelationshipRecords` from five tool reads each. Each agent's tools are in its `AgentSpec` (§5.6.1) and their permission names in `registry.TOOL_PERMISSION`. Compliance and Relationship rules still use the v4 allow-lists in `registry.TOOLS`; Relationship's adds `tickets.list` and `customer.get_credit_cards` for the RM handover (`rm_handover` reads as Relationship), and the chat-insights lane runs as `talking_points` with `insights.status` only. `tests/test_tool_boundary.py` fails if agent, rule, orchestrator, RM or chat-insights code reads `customer_data`, `kb` or `external` directly, and checks that client and RM turns trace `transport=mcp`.
+
+Not yet through the tools: the v1 pipeline's knowledge search (`answers.py`, `kb.search`) and the meeting agents' connectors (`tools.meeting_call`, §15), a follow-up. `scripts/mcp_server.py` serves the same functions over stdio to an external MCP client without agent specs, so with no field views or limits. Measured on 8 Nov 2026 without the network, the MCP layer adds about 1 ms per call (3 to 30 rows) and 4 ms for 200 transactions. The SDK import, server build and client open (about 1.8 s cold) happen once at API startup (`core/lifecycle.tool_lifespan`). On six live QA1 turns (C07, C12, C20, R01, R10, R11) the first-section and total turn times did not change measurably; model calls and hosted Data API reads (0.25 to 3 s each) dominate.
 
 ---
 
@@ -720,7 +723,7 @@ sequenceDiagram
 | Guardrail | < 5 ms | Pure Python |
 | Conversation prepare and save | 100–400 ms | Data API calls for the saved turn; v5 writes no checkpoints |
 | Plan | 0 ms (rules) / 0.5–1.5 s (LLM) | LLM only when no rule fits |
-| Reads per agent | 80–300 ms | Agents run concurrently |
+| Reads per agent | 80–300 ms | Agents run concurrently; each read is an in-process MCP call, about 1 ms more than a direct call (4 ms for 200 rows, §5.13) |
 | Agent LLM call | 1.5–4 s | One per task when rules do not answer; an `open` task adds up to 4 loop steps |
 | Offer save + audit batch | 50–150 ms | |
 

@@ -99,7 +99,7 @@ What the RM receives: topic, her question, up to three earlier messages (redacte
 
 ## 7. Tools
 
-Agents and rules read through `services/tools.py` (`my_cards`, `my_transactions`, `my_tickets`, `free_slots`, `knowledge_search`, …). `TOOL_TRANSPORT=direct` is the **default**; `mcp` sends the same calls through `app/mcp_server.py`. Every tool checks policy (`require_permission`), uses the caller's JWT and writes audit events. All tools are read-only; changes go through the Action Service.
+Every read that feeds a model or a rule is a tool in `services/tools.py` (`my_cards`, `my_transactions`, `my_tickets`, `my_requests`, `my_meeting_requests`, `free_slots`, `knowledge_search`, `rm_client_profile`, …), called through `tools.call`. That checks the agent's spec (allowed tools, limits, field view) and sends the call as a real MCP `tools/call` to `app/mcp_server.py`, inside the API process, on one client shared by the whole event loop and opened at startup. The caller's identity goes as a one-time key in the request's `_meta`, never as a tool argument; the server looks it up per call and runs the tool as that caller, under the caller's span and audit batch. Every tool checks policy (`require_permission`), uses the caller's JWT and writes audit events. All tools are read-only; changes go through the Action Service (or the approved RM writes) directly, never through MCP. Two reads still bypass the tools: the v1 pipeline's knowledge search and the meeting agents' connectors.
 
 ## 8. Worked example: Michelle raises her card limit
 
