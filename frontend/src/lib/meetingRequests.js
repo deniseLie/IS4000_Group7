@@ -122,9 +122,17 @@ export function parseMeetingDraft(text) {
   if(!rm||!about||!topics||!format||!times)return null;
   const byLabel=Object.fromEntries(Object.entries(TOPICS).map(([code,label])=>[label.toLowerCase(),code]));
   const formatCode=Object.entries({video:'video call',phone:'phone call',in_person:'in person'}).find(([,label])=>label===format[1].trim().toLowerCase())?.[0]||'video';
-  return {rm:rm[1].trim(),note:value.slice(0,rm.index).replace(/I can\s*$/,'').trim(),purpose:about[1].trim(),
+  return {rm:rm[1].trim(),note:value.slice(0,rm.index).replace(/I can\s*$/,'').trim(),purpose:aboutOnly(about[1]),
     topics:topics[1].split(',').map(label=>byLabel[label.trim().toLowerCase()]).filter(Boolean),format:formatCode,
     times:times[1].split(';').map(label=>label.trim()).filter(Boolean)};
+}
+
+// "What it's about" without the ask itself: "I'm thinking of buying a home. Can I meet my RM?" -> "I'm thinking of buying a home."
+// When the ask is all she wrote, it is kept.
+export function aboutOnly(text) {
+  const value=String(text||'').trim();
+  const kept=value.replace(/\s*(?:can|could|may)\s+i\s+(?:please\s+)?(?:meet|see|speak (?:to|with)|talk (?:to|with)|book (?:a )?(?:meeting|call|time) with)\s+(?:my|the|your)\s+(?:relationship manager|rm|banker|adviser|advisor)[^.?!]*[?.!]?\s*$/i,'').trim();
+  return kept||value;
 }
 
 // The same label the chat uses for a free time (Singapore time), so a drafted time can be matched to a free slot.

@@ -74,6 +74,8 @@ test('the chat meeting request draft is read back into fields',()=>{
   const text='I can send your relationship manager, Sophie Lim, this meeting request:\n• What it’s about: “I’m thinking of buying a home.”\n• Topics: Property financing, Investments\n• Format: video call\n• Times that suit you (Singapore time): Mon 16 Nov, 9:00 am; Tue 17 Nov, 9:00 am\nThey accept one of these times…';
   const draft=parseMeetingDraft(text);
   assert.equal(draft.rm,'Sophie Lim');assert.equal(draft.purpose,'I’m thinking of buying a home.');
+  assert.equal(parseMeetingDraft(text.replace('a home.”','a home. Can I meet my relationship manager?”')).purpose,'I’m thinking of buying a home.');
+  assert.equal(parseMeetingDraft(text.replace('I’m thinking of buying a home.','Can I meet my RM?')).purpose,'Can I meet my RM?');
   assert.deepEqual(draft.topics,['home_loan','investments']);assert.equal(draft.format,'video');
   assert.deepEqual(draft.times,['Mon 16 Nov, 9:00 am','Tue 17 Nov, 9:00 am']);
   assert.equal(parseMeetingDraft('Your balance is SGD 10.'),null);
