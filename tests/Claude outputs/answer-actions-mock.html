@@ -1,0 +1,53 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Answer actions mock</title>
+<style>
+:root{--ink:#1F2430;--muted:#6B7280;--line:#E5E7EB;--red:#D7262B}
+*{box-sizing:border-box}body{margin:0;background:#F7F8FA;font:15px/1.55 Inter,system-ui,sans-serif;color:var(--ink)}
+.wrap{max-width:1040px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.intro{color:var(--muted);font-size:14px;margin:0 0 22px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}@media(max-width:880px){.grid{grid-template-columns:1fr}}
+.opt h2{font-size:15px;margin:0 0 2px}.opt p.why{margin:0 0 10px;color:var(--muted);font-size:13px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.lead{margin:0 0 8px}.lead b{font-weight:700}.chip{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:1px 9px;margin-left:6px;background:#FEF3C7;color:#92400E}
+.row{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.row:first-of-type{border-top:0}
+.st{flex:none;font-size:11.5px;font-weight:700;border-radius:999px;padding:1px 8px;margin-top:2px}.to{background:#FEE2E2;color:#991B1B}.with{background:#EEF2FF;color:#3730A3}
+.src{display:inline-block;margin-top:10px;border:1px solid var(--line);background:#F9FAFB;border-radius:8px;padding:4px 10px;font-size:13px}
+.foot{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.lnk{color:var(--red);font-weight:600;font-size:13.5px}.q{color:var(--ink);font-weight:600;font-size:13.5px}
+.sep{width:1px;height:16px;background:var(--line)}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;font-size:13.5px;font-weight:600}.btn.main{background:var(--red);border-color:var(--red);color:#fff}
+.icon{display:inline-flex;align-items:center;gap:6px}
+.panel{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:#FAFAFA;padding:10px 12px;font-size:13.5px}
+.panel .mini{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)}.panel .mini:first-child{border-top:0}
+.ghost{color:var(--muted);font-size:12.5px}
+.rec{display:inline-block;margin-left:8px;font-size:11px;font-weight:700;color:#065F46;background:#ECFDF5;border-radius:999px;padding:1px 8px;vertical-align:middle}
+</style></head><body><div class="wrap">
+<h1>Better than "Open Periodic review → or show it here"</h1>
+<p class="intro">Same answer, four ways to finish it. All keep the actions inside the answer card.</p>
+<div class="grid">
+
+<div class="opt"><h2>A · Do the next step <span class="rec">Recommended</span></h2><p class="why">Lead with what she came to do (send the document), the page as the quiet second option. "Show here" goes away: the rows already show the review.</p>
+<div class="card"><p class="lead"><b>1 document left</b> for your periodic review <span class="chip">Due 30 Nov</span></p>
+<div class="row"><span class="st to">To send</span>Sale agreement for your Bangkok property</div><div class="row"><span class="st with">With the bank</span>Proof of address</div>
+<span class="src">▸ Sources · 2</span>
+<div class="foot"><span class="btn main">Upload the agreement</span><span class="lnk">Open Periodic review →</span></div></div></div>
+
+<div class="opt"><h2>B · Two equal links</h2><p class="why">Both are text links on one line with a divider, so neither shouts. Clear wording: "See it in this chat" instead of "show it here".</p>
+<div class="card"><p class="lead"><b>1 document left</b> for your periodic review <span class="chip">Due 30 Nov</span></p>
+<div class="row"><span class="st to">To send</span>Sale agreement for your Bangkok property</div><div class="row"><span class="st with">With the bank</span>Proof of address</div>
+<span class="src">▸ Sources · 2</span>
+<div class="foot"><span class="lnk">Open Periodic review →</span><span class="sep"></span><span class="q icon">▾ See it in this chat</span></div></div></div>
+
+<div class="opt"><h2>C · Opens in place</h2><p class="why">"See your review" works like Sources: it opens inside the answer with the upload button there. One link to the full page.</p>
+<div class="card"><p class="lead"><b>1 document left</b> for your periodic review <span class="chip">Due 30 Nov</span></p>
+<span class="src">▸ Sources · 2</span> <span class="src">▾ See your review</span>
+<div class="panel"><div class="mini"><span>Sale agreement for your Bangkok property</span><span class="btn main" style="padding:3px 10px;font-size:12.5px">Upload</span></div><div class="mini"><span>Proof of address</span><span class="ghost">With the bank</span></div></div>
+<div class="foot"><span class="lnk">Open Periodic review →</span></div></div></div>
+
+<div class="opt"><h2>D · Page link only</h2><p class="why">The simplest: one link, the same as every other answer (Open Statements, Open Requests). The in-chat review stays available from the review page.</p>
+<div class="card"><p class="lead"><b>1 document left</b> for your periodic review <span class="chip">Due 30 Nov</span></p>
+<div class="row"><span class="st to">To send</span>Sale agreement for your Bangkok property</div><div class="row"><span class="st with">With the bank</span>Proof of address</div>
+<span class="src">▸ Sources · 2</span>
+<div class="foot"><span class="lnk">Open Periodic review →</span></div></div></div>
+
+</div></div></body></html>

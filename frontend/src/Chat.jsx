@@ -56,15 +56,27 @@ const PAGES=['chat','overview','meetings','inbox','compliance','requests','actio
 // [title, explanation, secondary [label, action] or null, primary [label, action] where 'send' = send to the RM]
 const HELP_ROUTES={
   general:['Your relationship manager can help','Tip: the assistant answers most general questions instantly from approved bank information.',['Ask the assistant','chat'],['Send to my relationship manager','send']],
-  fraud:['Tell your relationship manager now','The assistant gives you the urgent steps and sends this to your relationship manager as urgent. You’ll see the details to confirm before anything is sent. If your card is at risk, freeze it on Overview or call the fraud line on the back of your card.',['Lost or stolen card','lost'],['Charge I don’t recognise','charge']],
-  card:['Card requests go to the cards and credit team','Limit changes and other card requests are decided by the cards and credit team. Raise the request and you’ll get a reference to follow in My requests.',null,['Open a card request','card']],
-  compliance:['Your review is handled by the compliance team','Your relationship manager can pass your question to the compliance team. Your documents, checks and the bank’s questions are on Compliance review.',['Open Compliance review','compliance'],['Send to my relationship manager','send']],
+  fraud:['Tell your relationship manager now','The assistant gives you the urgent steps and sends this to your relationship manager as urgent. You’ll see the details to confirm before anything is sent. If your card is at risk, freeze it on Home or call the number on the back of your card.',['Lost or stolen card','lost'],['Charge I don’t recognise','charge']],
+  card:['Card requests go to the cards and credit team','Limit changes and other card requests are decided by the cards and credit team. Raise the request and you’ll get a reference to follow in Requests.',null,['Open a card request','card']],
+  compliance:['Your relationship manager passes this to the review team','Your documents and the bank’s questions are on the Periodic review page.',['Open Periodic review','compliance'],['Send to my relationship manager','send']],
 };
-const HELP_TOPICS=[['general','General banking question'],['fraud','Fraud or an unauthorised charge'],['card','Card problem'],['records','Account or records'],['compliance','Compliance review'],['relationship','Advice, fees or something else for my relationship manager']];
+const HELP_TOPICS=[['general','A banking question'],['records','My accounts, spending or deposits'],['fraud','A charge I don’t recognise or a lost card'],['card','A card request (limit or other change)'],['compliance','My periodic review'],['relationship','Advice, fees or anything else']];
+// The first line of the drafted message, in her words, for each topic.
+const HELP_OPENING={general:'I have a banking question',records:'I have a question about my accounts',fraud:'I need help with my card',card:'I’d like to change something on my card',compliance:'I have a question about my periodic review',relationship:'I’d like your help with something'};
+// Talk to a person starts on the topic of her last question (she can still pick another).
+function guessHelpTopic(question) {
+  const q=String(question||'');
+  if(/\b(?:unrecogni[sz]ed|don.?t recogni[sz]e|fraud|stolen|lost (?:my )?card|suspicious)\b/i.test(q))return 'fraud';
+  if(/\b(?:limit|replace(?:ment)? card|new card)\b/i.test(q))return 'card';
+  if(/\b(?:review|compliance|kyc|proof of address|document)\b/i.test(q))return 'compliance';
+  if(/\b(?:spen[dt]|balance|account|deposit|statement|transaction|transfer|payment|matur\w*|savings?)\b/i.test(q))return 'records';
+  if(/\b(?:advice|invest\w*|loan|mortgage|fee|meeting)\b/i.test(q))return 'relationship';
+  return 'general';
+}
 // Guests can open every page's address too; they see a sign-in prompt instead of records.
 function pageFromHash(session) {const page=location.hash.slice(1);return PAGES.includes(page)||!session&&page==='actions'?page:'chat';}
 // The header badge says the data is fictional and each answer carries its own "General info, not advice" note.
-const DISCLAIMER = 'Demo AI assistant. AI answers can contain errors. Never share your PIN, password or OTP.';
+const DISCLAIMER = 'AI answers can contain errors. Never share your PIN, password or OTP.';
 
 export default function Chat({session,onSignIn}) {
   const [messages,setMessages]=useState([]);
@@ -310,7 +322,8 @@ export default function Chat({session,onSignIn}) {
       }
       if(!response.body)throw new Error('No response received.');
       let live=[];  // this reply's sections as they stream: a placeholder per planned task, filled in place (never reordered)
-      const streaming=()=>setMessages([...visible,{role:'assistant',content:'',sections:live}]);
+      // Parts are not shown one by one as they arrive: the three dots stay until the whole answer is ready, then all parts appear together.
+      const streaming=()=>{};
       await readEvents(response.body,(type,data)=>{
         if(epoch!==version.current)return;
         if(type==='conversation') {
@@ -322,7 +335,10 @@ export default function Chat({session,onSignIn}) {
         if(type==='section'){live=fill(live,JSON.parse(data));streaming();}
         if(type==='answer') {
           const result=JSON.parse(data);
-          setFreshDraftReply(visible.length);setNow(Date.now());setMessages([...visible,{role:'assistant',content:result.answer,...result,offer:parseOffer(result.offer)}]);
+          // Several questions: parts in the order she asked them (an urgent card part still first), not the order agents finished.
+          const order=section=>[section.priority==='P0'?0:1,Number(String(section.task_id||'').replace(/\D/g,''))||0];
+          const sections=Array.isArray(result.sections)?[...result.sections].sort((x,y)=>{const a=order(x),b=order(y);return a[0]-b[0]||a[1]-b[1];}):result.sections;
+          setFreshDraftReply(visible.length);setNow(Date.now());setMessages([...visible,{role:'assistant',content:result.answer,...result,...(sections?{sections}:{}),offer:parseOffer(result.offer)}]);
         }
       });
     } catch(err) {
@@ -332,6 +348,18 @@ export default function Chat({session,onSignIn}) {
     }
   }
 
+  async function loadSource(source) {
+    const r=await fetch(`${API_URL}${source.url}`);if(!r.ok)throw new Error('Source unavailable');
+    return r.json();
+  }
+  function pageLinkFor(message,index) {
+    // The periodic review answer: open the page, or show the review here (in the chat), as two links inside the answer.
+    if(index===lastCompliance&&session&&mode==='personal'&&!message.error&&message.response_origin!=='validation')
+      return {label:'Open Periodic review',testid:'compliance-handoff',go:()=>navigate('compliance'),
+        second:{label:showCompliance?'Hide review here':'Show review here',testid:'toggle-compliance-workspace',expanded:showCompliance,go:()=>setComplianceOpen(!showCompliance)}};
+    const found=message.role==='assistant'?ticketStep(message,index,true):null;
+    return found&&typeof found==='object'&&'go' in found?found:null;
+  }
   async function showSource(source) {
     if(!source.url)return;
     const epoch=version.current;
@@ -366,7 +394,14 @@ export default function Chat({session,onSignIn}) {
       const prepared=await prepareComplianceSupport(selection,token);setSupportScope(prepared.case_id);setSummary(prepared.summary);setHandoff({saving:false,outcome:null,error:''});
     }catch(error){setNotice(error.message);setHandoff({saving:false,outcome:null,error:error.message});}
   }
-  function prepareSummary() { rmEdited.current=false; if(session&&(view==='compliance'||view==='chat'&&showCompliance)&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;} setSupportScope(null);setAttachSummary(true);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic('general'); }
+  function prepareSummary() {
+    rmEdited.current=false;
+    const last=[...messages].reverse().find(item=>item.role==='user'&&item.content&&!/^talk to a person$/i.test(item.content.trim()))?.content;
+    const guessed=guessHelpTopic(last);
+    // The review-specific summary only on the review page, or in the chat when her last question was about the review.
+    if(session&&(view==='compliance'||view==='chat'&&showCompliance&&guessed==='compliance')&&complianceReview){prepareReviewSupport({review_case_id:complianceReview});return;}
+    setSupportScope(null);setAttachSummary(true);setSummary(session?handoffSummary(messages):supportSummary(messages));setApproved(false);setCopied(false);setCopyError('');setHandoff({saving:false,outcome:null,error:''});setHelpTopic(guessed);
+  }
   async function sendHandoff() {  // signed in: records a real support handoff (an automatic action) from the label-only summary
     if(!rmMessage.trim()){setHandoff({saving:false,outcome:null,error:'Write a short message for your relationship manager first.'});return;}
     setHandoff({saving:true,outcome:null,error:''});
@@ -385,7 +420,7 @@ export default function Chat({session,onSignIn}) {
       if(saved.receipt?.outcome!=='succeeded')throw new Error('Your question could not be sent. Please try again.');
       if(supportScope)await sendHandoffMessage(saved.receipt.result.handoff_id,clientMessage,token);
       setHandoff({saving:false,outcome:saved,error:''});
-      setNotice('Sent to your relationship manager. You can follow it in My requests.');
+      setNotice('Sent to your relationship manager. You can follow it in Requests.');
     } catch(failure) {setHandoff({saving:false,outcome:null,error:failure.message});}
   }
   const topicLabel=HELP_TOPICS.find(entry=>entry[0]===helpTopic)[1];
@@ -416,16 +451,13 @@ export default function Chat({session,onSignIn}) {
   // CR8: the assistant drafts the message to the RM in plain words; she reads it, edits or adds to it, then sends it.
   const lastQuestion=[...messages].reverse().find(item=>item.role==='user'&&item.content&&!/^talk to a person$/i.test(item.content.trim()))?.content;
   const rmFirst=rmIntro?.current?displayName(rmIntro.current.name).split(' ')[0]:null;
-  const rmDraft=summary===null?'':[`Hi${rmFirst?` ${rmFirst}`:''}, I’d like help with ${supportScope?'my compliance review':topicLabel.charAt(0).toLowerCase()+topicLabel.slice(1)}.`,
+  // Earlier topics only when she asked more than one thing (one question is already quoted in full).
+  const askedCount=messages.filter(item=>item.role==='user'&&!/^talk to a person$/i.test(String(item.content||'').trim())).length;
+  const rmDraft=summary===null?'':[`Hi${rmFirst?` ${rmFirst}`:''}, ${supportScope?HELP_OPENING.compliance:HELP_OPENING[helpTopic]}.`,
     lastQuestion&&!supportScope?`My question: “${redact(lastQuestion).slice(0,300)}”`:'',
-    earlierTopics?`Earlier in the chat I asked about: ${earlierTopics.toLowerCase()}.`:'',
+    earlierTopics&&askedCount>1?`Earlier I also asked about: ${earlierTopics.toLowerCase()}.`:'',
     'Thank you.'].filter(Boolean).join('\n');
   useEffect(()=>{if(!rmEdited.current)setRmMessage(rmDraft);},[rmDraft]);  // fixed labels only
-  const topics=[
-    {icon:'account',title:'Accounts & savings',detail:'Make sense of complex banking needs.',question:'What happens if I withdraw my fixed deposit early?'},
-    {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
-    {icon:'loan',title:'Financing options',detail:'Property financing and borrowing against investments.',question:'Which financing does DemoBank offer?'},
-  ];
 
   function openInlineRequest(prefill={},index=null) {
     const anchor=index??messages.findLastIndex(item=>item.role==='assistant');
@@ -455,7 +487,9 @@ export default function Chat({session,onSignIn}) {
       onProposalChange={id=>{pendingInlineProposal.current=id;}} onSuccess={()=>setPageKey(k=>k+1)}/>;
   }
   // Request categories (CL1/TK1/TK2): a matching question, or a reply handed to the RM, ends with a button to My requests.
-  function ticketStep(message,index) {
+  function ticketStep(message,index,inline=false) {
+    // Going to a page is a link inside the answer (inline); actions (start a request, report a charge) stay buttons below it.
+    const nav=(label,testid,go)=>inline?{label,testid,go}:null;
     if(message.role!=='assistant'||!message.content||!session||mode!=='personal')return null;
     const asked=messages[index-1]?.role==='user'?messages[index-1].content:'';
     let intent=ticketIntent(asked);
@@ -471,27 +505,27 @@ export default function Chat({session,onSignIn}) {
     // CR12: entering fraud support is not filing a report. Since 2b a signed-in fraud reply carries the urgent RM
     // request as an offer with its own Confirm; this button shows only on the latest fraud reply without one
     // (lib/fraudEntry.js).
-    if(canStartFraudReport({message,signedIn:!!session&&mode==='personal',latest:index===messages.length-1}))return <button type="button" className="primary-button rm-handoff" data-testid="fraud-report-entry" onClick={()=>send(null,'I suspect an unauthorised card transaction. Please help me identify the affected card and charge so I can review and confirm an urgent fraud report.')}>Report suspicious transaction<Icon name="arrow"/></button>;
-    if(intent==='status')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See verified request status<Icon name="arrow"/></button>;
+    if(canStartFraudReport({message,signedIn:!!session&&mode==='personal',latest:index===messages.length-1}))return nav('Report suspicious transaction','fraud-report-entry',()=>send(null,'I suspect an unauthorised card transaction. Please help me identify the affected card and charge so I can review and confirm an urgent fraud report.'));
+    if(intent==='status')return nav('Open Requests','ticket-handoff',()=>{setTicketPrefill(null);navigate('requests');});
     if(!concept&&(intent==='card_limit_change'||isLimitWorkflowReply(message))&&!message.error&&message.source_check!=='rejected'&&!/Answer withheld|couldn’t confirm|couldn't verify/i.test(message.content)) {
       const prefill={category:'card_limit_change',...limitRequestPrefill(messages.slice(0,index).filter(item=>['user','assistant'].includes(item.role)))};
       // When enough has been gathered, the inline card renders automatically after
       // the reply. Incomplete requests can be opened here to fill missing fields.
       if(readyForInlineCard(prefill)||inlineRequest?.index===index)return null;
-      return <button type="button" className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>openInlineRequest(prefill,index)}>Review request details<Icon name="arrow"/></button>;
+      return nav('Review request details','ticket-handoff',()=>openInlineRequest(prefill,index));
     }
     // The client can ask to start another service request in the chat itself.
     if(!concept&&/\b(?:raise|open|create|submit|start)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:service\s+)?request\b/i.test(asked)&&intent!=='status'&&message.response_origin!=='validation'&&!message.error)
-      return <button type="button" className="primary-button rm-handoff" onClick={()=>openInlineRequest({},index)}>Prepare a request in chat<Icon name="arrow"/></button>;
+      return nav('Prepare a request in chat','request-entry',()=>openInlineRequest({},index));
     // CR15: a statement question ends with a way to the Statements section, or to a statement copy request for older ones.
-    if(intent==='statements')return <button className="primary-button rm-handoff" data-testid="statement-handoff" onClick={()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});}}>Go to Statements<Icon name="arrow"/></button>;
-    if(intent==='personal_details_update'&&message.response_origin!=='validation')return <button className="primary-button rm-handoff" data-testid="personal-details-entry" onClick={()=>openInlineRequest({category:'personal_details_update',summary:redact(asked).slice(0,500)},index)}>Prepare details update<Icon name="arrow"/></button>;
-    if(intent==='statement_request')return <button className="primary-button rm-handoff" data-testid="ticket-handoff" onClick={()=>requestStatement(redact(asked).slice(0,500),index)}>Request a statement copy<Icon name="arrow"/></button>;
+    if(intent==='statements')return nav('Open Statements','statement-handoff',()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});});
+    if(intent==='personal_details_update'&&message.response_origin!=='validation')return nav('Prepare details update','personal-details-entry',()=>openInlineRequest({category:'personal_details_update',summary:redact(asked).slice(0,500)},index));
+    if(intent==='statement_request')return nav('Request a statement copy','ticket-handoff',()=>requestStatement(redact(asked).slice(0,500),index));
     // 2a: a meeting question ends with a way to the Meetings tab, where she follows her meeting requests (or makes one there).
-    if(relationshipIntent(asked)==='meeting')return <button className="primary-button rm-handoff" data-testid="meeting-handoff" onClick={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}>Go to Meetings<Icon name="arrow"/></button>;
+    if(relationshipIntent(asked)==='meeting')return nav('Open Meetings','meeting-handoff',()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');});
     // A question handed to the relationship manager: its reference is in the reply; follow it in My requests.
     if(message.needs_human&&/My requests/.test(message.content))
-      return <button className="bank-chat-logout rm-handoff" data-testid="ticket-handoff" onClick={()=>{setTicketPrefill(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button>;
+      return nav('Open Requests','ticket-handoff',()=>{setTicketPrefill(null);navigate('requests');});
     // CR2: otherwise a way to the page the question was about (not on previews, choices or withheld answers).
     if(index===lastCompliance)return null; // One compliance navigation action; the optional inline review is separate.
     const link=!message.error&&message.source_check!=='rejected'&&message.response_origin!=='validation'&&!/Here’s what I’d send|Answer withheld|couldn’t confirm|couldn.t verify/i.test(message.content)?pageLink(asked):null;
@@ -499,7 +533,7 @@ export default function Chat({session,onSignIn}) {
     const go={meetings:()=>navigate('meetings'),requests:()=>{setTicketPrefill(null);navigate('requests');},
       compliance:()=>navigate('compliance'),inbox:()=>{closeOverlays();navigate('inbox');}}[link.key]
       ||(()=>{navigate('overview');setOverviewFocus({section:link.key,key:Date.now()});});
-    return <button className="bank-chat-logout rm-handoff" data-testid="page-link" onClick={go}>{link.label}<Icon name="arrow"/></button>;
+    return nav(link.label.replace(/^Go to /,'Open '),'page-link',go);
   }
   // Compliance replies end with a hand-off to the review page, plus a toggle for the in-chat review panel under the latest one.
   const lastCompliance=messages.findLastIndex(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
@@ -507,27 +541,35 @@ export default function Chat({session,onSignIn}) {
   // A meeting request the assistant drafted (one meeting.request offer in its fixed wording) is shown as an editable card.
   function meetingDraft(message) {
     if(message.role!=='assistant'||!session||message.offer?.offers?.length!==1||message.offer.offers[0].type!=='meeting.request')return null;
-    return parseMeetingDraft([message.content,...(message.sections||[]).map(section=>section.answer)].filter(Boolean).join('\n'));
+    // Only the part that drafted the request goes in the card; other questions in the same message are answered above it.
+    const own=(message.sections||[]).find(section=>/this meeting request:/.test(section.answer||''));
+    return parseMeetingDraft(own?own.answer:message.content);
+  }
+  function otherParts(message) {
+    const rest=(message.sections||[]).filter(section=>!/this meeting request:/.test(section.answer||''));
+    return rest.length?{...message,sections:rest}:null;
+  }
+  function nextList(message,index) {
+    const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
+    const words=text=>new Set(String(text).toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w.length>2));
+    const same=(a,b)=>{const x=words(a),y=words(b);const both=[...x].filter(w=>y.has(w)).length;return both/Math.max(1,Math.min(x.size,y.size))>=0.75;};
+    return followUps({question:messages[index-1]?.role==='user'?messages[index-1].content:'',message,signedIn:!!session&&mode==='personal',asked})
+      .filter(text=>/\bTCK-\d+/.test(text)||!asked.some(question=>same(question,text)));  // a reference to pick is never "already asked"
   }
   function nextQuestions(message,index) {
     if(index!==messages.length-1||loading||pending)return null;
-    const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
-    const list=followUps({question:messages[index-1]?.role==='user'?messages[index-1].content:'',message,signedIn:!!session&&mode==='personal',asked});
+    const list=nextList(message,index);
     if(!list.length)return null;
-    return <div className="follow-ups" data-testid="follow-ups"><span>{list[0]===CONFIRM_REPORT?'Are these the charges?':list.includes('Both cards')?'Which card?':list[0]===CARE_CHIP?'We’re here to help':/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d/.test(list[0])?'Times that suit you':list.includes('Cancel')?'Send it?':'You could also ask'}</span>
-      {list.map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text}</button>)}</div>;
-  }
-  function complianceStep(message,index) {
-    if(index!==lastCompliance||!session||mode!=='personal'||message.error||message.response_origin==='validation')return null;
-    return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Go to Periodic review<Icon name="arrow"/></button>
-      <button className="bank-chat-logout rm-handoff" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>{showCompliance?'Hide review here':'Show review here'}</button></div>;
+    const label=list[0]===CONFIRM_REPORT?'Are these the charges?':/^What is the status of TCK-/.test(list[0])&&list.length>1?'Which request?':list.includes('Both cards')?'Which card?':list[0]===CARE_CHIP?'We’re here to help':/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d/.test(list[0])?'Times that suit you':list.includes('Cancel')?'Send it?':'Next:';
+    return <div className="follow-ups" data-testid="follow-ups"><span>{label}</span>
+      {(label==='Next:'?list.slice(0,3):list).map(text=><button key={text} type="button" data-testid="follow-up" disabled={booting||!!bootError||complianceBusy} onClick={()=>send(null,text)}>{text.replace(/^What is the status of (TCK-\d+)\?$/,'$1')}</button>)}</div>;
   }
   const showCompliance=complianceOpen===true;
-  const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · No real banking services</span></footer>;  // who is signed in is shown by the sidebar profile
+  const footer=null;  // who is signed in is shown by the sidebar profile
   function openActions() {closeOverlays();navigate('actions');}
   useEffect(()=>{if(!session)return;const c=new AbortController();(async()=>{try{const {data}=await supabase.auth.getSession();if(!data.session)return;
     const items=await loadActions(data.session.access_token,c.signal);if(!c.signal.aborted)setToConfirm(items.filter(item=>item.command.state==='proposed').length);}catch{}})();return ()=>c.abort();},[session?.user.id,view,pageKey]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const review={label:'Review in Actions',onSelect:openActions},requests={label:'Open My requests',onSelect:()=>navigate('requests')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
+  const review={label:'Review in Actions',onSelect:openActions},requests={label:'Open Requests',onSelect:()=>navigate('requests')},compliance={label:'Open Periodic review',onSelect:()=>navigate('compliance')};
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();history.replaceState(null,'',location.pathname+location.search);try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
@@ -571,19 +613,19 @@ export default function Chat({session,onSignIn}) {
           {notice&&(noticeToast?<p key={noticeKey} className="chat-toast" role="status"><Icon name="check"/>{notice}</p>
             :<p key={noticeKey} className="chat-notice-bar" role="status"><Icon name="info"/><span>{notice}</span><button className="icon-button" aria-label="Dismiss message" onClick={()=>setNoticeText('')}><Icon name="close"/></button></p>)}
           <div ref={messageList} className={`bank-chat-messages ${messages.length?'has-messages':''}`} aria-live="polite" aria-relevant="additions text">
-            {!messages.length&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in" aria-busy={profileName===null}>{profileName===null?<><span className="skeleton-text heading" aria-hidden="true"/><span className="sr-only">How can I help today?</span></>:profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>I answer from your own records and show where each answer comes from. If I can't help, I'll pass your question to your relationship manager.</p><ClientWelcome onDraft={draft} onNavigate={navigate}/></>
-              :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Understand your accounts, cards and loans. Start with a question.</p><div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></>}</div>}
+            {!messages.length&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in" aria-busy={profileName===null}>{profileName===null?<><span className="skeleton-text heading" aria-hidden="true"/><span className="sr-only">How can I help today?</span></>:profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm the UBS Connect AI assistant. I give general information, not advice.</p><p>I answer from your own records and show where each answer comes from. If I can't help, I'll pass your question to your relationship manager.</p><ClientWelcome onDraft={draft} onNavigate={navigate}/></>
+              :<><h1 className="welcome-signed-in">Hi, how can I help?</h1><p className="chat-greeting" data-testid="chat-greeting">I'm the UBS Connect AI assistant. I give general information, not advice.</p><p>I answer from the bank's published guides and show where each answer comes from. Sign in and I can answer from your own accounts too.</p><ClientWelcome guest onDraft={draft} onNavigate={navigate} onSignIn={onSignIn}/></>}</div>}
             {messages.map((m,i)=><div key={i} data-testid={`chat-message-${m.role}`} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}>
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Could not verify'}</small>}</div>}
+                {meetingDraft(m)&&otherParts(m)&&<Answer message={otherParts(m)} onSource={showSource} loadSource={loadSource}/>}
                 {meetingDraft(m)?<MeetingRequestCard draft={meetingDraft(m)} offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending}
                   onDecide={(decision,on)=>decideOffer(m,decision,on)} onAsk={text=>send(null,text)} onNavigate={navigate}
                   onMeetings={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}/>
-                :<><Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
+                :<><Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} loadSource={loadSource} link={pageLinkFor(m,i)}/>
                 <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={(decision,on)=>decideOffer(m,decision,on)}/></>}
-                {!meetingDraft(m)&&ticketStep(m,i)}{inlineCardFor(m,i)}{complianceStep(m,i)}{!meetingDraft(m)&&nextQuestions(m,i)}
-                {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
+                {!meetingDraft(m)&&ticketStep(m,i)}{inlineCardFor(m,i)}{!meetingDraft(m)&&nextQuestions(m,i)}
               </div>
             </div>)}
             {session&&mode==='personal'&&inlineRequest?.index===-1&&!inlineRequest.dismissed&&
@@ -617,23 +659,23 @@ export default function Chat({session,onSignIn}) {
       </main>}
     </div>
     {summary!==null&&session&&<Panel label="Human support" closeLabel="Close summary" title="Talk to a person" subtitle={route&&route[3][1]!=='send'?(helpTopic==='fraud'?'Your relationship manager handles this as urgent.':'The cards and credit team decides card requests.'):rmIntro?.current?`Your relationship manager, ${displayName(rmIntro.current.name)}, will pick this up and reply to you.`:'Your relationship manager will pick this up and reply to you.'} onClose={()=>setSummary(null)}
-      footer={<><span>IS4000 · Coursework demo · No real banking services</span>{handoff.outcome?<div className="panel-actions"><button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button><button className="primary-button" data-testid="handoff-open-requests" onClick={()=>{setSummary(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button></div>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button>
+      footer={<>{handoff.outcome?<div className="panel-actions"><button className="bank-chat-logout" onClick={()=>setSummary(null)}>Close</button><button className="primary-button" data-testid="handoff-open-requests" onClick={()=>{setSummary(null);navigate('requests');}}>See my requests<Icon name="arrow"/></button></div>:<div className="panel-actions"><button className="bank-chat-logout" data-testid="cancel-handoff" disabled={handoff.saving} onClick={()=>setSummary(null)}>Cancel</button>
         {route?.[2]&&<button className="bank-chat-logout" data-testid="handoff-route-secondary" onClick={()=>followRoute(route[2][1])}>{route[2][0]}</button>}
         <button className="primary-button" data-testid={route&&route[3][1]!=='send'?'handoff-route':'approve-handoff'} disabled={handoff.saving}
-          onClick={()=>route?followRoute(route[3][1]):sendHandoff()}>{route?route[3][0]:'Send to my relationship manager'}<Icon name="arrow"/></button></div>}</>}>
+          onClick={()=>route?followRoute(route[3][1]):sendHandoff()}>{route?route[3][0]:'Send to my relationship manager'}</button></div>}</>}>
       <label className="form-field">What do you need help with?<select data-testid="handoff-topic" value={helpTopic} disabled={handoff.saving||!!handoff.outcome} onChange={e=>changeTopic(e.target.value)}>{HELP_TOPICS.map(([value,text])=><option key={value} value={value}>{text}</option>)}</select></label>
       {route&&<div className="handoff-route" data-testid="handoff-route-info"><strong>{route[0]}</strong><p>{route[1]}</p></div>}
-      {(!route||route[3][1]==='send')&&!supportScope&&<label className="sp-attach"><input type="checkbox" checked={attachSummary} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setAttachSummary(e.target.checked)}/><span><strong>Attach a short summary of this chat</strong><small>Topic labels only. Passwords, OTPs and card numbers are never included.</small></span></label>}
+      {(!route||route[3][1]==='send')&&!supportScope&&<label className="sp-attach"><input type="checkbox" checked={attachSummary} disabled={handoff.saving||!!handoff.outcome} onChange={e=>setAttachSummary(e.target.checked)}/><span><strong>Attach a short summary of this chat</strong><small>Only the topics you asked about, never passwords, OTPs or card numbers.</small></span></label>}
       {(!route||route[3][1]==='send')&&<label className="form-field rm-message">Your message to your relationship manager
         <textarea data-testid="handoff-message" rows={5} value={rmMessage} maxLength={supportScope?480:1000} disabled={handoff.saving||!!handoff.outcome}
           onChange={e=>{rmEdited.current=true;setRmMessage(e.target.value);}}/>
-        <small>Drafted for you. Change or add anything before sending. Don’t include passwords, PINs or card numbers; they’re removed if you do.</small>
+        <small>Drafted for you. Change anything before you send it.</small>
         <span className="sr-only" data-testid="handoff-summary">{handoffText}</span></label>}
-      {(supportScope||attachSummary)&&handoffText&&<details data-testid="handoff-context"><summary>Attached context</summary><p>{handoffText}</p></details>}
-      <p className="security-note"><Icon name="shield"/>Never share your PIN, password or OTP. If you suspect fraud or a lost card, use the official bank fraud channel immediately. This chat can help prepare a report but cannot block the card.</p>
+      {(supportScope||attachSummary)&&handoffText&&<details data-testid="handoff-context"><summary>What’s attached</summary><p>{handoffText}</p></details>}
+      <p className="security-note"><Icon name="shield"/>Never share your PIN, password or OTP. Lost card or fraud? Freeze your card on Home or call the number on the back of it.</p>
       {handoff.saving&&<p className="loading" role="status">Sending…</p>}
       {handoff.error&&<p role="alert">{handoff.error}</p>}
-      {handoff.outcome&&<div role="status" data-testid="handoff-receipt"><p>{handoff.outcome.receipt.result.created?'Sent to your relationship manager.':'Your earlier question is still open with your relationship manager.'} You can follow it in My requests.</p></div>}
+      {handoff.outcome&&<div role="status" data-testid="handoff-receipt"><p>{handoff.outcome.receipt.result.created?'Sent to your relationship manager.':'Your earlier question is still open with your relationship manager.'} You can follow it in Requests.</p></div>}
     </Panel>}
     {summary!==null&&!session&&<Panel label="Human support" closeLabel="Close summary" title="Prepare a support summary" subtitle="Draft a summary you can copy into your bank’s official support channel." onClose={()=>setSummary(null)}><p>This demo has no staffed support queue. For a real issue, use your bank’s official app or website. This draft is not sent anywhere.</p><textarea aria-label="Support summary" rows={7} value={summary} onChange={e=>{setSummary(e.target.value);setApproved(false);setCopied(false);}}/><label className="review-summary"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/> I reviewed the summary and removed private details</label><div className="panel-actions"><button className="primary-button" disabled={!approved} onClick={async()=>{try{setCopyError('');await navigator.clipboard.writeText(redact(summary));setCopied(true);}catch{setCopyError('Copy unavailable. Select and copy the draft manually.');}}}>Copy summary</button></div>{copied&&<p role="status">Copied. No ticket was sent.</p>}{copyError&&<p role="alert">{copyError}</p>}</Panel>}
     {article&&<Panel label="Source details" closeLabel="Close source" title={article.title} onClose={()=>setArticle(null)}><p className="source-notice">{article.notice}</p><p>{article.content}</p><p className="source-publisher">Publisher: {article.publisher}</p>

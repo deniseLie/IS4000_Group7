@@ -194,8 +194,8 @@ def test_due_dates_shift_past_weekends_and_public_holidays():
 
 
 def evidence(tool: str, rows: list) -> Evidence:
-    return Evidence(id=tool, text=json.dumps({'records': rows}), publisher='DemoBank', scope='test',
-        source=Source(id=tool, title=tool, url=None, version='v1', publisher='DemoBank'))
+    return Evidence(id=tool, text=json.dumps({'records': rows}), publisher='UBS Connect', scope='test',
+        source=Source(id=tool, title=tool, url=None, version='v1', publisher='UBS Connect'))
 
 
 def holidays_reader(rows: list | None):

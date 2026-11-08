@@ -21,7 +21,7 @@ test('real v2 agent answer renders a sourced section and opens its source',async
   await expect(section.locator('.answer-text')).toContainText(/interest/i);
   await section.locator('summary').click();
   await section.locator('[data-source-id="sg-accounts"]').click();
-  await expect(page.locator('dialog[aria-label="Source details"]')).toBeVisible();
+  await expect(page.locator('[aria-label="Source details"]').first()).toBeVisible();
 });
 
 test('real v2 planner orders fraud security and banking sections',async({page})=>{

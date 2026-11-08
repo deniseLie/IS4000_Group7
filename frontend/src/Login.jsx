@@ -35,17 +35,16 @@ export default function Login({onBack}) {
       <button className="bank-chat-logout login-back" onClick={onBack}>← Back to general help</button>
       <div className="login-container">
         <section className="login-brand">
-          <span className="brand-name">DemoBank<span className="brand-dot">.</span></span>
-          <div><span className="small-rule"/><h2>A clearer view.<br/><span>A helping hand.</span></h2><p>Sign in to explore your synthetic demo records, with guidance from your banking assistant.</p></div>
-          <small>IS4000 · Coursework demo · Not a real bank</small>
+          <span className="brand-name">UBS Connect<span className="brand-dot">.</span></span>
+          <div><span className="small-rule"/><h2>A clearer view.<br/><span>A helping hand.</span></h2><p>Sign in to see your accounts, with guidance from your banking assistant.</p></div>
         </section>
 
         <section className="login-panel">
           <form onSubmit={handleLogin}>
             <div className="login-heading">
-              <span className="eyebrow">Demo account access</span>
+              <span className="eyebrow">Sign in</span>
               <h1>Welcome back</h1>
-              <p>Use your demo account to view synthetic records. General banking help is available without signing in.</p>
+              <p>Sign in to see your accounts, meetings and requests. General banking help is available without signing in.</p>
             </div>
 
             <label htmlFor="email">Email address</label>
@@ -78,7 +77,7 @@ export default function Login({onBack}) {
             {error && <p className="login-error" role="alert" data-testid="login-error">{error}</p>}
             {/* CR1: password recovery guidance; the assistant never asks for a password. */}
             <button type="button" className="source-link" data-testid="forgot-password" aria-expanded={forgot} onClick={() => setForgot(!forgot)}>Forgot password?</button>
-            {forgot && <p className="rm-small" data-testid="forgot-password-help">To reset your password, use “Forgot password” in the official DemoBank app or website, or call client services. DemoBank staff and this assistant will never ask for your password, PIN or one-time code. In this demo, use the persona password your team was given.</p>}
+            {forgot && <p className="rm-small" data-testid="forgot-password-help">To reset your password, use “Forgot password” in the official UBS Connect app or website, or call client services. UBS Connect staff and this assistant will never ask for your password, PIN or one-time code.</p>}
 
             <button data-testid="submit-login" className="login-submit primary-button" type="submit" disabled={loading}>
               {loading ? "Signing in..." : <>Sign in<Icon name="arrow"/></>}
@@ -86,7 +85,6 @@ export default function Login({onBack}) {
           </form>
         </section>
       </div>
-      <footer className="login-footer">Synthetic data only</footer>
     </div>
   );
 }

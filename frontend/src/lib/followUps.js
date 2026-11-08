@@ -7,6 +7,9 @@
 export const MEETING_CHIP='Request a meeting with your RM';
 export const CARE_CHIP='Talk to a person';
 const TOPICS=[
+  // Her existing requests (status, references, a list of them): request chips, never meeting ones. A meeting request stays a meeting.
+  {key:'requests',match:/^(?![^]*\bmeeting)[^]*(?:\bTCK-\d+|\b(?:my|the|that|this)\s+(?:\w+\s+)?(?:requests?|tickets?|cases?)\b|\brequests? that could match\b|\byour (?:open |latest )?(?:\d+ )?requests\b)/i,ask:[
+    ['What is the status of my request?',true],['Show my open requests',true],['Can I cancel my request?',true]]},
   {key:'fraud',match:/\b(?:unrecogni[sz]ed|don'?t recogni[sz]e|suspicious|fraud|stolen|lost (?:my )?card|block(?:ed)? (?:my )?card|london charges?|(?:someone|somebody) (?:has )?used my card|used my card without permission)\b/i,ask:[
     ['What happens after I report a charge?',false],['Will I get my money back?',false],['How do I get a replacement card?',false]]},
   {key:'document',match:/\b(?:upload|proof of address|utility bill|document|declaration|tax residency|not accepted|rejected|correction)\b/i,ask:[
@@ -17,6 +20,10 @@ const TOPICS=[
     ['How do I get an older or certified statement?',false],['What is my account balance?',true],['Show my recent transactions',true]]},
   {key:'meeting',match:/\b(?:meet|meeting|appointment|book(?:ing)?|schedule)\b/i,ask:[
     ['Who is my relationship manager?',true],['What should I prepare for the meeting?',false],['What is the status of my request?',true]]},
+  {key:'relationship',match:/\b(?:relationship manager|my rm|advis[eo]r|banker)\b/i,ask:[
+    ['Request a meeting with your RM',true],['What should I prepare for the meeting?',false],['What can you help me with?',false]]},
+  {key:'details',match:/\b(?:(?:my|new|home|mailing) address|phone number|mobile number|email address|personal details|change my name)\b/i,ask:[
+    ['What does a proof of address need to show?',false],['What is the status of my request?',true],['What can you help me with?',false]]},
   {key:'large_transfer',match:/\b(?:large|big|significant|substantial|complex|cross[- ]border)\b[^.?!]{0,30}\b(?:transfers?|wires?|remittances?)\b|\b(?:transfer\w*|send\w*|wir\w+|mov\w+)\b[^.?!]{0,30}(?:\d{1,3}(?:,\d{3}){1,}|\b\d{5,}|\b\d+\s?k\b|\bmillion\b)/i,ask:[
     ['How long do overseas transfers usually take?',false],['What are the fees for overseas transfers?',false]]},
   {key:'transfer',match:/\b(?:transfer|pending|payment (?:failed|declined)|declined|went through)\b/i,ask:[
@@ -24,12 +31,12 @@ const TOPICS=[
   {key:'limit',match:/\blimit\b/i,ask:[
     ['What documents do I need for a higher limit?',false],['What is the status of my request?',true],['When is my card payment due?',true]]},
   {key:'loans',match:/\b(?:loans?|mortgages?|borrow\w*|refinanc\w*|property|condo|hdb|house)\b/i,ask:[
-    ['Which financing does DemoBank offer?',false],['How is property financing arranged?',false],['Can I borrow against my investments?',false]]},
+    ['Which financing do you offer?',false],['How is property financing arranged?',false],['Can I borrow against my investments?',false]]},
   {key:'investments',match:/\b(?:invest\w*|unit trusts?|funds?|portfolio|stocks?|shares|bonds?|wealth|retirement)\b/i,ask:[
     ['What is a unit trust?',false],['What are the risks of investing?',false]]},
   {key:'cards',match:/\b(?:card|credit|minimum payment|interest|annual fee)\b/i,ask:[
     ['When is my card payment due?',true],['Does paying only the minimum avoid interest?',false],['Can I increase my credit limit?',false]]},
-  {key:'accounts',match:/\b(?:account|balance|savings?|fee|deposit|withdraw)\b/i,ask:[
+  {key:'accounts',match:/\b(?:accounts?|balances?|savings?|fees?|charges?|deposits?|withdraw\w*|spen[dt]\w*|transactions?|matur\w*|income|money)\b/i,ask:[
     ['What is my account balance?',true],['Show my recent transactions',true],['Are there fees on my savings account?',false]]},
 ];
 const DOMAIN={fraud:'fraud',compliance:'compliance',document:'document',relationship:'meeting'};
@@ -77,9 +84,26 @@ export function followUps({question,message,signedIn,asked=[]}) {
     const cards=[...message.content.matchAll(/your ([A-Z][A-Za-z ]{1,40}?) ending (\d{4})/g)].map(match=>`${match[1]} ending ${match[2]}`);
     if(cards.length>1)return [...cards.slice(0,3),'Both cards'].slice(0,4);
   }
+  // Several requests could match: one tap per reference, so she picks without typing it.
+  if(signedIn&&/Which reference do you mean\?/.test(message.content)) {
+    const refs=[...new Set([...message.content.matchAll(/\bTCK-\d{6,}\b/g)].map(match=>match[0]))];
+    if(refs.length>1)return refs.slice(0,5).map(ref=>`What is the status of ${ref}?`);
+  }
   const seen=new Set([question,...asked].map(text=>String(text||'').trim().toLowerCase()));
   // 2a: care first (job loss, debt, bereavement, illness, pressure about money): a person, never a product or a meeting.
   if(message.care)return seen.has(CARE_CHIP.toLowerCase())?[]:[CARE_CHIP];
+  // Several questions in one message: one suggestion for each part, in the order of the parts, so each stays on its topic.
+  const parts=message.sections?.length>1?message.sections:null;
+  if(parts&&!message.needs_human) {
+    const picked=[];
+    for(const section of parts) {
+      const key=topicOf('',{sections:[section],content:section.answer});
+      const pool=TOPICS.find(entry=>entry.key===key)?.ask||[];
+      const chip=pool.find(([text,personal])=>(signedIn||!personal)&&!seen.has(text.toLowerCase())&&!picked.includes(text));
+      if(chip)picked.push(chip[0]);
+    }
+    if(picked.length)return picked.slice(0,3);
+  }
   const topic=topicOf(question,message);
   const pool=message.needs_human?HANDED_OVER:(TOPICS.find(entry=>entry.key===topic)?.ask||GENERAL);
   const chips=pool.filter(([text,personal])=>(signedIn||!personal)&&!seen.has(text.toLowerCase())).map(([text])=>text);

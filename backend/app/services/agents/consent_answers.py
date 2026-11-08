@@ -70,9 +70,9 @@ class Reply(NamedTuple):
 
 def evidence_for(as_of,body: dict) -> list[Evidence]:
     """What the reply was built from: codes, ids and dates of her own settings (no free text)."""
-    return [Evidence(id='consent-sharing',text=json.dumps(body,ensure_ascii=False,default=str),publisher='DemoBank consent records',
+    return [Evidence(id='consent-sharing',text=json.dumps(body,ensure_ascii=False,default=str),publisher='UBS Connect consent records',
         scope='Her own data sharing settings; read for this request only.',source=Source(id='consent-sharing',
-        title='Your data sharing settings',url=None,version=as_of.isoformat(),publisher='DemoBank consent records'))]
+        title='Your data sharing settings',url=None,version=as_of.isoformat(),publisher='UBS Connect consent records'))]
 
 
 def reply(task_id: str,text: str,as_of,body: dict,proposals: list[OfferProposal]|None=None) -> Reply:

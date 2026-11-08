@@ -31,7 +31,7 @@ from app.services.agents.answer import WITHHELD, checked_model_answer
 
 PROMPTED = frozenset({'guide', 'accounts'})  # agents with their own runner prompt (version in prompts.VERSIONS); compliance and relationship answer through their rules only (agents/rules.py)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
-RECORDS = 'DemoBank synthetic records'
+RECORDS = 'UBS Connect records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_portfolio': 'Your investments', 'my_transactions': 'Your transactions',
     'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
@@ -70,8 +70,8 @@ def read_args(read: Read, task: PlanTask) -> dict[str, Any]:
 
 def note(id_: str, text: str) -> Evidence:
     """A plain statement about a read (unavailable, refused); it carries no records or figures."""
-    return Evidence(id=id_, text=text, publisher='DemoBank', scope='Status of a read in this answer; not a record.',
-        source=Source(id=id_, title='Read status', url=None, version='n/a', publisher='DemoBank'))
+    return Evidence(id=id_, text=text, publisher='UBS Connect', scope='Status of a read in this answer; not a record.',
+        source=Source(id=id_, title='Read status', url=None, version='n/a', publisher='UBS Connect'))
 
 
 def unique(base: str, taken: set[str]) -> str:
@@ -100,11 +100,11 @@ def records_evidence(name: str, args: dict[str, Any], result: dict[str, Any], ct
     if args and name not in tools.external.TOOLS:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
     records = result.get('items', result.get('data', []))
     body['records'] = [readable(row) for row in records] if isinstance(records, list) else readable(records)
-    scope = (f'An indicative public reference from {publisher}; not DemoBank data or a rate DemoBank applies.' if name in tools.external.TOOLS
+    scope = (f'An indicative public reference from {publisher}; not UBS Connect data or a rate UBS Connect applies.' if name in tools.external.TOOLS
         else 'The signed-in customer\'s own records from one audited read (read_with gives its arguments); today in Singapore is '
             f'{tools.today(ctx).isoformat()}. An empty or short list does not prove that other records do not exist.')
     return [Evidence(id=id_, text=json.dumps(body, ensure_ascii=False, default=str), publisher=publisher, scope=scope,
-        source=Source(id=id_, title=TITLES.get(name, 'DemoBank records'), url=None, version=tools.today(ctx).isoformat(), publisher=publisher))]
+        source=Source(id=id_, title=TITLES.get(name, 'UBS Connect records'), url=None, version=tools.today(ctx).isoformat(), publisher=publisher))]
 
 
 async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[str]) -> list[Evidence]:
@@ -127,7 +127,7 @@ async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[
 def input_evidence(inputs: dict[str, Export]) -> list[Evidence]:
     """Values another agent computed earlier in the turn (passed by orchestrator.gather in wave 2)."""
     return [Evidence(id=f'input-{name}', text=json.dumps({name: export.value, 'source_ids': export.source_ids}, ensure_ascii=False),
-        publisher=RECORDS, scope='A value another DemoBank agent computed from cited records in this turn.',
+        publisher=RECORDS, scope='A value another UBS Connect agent computed from cited records in this turn.',
         source=Source(id=f'input-{name}', title='From another part of this answer', url=None, version='n/a', publisher=RECORDS)) for name, export in inputs.items()]
 
 

@@ -12,7 +12,7 @@ from app.services.agents import runner
 from tests.data_api_support import NativeAPI
 
 SECTION=KnowledgeSection(article_id='card-limit-change',version=1,anchor='main',cite='kb:card-limit-change@v1#main',title='Changing your credit card limit',
-    heading='Changing your credit card limit',body='The cards and credit team decides.',publisher='DemoBank coursework project',
+    heading='Changing your credit card limit',body='The cards and credit team decides.',publisher='UBS Connect',
     scope='Fictional demo guidance; not a live bank policy.',reference_url=None,checked_on=None,review_due=None,score=1.0)
 
 

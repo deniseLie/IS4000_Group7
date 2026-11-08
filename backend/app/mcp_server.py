@@ -1,4 +1,4 @@
-"""DemoBank tools as a Model Context Protocol server (F21; `mcp` v2 is a core dependency).
+"""UBS Connect tools as a Model Context Protocol server (F21; `mcp` v2 is a core dependency).
 
 In-process: tools.call() with TOOL_TRANSPORT=mcp connects an MCP client to this server inside the API process, so
 every agent tool call is a real MCP tools/call. Stdio: `python -m scripts.mcp_server` serves the same tools to an
@@ -35,7 +35,7 @@ def capture_failure(function: Callable[P,Awaitable[R]]) -> Callable[P,Awaitable[
 @lru_cache(maxsize=1)
 def build_server():
     from mcp.server.mcpserver import MCPServer
-    server=MCPServer('demobank-tools',instructions='DemoBank coursework tools. Every call is permission-checked and audited; '
+    server=MCPServer('demobank-tools',instructions='UBS Connect coursework tools. Every call is permission-checked and audited; '
         'personal tools need a signed-in customer. Tools read records only; they never change banking data.')
     for name,function in TOOLS.items():server.tool(name=name,description=(function.__doc__ or name).strip())(capture_failure(function))
     return server

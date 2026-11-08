@@ -20,7 +20,28 @@ CARD_REQUEST=re.compile(r'\b(?:card|credit)\s+limit\b|\blimit\s+(?:increase|chan
 REFERENCE=re.compile(r'\bTCK-\d{6,}\b',re.I)
 APPROVAL=re.compile(r'\b(?:approved|rejected|approval|decision|accepted|gone through)\b',re.I)
 FOLLOW_UP=re.compile(r"\b(?:one|handling|happens next|internally|internal|staff|told|update|status)\b",re.I)
+PLURAL=re.compile(r'\b(?:my|all(?: my)?)\s+(?:\w+\s+)?(?:requests|tickets|cases)\b',re.I)
 NEW_REQUEST=re.compile(r'\b(?:raise|open|create|submit|start)\b',re.I)
+
+
+def short(row: CustomerTicket) -> str:
+    """What the request is about in a few plain words, for a list she picks from (her own words, not the type label)."""
+    text=' '.join(str(getattr(row,'summary','') or '').split())
+    if re.search(r'recorded case status|requested item status|preliminary outcome',text,re.I):return 'Help with your periodic review'
+    text=re.sub(r'^(?:client question for you|question for your relationship manager)\s*[:\-]\s*','',text,flags=re.I)
+    # Urgent card requests are written for the RM ("[Urgent card] Charge the client does not recognise."): say it to her.
+    urgent=text.startswith('[Urgent card]')
+    text=re.sub(r'^\[Urgent card\]\s*','',text)
+    text=re.sub(r'\bthe client does not\b',"you don't",text,flags=re.I)
+    text=re.split(r'(?<=[.?!])\s',text,maxsplit=1)[0].rstrip('.') or row.category_label
+    if urgent:text='Urgent card: '+text[:1].lower()+text[1:]
+    if len(text)>70:text=text[:69].rsplit(' ',1)[0].rstrip(' ,.;:')+'…'
+    return text[:1].upper()+text[1:] if text else row.category_label
+
+
+def bullets(rows: Sequence[CustomerTicket]) -> str:
+    """One request per line: reference, what it is about, where it is."""
+    return '\n'.join(f'• {row.reference} · {short(row)} · {STATUS_LABELS.get(row.status,"Status unavailable")}' for row in rows)
 
 
 def follow_up(question: str,history: Sequence[Message]) -> str:
@@ -41,9 +62,9 @@ def follow_up(question: str,history: Sequence[Message]) -> str:
 def evidence_for(rows: Sequence[CustomerTicket],as_of: datetime) -> list[Evidence]:
     text='Customer-authorised request records as of '+as_of.isoformat()+': '+ '; '.join(
         f'{row.reference}: {row.category_label}, status {row.status}, owner {row.owner_team}' for row in rows[:5])
-    return [Evidence(id='retail-tickets',text=text,publisher='DemoBank synthetic request records',
+    return [Evidence(id='retail-tickets',text=text,publisher='UBS Connect request records',
         scope='Customer-owned request status read. Workflow status is not a banking approval.',
-        source=Source(id='retail-tickets',title='Your request records',url=None,version=as_of.isoformat(),publisher='DemoBank synthetic request records'))]
+        source=Source(id='retail-tickets',title='Your request records',url=None,version=as_of.isoformat(),publisher='UBS Connect request records'))]
 
 
 async def existing_statement_request(task_id: str,question: str,ctx: RequestContext) -> tuple[AgentResult,list[Evidence]] | None:
@@ -87,19 +108,19 @@ async def respond(task_id: str,question: str,ctx):
               +'Check My Requests or provide the reference number.')
         return AgentResult(task_id=task_id,agent='retail',status='ok',answer_kind='conversation',text=text),[]
     if listing:
-        lines=[f'{row.reference}: {row.category_label} — {STATUS_LABELS.get(row.status,"Status unavailable")}' for row in rows[:8]]
-        text='Here are your open requests from the authorised records: '+ '; '.join(lines)+'. For full details and updates, open My Requests.'
+        text='Here are your open requests:\n'+bullets(rows[:8])+'\nFor full details and updates, open Requests.'
     elif cancel and len(rows)>1 and not reference:
-        text='Which request would you like to cancel? Please give its ticket reference. '+ '; '.join(
-            f'{row.reference}: {row.category_label}' for row in rows[:5])+'. Nothing has been cancelled.'
+        text='Which request would you like to cancel? Please give its reference.\n'+bullets(rows[:5])+'\nNothing has been cancelled.'
     elif cancel:
         text=('I found your request '+rows[0].reference+'. ' if rows else '')+(
             'This chatbot does not currently support cancellation of submitted service tickets. '
             'Please check My Requests or contact the responsible team through the official support channel. '
             'No ticket has been cancelled.')
+    elif len(rows)>1 and not reference and PLURAL.search(question):
+        # "What's the status of my requests?" asks about all of them: show each one's status instead of asking which.
+        text=f'Here are your latest {min(len(rows),5)} requests:\n'+bullets(rows[:5])+'\nThe status shows where each request is, not a decision. Open Requests for full details.'
     elif len(rows)>1 and not reference:
-        lines=[f'{row.reference}: {row.category_label} — {STATUS_LABELS.get(row.status,"Status unavailable")}' for row in rows[:5]]
-        text='I found more than one matching request. Which reference do you mean? '+ '; '.join(lines)+'. These are recorded workflow statuses, not approval decisions.'
+        text=f'I found {min(len(rows),5)} requests that could match. Which reference do you mean?\n'+bullets(rows[:5])+'\nThe status shows where each request is, not a decision.'
     else:
         row=rows[0]
         text=f'Your {row.category_label} request {row.reference} is recorded as {STATUS_LABELS.get(row.status,"Status unavailable")}. The responsible team is {row.owner_team}.'

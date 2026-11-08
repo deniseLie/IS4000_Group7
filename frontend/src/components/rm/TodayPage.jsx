@@ -66,7 +66,7 @@ export default function TodayPage({token,onAsk,advisor,today}) {
 
       <div className="rm-today-grid">
         <section className="rmw-card rm-first" data-testid="rm-today-first" aria-label={all?'Everything that needs you':'Do first'}>
-          <div className="rm-first-head"><h2>{all?'Everything that needs you':'Do first'}</h2><span className="rm-small">most important at the top · one step each</span></div>
+          <div className="rm-first-head"><h2>{all?'Everything that needs you':'Do first'}</h2></div>
           {!list.length&&<p className="rm-none">Nothing waiting for you. New requests, meetings and dates will appear here.</p>}
           {shown.map(x=>{const a=act(x);return <div key={x.key} className="rm-now-row" data-testid="rm-today-item">
             <span className={`rm-dot ${x.tone}`} aria-hidden="true"/>

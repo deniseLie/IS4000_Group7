@@ -11,14 +11,22 @@ import {formatDate} from '../lib/format';
 const GROUPS=[
   ['My money',[['When does my time deposit mature?','From your investments'],['What did I spend last month?','From your transactions'],['How do I get my statement?','Ready in one step']]],
   ['Cards and payments',[['Does paying only the minimum on my credit card avoid interest?','How interest works'],['I don’t recognise a charge on my card','Get it checked quickly'],['I lost my card','What to do now']]],
-  ['Plans and financing',[['Which financing does DemoBank offer?','Property financing and more'],['Can I borrow against my investments?','How a Lombard loan works'],['I’m thinking of buying a home. Can I meet my relationship manager?','Request a meeting']]],
+  ['Plans and financing',[['Which financing do you offer?','Property financing and more'],['Can I borrow against my investments?','How a Lombard loan works'],['I’m thinking of buying a home. Can I meet my relationship manager?','Request a meeting']]],
   ['Documents and requests',[['What does my periodic review still need?','Your documents'],['What’s the status of my requests?','Your requests'],['How do I upload a document?','Step by step']]]];
 const REVIEW_DONE=['completed','closed'];
+// Before sign-in: the same home with general questions the bank's guides answer, and a sign-in card where "For you right
+// now" sits after sign-in (design: guest welcome aligned with the signed-in assistant).
+const GUEST_GROUPS=[
+  ['Accounts and savings',[['What happens if I withdraw my fixed deposit early?','From the bank’s guides'],['How do I get my statement?','Ready in one step'],['What is a time deposit?','From the bank’s guides']]],
+  ['Cards and payments',[['Does paying only the minimum on my credit card avoid interest?','How interest works'],['I don’t recognise a charge on my card','Get it checked quickly'],['How do I freeze my card?','What to do now']]],
+  ['Financing',[['Which financing do you offer?','Property financing and more'],['What is a Lombard loan?','Borrowing against investments'],['How does property financing work?','From the bank’s guides']]]];
+const HELP_NOW=['I lost my card','I see a charge I don’t recognise','How do I find my statement?'];
 
-export default function ClientWelcome({onDraft,onNavigate}) {
+export default function ClientWelcome({onDraft,onNavigate,guest=false,onSignIn}) {
   const [tab,setTab]=useState(0),[now,setNow]=useState([]);
   useEffect(()=>{
     const controller=new AbortController();
+    if(guest)return;
     (async()=>{try{
       const {data}=await supabase.auth.getSession();const access=data.session?.access_token;if(!access)return;
       const quiet=promise=>promise.catch(()=>null);
@@ -36,12 +44,18 @@ export default function ClientWelcome({onDraft,onNavigate}) {
     }catch{}})();
     return ()=>controller.abort();
   },[]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const groups=guest?GUEST_GROUPS:GROUPS;
   return <>
+    {guest&&<section className="rm-now cw-now guest-signin" aria-label="Sign in for answers about you" data-testid="guest-signin">
+      <div className="guest-signin-text"><strong>Sign in for answers about you</strong>
+        <ul><li>Your balances, cards and statements</li><li>Book and follow meetings with your relationship manager</li><li>Send documents and track your requests</li></ul></div>
+      {onSignIn&&<button type="button" className="primary-button" data-testid="guest-signin-button" onClick={onSignIn}>Sign in to your account</button>}</section>}
     {now.length>0&&<section className="rm-now cw-now" aria-label="For you right now" data-testid="client-for-you"><div className="rm-now-head"><strong>For you right now</strong><span className="rm-small">from your accounts and requests</span></div>
       {now.map(row=><div key={row.key} className="rm-now-row"><span className={`rm-dot ${row.tone}`} aria-hidden="true"/><span className="rm-now-text">{row.text}</span>
         <button type="button" className="bank-chat-logout" onClick={row.go}>{row.label}</button></div>)}</section>}
-    <nav className="page-tabs rm-starter-tabs" role="tablist" aria-label="What I can help with">{GROUPS.map(([label],i)=><button key={label} type="button" role="tab" aria-selected={tab===i} onClick={()=>setTab(i)}>{label}</button>)}</nav>
-    <div className="bank-chat-suggestions client-starters">{GROUPS[tab][1].map(([question,detail])=><button key={question} onClick={()=>onDraft(question)}>
+    <nav className="page-tabs rm-starter-tabs" role="tablist" aria-label="What I can help with">{groups.map(([label],i)=><button key={label} type="button" role="tab" aria-selected={tab===i} onClick={()=>setTab(i)}>{label}</button>)}</nav>
+    <div className="bank-chat-suggestions client-starters">{groups[tab][1].map(([question,detail])=><button key={question} onClick={()=>onDraft(question)}>
       <strong>{question}</strong><span>{detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div>
+    {guest&&<div className="follow-ups guest-help" data-testid="guest-help-now"><span>Need help now?</span>{HELP_NOW.map(text=><button key={text} type="button" onClick={()=>onDraft(text)}>{text}</button>)}</div>}
   </>;
 }

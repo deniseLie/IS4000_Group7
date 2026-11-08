@@ -66,7 +66,7 @@ def checks(records: RetailRecords,question: str,today: date,threshold: tuple[Dec
     if not relevant(records,question,today):return None
     pending=pending_debits(records)
     due=due_date(question,today)
-    lines=[f'DemoBank rule checks computed by code for this request; they are not a prediction. Today in Singapore is {today.isoformat()} ({WEEKDAY[today.weekday()]}).']
+    lines=[f'UBS Connect rule checks computed by code for this request; they are not a prediction. Today in Singapore is {today.isoformat()} ({WEEKDAY[today.weekday()]}).']
     for row in pending:
         lines.append(f'Pending transfer: {row.description}, recorded amount {row.currency} {amount(row.amount)} ({row.currency} {amount(-row.amount)} out), '
             f'recorded as pending since {row.date.isoformat()} ({WEEKDAY[row.date.weekday()]}): {(today-row.date).days} calendar days and '
@@ -92,7 +92,7 @@ def checks(records: RetailRecords,question: str,today: date,threshold: tuple[Dec
     for card in records.cards:
         lines.append(f'Card charges are billed to the credit card ending {card.last4} (outstanding {amount(card.outstanding)} of a '
             f'{amount(card.limit)} limit; card currency not recorded) and do not change a bank account balance.')
-    return Evidence(id='retail-checks',text=' '.join(lines),publisher='DemoBank rule checks',
+    return Evidence(id='retail-checks',text=' '.join(lines),publisher='UBS Connect rule checks',
         scope='Deterministic checks over the authenticated records captured for this request; not a prediction or a monthly average.',
         source=Source(id='retail-checks',title='Rule checks: pending transfers, due day and balances',url=None,
-            version=records.captured_at.isoformat(),publisher='DemoBank rule checks'))
+            version=records.captured_at.isoformat(),publisher='UBS Connect rule checks'))

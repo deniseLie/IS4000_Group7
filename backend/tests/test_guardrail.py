@@ -100,7 +100,7 @@ def test_a_named_persons_records_get_the_fixed_refusal(question):
 
 @pytest.mark.parametrize('question', [
     "what's my balance?", "What's my account balance?", "Show today's transactions", "Today's balance please",
-    "What is DemoBank's savings account rate?", "There's a charge on my card", "Let's check my account",
+    "What is UBS Connect's savings account rate?", "There's a charge on my card", "Let's check my account",
     "What are Sophie's available times?", "What are Sophie's contact details?", "When is Monday's payment due on my card?",
     "What are Visa's card fees?", 'How do I see my portfolio?',
     "david's portfolio",  # the name part is case-sensitive by design: a lower-case name is not matched

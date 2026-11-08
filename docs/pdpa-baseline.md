@@ -1,7 +1,7 @@
 # PDPA baseline
 
-Status: checked against the sources on 8 Nov 2026. DemoBank is a coursework demo with synthetic data. This file is our
-design baseline: what Singapore's Personal Data Protection Act (PDPA) asks of an organisation, how DemoBank meets each
+Status: checked against the sources on 8 Nov 2026. UBS Connect is a coursework demo with synthetic data. This file is our
+design baseline: what Singapore's Personal Data Protection Act (PDPA) asks of an organisation, how UBS Connect meets each
 obligation, and what is not built. It is not legal advice. Every rule below is paraphrased; read the source for the exact
 wording.
 
@@ -25,7 +25,7 @@ example. A real bank follows those rules and MAS notices as well; they are outsi
 
 Status: **Built** (in the demo today), **Partly** (built with a named gap), **Not built**, **Not in force**.
 
-| Obligation | What the PDPA asks | How DemoBank meets it | Status |
+| Obligation | What the PDPA asks | How UBS Connect meets it | Status |
 |---|---|---|---|
 | Accountability (s11–12) | Name at least one data protection officer (DPO) and publish their business contact. Have policies and practices, a process to receive and answer complaints, tell staff about them, and share them on request | A complaint can be raised as a request (*Something else*) or through *Talk to a person*. There is no named DPO, published contact or policy page | Partly |
 | Consent (s13–14) | No collecting, using or disclosing without consent, unless the Act or another law requires or allows it. Consent counts only if she was told the purpose. Consent beyond what the service needs must not be a condition of it, and must not be obtained by misleading her | Her RM sees *Transaction insights* and *Chat insights* only under her grant, checked in SQL on every read. Both are off by default and no service depends on them. Switching on shows the exact line her RM will see and asks her to confirm; the grant records the notice version she agreed to. Offer switches in the chat stay off unless she turns them on, and a typed yes includes none | Built |
@@ -69,7 +69,7 @@ turnover is above S$10 million, and up to S$1 million otherwise (s48J).
 Every withdrawal happens in the app and takes effect at once. Nothing is sent to a team and nothing waits for a person
 (0147 removed the *Stop using my data* and *Delete all my data* requests).
 
-| What the PDPA asks (s16, Guidelines ¶12.38–12.54) | What DemoBank does |
+| What the PDPA asks (s16, Guidelines ¶12.38–12.54) | What UBS Connect does |
 |---|---|
 | She may withdraw any consent at any time, including consent that is only deemed, such as under a notice (¶12.38) | Switches on Data sharing for transaction and chat insights. For meeting recording, each meeting asks whether her RM may use a transcript of the call for the minutes; she chooses *I agree* or *Withdraw* on that meeting, before or after the call |
 | She gives reasonable notice. As a rule of thumb, at least 10 business days from when the bank receives it is reasonable; if the bank needs longer, telling her when it takes effect is good practice (¶12.41) | No notice period is needed: a switch or *Withdraw* stops use at once, in SQL |

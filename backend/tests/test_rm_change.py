@@ -28,7 +28,7 @@ RACHEL=UUID('00000000-0000-4000-8000-100300000001')
 
 def section(anchor: str) -> dict[str,object]:
     return {'cite':f'kb:rm-change@v1#{anchor}','article_id':'rm-change','version':1,'anchor':anchor,'title':'Changes to your relationship manager',
-        'heading':'Heading','body':'Approved body.','publisher':'DemoBank coursework project'}
+        'heading':'Heading','body':'Approved body.','publisher':'UBS Connect'}
 
 
 def introduction(notice: list[str],previous: bool=True,current: bool=True) -> Introduction:
@@ -149,7 +149,7 @@ def test_introduction_and_meeting_options_are_owned_and_audited(local_data_api: 
             ended=db.execute('select ended_on from rm.assignments where customer_id=1003 and advisor_id=%s',(SOPHIE,)).fetchone()[0]
         assert data['previous']['ended_on']==ended.isoformat()
         assert [item['anchor'] for item in data['notice']]==['team-restructure','continuity']
-        assert data['notice'][0]['body'].startswith('Your relationship manager changed because DemoBank reorganised')
+        assert data['notice'][0]['body'].startswith('Your relationship manager changed because UBS Connect reorganised')
         assert {row['format'] for row in options.json()['data']}=={'video','phone','in_person'}
     else:  # 0063: one long-standing advisor, no change, so no change wording
         assert data['current']['name']==('Priya Nair (DEMO)' if cid==1001 else 'Sophie Lim (DEMO)') and data['previous'] is None and data['notice']==[]

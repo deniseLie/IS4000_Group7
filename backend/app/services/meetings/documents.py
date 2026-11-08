@@ -119,6 +119,6 @@ def pdf(document: Document) -> bytes:
         canvas.drawString(42,29,'Meeting '+document.reference);canvas.drawRightString(A4[0]-42,29,'Page '+str(template.page))
         canvas.restoreState()
     SimpleDocTemplate(output,pagesize=A4,rightMargin=42,leftMargin=42,topMargin=32,bottomMargin=58,
-        title=document.title,author='DemoBank',invariant=1).build(story,onFirstPage=footer,onLaterPages=footer,
+        title=document.title,author='UBS Connect',invariant=1).build(story,onFirstPage=footer,onLaterPages=footer,
             canvasmaker=partial(Canvas,initialFontName='DemoBankNoto'))
     return output.getvalue()

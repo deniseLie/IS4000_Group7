@@ -10,7 +10,7 @@ from app.services import llm_gateway,prompts
 from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers,client_guidance
 from app.services.agents.answer import checked_model_answer
 
-LINKED='\nLinked context (DemoBank rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
+LINKED='\nLinked context (UBS Connect rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
 
 
 def currency_note(rows: list) -> str:
@@ -24,9 +24,9 @@ def evidence_for(records: RetailRecords) -> list[Evidence]:
         ('cards','Authenticated synthetic cards'+currency_note(records.cards),json.dumps([row.model_dump(mode='json') for row in records.cards])),
         ('loans','Authenticated synthetic loans'+currency_note(records.loans),json.dumps([row.model_dump(mode='json') for row in records.loans])),
         ('transactions','Authenticated synthetic recent transactions',json.dumps([row.model_dump(mode='json') for row in records.transactions]))]
-    return [Evidence(id='retail-'+key,text='{"records":'+text+'}',publisher='DemoBank synthetic records',
+    return [Evidence(id='retail-'+key,text='{"records":'+text+'}',publisher='UBS Connect records',
         scope='Own customer records from separate audited reads; at most 200 per collection. Transactions cover the last 90 days through today in Singapore. No product catalogue.',
-        source=Source(id='retail-'+key,title=title,url=None,version=records.captured_at.isoformat(),publisher='DemoBank synthetic records'))
+        source=Source(id='retail-'+key,title=title,url=None,version=records.captured_at.isoformat(),publisher='UBS Connect records'))
         for key,title,text in rows]
 
 

@@ -179,7 +179,7 @@ def test_a_workspace_button_skips_the_planner_and_one_reply_keeps_its_shape(reco
 
 SECTION = {'article_id': 'card-limit-change', 'version': 1, 'anchor': 'main', 'cite': 'kb:card-limit-change@v1#main',
     'title': 'Changing a card limit', 'heading': 'Changing a card limit', 'body': 'Card limit changes are decided by the cards team.',
-    'publisher': 'DemoBank', 'scope': 'Demo guidance', 'reference_url': None, 'checked_on': None, 'review_due': None, 'score': 0.0}
+    'publisher': 'UBS Connect', 'scope': 'Demo guidance', 'reference_url': None, 'checked_on': None, 'review_due': None, 'score': 0.0}
 
 
 def test_ticket_guidance_is_read_with_the_requests_permission(records, monkeypatch):
@@ -362,7 +362,7 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
         ('rm_calendar', 'decide_request'), ('rm_calendar', 'availability_change'), ('rm_requests', 'open'), ('rm_client', 'help')]  # never a client agent
     task = graph.plan_schema()['properties']['tasks']['items']['properties']
     assert task['agent']['enum'] == ['', 'rm_calendar', 'rm_client', 'rm_requests'] and 'open' in task['intent']['enum']
-    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v5', 'v7')
+    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v6', 'v8')
 
 
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):
@@ -424,7 +424,7 @@ def test_an_open_question_loops_at_most_agent_tool_calls_times_and_says_when_it_
     reply, spans = traced('Which card limit requests are waiting on me, and what did the clients ask?')
     steps = [c for c in seen if c['title'] == 'agent_step']
     assert len(steps) == 3 and [n for n, a in calls if a == 'rm_requests'] == ['rm_tickets', 'rm_ticket', 'rm_followups']
-    assert all(c['prompt'].startswith('v7+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v7's step.md
+    assert all(c['prompt'].startswith('v8+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v8's step.md
     assert '"reason": "not_in_book"' in steps[2]['system']  # outside the book: refused by the SQL check and shown to the next step
     assert 'ticket-TCK-001001' in steps[1]['system'] and not any('zebra lantern' in c['system'] for c in steps)  # free text hidden from steps
     assert 'zebra lantern' in evidence_in(next(c for c in seen if c['title'] == 'rm_brief'))  # the answer step reads it as data
@@ -654,7 +654,7 @@ def test_today_links_the_calendar_and_client_exports_and_code_keeps_the_rank_ord
     # Each agent reads its own records; the feeds call no model, so the only model call is the day's answer.
     assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_appointments', 'rm_calendar'),
         ('rm_meeting_requests', 'rm_calendar'), ('rm_review_status', 'rm_client'), ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests')}
-    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v6+')
+    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v8+')
     assert seen[0]['reasoning'] is False  # handlers.REASONING: the day's answer only rephrases records code ranked
     gather = next(a for n, a in spans if n == 'gather')
     assert {(p['from'], p['to'], p['name']) for p in gather['passed']} >= {('rm_calendar', 'rm_requests', 'meetings_next_7d'),

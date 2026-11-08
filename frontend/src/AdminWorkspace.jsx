@@ -39,8 +39,8 @@ export default function AdminWorkspace({session}) {
   const Current=PAGES.find(page=>page.view===view).Page;
   return <div className="bank-chat-page admin-shell" data-testid="admin-shell">
     <header className="bank-chat-header">
-      <div className="bank-chat-brand"><span className="brand-name">DemoBank<span className="brand-dot">.</span></span>
-        <div className="brand-caption"><strong>AI engineering dashboard</strong><span className="demo-badge">Synthetic data · LangSmith</span></div></div>
+      <div className="bank-chat-brand"><span className="brand-name">UBS Connect<span className="brand-dot">.</span></span>
+        <div className="brand-caption"><strong>AI engineering dashboard</strong><span className="demo-badge">LangSmith</span></div></div>
       <div className="chat-actions"><span className="rm-role-badge" title="Signed in with the admin role">Admin</span></div>
     </header>
     <div className="bank-chat-layout">
@@ -48,7 +48,6 @@ export default function AdminWorkspace({session}) {
       <TabBar current={view} pages={pages}/>
       <main className="app-page page-enter" key={view}>
         <Current onNavigate={navigate} views={VIEWS} filter={filter}/>
-        <footer className="bank-chat-footer"><span>IS4000 · Coursework demo · Synthetic data · Read-only view of LangSmith</span></footer>
       </main>
     </div>
   </div>;

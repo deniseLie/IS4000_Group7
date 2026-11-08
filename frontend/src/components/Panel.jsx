@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 
 // locked keeps the panel open (Escape, the dimmed backdrop) while a step it started is still being recorded.
-export default function Panel({label,title,closeLabel,onClose,children,eyebrow='DemoBank assistant',subtitle,footer,size,locked=false}) {
+export default function Panel({label,title,closeLabel,onClose,children,eyebrow='UBS Connect assistant',subtitle,footer,size,locked=false}) {
   const dialog=useRef(null),pressedOutside=useRef(false),[closing,setClosing]=useState(false);
   // Close plays the exit fade before the parent unmounts the panel.
   function close() {

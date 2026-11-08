@@ -52,7 +52,7 @@ export default function RmTicketsPage({token,onAsk}) {
               <small className="rmw-why">{[r.count>1&&`${r.count} requests like this`,r.overdue?`past the promised date (${t.target_sgt})`:`due ${t.target_sgt}`,
                 tab==='mine'?STATUS_WORDS[t.status]:`${t.owner_team} · client sees: ${t.client_safe_status}`,(t.age_hours??99)<24&&'new today'].filter(Boolean).join(' · ')}</small>
               {issues.length>1&&<span className="rm-issues">{issues.map(x=><span key={x}>{x}</span>)}</span>}</span></button>
-          {tab==='mine'&&<button type="button" className={i===0&&!all&&filter==='all'?'primary-button':'bank-chat-logout'} data-testid="rm-ticket-draft" onClick={()=>draft(t)}>Draft a reply</button>}
+          {tab==='mine'&&<button type="button" className="bank-chat-logout" data-testid="rm-ticket-draft" onClick={()=>draft(t)}>Draft a reply</button>}
         </div>;})}
         {rows.length>SHOWN&&<p className="rm-inbox-more">Showing {shown.length} of {rows.length} · <button type="button" className="link-button" onClick={()=>setAll(o=>!o)}>{all?'Show fewer':'Show all'}</button></p>}
       </section>

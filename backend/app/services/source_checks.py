@@ -16,7 +16,7 @@ MONEY_FIELDS = {'balance','amount','credit_limit','outstanding_balance','minimum
                 'annual_fee','outstanding_amount','monthly_repayment','min_income','min_loan_amount','max_loan_amount',
                 # Card and loan reads (0083 records their currency): a figure counts only with the currency on the same record.
                 'limit','outstanding','minimum_payment','principal','next_amount','charge_amount'}
-POLICY_CLAIM = re.compile(r"\b(?:our|DemoBank['’]s)\s+(?:card\s+)?(?:terms|policy|policies)\s+(?:say|says|state|states|require|requires|is|are)\b|\b(?:under|according to)\s+our\s+(?:card\s+)?(?:terms|policy)\b",re.I)
+POLICY_CLAIM = re.compile(r"\b(?:our|UBS Connect['’]s|UBS(?:\s+Connect)?['’]s)\s+(?:card\s+)?(?:terms|policy|policies)\s+(?:say|says|state|states|require|requires|is|are)\b|\b(?:under|according to)\s+our\s+(?:card\s+)?(?:terms|policy)\b",re.I)
 
 
 MONTHS={m:i for i,m in enumerate(['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],1)}

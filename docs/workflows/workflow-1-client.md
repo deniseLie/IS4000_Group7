@@ -1,6 +1,6 @@
 # Workflow 1 – Client (Michelle)
 
-The client side of DemoBank: one persona who uses the assistant for everyday banking within guardrails, her compliance review, and handover to her relationship manager. Stories CR1–CR18 are in the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history); how the agents run is in [how-agents-run.md](../how-agents-run.md).
+The client side of UBS Connect: one persona who uses the assistant for everyday banking within guardrails, her compliance review, and handover to her relationship manager. Stories CR1–CR18 are in the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history); how the agents run is in [how-agents-run.md](../how-agents-run.md).
 
 Demo login: `demo.michelle@example.com` (customer 1002).
 
@@ -238,7 +238,7 @@ Story IDs (e.g. CR12, CR5, RC1, F16) are the backlog items the step proves.
 
 ```mermaid
 flowchart TD
-    start([START: Alex opens DemoBank, not logged in]):::endpoint
+    start([START: Alex opens UBS Connect, not logged in]):::endpoint
     s1[CHAT opens by saying it is an AI assistant and gives general information, not advice]:::bot
     s2[ALEX asks a general question<br/>'wats the monthly fee for a savings acc?']:::user
     s3[BOT answers from the knowledge base; source FAQ / help page shown, collapsed<br/>No login needed · no personal data shown]:::bot
@@ -295,7 +295,7 @@ flowchart TD
 
 | # | Actor | Step | Stories |
 |---|---|---|---|
-| 0 | Start | Alex opens DemoBank (not logged in). | |
+| 0 | Start | Alex opens UBS Connect (not logged in). | |
 | 1 | Bot | Chat opens by saying it is an AI assistant and gives general information, not advice. | F18 |
 | 2 | Alex | Asks a general question: *"wats the monthly fee for a savings acc?"* | |
 | 3 | Bot | Answers from the knowledge base; the source (FAQ / help page) is shown, collapsed. No login needed · no personal data shown. | CR2 · F10, F19 |
@@ -409,7 +409,7 @@ Agent-level only, as below: the real planner, fraud and retail agents, validator
 | 3 | 3 issues, linked | Passed: both US charges, both offers | Passed validation; said the lock is protective but omitted "likely linked" and "reset only in the app" | Passed |
 | 4 | 3 issues, linked | Withheld: `ValidationError` after a successful model call, no offers | Passed | Passed |
 
-Direct fraud-agent runs (same records, four samples) all kept both offers, including two whose drafts failed validation. The runs that withheld the fraud section without offers led to a fix: the customer's own message now narrows the target whenever the planner's question names no single charge, including a question that matches charges on several cards (`fraud_records.scoped_proposals`; the test records include a second card). Whether that was the cause of runs 2 and 4 is not confirmed: the free tier's daily limit (50 requests) was reached before another sample. No answer claimed that DemoBank detected a sign-in or location.
+Direct fraud-agent runs (same records, four samples) all kept both offers, including two whose drafts failed validation. The runs that withheld the fraud section without offers led to a fix: the customer's own message now narrows the target whenever the planner's question names no single charge, including a question that matches charges on several cards (`fraud_records.scoped_proposals`; the test records include a second card). Whether that was the cause of runs 2 and 4 is not confirmed: the free tier's daily limit (50 requests) was reached before another sample. No answer claimed that UBS Connect detected a sign-in or location.
 
 ### Live checks (27 October 2026, earlier card-testing scenario)
 

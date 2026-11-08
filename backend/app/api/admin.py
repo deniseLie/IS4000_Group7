@@ -26,7 +26,7 @@ router=APIRouter(prefix='/admin')
 async def admin(ctx: RequestContext=Depends(get_ctx)) -> RequestContext:
     if ctx.principal.kind!='customer' or not ctx.principal.jwt:raise ApiError(401,'auth_required','Please sign in.')
     claims=await run_in_threadpool(auth.verify_token,ctx.principal.jwt.get_secret_value())
-    if not quality.is_admin(claims):raise ApiError(403,'admin_only','This page is for DemoBank administrators.')
+    if not quality.is_admin(claims):raise ApiError(403,'admin_only','This page is for UBS Connect administrators.')
     return ctx
 
 

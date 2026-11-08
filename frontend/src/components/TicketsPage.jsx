@@ -64,7 +64,6 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
       </section>
       {selected&&<RequestPanel key={selected.key} row={selected} onSupport={onSupport}/>}
     </div>}
-    <p className="page-note"><Icon name="shield"/>Demo service: references and statuses are synthetic. No real bank team works these requests.</p>
   </div>;
 }
 

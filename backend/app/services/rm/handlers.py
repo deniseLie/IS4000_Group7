@@ -11,7 +11,7 @@ approves through the existing write routes), and what needs judgement is written
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v7 + the intent's task file) with strict JSON output and cited record ids. A model
+3. One model call (prompt rm_assistant/v8 + the intent's task file) with strict JSON output and cited record ids. A model
    call's time follows the tokens it writes (docs/planning/rm-answer-speed.md), so the client reports (meeting_brief,
    client_overview, handover_brief, meeting_history) give the model a bounded set of facts (brief_facts.facts) and ask it
    only for the judgement parts; code writes the record sections. For

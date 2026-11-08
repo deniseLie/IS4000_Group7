@@ -3,7 +3,7 @@
 api/rm.py runs it only for a verified `rm` login (rm_caller); a client never reaches it.
 
 - planner: a fixed book check first (anyone outside the RM's book is refused and audited before any record is read or
-  the model is called, R06); then a workspace button's intent, or one rm_planner/v5 call. Each intent belongs to one of
+  the model is called, R06); then a workspace button's intent, or one rm_planner/v6 call. Each intent belongs to one of
   the three agents (Client, Requests, Calendar; registry.INTENT_AGENT), so the model picks an agent only for an `open`
   question; orchestrator.linked drops a link the specs do not declare.
 - agent: resolves the client, ticket or meeting against the book with the RM's own context, then runs the intent's

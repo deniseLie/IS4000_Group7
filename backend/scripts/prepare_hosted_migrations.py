@@ -1,4 +1,4 @@
-"""Prepare atomic SQL Editor batches for the existing DemoBank hosted project.
+"""Prepare atomic SQL Editor batches for the existing UBS Connect hosted project.
 
 Usage from backend/: python -m scripts.prepare_hosted_migrations --first 8 --last 12
 --output /private/tmp/demobank-0008-0012.sql. Inspect the existing schema first.

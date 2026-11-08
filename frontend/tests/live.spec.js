@@ -87,18 +87,18 @@ test('real AI understands a typo then follows a corrected topic',async({page},te
 });
 test('real AI admits unavailable fees and separates external education from bank policy',async({page},testInfo)=>{
  await page.goto('/');
- const fee=await ask(page,'What is the exact annual fee for the DemoBank Platinum card?',testInfo);
+ const fee=await ask(page,'What is the exact annual fee for the UBS Connect Platinum card?',testInfo);
  expect(fee.sources.map(s=>s.id)).toContain('cards');
  expect(fee.answer).not.toMatch(/\d/);
  expect(fee.answer).toMatch(/unavailable|cannot be confirmed|not (?:available|provided|supplied)|no .*record|don.t have/i);
  await page.getByRole('button',{name:'New chat',exact:true}).click();
- const policy=await ask(page,"Is the MoneySense credit card guidance DemoBank's own credit card policy?",testInfo);
+ const policy=await ask(page,"Is the MoneySense credit card guidance UBS Connect's own credit card policy?",testInfo);
  expect(policy.sources.map(s=>s.id)).toContain('sg-card-payments');
  expect(policy.answer).toMatch(/MoneySense/);
  expect(policy.answer).toMatch(/\bnot\b|\bno\b/i);
  await page.getByText('Sources',{exact:true}).click();
  await page.getByRole('button',{name:'Singapore credit card payments'}).click();
- await expect(page.getByRole('region',{name:'Source details'})).toContainText('Not a DemoBank product policy');
+ await expect(page.getByRole('region',{name:'Source details'})).toContainText('Not a UBS Connect product policy');
  await page.screenshot({path:'test-results/real-source-scope.png',fullPage:true});
 });
 for(const scenario of [

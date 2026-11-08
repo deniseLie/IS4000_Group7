@@ -23,8 +23,8 @@ def evidence_for(workspace: prechecks.Workspace,items: list[RequestedItem],as_of
         'precheck':next((report_evidence(report)
             for report in workspace.checks if report.item_id==item.item_id and prechecks.is_fresh(report,as_of)),None)} for item in items]
     return Evidence(id='document-prechecks',text=json.dumps({'records':rows},ensure_ascii=False),
-        publisher='DemoBank preliminary notice checks',scope='Recorded findings for current owned uploads only; never formal approval.',
-        source=Source(id='document-prechecks',title='Recorded preliminary document checks',url=None,version=as_of.isoformat(),publisher='DemoBank'))
+        publisher='UBS Connect preliminary notice checks',scope='Recorded findings for current owned uploads only; never formal approval.',
+        source=Source(id='document-prechecks',title='Recorded preliminary document checks',url=None,version=as_of.isoformat(),publisher='UBS Connect'))
 
 
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:

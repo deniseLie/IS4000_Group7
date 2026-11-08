@@ -1,4 +1,4 @@
-"""Zoom connector limited to DemoBank-linked synthetic meetings. Credentials never enter prompts or logs."""
+"""Zoom connector limited to UBS Connect-linked synthetic meetings. Credentials never enter prompts or logs."""
 from datetime import datetime,timedelta,timezone
 import json
 import logging
@@ -15,7 +15,9 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,SecretStr,StrictIn
 from filelock import FileLock,Timeout
 from app.schemas.zoom_scheduling import Cancellation
 
-PREFIX='DemoBank meeting '
+PREFIX='UBS Connect meeting '
+LEGACY_PREFIX='DemoBank meeting '  # meetings created before the UBS Connect name (8 Nov 2026) are still ours
+def ours(topic: str,meeting_id) -> bool:return topic in (PREFIX+str(meeting_id),LEGACY_PREFIX+str(meeting_id))
 
 class Token(BaseModel):
     model_config=ConfigDict(extra='ignore',frozen=True,hide_input_in_errors=True)
@@ -148,7 +150,7 @@ class Zoom:
         for _ in range(10):
             response=self.read('/users/me/meetings?'+urlencode({'type':'scheduled','page_size':300,**({'next_page_token':token} if token else {})}))
             if response.status_code!=200:raise ZoomFailure('Zoom creation reconciliation failed: HTTP '+str(response.status_code)+'; response='+response.text)
-            page=MeetingIndex.model_validate(response.json());matches.extend(item.id for item in page.meetings if item.topic==PREFIX+str(meeting_id))
+            page=MeetingIndex.model_validate(response.json());matches.extend(item.id for item in page.meetings if ours(item.topic,meeting_id))
             token=page.next_page_token
             if not token:break
         if token:raise ZoomFailure('Zoom reconciliation exceeded ten pages; inspect the registered synthetic meeting in Zoom before retrying')
@@ -180,7 +182,7 @@ class Zoom:
         if starts_at.utcoffset() is None or starts_at<=datetime.now(timezone.utc):raise ValueError('Zoom meeting requires a future timezone-aware start')
         topic=PREFIX+str(meeting_id)
         response=self.http.post('/users/me/meetings',json={'topic':topic,'type':2,'start_time':starts_at.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-          'duration':30,'timezone':'Asia/Singapore','agenda':'DemoBank synthetic meeting: discuss the agreed agenda.',
+          'duration':30,'timezone':'Asia/Singapore','agenda':'UBS Connect meeting: discuss the agreed agenda.',
           'settings':{'waiting_room':True,'join_before_host':False,'host_video':False,'participant_video':False,'use_pmi':False,'auto_recording':'none'}})
         if response.status_code!=201:raise ZoomFailure('Zoom create failed: HTTP '+str(response.status_code)+'; response='+response.text)
         meeting=Meeting.model_validate(response.json())
@@ -191,7 +193,7 @@ class Zoom:
         response=self.read('/meetings/'+str(provider_id))
         if response.status_code!=200:raise ZoomFailure('Zoom lab read failed: HTTP '+str(response.status_code)+'; response='+response.text)
         meeting=Meeting.model_validate(response.json())
-        if meeting.topic!=PREFIX+str(meeting_id):raise PermissionError('This Zoom meeting is outside the isolated prototype')
+        if not ours(meeting.topic,meeting_id):raise PermissionError('This Zoom meeting is outside the isolated prototype')
         return meeting
 
     def reschedule(self,provider_id: int,meeting_id: UUID,starts_at: datetime) -> Meeting:

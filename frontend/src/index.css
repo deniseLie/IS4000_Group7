@@ -26,7 +26,7 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .eyebrow { display: block; color: var(--muted); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; line-height: 1.5; }
 .small-rule { display: block; width: 26px; height: 2px; background: var(--red); }
 
-/* A quiet, typographic shell; DemoBank keeps its own identity. */
+/* A quiet, typographic shell; UBS Connect keeps its own identity. */
 .bank-chat-header { position: sticky; top: 0; z-index: 5; background: #fff; min-height: 64px; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
 .bank-chat-brand { display: flex; align-items: center; gap: 24px; }
 .brand-name { font-size: 24px; font-weight: 700; letter-spacing: -1.3px; white-space: nowrap; }
@@ -631,7 +631,7 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .answer-section .answer-text{font-size:14px;line-height:1.7}
 .block-card{margin-top:12px}
 
-/* ============ Bank-site theme: UBS colour palette, DemoBank identity ============ */
+/* ============ Bank-site theme: UBS colour palette, UBS Connect identity ============ */
 :root{--ink:#1C1C1C;--muted:#5A5D5C;--line:#E0DED6;--canvas:#F4F3EE;--chalk:#F9F9F7;--red:#E60000;--red-dark:#B30000;--tint:#FCEDEB;--ok:#2F7A3D;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--ink)}
 body{background:var(--chalk)}
 a,.source-link{color:#DA0000}a:hover,.source-link:hover{color:var(--red-dark)}
@@ -1641,7 +1641,7 @@ small{font-size:max(12px,.83em)}
 .chat-workspace:not([hidden]){animation:fade-in .25s var(--ease-out)}
 @keyframes page-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
-/* Loading: a red DemoBank card swipes through a reader slot (chosen 31 Oct). Skeletons still shimmer for lists. */
+/* Loading: a red UBS Connect card swipes through a reader slot (chosen 31 Oct). Skeletons still shimmer for lists. */
 .loading{position:relative;display:flex!important;align-items:center;min-height:36px;padding:6px 0 6px 84px;color:var(--muted);font-size:13px;animation:none}
 .loading::after{content:"";position:absolute;left:0;top:50%;width:70px;height:6px;margin-top:2px;border-radius:99px;background:var(--line);border:0;animation:none}
 .loading::before{content:"";position:absolute;left:0;top:50%;width:30px;height:20px;margin-top:-10px;border:0;border-radius:4px;z-index:1;
@@ -2844,3 +2844,110 @@ button.mrc-chip{cursor:pointer}button.mrc-chip:disabled{opacity:.45;cursor:defau
 .bank-chat-bubble .mrc .mrc-actions{margin-top:16px}
 .bank-chat-bubble .mrc [data-testid="offer-expiry"]{margin:10px 0 0}
 .bank-chat-bubble .mrc .mrc-foot{margin-top:16px;padding-top:12px}
+
+/* Before sign-in: the same welcome as the signed-in assistant, with a sign-in card in place of "For you right now". */
+.guest-signin{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.guest-signin-text strong{font-size:14px}
+.guest-signin ul{margin:6px 0 0;padding-left:18px;font-size:13.5px;color:var(--ink-2,#374151);line-height:1.7}
+.bank-chat-welcome .guest-help{border-top:0;padding-top:0;margin-top:16px}
+.bank-chat-welcome .guest-help>span{width:auto;font-weight:600;color:var(--muted);font-size:13px}
+.bank-chat-welcome .guest-help button{min-height:30px;padding:4px 12px;border-radius:999px;font-size:12.5px}
+.bank-chat-welcome .guest-help button:first-of-type{color:#fff;background:var(--red);border-color:var(--red)}
+/* Starter question cards have no icon: on small screens they stack as one column of text (signed in and guest). */
+@media (max-width:640px){.client-starters button{display:flex;flex-direction:column;gap:4px;min-height:0;padding:14px 40px 14px 14px}}
+
+/* Meeting reminders on Schedule: Today's row look, even padding, one button per row. */
+.mrem{padding:18px 22px}
+.mrem-head{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}.mrem-head h3{margin:0;font-size:15px}
+.mrem-list{list-style:none;margin:0;padding:0}
+.mrem-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.mrem-row:first-child{border-top:0}
+.mrem-row .rm-dot{margin-top:2px}
+.mrem-text{font-size:14px;min-width:0}.mrem-text .rm-type{margin-right:8px}
+.mrem-text small{display:block;margin-top:2px}
+.mrem-actions{display:flex;align-items:center;gap:12px}
+.mrem-actions .link-button{font-size:13px;color:var(--muted)}
+@media (max-width:640px){.mrem-row{grid-template-columns:auto 1fr}.mrem-actions{grid-column:2}}
+
+/* Client answers: no domain headings or disclaimer rows; sources folded like the RM side, without dates. */
+.answer-sources>summary[data-count]::after{content:" · " attr(data-count);color:var(--muted);font-weight:500}
+.answer-source-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.answer-urgent{display:inline-block;margin:0 0 6px;padding:1px 8px;border-radius:999px;background:#FEE2E2;color:#991B1B;font-size:11.5px;font-weight:700}
+.bank-chat-footer:empty{display:none}
+.answer-sources>.answer-source-chips{display:flex;margin:8px 0 0}.answer-source-chips .doc-src{font:inherit;font-size:11.5px;line-height:1.7}
+
+/* Several questions in one message: one answer card, parts numbered 1, 2, 3, sources once at the end. */
+.answer-sections.numbered{gap:0;padding:6px 18px 14px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.answer-sections.numbered>.answer-section{display:grid;grid-template-columns:auto 1fr;column-gap:12px;align-items:start;padding:14px 0;border:0;border-radius:0;background:none}
+.answer-sections.numbered>.answer-section+.answer-section{border-top:1px solid var(--line)}
+.answer-sections.numbered>.answer-section>*:not(.answer-part){grid-column:2}
+.answer-sections.numbered .answer-part{margin-top:2px}
+.answer-sections.numbered>.answer-sources{margin-top:4px}
+.answer-sections+.mrc{margin-top:12px}
+/* Sources like the RM side: numbered rows, the kind of source on the right, no dates. */
+.answer-source-list{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.answer-source-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;font-size:13.5px;color:var(--ink);text-align:left}
+button.answer-source-row{cursor:pointer}button.answer-source-row:hover{border-color:#9CA3AF}
+.answer-source-title{flex:1;min-width:0}
+.answer-source-row small{color:var(--muted);font-size:12px;white-space:nowrap}
+/* One Next line: the page link is a quiet pill first, the first question is the red one. */
+.bank-chat-bubble .follow-ups:not(.rm-options) button.follow-up-link,.bank-chat-bubble .follow-ups:not(.rm-options) button.follow-up-link:hover:not(:disabled){display:inline-flex;align-items:center;gap:5px;color:var(--ink);background:#fff;border-color:var(--line);font-weight:600}
+.bank-chat-bubble .follow-ups button.follow-up-link svg{width:12px;height:12px}
+.bank-chat-bubble .follow-ups:not(.rm-options) button.follow-up-link+button{color:#fff;background:var(--red);border-color:var(--red)}
+/* Sign-in card before login: more room inside, button aligned to the list. */
+.bank-chat-welcome .guest-signin{padding:20px 24px;gap:20px}
+.bank-chat-welcome .guest-signin ul{margin-top:8px}
+
+/* Answer footer: sources (opening in place) and the page this answer is about, on one row inside the answer. */
+.answer-foot{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 14px;margin-top:14px}
+.answer-foot:empty{display:none}
+.answer-foot>.answer-sources{margin:0;flex:1 1 100%}
+.answer-foot>.answer-sources:not([open]){flex:0 0 auto}
+.answer-page-link{border:0;background:none;padding:6px 2px;font:inherit;font-size:13.5px;font-weight:600;color:var(--red);cursor:pointer}
+.answer-page-link:hover{text-decoration:underline}
+.answer-source-list li.open>.answer-source-row{border-bottom-left-radius:0;border-bottom-right-radius:0;border-color:#9CA3AF}
+.answer-source-chev{color:var(--muted);font-size:11px;transition:transform .15s}
+.answer-source-list li.open .answer-source-chev{transform:rotate(180deg)}
+.answer-source-details{padding:10px 12px 12px;border:1px solid #9CA3AF;border-top:0;border-radius:0 0 8px 8px;background:#FAFAFA;font-size:13.5px;line-height:1.6}
+.answer-source-details p{margin:0 0 8px}.answer-source-details .source-notice,.answer-source-details .source-publisher{color:var(--muted);font-size:12.5px}
+
+/* Long request titles wrap inside their row instead of running past the card (client Requests and RM Ticket inbox). */
+.rm-inbox-list,.rm-inbox-row,.rm-inbox-pick,.rm-now-text,.mtg-row-text,.mrem-text{min-width:0}
+.rm-now-text strong,.rm-inbox-panel h3{overflow-wrap:anywhere}
+/* Room between a card and the next day heading (Schedule: reminders, then "Tomorrow · 9 Nov"). */
+.mrem{margin-bottom:24px}
+.rmw-page .rmw-card+h3,.rmw-page .rmw-card+.eyebrow{margin-top:24px}
+.rm-answer-foot{align-items:center;margin-top:12px}
+
+/* A thin divider between Sources and the page link: beside it while Sources is closed, a line above it once open. */
+.answer-foot{align-items:center}
+.answer-sources+.answer-page-link{border-left:1px solid var(--line);padding:4px 0 4px 14px;border-radius:0}
+.answer-sources[open]+.answer-page-link{flex:1 1 100%;border-left:0;border-top:1px solid var(--line);padding:12px 0 0;text-align:left}
+/* The page link always sits on its own row under the sources, after a full-width line (like the lines between parts 1, 2, 3). */
+.answer-foot .answer-page-link,.answer-sources+.answer-page-link,.answer-sources[open]+.answer-page-link{flex:1 1 100%;margin-top:4px;padding:12px 0 0;border:0;border-top:1px solid var(--line);border-radius:0;text-align:left}
+/* Page link row inside the answer: the page first, a second quiet action (Show review here) beside it. */
+.answer-page-links{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-top:4px;padding-top:12px;border-top:1px solid var(--line)}
+.answer-page-links .answer-page-link{flex:none;margin:0;padding:0;border:0}
+.answer-page-second{border:0;background:none;padding:0;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.answer-page-second:hover{text-decoration:underline}
+
+/* Next pills are all white (client, RM, guest "Need help now?", meeting card): none is singled out in red. */
+.bank-chat-bubble .follow-ups:not(.rm-options) button:first-of-type,
+.bank-chat-bubble .follow-ups:not(.rm-options) button.follow-up-link+button,
+.bank-chat-bubble .rm-next .rmw-mini:first-of-type,
+.bank-chat-welcome .guest-help button:first-of-type,
+.mrc-pill.main{color:var(--ink);background:#fff;border-color:var(--line);font-weight:500}
+.bank-chat-bubble .follow-ups:not(.rm-options) button:first-of-type:hover:not(:disabled),
+.bank-chat-bubble .rm-next .rmw-mini:first-of-type:hover:not(:disabled),
+.bank-chat-welcome .guest-help button:first-of-type:hover,
+.mrc-pill.main:hover{background:#FFF5F3;border-color:var(--red);color:var(--ink)}
+/* Every Next pill the same size and weight (the first one was bolder). */
+.bank-chat-bubble .follow-ups:not(.rm-options) button,.bank-chat-bubble .follow-ups:not(.rm-options) button:first-of-type,
+.bank-chat-bubble .rm-next .rmw-mini,.bank-chat-bubble .rm-next .rmw-mini:first-of-type,
+.bank-chat-welcome .guest-help button,.bank-chat-welcome .guest-help button:first-of-type,.mrc-pill,.mrc-pill.main{font-weight:400;font-size:13px;min-height:32px;padding:5px 13px}
+
+/* One look for buttons in a list of rows (Meeting reminders, Today, Home "for you", RM requests, RM assistant):
+   every row's action is the same white button with the same width, so the column lines up; Dismiss is a plain text link. */
+.mrem-actions .bank-chat-logout,.rm-today-row .bank-chat-logout{min-width:124px;justify-content:center}
+.mrem-actions .link-button{border:0;background:none;padding:4px 2px;min-height:0;box-shadow:none;color:var(--muted);font-size:13px;font-weight:500;text-decoration:none}
+.mrem-actions .link-button:hover{color:var(--ink);text-decoration:underline}

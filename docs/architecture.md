@@ -1,4 +1,4 @@
-# DemoBank system architecture (v5, as built)
+# UBS Connect system architecture (v5, as built)
 
 Status: **as built** (6 Nov 2026). This document describes the system that is in the code today, using the component names of the v3.1 proposal. [§10](#10-differences-from-the-v31-proposal) records how v4 differed from that proposal; §14 records the v5 redesign. The two workflows (client, relationship manager) are in `docs/workflows/`; one chat turn, step by step, is in [how-agents-run.md](how-agents-run.md). Coursework demo with synthetic data only.
 

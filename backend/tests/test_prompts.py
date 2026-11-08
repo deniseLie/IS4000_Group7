@@ -86,6 +86,19 @@ RELEASED[('brief_writer','v2')]='v2+74f98536'
 RELEASED[('brief_writer','v3')]='v3+8ff73d94'
 RELEASED[('brief_writer','v4')]='v4+03eb16f4'  # storyline: recorded dates, funding-options question (0140)
 
+# 8 Nov 2026: the product is named UBS Connect; each family below is its previous version with "DemoBank" renamed, nothing else.
+RELEASED[('answer','v4')]='v4+7c757bc5'
+RELEASED[('planner','v11')]='v11+e5506594'
+RELEASED[('guide','v3')]='v3+3eec8ebc'
+RELEASED[('accounts','v2')]='v2+50c6b0ab'
+RELEASED[('runner_common','v3')]='v3+9cc8694c'
+RELEASED[('retail','v12')]='v12+e2b249d0'
+RELEASED[('compliance','v8')]='v8+4c71d46e'
+RELEASED[('relationship','v8')]='v8+3ac41170'
+RELEASED[('document','v6')]='v6+d4f5ed2b'
+RELEASED[('rm_planner','v6')]='v6+08f9a7ff'
+RELEASED[('rm_assistant','v8')]='v8+ea931216'
+
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
 

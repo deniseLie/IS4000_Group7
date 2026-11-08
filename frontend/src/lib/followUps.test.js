@@ -109,3 +109,16 @@ test('rejected replies do not invent new banking follow-up actions',()=>{
   const failed={role:'assistant',content:'I could not verify this.',response_origin:'validation',source_check:'rejected'};
   assert.deepEqual(followUps({question:'Can I see my balance?',message:failed,signedIn:true}),[]);
 });
+
+test('request answers suggest request questions, a choice offers one tap per reference', () => {
+  const choice={role:'assistant',content:'I found 2 requests that could match. Which reference do you mean?\n• TCK-001090 · a · Submitted\n• TCK-001089 · b · Submitted'};
+  assert.deepEqual(followUps({question:'What is the status of my request?',message:choice,signedIn:true}),['What is the status of TCK-001090?','What is the status of TCK-001089?']);
+  const one={role:'assistant',content:'Your request TCK-001090 is recorded as Submitted.'};
+  const next=followUps({question:'What is the status of TCK-001090?',message:one,signedIn:true});
+  assert.ok(next.length&&next.every(text=>!/meeting|relationship manager/i.test(text)));
+});
+
+test('several questions in one message get one suggestion per part, in order', () => {
+  const message={role:'assistant',content:'a',sections:[{domain:'fraud',answer:'Your card is blocked.'},{domain:'compliance',answer:'Your review is due.'},{domain:'retail',answer:'Your statements are ready.'}]};
+  assert.deepEqual(followUps({question:'x',message,signedIn:true}),['What happens after I report a charge?','What do I still need to send for my review?','How do I get an older or certified statement?']);
+});

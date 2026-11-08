@@ -129,7 +129,7 @@ export function reportText(reply,client) {
   }
   for(const d of allDrafts(reply))lines.push(`Draft${d.client?` to ${d.client}`:''} (not sent):`,d.text,'');
   if(sources.length)lines.push('Sources',...sources.map((s,i)=>`[${i+1}] ${s.title}`));
-  lines.push('','AI-generated from DemoBank demo records. Check the sources before acting.');
+  lines.push('','AI-generated from your UBS Connect records. Check the sources before acting.');
   return lines.join('\n');
 }
 
@@ -441,16 +441,21 @@ const NEXT={
   today:[{label:'Brief me for my next meeting',message:'What meetings do I have in the next two weeks?',intent:'schedule'}],
   ticket_inbox:[{label:'Who should I follow up with?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'}],
   priorities:[{label:'Plan my day',message:'What’s on today?',intent:'today'}],
-  meeting_requests:[{label:'Answer in Schedule → Requests',navigate:'schedule'}],
+  meeting_requests:[{label:'Answer in Schedule → Requests',link:'Answer meeting requests',navigate:'schedule'}],
   schedule:[{label:'Meeting requests waiting',message:'Which meeting requests are waiting for me?',intent:'meeting_requests'}],
-  meeting_brief:[{label:'After the call: open the meeting page',navigate:'schedule'}],
+  meeting_brief:[{label:'After the call: open the meeting page',link:'Open the meeting page',navigate:'schedule'}],
   client_overview:[{label:'Brief me for her next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'},{label:'Draft a message',draft:'Draft a message to this client about '}],
   meeting_history:[{label:'Brief me for the next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'}],
   handover_brief:[{label:'Summarise this client',message:'Give me an overview of this client',intent:'client_overview'}],
   book_question:[{label:'Plan my day',message:'What’s on today?',intent:'today'}]};
 export function nextSteps(reply) {
   if(!reply||reply.status!=='ok'||reply.clarification)return [];
-  return NEXT[reply.intent]||[];
+  return (NEXT[reply.intent]||[]).filter(n=>!n.navigate&&!n.meetingPage);  // going to a page is a link inside the answer (pageStep)
+}
+// The page an answer points to ("Open Schedule · Requests"), shown inside the answer under its sources, like the client side.
+export function pageStep(reply) {
+  if(!reply||reply.status!=='ok'||reply.clarification)return null;
+  return (NEXT[reply.intent]||[]).find(n=>n.navigate||n.meetingPage)||null;
 }
 
 // Clarity pass (first-time users) -------------------------------------------------------------------------------------

@@ -116,10 +116,10 @@ async def savings_after_cards(spec: AgentSpec, task: PlanTask, ctx: RequestConte
             card_balances=[{'last4': digits(c, 'last4'), 'currency': 'SGD', 'outstanding': figure(money(c['outstanding']))} for c in owed],
             savings_total=sgd(kept), card_balances_total=sgd(paid), savings_after_paying=sgd(left), below_threshold=left < limit)
     else:body['not_checked'] = why
-    evidence.append(Evidence(id=SAVINGS_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='DemoBank',
+    evidence.append(Evidence(id=SAVINGS_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='UBS Connect',
         scope='Computed by code from the customer\'s own active savings accounts and card balances: savings minus every card\'s '
             'outstanding balance, against the amount she named. A plan, not a payment; balances change.',
-        source=Source(id=SAVINGS_SOURCE, title='Your savings after paying your cards', url=None, version=tools.today(ctx).isoformat(), publisher='DemoBank')))
+        source=Source(id=SAVINGS_SOURCE, title='Your savings after paying your cards', url=None, version=tools.today(ctx).isoformat(), publisher='UBS Connect')))
     if why is not None:return Derived()
     return Derived(exports={'below_threshold': Export(value=body['below_threshold'], source_ids=[account_source, card_source, SAVINGS_SOURCE])})
 
@@ -149,10 +149,10 @@ def check_failed(evidence: list[Evidence], question: str) -> dict[str, Export]:
 
 
 def trip_evidence(body: dict, ctx: RequestContext) -> Evidence:
-    return Evidence(id=TRIP_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='DemoBank',
+    return Evidence(id=TRIP_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='UBS Connect',
         scope='Dates computed by code from the customer\'s own card and loan records and the public holiday calendar; '
             f'today in Singapore is {tools.today(ctx).isoformat()}.',
-        source=Source(id=TRIP_SOURCE, title='Your due dates during your trip', url=None, version=tools.today(ctx).isoformat(), publisher='DemoBank'))
+        source=Source(id=TRIP_SOURCE, title='Your due dates during your trip', url=None, version=tools.today(ctx).isoformat(), publisher='UBS Connect'))
 
 
 async def trip_due_dates(spec: AgentSpec, task: PlanTask, ctx: RequestContext, evidence: list[Evidence], read: Reader) -> Derived:

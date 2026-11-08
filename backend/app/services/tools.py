@@ -51,14 +51,14 @@ class ToolLimitExceeded(PolicyDenied):
 
 
 async def knowledge_search(query: str,k: int=4) -> dict[str,Any]:
-    """Search approved DemoBank knowledge (public scope). Returns cited sections."""
+    """Search approved UBS Connect knowledge (public scope). Returns cited sections."""
     ctx=_ctx()
     with data_api.connect(ctx) as db:sections=await kb.search(KnowledgeQuery(query=query,scope='public',k=k),ctx,db)
     return {'items':[item.model_dump(mode='json') for item in sections]}
 
 
 async def knowledge_article(article_id: str) -> dict[str,Any]:
-    """One approved DemoBank article by id (published, in-review sections in anchor order); empty when retired or unknown."""
+    """One approved UBS Connect article by id (published, in-review sections in anchor order); empty when retired or unknown."""
     ctx=_ctx()
     with data_api.connect(ctx) as db:sections=await kb.get_article(article_id,ctx,db)
     return {'items':[item.model_dump(mode='json') for item in sections]}

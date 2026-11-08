@@ -74,7 +74,7 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,onRais
     {error&&<p role="alert">{error} These are your last loaded records.</p>}
     {waiting.length>0&&<section className="ov-waiting" aria-label="Waiting for you" data-testid="overview-waiting"><div className="ov-waiting-head"><h2>Waiting for you</h2><span>{waiting.length} thing{waiting.length===1?'':'s'}</span></div>
       {waiting.map((x,i)=><div key={x.key} className="ov-waiting-row"><span className={`rm-dot ${x.tone}`} aria-hidden="true"/><span className="ov-waiting-text"><strong>{x.title}</strong><small>{x.why}</small></span>
-        <button className={i===0?'primary-button':'bank-chat-logout'} onClick={x.go}>{x.label}</button></div>)}</section>}
+        <button className="bank-chat-logout" onClick={x.go}>{x.label}</button></div>)}</section>}
     <div className="ov-balance"><div><span>Accounts (SGD)</span><strong data-testid="overview-total">{money(sgd)}</strong></div>
       {portfolio&&<div><span>Investments</span><strong>{money(portfolio.total_value,portfolio.currency)}</strong></div>}
       <small>As of {formatDateTime(records.accounts.as_of)}</small></div>
