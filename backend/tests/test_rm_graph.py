@@ -35,7 +35,7 @@ def reviews(n: int, due: str = '2026-11-30') -> list[dict]:
 @pytest.fixture
 def records(monkeypatch):
     """The RM's SQL reads, recorded with the agent that asked (and in data['args'] with the arguments); data['rows'] holds a
-    sample result (or a function of the arguments) per tool. The direct transport runs the real tools.call checks."""
+    sample result (or a function of the arguments) per tool. The real tools.call checks run, through MCP."""
     calls: list[tuple[str, str | None]] = []
     data = {'reviews': reviews(2), 'consent': True, 'outside': False, 'rows': {}, 'args': []}
     def tool(name):
@@ -56,7 +56,6 @@ def records(monkeypatch):
                 return {'data': {'consent_active': data['consent'], 'shared': shared if data['consent'] else []}, 'as_of': 'now'}
             return {'data': {}, 'as_of': 'now'}
         return read
-    monkeypatch.setattr(settings, 'tool_transport', 'direct')
     monkeypatch.setattr(tools, 'TOOLS', {**tools.TOOLS, **{n: tool(n) for n in tools.TOOLS if n.startswith('rm_')}})
     return calls, data
 
@@ -374,7 +373,7 @@ def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without
     shared = run('Give me an overview of Michelle', None)
     evidence = evidence_in(seen[-1])
     assert '5200' in evidence and LINE in evidence and '"shared": false' not in evidence
-    assert ('rm_transaction_insights', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view'}) in data['args']
+    assert ('rm_transaction_insights', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view', 'days': 90}) in data['args']  # days: the tool's default
     assert ('rm_talking_points', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view'}) in data['args']
     assert [s['record']['days'] for s in shared['sources'] if s['id'] == 'transaction-insights'] == [90]
     plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Mei Ling'}])

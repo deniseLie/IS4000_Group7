@@ -40,7 +40,6 @@ def served(monkeypatch):
             calls.append((name, args))
             return {'items': rows, 'call_id': str(uuid4())}
         return run
-    monkeypatch.setattr(settings, 'tool_transport', 'direct')
     monkeypatch.setitem(tools.TOOLS, 'my_cards', tool('my_cards', [CARD]))
     monkeypatch.setitem(tools.TOOLS, 'my_accounts', tool('my_accounts', []))
     monkeypatch.setitem(tools.TOOLS, 'my_transactions', tool('my_transactions', [TXN]))
@@ -79,7 +78,7 @@ def test_run_agent_refuses_before_reading(served):
 def test_a_known_intent_runs_exactly_its_default_reads_with_entity_arguments(served):
     got = Gathered()
     asyncio.run(default_reads(ACCOUNTS, task('transactions', 'Show my last 30 days', days=30), ctx(), got))
-    assert served == [('my_transactions', {'days': 30})]  # status entity missing: the tool's default
+    assert served == [('my_transactions', {'status': None, 'days': 30})]  # status entity missing: the tool's default (the MCP server fills it)
     assert [e.id for e in got.evidence] == ['my_transactions']
     records = json.loads(got.evidence[0].text)
     assert 'call_id' not in records and records['records'][0] == {**{k: TXN[k] for k in
@@ -91,8 +90,8 @@ def test_fixed_arguments_limits_and_the_question_as_knowledge_query(served):
     asyncio.run(default_reads(ACCOUNTS, task('transfer_status', 'Where is my transfer?'), ctx(), got))
     asyncio.run(default_reads(ACCOUNTS, task('card_fees', 'What is the annual fee?'), ctx(), got))
     asyncio.run(default_reads(ACCOUNTS, task('transactions', 'Everything'), ctx(), got))
-    assert served == [('my_transactions', {'status': 'pending', 'days': 90}), ('my_accounts', {}),
-        ('my_cards', {}), ('knowledge_search', {'query': 'What is the annual fee?'}), ('my_transactions', {'days': 90})]
+    assert served == [('my_transactions', {'status': 'pending', 'days': 90}), ('my_accounts', {}),  # as validated by the MCP server
+        ('my_cards', {}), ('knowledge_search', {'query': 'What is the annual fee?', 'k': 4}), ('my_transactions', {'status': None, 'days': 90})]
     assert [e.id for e in got.evidence] == ['my_transactions', 'my_accounts', 'my_cards', 'my_transactions-2']
     assert 'customer_id' not in got.evidence[2].text and '"card_id"' not in got.evidence[2].text  # field view
     assert [entry['tool'] for entry in got.log] == ['my_transactions', 'my_accounts', 'my_cards', 'knowledge_search', 'my_transactions']
@@ -101,7 +100,7 @@ def test_fixed_arguments_limits_and_the_question_as_knowledge_query(served):
 def test_reads_beyond_the_limit_or_unavailable_become_notes_never_records(served, monkeypatch):
     got = Gathered()
     asyncio.run(default_reads(ACCOUNTS, task('transactions', 'This year', days=365), ctx(), got))
-    assert ('my_transactions', {'days': 365}) not in served and got.evidence[0].id == 'my_transactions-limit'
+    assert not any(name == 'my_transactions' and args.get('days') == 365 for name, args in served) and got.evidence[0].id == 'my_transactions-limit'
     async def down(**args):raise external.ExternalError('fx_rate', 'timeout')
     async def broken(**args):raise RuntimeError('database down')
     monkeypatch.setitem(tools.TOOLS, 'fx_rate', down)

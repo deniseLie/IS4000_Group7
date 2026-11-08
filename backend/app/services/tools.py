@@ -1,9 +1,10 @@
 """Local tool layer (F21): each tool is one audited service call with the caller's own RequestContext.
 
-Agents reach these tools directly (TOOL_TRANSPORT=direct, the default) or through the Model Context Protocol
-(TOOL_TRANSPORT=mcp): app/mcp_server.py exposes the same functions as an MCP server, used in-process by the
-orchestrator and over stdio by external MCP clients (python -m scripts.mcp_server). Either way, policy
-(require_permission), JWT + RLS and audit are applied inside the tool, never by the caller or the model.
+Every read that feeds a model or an agent's rules is a tool here and goes through call(), which checks the agent's
+spec (require_tool, bounded, shaped) and sends the call through the Model Context Protocol: app/mcp_server.py serves
+these functions in-process (one shared client per event loop), and over stdio to external MCP clients
+(python -m scripts.mcp_server). Policy (require_permission), JWT + RLS and audit run inside the tool, never in the caller
+or the model. Writes are not tools: actions, offers, approved RM writes, uploads and insight actions call their services.
 """
 import inspect
 from collections import Counter
@@ -11,12 +12,12 @@ from collections.abc import Awaitable,Callable,Iterator
 from contextlib import contextmanager
 from datetime import date,timedelta
 from contextvars import ContextVar
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 from pydantic import JsonValue
 from app.core import data_api
-from app.core.config import settings
 from app.core.observability import span
 from app.schemas.contracts import RequestContext,ToolResult,ToolView
 from app.schemas.customer_data import CustomerEnvelope
@@ -301,6 +302,7 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
     'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts,'rm_transaction_insights':rm_transaction_insights,
     'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests}
+SERVED=MappingProxyType(dict(TOOLS))  # the MCP server's tool list and schemas; a call runs TOOLS[name] (tests may swap one)
 
 
 def project(value: Any,fields: frozenset[str]) -> Any:
@@ -363,10 +365,10 @@ def meeting_call(name: str,meeting: UUID | None,ctx: MeetingAccess) -> Iterator[
 
 
 async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
-    """The one way agents call a tool. The transport is a setting; the tool, policy and audit are the same.
+    """The one way agents and rules call a tool: as an MCP tools/call (app/mcp_server.py) with the caller's context.
     A v5 agent (registry.spec_for) may call only its spec's tools, within its limits, and receives only its field view."""
     if name not in TOOLS:raise KeyError(f'Unknown tool {name}')
-    with span('tool_call','tool',tool=name,agent=ctx.agent,transport=settings.tool_transport) as facts:
+    with span('tool_call','tool',tool=name,agent=ctx.agent,transport='mcp') as facts:
         try:
             require_tool(name,ctx)
             spec=registry.spec_for(ctx.agent)
@@ -375,17 +377,12 @@ async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,An
         except PolicyDenied as error:
             facts.update(allowed=False,reason='limit' if isinstance(error,ToolLimitExceeded) else str(error).rsplit(': ',1)[-1][:40]);raise
         facts['allowed']=True
-        token=TOOL_CTX.set(ctx)
-        try:
-            if settings.tool_transport=='mcp':
-                from app.mcp_server import call_in_process
-                result=await call_in_process(name,args)
-            else:result=await TOOLS[name](**args)
+        from app.mcp_server import call_in_process
+        try:result=await call_in_process(name,args,ctx)
         except rm_records.RmDenied:
             facts.update(allowed=False,reason='not_in_book');raise
         except PolicyDenied as error:
             facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1][:40]);raise
-        finally:TOOL_CTX.reset(token)
         facts.update(result_facts(name,args,result))
     return shaped(result,view) if view is not None else result
 
