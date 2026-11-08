@@ -102,6 +102,34 @@ def test_deleting_a_topic_offers_insight_delete_for_the_point_she_has(records):
     assert found.proposals==[] and found.result.text==consent_answers.NO_TOPIC.format(rm='Sophie',topic='insurance')
 
 
+def test_stopping_meeting_recording_offers_a_request_to_the_data_protection_team(records):
+    """0146: recording is on under the meeting notice, so the chat offers a consent_withdrawal ticket, never a revoke."""
+    for text in ('Please stop recording my meetings','I don’t want my meetings with Sophie recorded','Do not record my calls',
+            'I want to opt out of meeting recording','Withdraw my consent for recording my meetings'):
+        found=ask(text)
+        [offer]=found.proposals
+        assert (offer.type,offer.agent,offer.target)==('ticket.create','relationship',consent_answers.RECORDING_REQUEST),text
+        assert '10 business days' in found.result.text and 'Sophie Lim' in found.result.text and 'Nothing changes until they reply' in found.result.text
+        assert found.evidence[0].id=='consent-sharing' and 'Sophie Lim' not in found.evidence[0].text
+    records['sharing']=sharing(rm=False)
+    assert ask('Stop recording my meetings').proposals[0].type=='ticket.create'  # a request to the bank, whoever her RM is
+    for text in ('Do you record my meetings?','Please record my next meeting','Don’t forget to record the meeting',
+            'I don’t need a record of that','Stop sharing my records'):
+        found=ask(text)
+        assert found is None or all(p.type!='ticket.create' for p in found.proposals),text
+
+
+def test_the_relationship_agent_may_offer_the_request_only_with_her_confirmation():
+    from app.services.agents import registry
+    from app.services.authorization import decide
+    ctx=context().request.model_copy(update={'agent':'relationship'})
+    assert decide(ctx.principal,'ticket.create',{'customer_id':ctx.principal.customer_id},ctx).obligations==['require:confirmation']
+    assert 'ticket.create' in registry.CHAT_SPECS['relationship'].offers
+    req=ChatRequest(messages=[{'role':'user','content':'Please stop recording my meetings with Sophie'}],mode='personal')
+    risk=assess_request(req)
+    assert [(t.agent,t.intent) for t in orchestrator.overridden(orchestrator.rule_plan(req,risk,req.messages),risk)]==[('relationship','consent')]
+
+
 def test_a_meeting_request_carries_optional_grants_for_what_she_does_not_share_yet(records):
     found=asyncio.run(consent_answers.meeting_shares('t1',context().request))
     assert [(p.type,p.chained,p.task_id,p.target['category'],p.target['until']) for p in found]==[('consent.grant',True,'t1','chat_topics','request')]
