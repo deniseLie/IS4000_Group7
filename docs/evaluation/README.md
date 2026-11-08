@@ -322,7 +322,7 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
 
 ### 9. RM answer speed (6 Nov 2026, `rm_assistant/v6`)
 
-What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-built-6-nov-2026). Every run below is on the hosted project, `CHAT_TRANSPORT=claude`, `CLAUDE_MODEL=haiku`, judge `sonnet`, with the **default** limits: `LLM_REQUEST_TOKEN_BUDGET=24000` and the 90 s CLI timeout. Times are the `/rm/assistant` request or the case's target run, without the judge. Token counts are the CLI's: input includes cached prompt reads, and output includes thinking, which the CLI does not report separately (`answer_chars` on the `llm` span is the size of the answer itself).
+What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-built-6-nov-2026). Every run below is on the hosted project, `CHAT_TRANSPORT=claude`, `CLAUDE_MODEL=haiku`, judge `sonnet`, with the **default** limits: `LLM_REQUEST_TOKEN_BUDGET=24000` and the 90 s CLI timeout. Times are the `/rm/assistant` request or the case's target run, without the judge. Token counts are the CLI's: input includes cached prompt reads, and output includes thinking. These runs predate the `thinking_tokens` count on the `llm` span (7 Nov), so only `answer_chars`, the size of the answer itself, was recorded with them.
 
 **R22 before and after**
 
@@ -357,7 +357,7 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 **Against slice 1–3's "done when"**
 - R22 passes on the default budget and timeout: **met**.
 - R04 passes and the judge's follow-ups gap is closed: **met**.
-- "Each client-report call writes under 4k output tokens": **met** for the overview (2.7k), the questions and the follow-ups (1.1–2.5k). **Not met** for the brief (4.3–8.2k), the handover (3.1–4.6k) and today (5.8k). Their answers are 1.8–2.2k characters; the rest is thinking.
+- "Each client-report call writes under 4k output tokens": **met** for the overview (2.7k), the questions and the follow-ups (1.1–2.5k). **Not met** for the brief (4.3–8.2k), the handover (3.1–4.6k) and today (5.8k). Their answers are 1.8–2.2k characters; the rest is thinking. Re-running R22's saved brief and follow-ups prompts once through the same CLI command (7 Nov) gave the split: brief 7.8k in, 4.9k out of which 3.9k thinking (80%), answer 2,281 characters; follow-ups 6.0k in, 2.2k out of which 1.8k thinking (82%), answer 974 characters.
 - R05 is a manual case and was not run.
 
 **Judge 0.5s not caused by this change**
