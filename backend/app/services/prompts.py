@@ -14,8 +14,8 @@ ORDER = ('system', 'format', 'public_only')  # digest order; keeps the ids of re
 # with its prompt-log entry and edit the version here. The meeting agents keep theirs in registry.MEETING_SPECS (in_use adds them).
 VERSIONS = {
     'answer': 'v4',  # the v1 pipeline's one model call (llm.answer_request)
-    'planner': 'v11',  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3)
-    'guide': 'v3', 'accounts': 'v2',  # the v5 runner agents (runner.PROMPTED)
+    'planner': 'v12',  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3); v12: no currency entities (8 Nov)
+    'guide': 'v4', 'accounts': 'v3',  # the v5 runner agents (runner.PROMPTED); v4/v3 (8 Nov): no FX or holiday tools
     'runner_common': 'v3',  # the runner's shared answer contract and step format (v2: never restate her own figures, C12)
     'retail': 'v12',
     'compliance': 'v8',  # v7 (batch 3, P05): her account list from Accounts (input-account_refs) is citable

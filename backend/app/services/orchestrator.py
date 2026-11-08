@@ -2,7 +2,7 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-urgent card and login wording, an explicit request for a person, greetings), then one planner/v11 call, then the rule
+urgent card and login wording, an explicit request for a person, greetings), then one planner/v12 call, then the rule
 overrides and a plan check against registry.CHAT_SPECS. Each task runs on its agent through runner.run_agent, except an
 urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
 offer from code, never the model (build plan 2b: there is no Security agent). Agents never

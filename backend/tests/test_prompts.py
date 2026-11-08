@@ -98,6 +98,10 @@ RELEASED[('relationship','v8')]='v8+3ac41170'
 RELEASED[('document','v6')]='v6+d4f5ed2b'
 RELEASED[('rm_planner','v6')]='v6+08f9a7ff'
 RELEASED[('rm_assistant','v8')]='v8+ea931216'
+# 8 Nov 2026: the public holiday and FX tools are removed; each is its previous version without their lines.
+RELEASED[('accounts','v3')]='v3+ccdade61'
+RELEASED[('guide','v4')]='v4+eb11931a'
+RELEASED[('planner','v12')]='v12+77ebe779'
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
