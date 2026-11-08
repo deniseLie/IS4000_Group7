@@ -452,7 +452,7 @@ The request summary (`observability.request_facts`) adds side, role, tool calls,
 
 #### 5.7.4 Authorisation & Consent Service
 - **Category:** Attribute-based authorisation + consent check.
-- **Responsibility & boundaries:** `decide(subject, action, resource, context)` is pure; `require_permission` audits each decision (`policy.decided`) and raises on deny. Unknown tools, scope mismatches and staff operations from customer/agent paths are denied. `has_consent` checks exact purpose/recipient/category coverage, revocation and wall-clock expiry under JWT + RLS. Grants and revocations are written only by confirmed actions. RM reads of consent-gated categories are checked inside SQL by `rm.consent_active` (§15).
+- **Responsibility & boundaries:** `decide(subject, action, resource, context)` is pure; `require_permission` audits each decision (`policy.decided`) and raises on deny. Unknown tools, scope mismatches and staff operations from customer/agent paths are denied. `has_consent` checks exact purpose/recipient/category coverage, revocation and wall-clock expiry under JWT + RLS. Grants and revocations are written only by confirmed actions. RM reads of consent-gated categories are checked inside SQL by `rm.consent_active` (§15). The PDPA obligations this service is built to, how each is met and what is not built: [PDPA baseline](pdpa-baseline.md).
 
 | Part | Built as |
 |---|---|
@@ -1076,7 +1076,7 @@ Agreed additions to the seam ([build plan](planning/rm-copilot-build-plan.md), p
 
 ### 15.2 Consent v2 (agreed 5 Nov 2026, build plan phase 6, 0109–0114; built 5 Nov 2026)
 
-The client decides per category what her RM may see, for how long, and can take it back. Grants are per RM (recipient = `advisor_id`) under the `rm_brief` purpose; `rm.consent_active` stays the only check, made scope-aware. Revoking or expiry **stops access at once**; anything that must be deleted is soft-deleted and purged within 7 days.
+The client decides per category what her RM may see, for how long, and can take it back. The PDPA rules this follows, and the gaps, are in the [PDPA baseline](pdpa-baseline.md). Grants are per RM (recipient = `advisor_id`) under the `rm_brief` purpose; `rm.consent_active` stays the only check, made scope-aware. Revoking or expiry **stops access at once**; anything that must be deleted is soft-deleted and purged within 7 days.
 
 **Built 5 Nov 2026.** 6c (transcript revoke) shipped on the meeting side as `meeting_transcript_revoke` (`0122`, §15.3) instead of a ledger action, so `0111` stays unused.
 - **0109:** grants with a scope and an end (`until`): a date up to 12 months ahead, until a meeting ends, or until a meeting request is answered (then until the meeting it becomes). One grant per category and RM, at most `max_months` back, only to her current RM and under the current notice. `rm.consent_scope(customer, category, advisor)` returns the scope and the gated readers filter by it in SQL. Also `consent.categories`, the renewal notice 7 days before a dated end, notice-based recording, reassignment ending access, and `customer_read_consent_sharing` (`GET /consent/sharing`).
@@ -1097,7 +1097,7 @@ The client decides per category what her RM may see, for how long, and can take 
 
 **Briefs and what was already shown (target, with the Brief Writer).** A brief stores references and `grants_used`, never copies of gated data, and re-checks consent and deletions when it is opened. A removed item renders as *Removed by client on <date>*; an AI suggestion that rested only on removed items is dropped. Shared client packs and approved minutes are not rewritten; if the topic behind a pack was removed, the RM sees a flag.
 
-**Deletion practice.** Access stops at once; purge within 7 days by a worker job (audited `data.insight_purged`, and `document.meeting_transcript_purged` for transcripts since 0122; ids only). A *delete all my data* request becomes a ticket with a 10-business-day target. Background: PDPA asks for a "reasonable time" (the PDPC consulted on 10 business days in 2018, not a fixed rule); GDPR allows one month; the Australian CDR says as soon as practicable.
+**Deletion practice.** Access stops at once; purge within 7 days by a worker job (audited `data.insight_purged`, and `document.meeting_transcript_purged` for transcripts since 0122; ids only). A *delete all my data* request becomes a ticket with a 10-business-day target. Background: the PDPA has no right to erasure; withdrawing consent does not oblige the bank to delete (Guidelines ¶12.54), and keeping data is governed by retention limitation (s25). The 10 business days reuse the PDPC's rule of thumb for a withdrawal notice, at least 10 business days (¶12.41, a guideline, not a fixed rule); GDPR allows one month; the Australian CDR says as soon as practicable. The rules and how each is met: [PDPA baseline](pdpa-baseline.md).
 
 ### 15.3 Meeting lifecycle (explicit runtime opt-in)
 

@@ -3,7 +3,8 @@
 *Stop using my data* (`consent_withdrawal`, migration 0146) is how a client asks DemoBank to stop using her personal data
 for something the Data sharing switches do not cover, such as recording her meetings. The **Data protection team** owns
 these requests and works them from the Supabase SQL editor as the project owner. There is no staff role and no screen,
-the same as *Delete all my data* (`data_deletion`, 0113). Synthetic data only.
+the same as *Delete all my data* (`data_deletion`, 0113). Synthetic data only. The PDPA rules behind each step are in the
+[PDPA baseline](../pdpa-baseline.md#withdrawing-consent).
 
 The Data sharing switches are not part of this. Switching off transaction insights or chat insights on Data sharing (or
 confirming the chat's offer) stops access **at once**, with a receipt in Activity and no ticket.
@@ -16,9 +17,10 @@ confirming the chat's offer) stops access **at once**, with a receipt in Activit
 | The client in chat | "Stop recording my meetings": the assistant offers the request and records it only when she confirms | `chat` |
 | Her RM | A service request from a client note: the assistant drafts it, the RM confirms she checked the client's identity and approves it (`POST /rm/requests`, `rm_create_service_request`). The client gets an Inbox notice with the reference | `rm` |
 
-Her RM sees the request under *Specialist* in her ticket list and can send her messages on it, but cannot change its
-status (`rm_send_client_update` refuses a status on a ticket her RM does not own). The target is **10 business days**
-(PDPC Advisory Guidelines on Key Concepts, 12.41). If it will take longer, tell her when it takes effect.
+Her RM sees the request in Follow-ups under *Specialist-managed, for awareness* and can send her messages on it, but cannot change its
+status (`rm_send_client_update` refuses a status on a ticket her RM does not own). The target is **10 business days**:
+the PDPC treats a withdrawal notice of at least 10 business days as reasonable (Advisory Guidelines on Key Concepts,
+¶12.41). If it will take longer, tell her when it takes effect.
 
 ## Steps in the SQL editor
 
