@@ -1,8 +1,8 @@
 // CR2: the page a personal question is about, so the answer can end with a "Go to …" button. Typo-tolerant on purpose.
 const LINKS=[
   ['meetings',/\b(?:meetings?|appointments?|book(?:ing)? a (?:time|slot))\b/i,'Go to Meetings'],
-  ['requests',/\b(?:requests?|tickets?|tck-\d+)\b/i,'Go to My requests'],
-  ['compliance',/\b(?:compliance|kyc|review|documents?|docs?|upload|proof of address|source of wealth|tax residency)\b/i,'Go to Compliance review'],
+  ['requests',/\b(?:requests?|tickets?|tck-\d+)\b/i,'Go to Requests'],
+  ['compliance',/\b(?:compliance|kyc|review|documents?|docs?|upload|proof of address|source of wealth|tax residency)\b/i,'Go to Periodic review'],
   ['inbox',/\b(?:inbox|reminders?|notifications?)\b/i,'Go to Inbox'],
   ['cards',/\b(?:cards?|crads?|cadr|credit limit|annual fee|minimum payment|min payment)\b/i,'Go to Cards'],
   ['loans',/\b(?:loans?|mortgage)\b/i,'Go to Loans'],

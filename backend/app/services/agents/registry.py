@@ -155,7 +155,7 @@ RM_CLIENT=AgentSpec(name='rm_client',role='rm',scope='rm_book',prompt='rm_assist
         'meeting_brief':(PROFILE,NOTES,Read(tool='rm_shared_summary'),Read(tool='rm_cash_events'),
             gated('rm_transaction_insights','meeting_prep'),gated('rm_talking_points','meeting_prep')),
         'handover_brief':(Read(tool='rm_handover_sources'),),'shared_note':(Read(tool='rm_shared_summary'),),
-        'reviews':(Read(tool='rm_review_status'),),'book_question':(Read(tool='rm_book_facts'),),'help':()},
+        'reviews':(Read(tool='rm_review_status'),),'book_question':(Read(tool='rm_book_facts'),),'help':(),'follow_up':()},
     loop_tools=frozenset({'rm_client_profile','rm_meeting_notes','rm_review_status','rm_book_facts'}),
     exports={'client_ref':'client_ref','latest_note':'reference','reviews_due':'list[client_ref]','clients_due':'list[client_ref]','consent_active':'bool'},
     sort_by={'reviews_due':'due_date','clients_due':'due_date'})

@@ -58,7 +58,7 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
     const preview=previews[item.session_id],mine=item.session_id===current;
     return <li key={item.session_id}><button className={`saved-chat-button ${mine?'current':''}`} disabled={opening}
       data-testid="saved-chat" data-conversation-id={item.session_id} onClick={async()=>{setOpening(true);setError('');try{await onOpen(item);}catch(failure){if(failure.name!=='AbortError')setError(failure.message);}finally{setOpening(false);}}}>
-      <span className="saved-chat-when"><strong>{when(item.last_active_at)}</strong>{mine?<em>Current</em>:<Icon name="chevron"/>}</span>
+      <span className="saved-chat-when"><strong>{when(item.last_active_at)}</strong><Icon name="chevron"/></span>
       <span className="saved-chat-title">{preview?.title||'Chat'}</span>
       <span className="saved-chat-sub">{preview?.detail||item.language}{item.active_turn_id?' · Reply pending':''}</span></button></li>;
   };
@@ -70,8 +70,7 @@ export default function SavedChats({current,closing=false,onClose,onOpen,onLoade
       {!sessions&&!error&&<div className="loading-list" role="status" aria-label="Loading saved chats">{[0,1,2,3].map(key=><span key={key} className="skeleton-card"/>)}</div>}
       {error&&<p role="alert">{error}</p>}
       {sessions?.length===0&&<p className="saved-empty" data-testid="saved-chats-empty">No saved chats yet.</p>}
-      {active.length>0&&<><h3 className="saved-group">Active session</h3><ul className="saved-chats-list">{active.map(row)}</ul></>}
-      {previous.length>0&&<><h3 className="saved-group">{active.length?'Previous chats':'Recent chats'}</h3><ul className="saved-chats-list">{previous.map(row)}</ul></>}
+      {sessions?.length>0&&<ul className="saved-chats-list">{[...active,...previous].map(row)}</ul>}
     </div>
     <p className="chat-history-foot">Your 50 most recent chats are saved, redacted, to your demo profile. Long chats reopen at their latest messages.</p>
   </aside></div>;

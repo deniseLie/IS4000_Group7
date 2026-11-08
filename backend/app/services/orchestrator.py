@@ -86,9 +86,9 @@ STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try 
 DONE = 'Done. You can see the receipt in Activity.'
 GRANTED = 'Done: {rm} can now see your {label} {until}. You can switch it off on Data sharing at any time.'
 GRANT_UNTIL = {'date': 'until {date}', 'meeting': 'until your meeting ends', 'request': 'until your meeting request is answered'}
-TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
+TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in Requests.'
 MEETING_SENT = ('Sent: your meeting request is with your relationship manager. They will answer by {respond_by} (Singapore time): '
-    'they accept one of your times, suggest another or reply in a message. You can follow it in My requests → Meetings.')  # 0106
+    'they accept one of your times, suggest another or reply in a message. You can follow it in the Meetings page.')  # 0106
 SHARED = ('Done: your relationship manager can now see “{line}”, and nothing else from this chat. You can remove it at any time '
     'under Data sharing.')  # 0108, lane 2
 LINKED = ' It is linked to your earlier request {reference}.'

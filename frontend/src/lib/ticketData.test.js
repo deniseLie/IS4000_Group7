@@ -12,7 +12,7 @@ test('tickets parse with their plain-language next step and reject tampered data
   assert.equal(ticket.reference,'TCK-001001');
   assert.match(nextStep(ticket),/No action needed from you\. The operations team will review it/);
   assert.match(nextStep({...ticket,status:'waiting_on_client',last_update:{...ticket.last_update,note:'Please upload proof of address.'}}),/proof of address/);
-  assert.match(nextStep({...ticket,overdue:true}),/past the operations team's target time/);
+  assert.match(nextStep({...ticket,overdue:true}),/past the operations team's promised time/);
   assert.throws(()=>parseTickets({data:[{...TICKET,status:'approved'}]}));
   assert.throws(()=>parseTickets({data:[TICKET,TICKET]}));
   assert.throws(()=>parseTickets({data:[{...TICKET,reference:'X-1'}]}));

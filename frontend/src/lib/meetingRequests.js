@@ -110,3 +110,26 @@ export function meetingRequestTarget({advisorId,purpose:text,topics:chosen,forma
   return {advisor_id:advisorId,purpose:cleaned,topics:[...new Set(chosen)].sort(),format:kind,
     preferred_times:[...new Set(picked)].sort((a,b)=>Date.parse(a)-Date.parse(b))};
 }
+
+// The chat's meeting request draft (services/agents/meeting_answers.py writes it in a fixed form) read back into fields
+// for the inline card: who, what it's about, topics, format and the times as labels ("Mon 16 Nov, 9:00 am").
+// Returns null when the text is not that form, so the reply is shown as plain text with its Confirm and Cancel.
+export function parseMeetingDraft(text) {
+  const value=String(text||'');
+  const rm=value.match(/send your relationship manager, (.+?), this meeting request:/);
+  const about=value.match(/What it[’']s about: “([^”]*)”/),topics=value.match(/• Topics: ([^\n]+)/),format=value.match(/• Format: ([^\n]+)/);
+  const times=value.match(/• Times that suit you \(Singapore time\): ([^\n]+)/);
+  if(!rm||!about||!topics||!format||!times)return null;
+  const byLabel=Object.fromEntries(Object.entries(TOPICS).map(([code,label])=>[label.toLowerCase(),code]));
+  const formatCode=Object.entries({video:'video call',phone:'phone call',in_person:'in person'}).find(([,label])=>label===format[1].trim().toLowerCase())?.[0]||'video';
+  return {rm:rm[1].trim(),note:value.slice(0,rm.index).replace(/I can\s*$/,'').trim(),purpose:about[1].trim(),
+    topics:topics[1].split(',').map(label=>byLabel[label.trim().toLowerCase()]).filter(Boolean),format:formatCode,
+    times:times[1].split(';').map(label=>label.trim()).filter(Boolean)};
+}
+
+// The same label the chat uses for a free time (Singapore time), so a drafted time can be matched to a free slot.
+export function slotLabel(value) {
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Singapore',weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit',hour12:true})
+    .formatToParts(new Date(value)).map(p=>[p.type,p.value]));
+  return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute} ${String(parts.dayPeriod).toLowerCase()}`;
+}

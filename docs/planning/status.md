@@ -1,4 +1,4 @@
-# Status (7 Nov 2026)
+# Status (8 Nov 2026)
 
 Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history). Both personas are built; the dated sections below are history, newest first.
 
@@ -33,6 +33,14 @@ Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
 | QA1 | Test case set (49 cases) | **Runnable / manual boundaries explicit** | [C01–C24, C11b, R01–R20 and R24–R27](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 17 runnable, 8 manual; RM: 17 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
+
+## Done on 8 Nov (client chat insights v2, naming, care pause retired; migrations 0143-0145, on hosted with 0142)
+
+What changed and how to check it: [chat-insights-changes-8-nov.md](chat-insights-changes-8-nov.md).
+- **Insights follow the conversation (0143, `talking_points/v2`):** a follow-up without the topic's name updates the insight while the topic is active in the chat; each topic can name a kind (HDB resale, ETFs, ...); her own words that a plan is off put it on hold, hidden from her RM until she mentions it again. Live: conversations 15 of 15 against v1's 11 of 15, no false insights or false on hold.
+- **Naming (0144):** *Chat insights* on her pages, *Client chat insights* on the RM side; code keeps `talking_points`.
+- **Care pause retired (0145):** a care message no longer pauses chat insights; open pauses ended (audited), `customer_pause_suggestions` dropped; the care flag and its *Talk to a person* chip are unchanged. Care cases C01-C04 and CV09 removed from the evaluation (57 messages, 14 conversations).
+- **Hosted:** batches 48 (0142) and 49 (0143-0145) applied in the SQL editor; recorded SQL matches the files. The backend and frontend must run `main`.
 
 ## Done on 7 Nov (storyline alignment and Brief Writer; migrations 0115-0117, 0118)
 

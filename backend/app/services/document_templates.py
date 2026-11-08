@@ -111,6 +111,16 @@ class Template:
 
 
 TEMPLATES=(
+    # Storyline scene 1: the signed agreement for Michelle's Bangkok property, asked because the sale money was paid in.
+    # Listed first so its instructions are not taken for another document.
+    Template('sale_agreement','Property sale agreement',re.compile(r'\bsale (?:and purchase )?agreement\b|\bsale and purchase\b',re.I),
+        ('The names of the seller and the buyer','The property address','The sale price and currency','The date of the sale',
+         'The signatures of both sides, on every page that needs them'),
+        ('SALE AND PURCHASE AGREEMENT  ·  Condominium unit','Seller: NG MICHELLE  ·  Buyer: (buyer’s full name)',
+         'Property: Unit 12/34, Example Residence, Sukhumvit Road, Bangkok 10110','Sale price: THB 18,500,000  ·  Date of sale: 14 Aug 2026',
+         'Signature: ____________ (Seller)   Signature: ____________ (Buyer)','Page 1 of 6'),
+        ('Upload every page as one PDF, including the signature pages.',
+         'If the agreement is in Thai, add an English translation in the same PDF.')),
     Template('proof_address','Proof of residential address (Singapore)',re.compile(r'\baddress\b|\butility\b',re.I),
         ('Your full name, as on your bank records','Your Singapore residential address, including the 6-digit postal code',
          'The company that issued it (a utility, telco, town council or bank)','A bill or statement date within the last 3 months'),
@@ -181,6 +191,10 @@ def check(template: Template,text: str,pages: int | None,name: str,today: date,p
         if template.key=='tax_residency' and not re.search(r'\btax\b[^\n]{0,40}\b(?:residen|country)|\bTIN\b',text,re.I):missing('Your country of tax residence')
         if not dates:missing('The date you completed it')
         if not has_signature_text(text):missing('Your signature')
+    elif template.key=='sale_agreement':
+        if not re.search(r'\b(?:THB|SGD|USD|baht)\b|฿|\bprice\b',text,re.I):missing('The sale price and currency')
+        if not dates:missing('The date of the sale')
+        if not has_signature_text(text):missing('The signatures of both sides')
     elif template.key=='identity':
         future=[value for value in all_dates(text) if value>today]
         if not future:findings.append(Finding(code='date_outdated',field='An expiry date that has not passed'))

@@ -362,7 +362,7 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
         ('rm_calendar', 'decide_request'), ('rm_calendar', 'availability_change'), ('rm_requests', 'open'), ('rm_client', 'help')]  # never a client agent
     task = graph.plan_schema()['properties']['tasks']['items']['properties']
     assert task['agent']['enum'] == ['', 'rm_calendar', 'rm_client', 'rm_requests'] and 'open' in task['intent']['enum']
-    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v5', 'v6')
+    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v5', 'v7')
 
 
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):
@@ -424,7 +424,7 @@ def test_an_open_question_loops_at_most_agent_tool_calls_times_and_says_when_it_
     reply, spans = traced('Which card limit requests are waiting on me, and what did the clients ask?')
     steps = [c for c in seen if c['title'] == 'agent_step']
     assert len(steps) == 3 and [n for n, a in calls if a == 'rm_requests'] == ['rm_tickets', 'rm_ticket', 'rm_followups']
-    assert all(c['prompt'].startswith('v6+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v6's step.md
+    assert all(c['prompt'].startswith('v7+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v7's step.md
     assert '"reason": "not_in_book"' in steps[2]['system']  # outside the book: refused by the SQL check and shown to the next step
     assert 'ticket-TCK-001001' in steps[1]['system'] and not any('zebra lantern' in c['system'] for c in steps)  # free text hidden from steps
     assert 'zebra lantern' in evidence_in(next(c for c in seen if c['title'] == 'rm_brief'))  # the answer step reads it as data

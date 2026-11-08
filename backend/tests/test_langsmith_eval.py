@@ -102,7 +102,7 @@ def test_handover_confirmation_requires_the_actual_visible_preview():
     question='Can my RM review my annual fee?'
     assert targets.handover_reply(rm_handover.preview(question))==rm_handover.SEND_REPLY
     assert targets.handover_reply(rm_handover.preview(question,existing='TCK-001234'))=='Add to TCK-001234'
-    assert targets.handover_reply('You can check TCK-001234 in My requests.') is None
+    assert targets.handover_reply('You can check TCK-001234 in Requests.') is None
 
 
 def test_dependency_checks():

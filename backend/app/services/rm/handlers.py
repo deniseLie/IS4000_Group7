@@ -11,7 +11,7 @@ approves through the existing write routes), and what needs judgement is written
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v6 + the intent's task file) with strict JSON output and cited record ids. A model
+3. One model call (prompt rm_assistant/v7 + the intent's task file) with strict JSON output and cited record ids. A model
    call's time follows the tokens it writes (docs/planning/rm-answer-speed.md), so the client reports (meeting_brief,
    client_overview, handover_brief, meeting_history) give the model a bounded set of facts (brief_facts.facts) and ask it
    only for the judgement parts; code writes the record sections. For
@@ -45,7 +45,7 @@ from app.services.rm.records import RmDenied
 SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
-    'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help',
+    'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help','follow_up':'follow_up',
     'meeting_requests':'meeting_requests','availability_change':'availability','open':'open','today':'today'}  # decide_request: a card from code, no model
 # Hidden reasoning per intent: one table, set by code, never by a model. Off for every RM answer: those tokens count against
 # MAX_TOKENS and vary per call (1,300-3,600 measured), so with reasoning on 7 of 11 QA1 RM cases and 3 of 5 call notes (R13) hit the
@@ -533,7 +533,7 @@ async def h_overview(t: Turn,plan,client_id):
     reads,ctx,name=[r['cash'],r['insights'],r['points']],t.context(client_id),t.name(client_id)
     if not wants_report(t,'client_overview',OVERVIEW):
         reply=brief_reply('client_overview',await t.model('client_overview',bundle,brief_schema(bundle.ids()),client_id,task='question'),bundle,ctx)
-        return with_asks(reply,ask_cards(reads,client_id,name,None))
+        return with_asks({**reply,'format':'answer'},ask_cards(reads,client_id,name,None))  # a direct question: a chat answer, not a report
     data=r['profile']['data']
     records=brief_facts.overview_sections(data,bundle)
     await t.show(brief_facts.in_order(records,brief_facts.OVERVIEW_ORDER),bundle)
@@ -564,7 +564,7 @@ async def h_history(t: Turn,plan,client_id):
     if not notes:bundle.add(ev.Evidence('notes-none','Meeting notes','record',{'notes_recorded':0},str(read.get('as_of')),client_id))
     ctx,name=t.context(client_id),t.name(client_id)
     if not wants_report(t,'meeting_history',HISTORY):
-        return brief_reply('meeting_history',await t.model('meeting_history',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx)
+        return {**brief_reply('meeting_history',await t.model('meeting_history',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx),'format':'answer'}
     records=brief_facts.history_sections(notes,withheld)
     order=[s['heading'] for s in records]+['Gaps to check']
     if not notes:
@@ -986,9 +986,44 @@ async def h_book(t: Turn,plan,client_id):
     return brief_reply('book_question',await t.model('book_question',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
 
 
+def chat_reply(intent: str,data: dict,bundle: ev.Bundle,context: dict) -> dict:
+    """A plain chat reply (help, follow-up questions): the checked summary is the answer and sections are optional, so a
+    short answer is not turned into a report or replaced by "couldn't verify". Facts in it must still be in the evidence."""
+    if data.get('status')=='needs_clarification' and (q:=(data.get('clarification_question') or '').strip()) and not checks.safety(q):
+        return {**clarify(q,[{'label':o,'message':o} for o in data.get('clarification_options') or [] if o.strip() and not checks.safety(o)],intent,context,'ai'),'origin':'ai'}
+    report=checks.Report()
+    sections=checks.check_sections(data.get('sections') or [],bundle,report,False)
+    summary=checks.check_summary(data.get('summary',''),bundle,report)
+    if not summary and not sections:
+        summary='I couldn’t answer that from your records or my last answer. Try asking about a client, a request or a meeting.'
+    cited=[i for s in sections for item in s['items'] for i in item['source_ids']]
+    return {'status':'ok' if summary or sections else 'unverified','intent':intent,'summary':summary,'sections':sections,'clarification':None,
+        'context':context,'sources':_sources(bundle,cited),'validation':report.as_dict(),'origin':'ai','format':'answer'}
+
+
 async def h_help(t: Turn,plan,client_id):
     bundle=ev.Bundle()
-    return brief_reply('help',await t.model('help',bundle,brief_schema([]),None),bundle,t.context(t.req.context.client_id))
+    return chat_reply('help',await t.model('help',bundle,brief_schema([]),None),bundle,t.context(t.req.context.client_id))
+
+
+def last_answer(req: RmAssistantRequest) -> str:
+    """The assistant's latest reply in this conversation (as the page sent it, redacted), for a follow-up question."""
+    turn=next((x for x in reversed(req.history) if x.role=='assistant' and x.content.strip()),None)
+    return redact(turn.content)[0][:6000] if turn else ''
+
+
+async def h_follow_up(t: Turn,plan,client_id):
+    """A question about the previous answer ("1 not known is what"): explained from that answer only (evidence
+    previous-reply), in one or two sentences. No records are read and nothing new is claimed."""
+    previous=last_answer(t.req)
+    context=t.context(t.req.context.client_id)
+    if not previous:
+        return {'status':'ok','intent':'follow_up','summary':'I don’t have an earlier answer in this chat to explain. Ask your question in full and I’ll check your records.',
+            'sections':[],'clarification':None,'context':context,'sources':[],'validation':checks.Report().as_dict(),'origin':'records'}
+    bundle=ev.Bundle()
+    bundle.add(ev.Evidence(id='previous-reply',title='My last answer',kind='record',data={'answer':previous}))
+    await t.say('Reading my last answer…')
+    return chat_reply('follow_up',await t.model('follow_up',bundle,brief_schema(bundle.ids()),None),bundle,context)
 
 
 # Calendar agent (build plan 3a) ---------------------------------------------------------------------------------------
@@ -1297,5 +1332,5 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
 
 HANDLERS={'ticket_inbox':h_inbox,'priorities':h_priorities,'reviews':h_reviews,'schedule':h_schedule,'client_overview':h_overview,
     'meeting_history':h_history,'meeting_brief':h_brief,'ticket_summary':h_ticket,'draft_message':h_draft,'document_interaction':h_document,
-    'actions_from_note':h_actions,'handover_brief':h_handover,'shared_note':h_shared,'book_question':h_book,'help':h_help,
+    'actions_from_note':h_actions,'handover_brief':h_handover,'shared_note':h_shared,'book_question':h_book,'help':h_help,'follow_up':h_follow_up,
     'meeting_requests':h_meeting_requests,'decide_request':h_decide,'availability_change':h_availability,'today':h_today}

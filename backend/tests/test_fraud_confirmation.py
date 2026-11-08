@@ -42,7 +42,7 @@ def test_her_yes_quotes_the_rm_ticket_and_her_no_sends_nothing(monkeypatch) -> N
     monkeypatch.setattr(rm_handover, 'ticket_reference', reference)
     urgent = rm_handover.urgent_target('charge', 'a charge I did not make')['summary']
     sent = asyncio.run(orchestrator.outcome_text(outcome('succeeded', urgent), None))
-    assert sent.startswith('I’ve sent this to your relationship manager as urgent (reference TCK-001234).') and 'My requests' in sent
+    assert sent.startswith('I’ve sent this to your relationship manager as urgent (reference TCK-001234).') and 'in Requests' in sent
     assert asyncio.run(orchestrator.outcome_text(outcome('rejected', urgent), None)) == rm_handover.URGENT_DECLINED
     plain = asyncio.run(orchestrator.outcome_text(outcome('succeeded', '[Fees or rates] Client question for you: waive my fee'), None))
     assert plain == rm_handover.handed_over('TCK-001234') and 'urgent' not in plain

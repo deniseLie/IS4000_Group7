@@ -191,7 +191,7 @@ def test_a_sent_request_says_when_her_rm_answers_and_where_to_follow_it() -> Non
         'respond_by':'2026-11-06T09:42:00Z','respond_by_text':'Fri 6 Nov 2026, 5:42 pm'}))
     text=asyncio.run(orchestrator.outcome_text(sent,context()))
     assert text==orchestrator.MEETING_SENT.format(respond_by='Fri 6 Nov 2026, 5:42 pm')
-    assert 'Fri 6 Nov 2026, 5:42 pm' in text and 'My requests → Meetings' in text and 'TCK-' not in text
+    assert 'Fri 6 Nov 2026, 5:42 pm' in text and 'the Meetings page' in text and 'TCK-' not in text
 
 
 def test_a_redraft_cancels_only_the_open_meeting_draft(monkeypatch) -> None:

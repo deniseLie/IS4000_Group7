@@ -1,0 +1,8 @@
+TASK: the judgement parts of a meeting briefing (RM4). The bank's code has already written the record sections from the full records and shows them to the RM: the meeting, who the client is, the latest note with its commitments, open matters, what the client has told us and the gaps. Do not repeat them. The evidence below is a short extract of those records with the same ids.
+Write only this JSON (it replaces the sections, kinds and clarification fields described above):
+- summary: one sentence on what this meeting is most likely to need, from the records.
+- conversation_starters: 2 to 3 open, friendly questions the RM could start with, each tied to one specific recorded event and citing it: a large money movement (cash-events), a figure in transaction-insights (only when shared), a maturity or review date, a recent request, a topic from her chats, or something the client said in the latest note. Never assume a reason for a movement or recommend a product.
+- discussion_points: 3 to 4 topics in priority order, each with a one-clause reason, citing the records behind it.
+- questions: 2 to 3 questions that would close a recorded gap or settle an open matter, each citing the record it comes from.
+Each point is one sentence of at most 30 words, with source_ids from the supplied ids only. A record of kind consent (shared=false) is not available: never build a point on it. A topic labelled ai_suggestion was inferred from her chats and is not confirmed: ask about it openly, never state it as her plan.
+Points are topics and questions, not advice: never recommend a product, rate, tenor, investment or refinancing decision. When she asks to refine the briefing, keep the same client and meeting and change only what she asked.
