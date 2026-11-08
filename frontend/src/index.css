@@ -2312,11 +2312,55 @@ button.cell.past:disabled{opacity:.35}
 .offer-switches{border:0;margin:0;padding:0;display:grid;gap:6px;font-size:13px;min-width:0}
 .offer-switches legend{font-size:12px;color:var(--muted);padding:0}
 .offer-switches small{font-size:12px;color:var(--muted)}
-/* Consent v2 (6e): Data sharing has one card per category. */
-.consent-cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
-.consent-cards .access-card{display:grid;align-items:start;gap:8px;min-width:0}
-.consent-cards .access-card h3{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.consent-cards fieldset{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+/* Data sharing (redesign 8 Nov): what her RM can see as one list of rows; each row opens its detail one tap down. */
+.sharing-page{max-width:720px;overflow-wrap:anywhere}
+.sharing-page h1{margin:0 0 4px;font-size:24px}
+.sharing-head{display:flex;align-items:center;gap:14px;margin:4px 0 20px}.sharing-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.sharing-lead{margin:4px 0 18px;color:var(--muted);font-size:13px;line-height:1.6}
+.sharing-rows,.sharing-list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.sharing-rows>li+li,.sharing-list>li+li{border-top:1px solid var(--line)}
+.sharing-row{display:flex;align-items:center;gap:14px;width:100%;padding:14px 16px;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;
+  transition:background-color .15s var(--ease-out)}
+.sharing-row:hover{background:var(--chalk)}.sharing-row:focus-visible{outline:none;box-shadow:inset var(--focus-ring)}
+.sharing-row>svg{width:20px;height:20px;flex:none;color:var(--muted)}
+.sharing-row-text{flex:1;min-width:0;display:grid;gap:2px}.sharing-row-text strong{font-size:14px;font-weight:600}
+.sharing-row-text small,.sharing-list small,.sharing-switch small,.sharing-topic small{color:var(--muted);font-size:12px;line-height:1.5}
+.sharing-go{display:inline-flex;flex:none;color:var(--faint,var(--muted))}.sharing-go svg{width:16px;height:16px;transform:rotate(-90deg)}
+.sharing-pill{flex:none;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:var(--canvas);color:var(--muted)}
+.sharing-pill.on{background:#edf6ef;color:#1f6b3a}.sharing-pill.held{display:inline-block;margin-top:4px;white-space:normal}.sharing-pill.wait{display:inline-block;margin-top:4px;background:#fdf5e4;color:#8a5a00;white-space:normal}
+.sharing-list>li{display:grid;gap:2px;padding:12px 16px;font-size:13px;line-height:1.5}
+.sharing-ask{display:grid;gap:8px;margin:0 0 14px;padding:12px 14px;border:1px solid #f0dfb5;border-radius:10px;background:#fdf5e4;color:#5c3d00;font-size:13px}
+.sharing-ask p{margin:0;line-height:1.5}.sharing-ask .panel-actions{margin:0}
+.sharing-alert,.sharing-done{margin:0 0 14px;font-size:13px;line-height:1.5}.sharing-alert{color:var(--red-dark)}
+.sharing-link{display:inline;padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line);cursor:pointer;text-align:left}
+.sharing-link.danger{color:#DA0000;font-weight:500;text-decoration:none}
+.sharing-link:hover:not(:disabled){text-decoration:underline;text-decoration-color:currentColor}.sharing-link:disabled{opacity:.5;cursor:not-allowed}
+.sharing-foot{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
+.sharing-confirm{display:grid;gap:10px;margin:12px 0;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--chalk);font-size:13px}
+.sharing-confirm p{margin:0;line-height:1.55}.sharing-confirm .panel-actions{margin:0}
+.sharing-confirm fieldset{border:0;margin:0;padding:0;display:grid;gap:8px;min-width:0}.sharing-confirm legend{padding:0 0 4px;font-weight:600}
+.sharing-confirm label{display:flex;align-items:center;gap:8px;line-height:1.4}.sharing-confirm input[type=radio],.sharing-confirm input[type=checkbox]{margin:0;accent-color:var(--red)}
+.sharing-indent{padding-left:24px}.sharing-field{flex-wrap:wrap;margin-top:4px}
+.sharing-field select,.sharing-field input{max-width:100%;min-height:34px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;font-size:13px;color:var(--ink)}
+.sharing-field select:focus-visible,.sharing-field input:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.sharing-back{display:inline-flex;align-items:center;gap:4px;margin:0 0 14px;padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
+.sharing-back:hover{color:var(--ink)}.sharing-back svg{width:16px;height:16px;transform:rotate(90deg)}
+.sharing-switch{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.sharing-switch>div{flex:1;min-width:0;display:grid;gap:2px}.sharing-switch strong{font-size:14px}
+.sharing-detail>.sharing-link{margin-top:10px}
+.sharing-toggle{position:relative;flex:none;width:42px;height:24px;padding:0;border:0;border-radius:999px;background:var(--line-2,#ccc);cursor:pointer;transition:background-color .15s var(--ease-out)}
+.sharing-toggle span{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s var(--ease-out)}
+.sharing-toggle[aria-checked="true"]{background:var(--ok,#2F7A3D)}.sharing-toggle[aria-checked="true"] span{transform:translateX(18px)}
+.sharing-toggle:focus-visible{outline:none;box-shadow:var(--focus-ring)}.sharing-toggle:disabled{opacity:.5;cursor:not-allowed}
+.sharing-topics{margin-top:28px}.sharing-topics h2{margin:0 0 10px;font-size:15px}
+.sharing-topic{grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:12px}.sharing-topic>div:first-child{display:grid;gap:2px}
+.sharing-topic [data-testid=talking-point-line]{font-size:14px;color:var(--ink)}
+.sharing-topic-actions{display:flex;align-items:center;gap:6px}.sharing-topic-actions .bank-chat-logout{min-height:32px;padding:6px 12px;font-size:12px}
+.sharing-more{position:relative}.sharing-more summary{list-style:none;display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--line);border-radius:var(--btn-radius);cursor:pointer;color:var(--muted)}
+.sharing-more summary::-webkit-details-marker{display:none}
+.sharing-more[open] .sharing-link{position:absolute;right:0;top:36px;z-index:2;width:max-content;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.sharing-more-rows{margin-top:12px}.sharing-fold{margin-top:12px}.sharing-fold summary{cursor:pointer;color:var(--muted);font-size:13px;padding:6px 0}.sharing-fold .sharing-list{margin-top:6px}
+@media(max-width:640px){.sharing-row{padding:12px;gap:10px}.sharing-switch{padding:12px}.sharing-topic{grid-template-columns:minmax(0,1fr)}.sharing-topic-actions{margin-top:6px}}
 .answer-section[data-pending] .skeleton-text{width:min(320px,80%);height:12px}
 
 /* Keep account and card controls within a narrow client's viewport. */

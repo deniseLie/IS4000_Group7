@@ -27,7 +27,7 @@ def sharing(active: tuple[str,...]=('transaction_insights',),rm: bool=True,meeti
     def card(code: str) -> dict:
         grant={'grant_id':str(GRANT),'legacy':False,'scope':None,'until':'date','basis':'consent','granted_at':NOW.isoformat(),
             'expires_at':(NOW+timedelta(days=30)).isoformat(),'until_meeting_id':None,'until_request_id':None,'renewal_due':False}
-        return {'code':code,'label':code.replace('_',' '),'gated':True,'withdrawable':True,'max_months':12,'notice_version':'v1',
+        return {'code':code,'label':code.replace('_',' '),'description':'What is shared.','gated':True,'default_on':False,'withdrawable':True,'max_months':12,'notice_version':'v1',
             'grant':grant if code in active else None}
     data={'rm':{'advisor_id':SOPHIE,'name':'Sophie Lim (DEMO)'} if rm else None,'categories':[card('transaction_insights'),card('chat_topics')],
         'accounts':[],'next_meeting':{'meeting_id':str(MEETING),'starts_at':(NOW+timedelta(days=3)).isoformat()} if meeting else None,
@@ -63,7 +63,7 @@ def test_stopping_offers_the_revoke_of_her_grant_with_what_changes_at_once(recor
     assert 'at once' in found.result.text and found.result.citations[0].source_id=='consent-sharing' and found.evidence[0].id=='consent-sharing'
     assert str(GRANT) in found.evidence[0].text and 'Sophie Lim' not in found.evidence[0].text  # ids and codes, no names
     found=ask('I no longer want to share my chat topics')
-    assert found.proposals==[] and found.result.text==consent_answers.NOT_SHARED.format(label='topics from your chats',rm='Sophie Lim')
+    assert found.proposals==[] and found.result.text==consent_answers.NOT_SHARED.format(label='chat insights',rm='Sophie Lim')
 
 
 def test_sharing_offers_a_grant_with_a_scope_and_an_end_she_named_or_three_months(records):
@@ -71,7 +71,7 @@ def test_sharing_offers_a_grant_with_a_scope_and_an_end_she_named_or_three_month
     [offer]=found.proposals
     assert offer.type=='consent.grant' and offer.target=={'category':'chat_topics','recipient':SOPHIE,'scope':{'topic_areas':['home_property','investments']},
         'notice_version':'ct-2026-11','until':'date','expires_on':(TODAY+timedelta(days=42)).isoformat()}
-    assert offer.summary=='Share your topics from your chats with Sophie Lim (home property, investments) until 17 Dec 2026'
+    assert offer.summary=='Share your chat insights with Sophie Lim (home property, investments) until 17 Dec 2026'
     assert not offers.optional(offer.type,offer.target)
     found=ask('Let my RM see my chat topics until my next meeting')
     assert found.proposals[0].target['until']=='meeting' and found.proposals[0].target['meeting_id']==str(MEETING)
@@ -112,7 +112,7 @@ def test_a_meeting_request_carries_optional_grants_for_what_she_does_not_share_y
 
 def test_compose_marks_the_switches_and_a_typed_yes_sends_the_request_only(monkeypatch: pytest.MonkeyPatch):
     meeting=OfferProposal(task_id='t1',agent='relationship',type='meeting.request',target={'advisor_id':SOPHIE},summary='Send a meeting request to Sophie')
-    switch=OfferProposal(task_id='t1',agent='relationship',type='consent.grant',chained=True,summary='Also share your topics from your chats with Sophie until this request is answered',
+    switch=OfferProposal(task_id='t1',agent='relationship',type='consent.grant',chained=True,summary='Also share your chat insights with Sophie until this request is answered',
         target={'category':'chat_topics','recipient':SOPHIE,'scope':{'topic_areas':['investments']},'notice_version':'ct-2026-11','until':'request'})
     async def run(spec,task,*a,**kw):
         return AgentOutput(task_id=task.id,agent=spec.name,status='ok',origin='safety',proposals=[meeting,switch],

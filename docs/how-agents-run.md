@@ -22,7 +22,7 @@ flowchart LR
 
 The guardrail runs first and never calls the model. Lost card and pasted secrets get fixed safety wording (signed in, a lost card also offers one urgent request to her RM); "talk to a person" shows the RM preview. Urgent words are matched on a typo-tolerant copy (`services/typos.py`), so "i lsot my crad" is still a lost card.
 
-After the `answer` event of a new reply in a signed-in saved chat, `/chat` runs one background step with her JWT: talking points lane 1 (`services/talking_points.after_reply`, 0108). It never changes the reply. A care signal pauses topic suggestions; otherwise, only while her consent covers chat topics and a code pre-filter passes, one `talking_points/v1` call classifies her redacted message, and code keeps list values plus her exact quote (hers only) for her RM's meeting topics.
+After the `answer` event of a new reply in a signed-in saved chat, `/chat` runs one background step with her JWT: talking points lane 1 (`services/talking_points.after_reply`, 0108). It never changes the reply. Only while her consent covers chat insights and a code pre-filter passes, one `talking_points/v2` call (since 0143; v1 before) classifies her redacted message with what is already recorded about her, and code keeps list values plus her exact quote (hers only) for her RM's meeting topics.
 
 ## 2. The orchestrator graph (`services/orchestrator.py`)
 

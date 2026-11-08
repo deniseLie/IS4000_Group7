@@ -17,7 +17,7 @@ def test_a_read_the_client_has_not_shared_is_a_consent_gap_not_an_empty_record()
         assert (item.id,item.kind,item.data['shared'])==(source,'consent',False)
         assert 'transaction insights' in item.data['meaning'] and 'large_movements' not in item.data
     item=ev.talking_points_evidence(TOPICS,1007)
-    assert item.kind=='consent' and 'topics from their chats' in item.data['meaning'] and item.data['shared_by_client']==[]
+    assert item.kind=='consent' and 'chat insights' in item.data['meaning'] and item.data['shared_by_client']==[]
 
 
 def test_topics_she_shared_herself_still_reach_the_rm_without_the_chat_topics_grant() -> None:

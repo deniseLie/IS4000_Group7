@@ -237,7 +237,7 @@ async def rm_transaction_insights(customer_id: int,purpose: str,days: int=90) ->
 
 
 async def rm_talking_points(customer_id: int,purpose: str) -> dict[str,Any]:
-    """Topics from one book client's chats (list values and dates only). Inferred topics only under the client's chat_topics
+    """Client chat insights of one book client (list values and dates only). Inferred topics only under the client's chat_topics
     consent; data is always a list, and without that consent it holds only topics she shared herself.
     purpose: meeting_prep (a meeting brief) or client_view, set by code from the intent, never by a model (audited)."""
     return await rm_records.talking_points(_ctx(),customer_id,purpose)

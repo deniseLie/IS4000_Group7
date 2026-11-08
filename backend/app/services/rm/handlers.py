@@ -494,7 +494,7 @@ def fixed(intent: str,tool: str) -> dict:
     return dict(next(r.fixed for r in registry.RM_CLIENT.intents[intent] if r.tool==tool))
 
 
-ASK_LABELS={'transaction_insights':'Transaction insights','chat_topics':'Topics from her chats'}
+ASK_LABELS={'transaction_insights':'Transaction insights','chat_topics':'Chat insights'}
 
 
 def ask_cards(reads: list[dict],client_id: int,client: str|None,meeting: dict|None) -> list[dict]:
