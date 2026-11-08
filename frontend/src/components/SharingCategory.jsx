@@ -26,7 +26,7 @@ export default function SharingCategory({card,sharing,rm,asks,topics,topicsError
     {asks.map(ask=><div key={ask.ask_id} className="sharing-ask" data-testid="consent-ask"><p>{askLine(ask,formatDateTime)}</p></div>)}
     <div className="sharing-switch">
       <div><strong>{state.switchable?`Sharing with ${Rm}`:state.label}</strong>
-        <small data-testid="consent-card-scope">{grant?.basis==='notice'?'Part of every confirmed meeting, so it can’t be switched off here. The minutes of each meeting stay.':grant?[scopeText(card.code,grant.scope,sharing.accounts),untilText(grant,grant.until==='date'?formatDate:formatDateTime)].filter(Boolean).join(' · '):
+        <small data-testid="consent-card-scope">{grant?.basis==='notice'?'Your choice on each meeting: before the call you say whether a transcript may be used for the minutes, and you can withdraw it on that meeting at any time (My requests, Meetings). Approved minutes stay.':grant?[scopeText(card.code,grant.scope,sharing.accounts),untilText(grant,grant.until==='date'?formatDate:formatDateTime)].filter(Boolean).join(' · '):
           state.switchable?`${Rm} can't see this.`:card.reason||''}</small></div>
       {state.switchable&&sharing.rm&&<button type="button" role="switch" aria-checked={!!grant} aria-label={`Share ${card.label.toLowerCase()} with ${Rm}`}
         className="sharing-toggle" data-testid={grant?'consent-card-stop':'consent-card-edit'} disabled={off} onClick={toggle}><span/></button>}

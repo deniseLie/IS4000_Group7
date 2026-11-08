@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DELETE_ALL,accessGroups,accessLine,alwaysShared,askLine,cardState,choiceSummary,defaultChoice,grantSentence,grantTarget,latestEnd,openAsks,
+import {accessGroups,accessLine,alwaysShared,askLine,cardState,choiceSummary,defaultChoice,grantSentence,grantTarget,latestEnd,openAsks,
   parseAccessLog,parseAskResult,parseAskTarget,parseAsks,parseGrantV2Result,parseGrantV2Target,parseSharing,revokeConsequence,rowLine,rowState,scopeText,untilText} from './consentSharing.js';
 import {parseAction} from './actions.js';
 import {included,offerReply,parseOffer,required,switches} from './offers.js';
@@ -69,7 +69,6 @@ test('the access log and her RM’s asks are ids, codes and dates; the words com
   assert.deepEqual(openAsks(asks,'transaction_insights'),[]);
   assert.equal(askLine(asks[0],day),'Sophie Lim asked to see your chat topics to prepare for your meeting on 2026-11-12.');
   assert.throws(()=>parseAsks({data:[{...asks[0],category:'meeting_recording'}]}));
-  assert.deepEqual(DELETE_ALL,{category:'data_deletion',summary:'Please delete all my data.',urgency:'normal',details:{}});
 });
 
 test('a v2 grant and her Not now parse on the ledger with matching receipts only',()=>{

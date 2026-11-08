@@ -2333,9 +2333,7 @@ button.cell.past:disabled{opacity:.35}
 .sharing-ask p{margin:0;line-height:1.5}.sharing-ask .panel-actions{margin:0}
 .sharing-alert,.sharing-done{margin:0 0 14px;font-size:13px;line-height:1.5}.sharing-alert{color:var(--red-dark)}
 .sharing-link{display:inline;padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line);cursor:pointer;text-align:left}
-.sharing-link.danger{color:#DA0000;font-weight:500;text-decoration:none}
 .sharing-link:hover:not(:disabled){text-decoration:underline;text-decoration-color:currentColor}.sharing-link:disabled{opacity:.5;cursor:not-allowed}
-.sharing-foot{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
 .sharing-confirm{display:grid;gap:10px;margin:12px 0;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--chalk);font-size:13px}
 .sharing-confirm p{margin:0;line-height:1.55}.sharing-confirm .panel-actions{margin:0}
 .sharing-confirm fieldset{border:0;margin:0;padding:0;display:grid;gap:8px;min-width:0}.sharing-confirm legend{padding:0 0 4px;font-weight:600}
