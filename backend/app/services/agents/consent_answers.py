@@ -26,7 +26,7 @@ CATEGORY_WORDS=(
     ('chat_topics',re.compile(r"\b(?:chat\s+topics?|topics?\s+(?:from|in|of)\s+(?:my\s+)?chats?|my\s+chats?|what\s+i\s+(?:talk|chat)\s+about)\b")),
     ('transaction_insights',re.compile(r'\b(?:transactions?|transaction\s+insights?|spending|money\s+in\s+and\s+out)\b')),
 )
-LABEL={'transaction_insights':'transaction insights','chat_topics':'topics from your chats'}
+LABEL={'transaction_insights':'transaction insights','chat_topics':'chat insights'}  # Chat insights on her pages (talking points in the code)
 STOP=re.compile(r"\b(?:stop|withdraw|revoke|end|turn\s+off|switch\s+off|no\s+longer)\s+(?:\w+\s+){0,3}?(?:shar(?:e|ing)|access)\b"
     r"|\bunshare\b|\b(?:stop|don'?t)\s+let(?:ting)?\s+(?:\w+\s+){0,3}?see\b|\bwithdraw\s+(?:my\s+)?consent\b")
 SHARE=re.compile(r"\b(?:share|sharing)\b|\blet\s+(?:\w+\s+){0,3}?see\b|\b(?:turn|switch)\s+on\s+(?:\w+\s+){0,3}?sharing\b")
@@ -54,13 +54,13 @@ NOTICE={'transaction_insights':'ti-2026-11','chat_topics':'ct-2026-11'}  # conse
 NO_RM='You don’t have a relationship manager recorded right now, so there is no one to share with.'
 NOT_SHARED='You are not sharing {label} with {rm}, so there is nothing to stop.'
 ALREADY='You already share {label} with {rm}. You can change what and until when on Data sharing.'
-NO_TOPIC='{rm} doesn’t see a {topic} topic from your chats, so there is nothing to delete.'
+NO_TOPIC='{rm} doesn’t see a {topic} insight from your chats, so there is nothing to delete.'
 RECORDING=('Your meetings with {rm} are recorded under the meeting notice, so this is not a switch on Data sharing. I can send a request '
     'to our data protection team to stop recording them. They check what the bank must keep by law and reply within 10 business days; '
     'minutes already approved are kept. Nothing changes until they reply.')
 RECORDING_REQUEST={'category':'consent_withdrawal','summary':'Please stop recording my meetings.','urgency':'normal','details':{'what':'Meeting recordings'}}
 CONSEQUENCE={'transaction_insights':'If you stop, {rm} stops seeing your transaction insights at once, and briefs for your meetings say you have not shared them.',
-    'chat_topics':'If you stop, {rm} stops seeing topics picked up from your chats, and they are deleted at once with your words. Topics you shared yourself stay.'}
+    'chat_topics':'If you stop, {rm} stops seeing insights picked up from your chats, and they are removed at once. Insights you shared yourself stay.'}
 
 
 class Reply(NamedTuple):

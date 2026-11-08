@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.observability import span_sink
 from app.schemas.contracts import Principal, RequestContext
 from app.schemas.rm import RmAssistantRequest
-from app.services import llm_gateway, orchestrator, tools
+from app.services import llm_gateway, orchestrator, prompts, tools
 from app.services.agents import registry
 from app.services.authorization import PolicyDenied
 from app.services.rm import graph, handlers
@@ -362,7 +362,7 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
         ('rm_calendar', 'decide_request'), ('rm_calendar', 'availability_change'), ('rm_requests', 'open'), ('rm_client', 'help')]  # never a client agent
     task = graph.plan_schema()['properties']['tasks']['items']['properties']
     assert task['agent']['enum'] == ['', 'rm_calendar', 'rm_client', 'rm_requests'] and 'open' in task['intent']['enum']
-    assert (graph.PLANNER_VERSION, handlers.ASSISTANT_VERSION) == ('v5', 'v6')
+    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v5', 'v6')
 
 
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):
@@ -381,7 +381,7 @@ def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without
     gap = run('Give me an overview of Mei Ling', None)
     evidence = evidence_in(seen[-1])
     assert '5200' not in evidence and 'Property financing' not in evidence and evidence.count('"shared": false') == 3  # cash events, insights, chat topics
-    assert 'has not shared transaction insights' in evidence and 'has not shared topics from their chats' in evidence
+    assert 'has not shared transaction insights' in evidence and 'has not shared chat insights' in evidence
     assert [(s['kind'], s['record']['shared']) for s in gap['sources'] if s['id'] == 'transaction-insights'] == [('consent', False)]
     # Consent v2 (0113): each gap comes with an "Ask the client to share" card from the records, approved by the RM; none when shared
     assert 'consent_asks' not in shared and [(a['customer_id'], a['category'], a['reason'], a['meeting_id']) for a in gap['consent_asks']] == [
@@ -943,7 +943,7 @@ def test_r11_an_overview_is_code_sections_and_a_question_is_answered_from_that_c
     overview = run('Give me an overview of Michelle', None)
     assert [c['title'] for c in seen] == ['rm_overview_points'] and 'TASK: the judgement part of a client overview' in seen[0]['system']
     heads = [s['heading'] for s in overview['sections']]
-    assert heads == ['Snapshot', 'Accounts and products', 'Upcoming', 'Transaction insights', "Topics from the client's chats", 'Worth raising',
+    assert heads == ['Snapshot', 'Accounts and products', 'Upcoming', 'Transaction insights', 'Client chat insights', 'Worth raising',
         'Missing or unavailable']
     products = next(s for s in overview['sections'] if s['heading'] == 'Accounts and products')['items']
     assert products == [{'text': 'Savings account ****1234: SGD 80,000.00, active.', 'kind': 'record', 'owner': 'rm', 'source_ids': ['accounts']}]

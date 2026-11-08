@@ -66,6 +66,8 @@ def test_the_catalogue_names_three_gated_categories_and_what_is_always_shared(da
         ('meeting_recording',True,True,False,None,'mr-2026-11',True)]
     assert [(r[0],r[1],r[6]) for r in rows[3:]]==[('profile_basics',False,True),('products',False,True),('requests_and_meetings',False,True),
         ('compliance_status',False,True)]  # always shared, each with the reason
+    labels=dict(database.execute('select code,label from consent.categories').fetchall())
+    assert labels['chat_topics']=='Chat insights' and labels['transaction_insights']=='Transaction insights'  # 0144 renamed only the label
 
 
 def test_a_scoped_grant_shows_only_her_chosen_account_and_months_until_her_next_meeting(database: 'Connection[SqlRow]') -> None:

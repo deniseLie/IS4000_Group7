@@ -48,9 +48,7 @@ class Settings(BaseSettings):
     document_ocr_mean_confidence: float=Field(default=90,ge=0,le=100)
     worker_database_url: SecretStr | None = Field(default=None,repr=False)
     cors_origins: list[str] = ["http://localhost:5173"]
-
-    prompt_version: str = "v3"
-    prompt_versions: dict[str, str] = {'planner':'v5','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
+    # Prompt versions are not settings: services/prompts.VERSIONS is the one table.
 
     # LLM Gateway limits (services/llm_gateway.py)
     llm_timeout_s: float = 30

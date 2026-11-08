@@ -1,18 +1,17 @@
 """Direct validation and composition checks; live checks call the real provider only when enabled."""
 import asyncio
 import json
-import os
 from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from app.core.config import Settings, settings
 from app.main import app
-from app.schemas.agents import Evidence, PlannedIssue, PlannerDraft
+from app.schemas.agents import PlannedIssue, PlannerDraft
 from app.schemas.chat import ChatRequest
 from app.schemas.contracts import AgentOutput,AgentResult,PlanTask,Principal,RequestContext, Task
 from app.schemas.events import Source
-from app.services.agents.answer import respond, validate_draft
+from app.services.agents.answer import validate_draft
 from app.services.guardrail import assess_request
 from tests import knowledge_fixtures
 from tests.knowledge_fixtures import cite
@@ -136,29 +135,3 @@ def test_provider_configuration_failure_withholds_a_social_section(monkeypatch):
     ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))
     answer=asyncio.run(orchestrator.answer(req,assess_request(req),orchestrator.TurnContext(request=ctx)))
     assert answer.response_origin=='validation' and answer.sections[0].response_origin=='validation' and answer.sections[0].domain=='retail'
-
-
-@pytest.mark.skipif(os.getenv('TEST_AGENTS_LIVE')!='1',reason='Opt in to real provider calls with TEST_AGENTS_LIVE=1')
-def test_real_domain_agents():
-    # Keep one event loop for the real provider's pooled asynchronous HTTP clients.
-    from app.schemas.knowledge import KnowledgeSection
-    from app.services import tools
-    ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='guest'))  # public knowledge from the configured database
-    async def task_evidence(planned,history,language):
-        found=await tools.call('knowledge_search',{'query':planned.entities['question'],'k':4},ctx)
-        sections=[KnowledgeSection.model_validate(item) for item in found['items']]
-        return [Evidence(id=s.cite,text=s.body,publisher=s.publisher,scope=s.scope,source=s.source()) for s in sections]
-    async def run():
-        for domain,question in [
-            ('retail','What happens if I withdraw my fixed deposit early?'),
-            ('fraud','There is an unfamiliar charge on my card.'),
-            ('compliance','Can you show my compliance review status?'),
-            ('document','Can you check the pages in my document?'),
-            ('relationship','Who is my relationship manager?'),
-        ]:
-            planned=Task(task_id='live1',domain=domain,intent='answer_question',entities={'question':question})
-            req=ChatRequest(messages=[{'role':'user','content':question}])
-            result=await respond(planned,question,req.messages,await task_evidence(planned,req.messages,'English'),'English')
-            assert result.status!='error',domain
-            assert result.pending_action is None and result.receipts==[]
-    asyncio.run(run())

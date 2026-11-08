@@ -85,11 +85,11 @@ def test_what_the_client_told_us_keeps_inferred_topics_as_suggestions_and_states
     assert told[5]['text'] == 'No handover note is shared with you under active consent.'
     assert told[6]['text'] == 'The client has not shared transaction insights with you.'
     pending = bf.told_section(d, bundle(d))['items']
-    assert bf.gap("Some topics from the client's chats are not available yet.", ['talking-points']) in pending
+    assert bf.gap('Some client chat insights are not available yet.', ['talking-points']) in pending
     gated = bf.told_section(d, bundle(d, points={'shared': False, 'category': 'chat_topics', 'data': [confirmed]}))['items']
-    assert [(x['kind'], x['text']) for x in gated if 'chats' in x['text']] == [('client_stated', "Topic from the client's chats: Investments · "
+    assert [(x['kind'], x['text']) for x in gated if 'chat insight' in x['text']] == [('client_stated', 'Client chat insight: Investments · '
         'planning · within 12 months · asks about rates · shared by the client (last mentioned 28 Oct 2026).'),
-        ('gap', 'The client has not shared topics from their chats with you.')]  # a topic she shared herself still shows
+        ('gap', 'The client has not shared chat insights with you.')]  # a topic she shared herself still shows
 
 
 def test_the_model_facts_are_bounded_and_keep_the_full_records_ids():

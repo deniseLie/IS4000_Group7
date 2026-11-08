@@ -386,7 +386,7 @@ export function nextStep(item) {
 
 // Brief Writer (0118) ------------------------------------------------------------------------------------------------
 // A changed snapshot needs a new review. Attribute withdrawal or deletion only when the current response records it.
-const CATEGORY_WORDS={chat_topics:'topics from her chats',transaction_insights:'transaction insights'};
+const CATEGORY_WORDS={chat_topics:'her chat insights',transaction_insights:'transaction insights'};
 export function briefNotice(brief) {
   if(!brief)return [];
   const lines=[];

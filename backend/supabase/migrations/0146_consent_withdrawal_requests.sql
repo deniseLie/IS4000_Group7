@@ -16,10 +16,10 @@
 -- 1. The request category ---------------------------------------------------------------------------------------------
 insert into support.request_categories(category,label,description,owner_team,decided_by,target_hours,fields,documents,kb_article,customer_raisable) values
  ('consent_withdrawal','Stop using my data','Ask DemoBank to stop using your personal data for something you agreed to or were told about, '
-  'such as recording your meetings. To stop sharing transaction insights or chat topics with your relationship manager now, switch them off in Data sharing.',
+  'such as recording your meetings. To stop sharing transaction insights or chat insights with your relationship manager now, switch them off in Data sharing.',
   'Data protection team','The data protection team checks what the bank must keep by law and tells you what changes.',240,
   '[{"key":"what","label":"What should we stop using","kind":"choice","required":true,
-     "choices":["Meeting recordings","Transaction insights","Topics from my chats","Something else"]},
+     "choices":["Meeting recordings","Transaction insights","Chat insights","Something else"]},
     {"key":"details","label":"Anything the team should know (optional)","kind":"text","required":false}]','{}',null,true);
 
 -- The same 10-business-day target as data_deletion (0113), by the end of the day in Singapore.
@@ -87,7 +87,7 @@ alter table consent.grants add constraint grants_end_reason_check
 -- The team's step once it has checked the request (docs/workflows/consent-withdrawal-runbook.md). The ticket decides whose
 -- grants end; the category is the team's reading of her request. A grant of that category alone ends (withdrawn); an
 -- earlier 0037 grant covering several categories stops covering this one. Ending a chat_topics grant fires 0110's
--- insights.grant_changed, so her inferred topics and quotes go at once.
+-- insights.grant_changed, so the chat insights picked up from her chats go at once.
 create function consent.withdraw_by_request(p_reference text,p_category text) returns jsonb
 language plpgsql volatile security definer set search_path='' as $$
 declare t support.tickets; g consent.grants; ended int:=0; narrowed int; opted int:=0;

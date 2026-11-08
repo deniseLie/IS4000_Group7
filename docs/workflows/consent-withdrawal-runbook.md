@@ -5,7 +5,7 @@ for something the Data sharing switches do not cover, such as recording her meet
 these requests and works them from the Supabase SQL editor as the project owner. There is no staff role and no screen,
 the same as *Delete all my data* (`data_deletion`, 0113). Synthetic data only.
 
-The Data sharing switches are not part of this. Switching off transaction insights or chat topics on Data sharing (or
+The Data sharing switches are not part of this. Switching off transaction insights or chat insights on Data sharing (or
 confirming the chat's offer) stops access **at once**, with a receipt in Activity and no ticket.
 
 ## Where requests come from
@@ -55,8 +55,8 @@ status (`rm_send_client_update` refuses a status on a ticket her RM does not own
    ```
 
    This ends her active grants of that category (`end_reason` `withdrawn`, audited `consent.withdrawn`), and her RM stops
-   seeing that category at once. Ending `chat_topics` also removes the topics picked up from her chats, and her words,
-   at once; topics she shared herself stay. For `meeting_recording` it also opts her out, so her next confirmed meetings
+   seeing that category at once. Ending `chat_topics` (*Chat insights*) also removes the insights picked up from her chats
+   at once; insights she shared herself stay. For `meeting_recording` it also opts her out, so her next confirmed meetings
    are not put back under the recording notice. It returns `grants_ended` and `recording_opted_out`, and running it twice
    changes nothing. It refuses a ticket that is not an open `consent_withdrawal` request.
 

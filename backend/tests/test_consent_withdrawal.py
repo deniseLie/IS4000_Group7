@@ -104,7 +104,7 @@ def test_withdrawing_recording_ends_the_notice_grant_and_no_later_meeting_brings
 
 
 def test_withdrawing_chat_topics_forgets_her_inferred_topics_and_keeps_her_recording(database: 'Connection[SqlRow]') -> None:
-    reference=raise_ticket(database,what='Topics from my chats')
+    reference=raise_ticket(database,what='Chat insights')
     database.execute('reset role')
     assert database.execute("select count(*) from insights.talking_points where customer_id=1002 and origin='inferred' and deleted_at is null").fetchone()[0]>0
     result=withdraw(database,reference,'chat_topics')

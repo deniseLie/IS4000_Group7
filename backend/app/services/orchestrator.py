@@ -44,7 +44,6 @@ from app.services.guardrail import FRAUD
 MAX_TASKS = 5
 WITH_RELATIONSHIP = rules.WITH_RELATIONSHIP  # an Accounts task's entity, set only by checked()
 MAX_ITEMS = 5  # fan-out cap per list export
-PLANNER = 'v10'  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3)
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
 GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
 LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app"
@@ -296,7 +295,7 @@ def plan_schema() -> dict:
 
 
 async def model_plan(history: list[Message]) -> list[PlanTask]:
-    pv = prompts.load('planner', PLANNER)
+    pv = prompts.current('planner')
     result = await llm_gateway.call(pv, pv['system'] + '\n' + catalogue(), [(m.role, m.content) for m in history], plan_schema())
     rows = result.data.get('tasks') if isinstance(result.data, dict) else None
     if not isinstance(rows, list) or not rows:raise llm_gateway.LLMBadOutput('The planner returned no tasks')

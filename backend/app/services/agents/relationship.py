@@ -16,8 +16,6 @@ from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.privacy import redact
 from app.services.source_checks import dates,dates_supported
 
-PROMPT='v7'
-
 ACTION_CLAIM=re.compile(r"\b(?:I|we)(?:['’]ve)?\s+(?:(?:have|will|just|successfully|already)\s+){0,3}(?:book(?:ed)?|reserv(?:e|ed)|schedul(?:e|ed)|cancel(?:led|ed)?|sent|send|submit(?:ted)?|shar(?:e|ed)|sav(?:e|ed)|grant(?:ed)?|revok(?:e|ed)|contact(?:ed)?)\b",re.I)
 
 
@@ -87,7 +85,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     if not isinstance(question,str):raise ValueError('Relationship task question must be text')
     records=records or await relationship_records.load(ctx)
     evidence=[*public_evidence,*evidence_for(records)]
-    pv=prompts.load('relationship',PROMPT)
+    pv=prompts.current('relationship')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
