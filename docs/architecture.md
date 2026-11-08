@@ -2,7 +2,7 @@
 
 Status: **as built** (6 Nov 2026). This document describes the system that is in the code today, using the component names of the v3.1 proposal. [§10](#10-differences-from-the-v31-proposal) records how v4 differed from that proposal; §14 records the v5 redesign. The two workflows (client, relationship manager) are in `docs/workflows/`; one chat turn, step by step, is in [how-agents-run.md](how-agents-run.md). Coursework demo with synthetic data only.
 
-v5 as built: client chat runs on a five-node LangGraph graph with four client agents and confirmations as chat turns (§14, built in phases 1–9 on 4 Nov 2026); the RM assistant runs on its own graph with three RM agents (§14.11); the meeting team's minutes graph and meeting worker draft and approve meeting minutes (§15, migrations 0120–0124); and consent v2 lets the client choose what her RM sees and for how long (§15.2). The multi-agent pipeline is switched on with `PIPELINE=v2`; `v1`, the single-path `make_answer` flow, is still the default.
+v5 as built: client chat runs on a five-node LangGraph graph with four client agents and confirmations as chat turns (§14, built in phases 1–9 on 4 Nov 2026); the RM assistant runs on its own graph with three RM agents (§14.11); the meeting team's lifecycle graph and meeting worker take a confirmed meeting through brief, meeting, minutes and follow-up, with the RM approving each step (§15, migrations 0120–0141); and consent v2 lets the client choose what her RM sees and for how long (§15.2). The multi-agent pipeline is switched on with `PIPELINE=v2`; `v1`, the single-path `make_answer` flow, is still the default.
 
 ---
 
@@ -22,7 +22,7 @@ All seven v3.1 principles are implemented; the notes say how.
 
 ## 1. Naming map
 
-The draw.io diagram is `docs/architecture.drawio` (page V3). It labels Guide "General", Relationship & Service "Relationship" and talking points "Chat insights".
+The draw.io diagram is `docs/architecture.drawio` (page V4). It labels Guide "General", Relationship & Service "Relationship" and talking points "Chat insights". It draws Authorisation and Consent as two boxes, the Action Service and the RM writes as one box, *Approved Actions* (a change runs only after the client or the RM confirms it), and the tool layer as *Tool layer · MCP Service* (`app/mcp_server.py`) with Internal tools and Zoom tools. In the code the meeting worker and the `/meetings` routes call Zoom through `services/meetings/zoom.py`, not through `tools.call`. Box ⑳ is the meeting worker; box ⑲, the bank's specialist and compliance teams, is outside the prototype (a demo script, `hosted/45_demo_specialist_reply.sql`, records their reply).
 
 | Draw.io label | Component | Built as | Main code |
 |---|---|---|---|
@@ -44,7 +44,7 @@ The draw.io diagram is `docs/architecture.drawio` (page V3). It labels Guide "Ge
 | Reply over SSE | **Streaming Response (SSE)** | `fetch` + parser | `api/chat.py`, `frontend/src/lib/chatTools.js` |
 | Human handoff queue | **Human Handoff** | `handoffs.py` executor + staff script | `actions/handoffs.py`, `actions/staff.py`, `scripts/staff_support.py` |
 | Proactive triggers + event bus + rules | **Background Worker** | Outbox poller, reminder and renewal scheduler, topic purge (no pg_cron) | `app/worker.py`, `core/lifecycle.py` |
-| — (new) | **Meeting worker** | Claims `meetings.events`, drafts minutes from transcripts, purges transcripts | `services/meetings/worker.py` |
+| — (new) | **Meeting worker** | Separate process with a restricted login: claims `meetings.events`, runs the lifecycle graph (Zoom links, transcript fetch, minutes), timers, transcript purge | `services/meetings/worker.py`, `lifecycle.py` |
 | Observability | **Tracing & Evaluation** | LangSmith runs (redacted), JSON request logs, eval harness, admin dashboard | `core/observability.py`, `core/langsmith_client.py`, `backend/evaluation/`, `services/quality.py`, `services/insights.py`, `api/admin.py` |
 | — (new) | **Audit Log Service** | Append-only hash-chained `audit.events` | `services/audit.py`, migrations `0005`–`0007`, `0054` |
 | LLM provider | **LLM Gateway** | One client for planners and agents | `services/llm_gateway.py`, `prompts.py` |
@@ -72,7 +72,7 @@ flowchart TB
       direction LR
       CG["Client graph · POST /chat<br/>planner → agent ×N → gather → compose<br/>planner → act → compose"]
       RG["RM graph · POST /rm/assistant<br/>planner → agent ×N → gather → compose"]
-      MG["Meeting minutes graph · /meetings<br/>one node, minutes_writer"]
+      MG["Meeting lifecycle · /meetings<br/>prepare → meet → minutes → follow up<br/>Brief Writer, Proposal Drafter, Minutes Writer"]
     end
     subgraph AGENTS["Domain Agents (one AgentSpec each)"]
       direction LR
@@ -500,7 +500,7 @@ The request summary (`observability.request_facts`) adds side, role, tool calls,
 - **Responsibility & boundaries:** `llm_gateway.call` is the one client for planners and agents: loads versioned prompts (`prompts.load(agent, version)`), enforces strict JSON, timeout per attempt, retries on timeouts/429/5xx only, per-request token budget, an `llm` LangSmith span and a model-call record that `/chat` and `/rm/assistant` write as `agent.llm_call` audit events. Raises `LLMError`; failures are reported, never replaced with sample answers. `reasoning=False` asks OpenRouter to turn the model's hidden reasoning off for one call: those tokens count against `MAX_TOKENS` and vary per call (1,300–2,700 on the RM `today` answer, which truncated about half the time). The CLI transports cannot turn thinking off and other providers keep their default, so the span records `reasoning` as `off` only where it took effect. The RM assistant sets it per intent in one code table (`rm/handlers.REASONING`), off for every RM answer: with reasoning on, 7 and 9 of 11 QA1 RM cases hit the limit in two runs and 3 of 5 call notes (R13) did; off, all passed in about a third of the time. An intent turns it back on only with evaluation evidence and output headroom. The RM planner and the open loop's steps keep the default (short outputs).
 - **Inputs / outputs:** In: `{prompt, system, history, schema}`. Out: parsed object + `{model, tokens, latency}`.
 - **Infrastructure / pattern:** LangChain → OpenRouter (`CHAT_TRANSPORT=api`); local Codex CLI (`CHAT_TRANSPORT=codex`, `services/codex_cli.py`) or Claude Code CLI (`CHAT_TRANSPORT=claude`, `services/claude_cli.py`), with no app keys and no coding tools. The planner and agents use `LLM_MODEL`; talking points may use `TALKING_POINTS_MODEL`. Focused real-provider checks use `dots-studio/dots-3-note-preview:free`.
-- **Dependencies:** ↑ Orchestrator, RM graph, meeting minutes graph, Agents, v1 answer flow. ↓ OpenRouter, Tracing.
+- **Dependencies:** ↑ Orchestrator, RM graph, meeting lifecycle (Brief Writer, Proposal Drafter, Minutes Writer, Minutes Overview), Agents, v1 answer flow. ↓ OpenRouter, Tracing.
 
 ### 5.12 Tracing & Evaluation
 - **Category:** Tracing, structured logs, evaluation harness.
