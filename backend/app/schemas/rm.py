@@ -23,6 +23,13 @@ class Model(BaseModel):
     model_config=ConfigDict(extra='forbid')
 
 
+class AppointmentWindow(BaseModel):
+    """Explicit calendar window; the default retains the existing fourteen-day read."""
+    model_config=ConfigDict(extra='ignore')
+    past_days: int=Field(default=0,ge=0,le=30)
+    future_days: int=Field(default=13,ge=0,le=62)
+
+
 class RmTurn(Model):
     role: Literal['user','assistant']
     content: str=Field(max_length=6000)
@@ -188,3 +195,15 @@ class ConversationSave(Model):
 
 class Dismissal(Model):
     item_key: str=Field(pattern=r'^[a-z_]{1,30}:[A-Za-z0-9_.:-]{1,100}$')
+
+
+class BriefPrepare(Model):
+    """Brief Writer (0118): write a new version even when the saved one is current."""
+    regenerate: bool=False
+
+
+class BriefApproval(Model):
+    """The RM approves the exact brief version she read (0118)."""
+    brief_id: UUID
+    version: int=Field(ge=1)
+    command_id: UUID

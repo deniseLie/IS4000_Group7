@@ -6,6 +6,7 @@ Consent lookup and transactional action execution belong to their subsequent ser
 from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, ValidationError
 from app.schemas.contracts import Decision, Principal, RequestContext
+from app.schemas.meeting_agents import MeetingAccess, MeetingRmAccess, MeetingWorkerAccess
 from app.services import audit
 from app.services.agents import registry
 from app.services.agents.registry import TOOLS
@@ -30,9 +31,10 @@ AGENT_ACTIONS = {
     'fraud':frozenset({'card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke','meeting.request',
-        'insight.share','insight.delete'}),  # the chat offers a meeting request (2a), Let-Sophie-know (0108, lane 2) and topic deletion (6e)
+        'insight.share','insight.delete',  # the chat offers a meeting request (2a), Let-Sophie-know (0108, lane 2) and topic deletion (6e)
+        'ticket.create'}),  # 0146: "stop recording my meetings" is a consent_withdrawal request (agents/consent_answers)
 }
-KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list','insights.read','insights.status','insights.record','consent.sharing','consent.access_log','consent.asks'}
+KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list','insights.read','insights.status','insights.record','consent.sharing','consent.access_log','consent.asks','customer.get_portfolio'}  # 0116: Overview only, no agent reads it
 
 
 class PolicyResource(BaseModel):
@@ -45,10 +47,31 @@ class PolicyDenied(PermissionError):
     """A registered tool or action was refused before any service access."""
 
 
-def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | None, context: RequestContext | None) -> Decision:
-    if action not in KNOWN_TOOLS:return Decision(allow=False,reasons=['unknown_tool'])
+def meeting_decision(subject: Principal, action: str, resource: Mapping[str, JsonValue] | None, context: MeetingAccess) -> Decision:
+    """Check the execution lane before connecting. SQL verifies live assignment, consent and queue leases."""
+    spec = registry.MEETING_SPECS.get(context.agent)
+    tool = next((tool for tool in spec.tools if tool.name == action), None) if spec else None
+    if tool is None:return Decision(allow=False,reasons=['agent_tool_forbidden'])
+    target = context.meeting_id if isinstance(context, MeetingRmAccess) else context.claim.meeting_id
+    if resource is None or resource.get('meeting_id') != str(target):
+        return Decision(allow=False,reasons=['meeting_scope_mismatch'])
+    if tool.actor == 'assigned_rm':
+        if not isinstance(context, MeetingRmAccess) or subject.kind != 'customer' or not subject.jwt or not subject.jwt.get_secret_value().strip():
+            return Decision(allow=False,reasons=['meeting_rm_required'])
+        if context.claims.sub != subject.user_id or context.claims.app_metadata.demobank_role != 'rm' or context.claims.app_metadata.rm_id is None:
+            return Decision(allow=False,reasons=['meeting_rm_required'])
+    elif not isinstance(context, MeetingWorkerAccess) or subject.kind != 'system' or context.claim.event_type != 'transcript.ready':
+        return Decision(allow=False,reasons=['meeting_claim_required'])
+    return Decision(allow=True,reasons=['explicit_rule'])
+
+
+def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | None, context: RequestContext | MeetingAccess | None) -> Decision:
+    if action not in KNOWN_TOOLS and action not in registry.MEETING_TOOLS:return Decision(allow=False,reasons=['unknown_tool'])
     if context is None:return Decision(allow=False,reasons=['missing_context'])
     if subject != context.principal:return Decision(allow=False,reasons=['principal_mismatch'])
+    if isinstance(context, (MeetingRmAccess, MeetingWorkerAccess)):
+        return meeting_decision(subject,action,resource,context)
+    if action in registry.MEETING_TOOLS:return Decision(allow=False,reasons=['meeting_execution_required'])
     try:
         scope = PolicyResource.model_validate(resource if resource is not None else {})
     except ValidationError:
@@ -82,12 +105,12 @@ def decide(subject: Principal, action: str, resource: Mapping[str, JsonValue] | 
     return Decision(allow=True,reasons=['explicit_rule'],obligations=obligations)
 
 
-def require_permission(subject: Principal, action: str, resource: Mapping[str, JsonValue] | None, context: RequestContext) -> Decision:
+def require_permission(subject: Principal, action: str, resource: Mapping[str, JsonValue] | None, context: RequestContext | MeetingAccess) -> Decision:
     """Record ids and rule codes only; a denial raises before the caller opens a DB client."""
     decision = decide(subject,action,resource,context)
     actor = {'actor_type':'agent','actor_id':context.agent} if context.agent is not None else {}
     audit.add('policy','policy.decided','success' if decision.allow else 'denied',
-        details={'tool':action if action in KNOWN_TOOLS else 'unregistered_tool','reasons':decision.reasons,'version':'v1'},**actor)
+        details={'tool':action if action in KNOWN_TOOLS or action in registry.MEETING_TOOLS else 'unregistered_tool','reasons':decision.reasons,'version':'v1'},**actor)
     if not decision.allow:raise PolicyDenied(f"Tool access denied: {decision.reasons[0]}")
     return decision
 

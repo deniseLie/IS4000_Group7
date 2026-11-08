@@ -116,11 +116,11 @@ def imported(body: ImportRequest) -> Imported:
     if suffix=='vtt':parsed=parse_vtt(body.text);origin='zoom_export_vtt'
     elif suffix=='txt':parsed=parse_txt(body.text);origin='zoom_export_txt'
     else:raise ValueError('Only Zoom .vtt or .txt exports are supported; enter RM notes separately')
-    if len(parsed)>100:raise ValueError('The meeting intake supports at most 100 speech cues; no text was truncated')
+    if len(parsed)>1000:raise ValueError('The meeting intake supports at most 1000 speech cues; no text was truncated')
     aliases={s.label.casefold().strip():s.role for s in body.speakers};cues=[];count=0
     for index,item in enumerate(parsed,1):
         safe,changes=redact_details(item.text);count+=sum(change.count for change in changes)
         cues.append(Cue(cue_id='cue'+str(index),speaker=aliases.get((item.label or '').casefold().strip(),'unmapped'),start_seconds=item.start_seconds,text=safe))
-    if len(json.dumps([c.model_dump(mode='json') for c in cues]).encode())>16000:
-        raise ValueError('Redacted transcript exceeds the 16 KB evidence limit of the meeting intake; no text was truncated')
+    if len(json.dumps([c.model_dump(mode='json') for c in cues],ensure_ascii=False).encode())>128000:
+        raise ValueError('Redacted transcript exceeds the 128000-byte evidence limit; no text was truncated')
     return Imported(origin=origin,file_hash=sha256(raw).hexdigest(),cues=tuple(cues),coverage=body.coverage,redaction_count=count)

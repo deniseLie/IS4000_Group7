@@ -2312,11 +2312,55 @@ button.cell.past:disabled{opacity:.35}
 .offer-switches{border:0;margin:0;padding:0;display:grid;gap:6px;font-size:13px;min-width:0}
 .offer-switches legend{font-size:12px;color:var(--muted);padding:0}
 .offer-switches small{font-size:12px;color:var(--muted)}
-/* Consent v2 (6e): Data sharing has one card per category. */
-.consent-cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
-.consent-cards .access-card{display:grid;align-items:start;gap:8px;min-width:0}
-.consent-cards .access-card h3{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.consent-cards fieldset{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+/* Data sharing (redesign 8 Nov): what her RM can see as one list of rows; each row opens its detail one tap down. */
+.sharing-page{max-width:720px;overflow-wrap:anywhere}
+.sharing-page h1{margin:0 0 4px;font-size:24px}
+.sharing-head{display:flex;align-items:center;gap:14px;margin:4px 0 20px}.sharing-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.sharing-lead{margin:4px 0 18px;color:var(--muted);font-size:13px;line-height:1.6}
+.sharing-rows,.sharing-list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.sharing-rows>li+li,.sharing-list>li+li{border-top:1px solid var(--line)}
+.sharing-row{display:flex;align-items:center;gap:14px;width:100%;padding:14px 16px;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;
+  transition:background-color .15s var(--ease-out)}
+.sharing-row:hover{background:var(--chalk)}.sharing-row:focus-visible{outline:none;box-shadow:inset var(--focus-ring)}
+.sharing-row>svg{width:20px;height:20px;flex:none;color:var(--muted)}
+.sharing-row-text{flex:1;min-width:0;display:grid;gap:2px}.sharing-row-text strong{font-size:14px;font-weight:600}
+.sharing-row-text small,.sharing-list small,.sharing-switch small,.sharing-topic small{color:var(--muted);font-size:12px;line-height:1.5}
+.sharing-go{display:inline-flex;flex:none;color:var(--faint,var(--muted))}.sharing-go svg{width:16px;height:16px;transform:rotate(-90deg)}
+.sharing-pill{flex:none;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:var(--canvas);color:var(--muted)}
+.sharing-pill.on{background:#edf6ef;color:#1f6b3a}.sharing-pill.held{display:inline-block;margin-top:4px;white-space:normal}.sharing-pill.wait{display:inline-block;margin-top:4px;background:#fdf5e4;color:#8a5a00;white-space:normal}
+.sharing-list>li{display:grid;gap:2px;padding:12px 16px;font-size:13px;line-height:1.5}
+.sharing-ask{display:grid;gap:8px;margin:0 0 14px;padding:12px 14px;border:1px solid #f0dfb5;border-radius:10px;background:#fdf5e4;color:#5c3d00;font-size:13px}
+.sharing-ask p{margin:0;line-height:1.5}.sharing-ask .panel-actions{margin:0}
+.sharing-alert,.sharing-done{margin:0 0 14px;font-size:13px;line-height:1.5}.sharing-alert{color:var(--red-dark)}
+.sharing-link{display:inline;padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line);cursor:pointer;text-align:left}
+.sharing-link.danger{color:#DA0000;font-weight:500;text-decoration:none}
+.sharing-link:hover:not(:disabled){text-decoration:underline;text-decoration-color:currentColor}.sharing-link:disabled{opacity:.5;cursor:not-allowed}
+.sharing-foot{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
+.sharing-confirm{display:grid;gap:10px;margin:12px 0;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--chalk);font-size:13px}
+.sharing-confirm p{margin:0;line-height:1.55}.sharing-confirm .panel-actions{margin:0}
+.sharing-confirm fieldset{border:0;margin:0;padding:0;display:grid;gap:8px;min-width:0}.sharing-confirm legend{padding:0 0 4px;font-weight:600}
+.sharing-confirm label{display:flex;align-items:center;gap:8px;line-height:1.4}.sharing-confirm input[type=radio],.sharing-confirm input[type=checkbox]{margin:0;accent-color:var(--red)}
+.sharing-indent{padding-left:24px}.sharing-field{flex-wrap:wrap;margin-top:4px}
+.sharing-field select,.sharing-field input{max-width:100%;min-height:34px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;font-size:13px;color:var(--ink)}
+.sharing-field select:focus-visible,.sharing-field input:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.sharing-back{display:inline-flex;align-items:center;gap:4px;margin:0 0 14px;padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
+.sharing-back:hover{color:var(--ink)}.sharing-back svg{width:16px;height:16px;transform:rotate(90deg)}
+.sharing-switch{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.sharing-switch>div{flex:1;min-width:0;display:grid;gap:2px}.sharing-switch strong{font-size:14px}
+.sharing-detail>.sharing-link{margin-top:10px}
+.sharing-toggle{position:relative;flex:none;width:42px;height:24px;padding:0;border:0;border-radius:999px;background:var(--line-2,#ccc);cursor:pointer;transition:background-color .15s var(--ease-out)}
+.sharing-toggle span{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s var(--ease-out)}
+.sharing-toggle[aria-checked="true"]{background:var(--ok,#2F7A3D)}.sharing-toggle[aria-checked="true"] span{transform:translateX(18px)}
+.sharing-toggle:focus-visible{outline:none;box-shadow:var(--focus-ring)}.sharing-toggle:disabled{opacity:.5;cursor:not-allowed}
+.sharing-topics{margin-top:28px}.sharing-topics h2{margin:0 0 10px;font-size:15px}
+.sharing-topic{grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:12px}.sharing-topic>div:first-child{display:grid;gap:2px}
+.sharing-topic [data-testid=talking-point-line]{font-size:14px;color:var(--ink)}
+.sharing-topic-actions{display:flex;align-items:center;gap:6px}.sharing-topic-actions .bank-chat-logout{min-height:32px;padding:6px 12px;font-size:12px}
+.sharing-more{position:relative}.sharing-more summary{list-style:none;display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--line);border-radius:var(--btn-radius);cursor:pointer;color:var(--muted)}
+.sharing-more summary::-webkit-details-marker{display:none}
+.sharing-more[open] .sharing-link{position:absolute;right:0;top:36px;z-index:2;width:max-content;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.sharing-more-rows{margin-top:12px}.sharing-fold{margin-top:12px}.sharing-fold summary{cursor:pointer;color:var(--muted);font-size:13px;padding:6px 0}.sharing-fold .sharing-list{margin-top:6px}
+@media(max-width:640px){.sharing-row{padding:12px;gap:10px}.sharing-switch{padding:12px}.sharing-topic{grid-template-columns:minmax(0,1fr)}.sharing-topic-actions{margin-top:6px}}
 .answer-section[data-pending] .skeleton-text{width:min(320px,80%);height:12px}
 
 /* Keep account and card controls within a narrow client's viewport. */
@@ -2329,3 +2373,227 @@ button.cell.past:disabled{opacity:.35}
 /* Meeting lifecycle: shared form, card and button tokens from the app theme. */
 .meeting-lifecycle{margin-top:24px;overflow-wrap:anywhere}.meeting-lifecycle h2{display:flex;gap:10px;align-items:center}.meeting-lifecycle form{display:grid;gap:12px;margin:16px 0}.meeting-notice,.meeting-minutes,.meeting-action-item{padding:16px 0;border-top:1px solid var(--line,#e2e7eb)}.meeting-evidence-form{padding:16px;background:var(--surface,#f7f9fa);border-radius:12px}.meeting-lifecycle blockquote{margin:12px 0;padding-left:14px;border-left:3px solid var(--line,#d9e1e8)}.meeting-action-item label{display:flex;gap:10px;align-items:flex-start}.meeting-lifecycle textarea,.meeting-lifecycle input:not([type=checkbox]),.meeting-lifecycle select{width:100%;max-width:100%}.meeting-lifecycle details{margin:8px 0}.meeting-lifecycle .primary-button{display:inline-flex;align-items:center}.meeting-lifecycle .meeting-actions{display:flex;gap:8px;flex-wrap:wrap}
 .admin-more { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; }
+
+/* Meeting page (storyline UX pass): one meeting, four steps. Matches the RM workspace cards, red accent and buttons. */
+.meeting-page{margin-top:16px}
+.meeting-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:16px 0 8px;padding:0;list-style:none;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.meeting-step{border-right:1px solid var(--line)}.meeting-step:last-child{border-right:0}
+.meeting-step button{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:10px 14px;border:0;background:none;font:600 13.5px var(--font-body);color:var(--ink-2);cursor:pointer;text-align:left}
+.meeting-step-mark{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:999px;border:1.5px solid var(--faint);font-size:12px;font-weight:700;color:var(--muted)}
+.meeting-step.done .meeting-step-mark{border:0;background:#EAF5EC;color:var(--ok,#2F7A3D)}
+.meeting-step.current .meeting-step-mark{border:0;background:var(--red);color:#fff}
+.meeting-step.current button{color:var(--ink)}
+.meeting-step.shown button{background:var(--tint);box-shadow:inset 0 -3px 0 var(--red)}
+.meeting-step-panel{display:grid;gap:12px;margin-top:8px}
+.meeting-step-panel>h3{margin:4px 0 0}
+.meeting-speakers{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;border:0;padding:0;margin:0}
+.meeting-speakers legend{font-weight:600;margin-bottom:6px}
+.meeting-review-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.meeting-review-grid .rmw-card{margin:0}
+.meeting-send-bar{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 -4px 16px rgba(17,24,39,.06)}
+@media (max-width:640px){.meeting-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.meeting-step:nth-child(2){border-right:0}}
+.meeting-page .meeting-evidence-form>button,.meeting-page .meeting-evidence-form>.primary-button{justify-self:start}
+.rmw-page>nav .link-button{border:0;background:none;padding:0;font:inherit;color:var(--muted);text-decoration:underline;cursor:pointer}
+/* RM assistant home: needs-you-now rows, starter tabs, next steps */
+.rm-now{margin:20px 0 4px;padding:14px 18px 6px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:left}
+.rm-now-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:4px}.rm-now-head .link-button{margin-left:auto}
+.rm-now-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.rm-now-row small{display:block}
+.rm-starter-tabs{margin:18px 0 10px}
+.rm-next{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}.rm-next>span{font-weight:600;color:var(--muted);font-size:13px}
+.meeting-ready{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.meeting-ready h4{margin:0 0 6px}.meeting-ready ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.meeting-ready li.ok{color:var(--ink)}.meeting-ready li.ok::first-letter{color:var(--ok,#2F7A3D)}.meeting-ready li.todo{color:var(--muted)}
+.meeting-ready small{color:var(--muted)}
+.meeting-ready .link-button{border:0;background:none;padding:0;min-height:0;font:inherit;color:var(--ink);text-decoration:underline;cursor:pointer}
+/* Meeting page, matched to the mock-up: page header, stepper with sub-labels, main card + right rail */
+.meeting-page.meeting-lifecycle{margin-top:0}
+.meeting-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 14px;font-size:13px;color:var(--muted)}
+.meeting-crumbs button{border:0;background:none;padding:0;font:inherit;color:var(--muted);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.meeting-crumbs button:hover{color:var(--ink)}.meeting-crumbs [aria-current]{color:var(--ink-2)}
+.meeting-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.meeting-head h1{margin:6px 0 4px;font:700 30px/1.2 var(--font-display);letter-spacing:-.02em}
+.meeting-meta{margin:0;color:var(--muted);font-size:14px}
+.meeting-head-actions{display:flex;gap:8px;align-items:center}
+.meeting-refresh{width:38px;height:38px;border:1px solid var(--line);border-radius:8px;background:#fff;display:grid;place-items:center}
+.meeting-step button{align-items:center;min-height:60px}
+.meeting-step-text{display:grid;gap:1px}.meeting-step-text small{font-size:12px;font-weight:500;color:var(--muted)}
+.meeting-step.current .meeting-step-text small{color:var(--red-dark,#B30000)}
+.meeting-body{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;margin-top:4px}
+.meeting-main{flex:999 1 520px;min-width:0;display:grid;gap:16px}
+.meeting-rail{flex:1 1 260px;display:grid;gap:16px}
+.meeting-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.meeting-card>h2{margin:0;font:700 18px/1.3 var(--font-display)}
+.meeting-card>h2+p.muted{margin:-6px 0 4px}
+.meeting-page .muted{color:var(--muted);font-size:13.5px}
+.meeting-page .meeting-evidence-form{padding:0;background:none;border-radius:0;gap:14px}
+.meeting-file{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--chalk,#F9FAFB)}
+.meeting-file>span:first-of-type{flex:1 1 220px;display:grid}.meeting-file strong{font-family:var(--font-mono);font-size:13px}
+.meeting-file small{color:var(--muted);font-size:12px}.meeting-file label{cursor:pointer}
+.meeting-file.empty{cursor:pointer;border-style:dashed}.meeting-file.empty strong{font-family:var(--font-body)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.meeting-preview h4{margin:0 0 6px}.meeting-preview>div{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.meeting-preview p{margin:0}
+.meeting-who{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#F3F4F6;color:var(--ink-2)}
+.meeting-who.client{background:#FFFBF3;color:#6B4700;border:1px solid #F3E3C1}
+.meeting-submit{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding-top:14px;border-top:1px solid var(--line)}
+.meeting-ready h3,.meeting-glance h3{margin:0 0 10px;font:600 15px var(--font-display)}
+.meeting-ready ul{margin:0 0 10px;padding:0;list-style:none;display:grid;gap:8px}
+.meeting-ready li{display:flex;gap:8px}.meeting-ready li span{flex:none;font-weight:700}
+.meeting-ready li.ok span{color:var(--ok,#2F7A3D)}.meeting-ready li.todo{color:var(--muted)}
+.meeting-ready p{margin:0}
+.meeting-glance{display:grid;gap:2px}.meeting-glance p{margin:0 0 8px}
+.meeting-page .link-button{border:0;background:none;padding:0;min-height:0;font:inherit;color:var(--ink);text-decoration:underline;cursor:pointer}
+.meeting-page .meeting-send-bar{position:static;box-shadow:none;background:var(--chalk,#F9FAFB)}
+.meeting-zoom-wait{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--chalk,#F9FAFB);display:grid;gap:8px}
+.meeting-zoom-wait h3{margin:0;font:600 15px var(--font-display)}.meeting-zoom-wait p{margin:0}
+.meeting-fallback{border-top:1px solid var(--line);padding-top:10px}.meeting-fallback>summary{cursor:pointer;color:var(--ink-2);font-weight:600;font-size:13.5px;margin-bottom:12px}
+.meeting-technical{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}.meeting-technical>summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600}
+.meeting-proposal-bare{display:grid;gap:12px}.meeting-proposal-bare form{display:grid;gap:12px}
+/* Assistant home, matched to the mock-up: a coloured dot instead of a tag, one plain sentence, one button */
+.rm-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.rm-dot.urgent{background:var(--red)}.rm-dot.date{background:#D97706}.rm-dot.meeting{background:#2563EB}
+.rm-now-row{flex-wrap:nowrap}.rm-now-text{flex:1;min-width:0}
+.rm-continue{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px}
+.rm-continue>div{display:grid;gap:4px}
+.rm-steps{display:flex;gap:4px}.rm-steps i{display:block;width:36px;height:6px;border-radius:3px;background:var(--line)}
+.rm-steps i.done{background:var(--ok,#2F7A3D)}.rm-steps i.now{background:var(--red)}
+/* Propose a meeting: a drop-down card under its button, like an apps menu */
+.rm-popover-anchor{position:relative}
+.rm-popover{position:absolute;top:calc(100% + 10px);right:0;z-index:30;width:min(440px,calc(100vw - 32px));padding:16px 18px 18px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 50px rgba(17,24,39,.16);text-align:left;animation:fade-in .15s var(--ease-out)}
+.rm-popover-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.rm-popover-head strong{font:600 16px var(--font-display)}
+.rm-popover .meeting-proposal-bare textarea{min-height:70px}
+/* My clients (option B): one dot and one sentence, details underneath */
+.rm-book-since{font-weight:400;color:var(--muted);font-size:13px}
+.rm-book-status{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:14px;color:var(--ink)}
+.rm-book-status b{font-weight:600}
+.rm-book-detail{display:block;margin:2px 0 0 17px;color:var(--muted)}
+.rm-dot.late{background:#D97706}.rm-dot.open{background:#6B7280}.rm-dot.clear{background:var(--ok,#2F7A3D)}
+/* Today redesign: next meeting, one ranked list, this week and counts */
+.rmw-today .page-header-actions .icon-button{width:38px;height:38px;padding:9px;border-radius:8px}
+.rm-nextmeet{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 20px;border-left:3px solid #2563EB}
+.rm-nextmeet>div:first-child{display:grid;gap:3px;min-width:0}.rm-nextmeet strong{font-size:16px}
+.rm-nextmeet-actions{display:flex;gap:8px;flex-wrap:wrap}
+.rm-today-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:16px;align-items:start;margin-top:16px}
+@media (max-width:900px){.rm-today-grid{grid-template-columns:1fr}}
+.rm-first{gap:0}.rm-first-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:6px}.rm-first-head h2{margin:0;font-size:18px}
+.rm-first .rm-now-row{padding:12px 0}.rm-first .rm-now-row button{flex:none}
+.rm-type{display:block;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
+.rm-dot.shared{background:#7C3AED}.rm-dot.request{background:#6B7280}
+.rm-now-row>.rm-dot{margin-top:6px;align-self:flex-start}
+.rm-see-all{justify-self:start;margin-top:8px;padding:10px 0 2px;border-top:1px solid var(--line);width:100%;text-align:left;font-weight:600}
+.rm-aware{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.rm-aware h3{margin:0;font-size:15px}
+.rm-aware .rm-now-row{opacity:.85}
+.rm-today-side{display:grid;gap:12px;min-width:0}.rm-today-side h3{margin:0;font-size:15px}
+.rm-week-row{display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.rm-week-day{flex:none;width:64px;font-weight:600}.rm-week-day small,.rm-week-row .rm-plain small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+
+.rm-counts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rm-count{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:left;cursor:pointer;font:inherit;color:var(--ink)}
+.rm-count:hover{border-color:var(--line-2,#D1D5DB);background:var(--chalk,#F9FAFB)}.rm-count strong{font-size:22px;line-height:1.1}.rm-count span{font-size:12.5px;color:var(--muted)}
+.rm-count.zero strong{color:var(--faint,#9CA3AF)}
+.rm-dot.meeting{display:block;padding:0;border:0;gap:0}  /* .meeting (Schedule rows) must not size the dot */
+.rm-plain{padding:0;border:0;background:none;box-shadow:none;min-height:0;font:inherit;color:var(--ink);text-align:left;cursor:pointer}
+.rm-plain:hover{color:var(--red)}
+.rm-see-all.rm-plain{color:var(--ink)}.rm-see-all.rm-plain:hover{color:var(--red)}
+.rm-week-row .rm-plain{font-weight:600}
+/* Propose popover: opens in one piece, attached to its button (grows from the button's corner) */
+.rm-popover[hidden]{display:none}
+.rm-popover{top:calc(100% + 6px);transform-origin:top right;animation:rm-pop .16s cubic-bezier(.2,.8,.2,1)}
+@keyframes rm-pop{from{opacity:0;transform:scale(.96) translateY(-4px)}to{opacity:1;transform:none}}
+.rm-popover .meeting-proposal-bare,.rm-popover .meeting-proposal-bare form{gap:12px}
+.rm-popover .rm-form-grid{margin:0;gap:12px}.rm-popover .form-field{margin:0;gap:6px}
+.rm-popover .meeting-proposal-bare>p.rm-small{margin:0 0 2px;font-size:13px}
+/* RM assistant home (design: AssistantHome) */
+.rmw-shell .bank-chat-welcome{max-width:760px}
+.rmw-shell .bank-chat-welcome .welcome-signed-in{font:600 38px/1.15 var(--font-display,'Plus Jakarta Sans',sans-serif);letter-spacing:-.03em}
+.rmw-shell .bank-chat-welcome .chat-greeting{font-size:16px;color:var(--ink-2,#374151);margin-top:10px}
+.rm-now-open{margin-left:auto;font-size:13px;font-weight:600}
+.rm-now-why{color:var(--muted)}
+.rm-now .rm-now-row{align-items:center}.rm-now .rm-now-row>.rm-dot{align-self:center;margin-top:0}
+.rm-continue-steps{display:flex;align-items:center;gap:8px}.rm-continue-steps small{color:var(--muted);font-size:13px}
+.composer-attach{flex:none;display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:50%;background:#fff;color:var(--ink-2,#374151);cursor:pointer;align-self:flex-end;margin-bottom:2px}
+.composer-attach:hover{background:var(--canvas)}.composer-attach svg{width:16px;height:16px}
+.composer-note kbd{font:500 12px ui-monospace,monospace;padding:1px 6px;border:1px solid var(--line-2,#D1D5DB);border-radius:5px;background:#fff}
+.composer-area{position:relative}
+.rm-slash{position:absolute;left:0;right:0;bottom:calc(100% - 4px);z-index:20;max-height:320px;overflow:auto;margin:0;padding:6px;list-style:none;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(17,24,39,.12)}
+.rm-slash button{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:none;font:inherit;text-align:left;cursor:pointer;color:var(--ink)}
+.rm-slash li[aria-selected="true"] button,.rm-slash button:hover{background:var(--canvas)}
+.rm-slash button svg{width:16px;height:16px;flex:none}.rm-slash span{display:grid;flex:1}.rm-slash small{color:var(--muted);font-size:12px}
+.rm-slash em{font-style:normal;font-size:11px;color:var(--faint,#9CA3AF)}
+/* Meeting conversation (design: Assistant): pinned meeting, who-did-this line, step suggestions */
+.rm-pinned{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:12px 0 0;padding:10px 16px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.rm-pinned>div{flex:1 1 240px;min-width:0}.rm-pinned>div .eyebrow{display:block}
+.rm-pinned-steps{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.rm-pill{display:inline-flex;align-items:center;min-height:30px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;font:600 12.5px Inter,system-ui,sans-serif;color:var(--ink-2,#374151);cursor:pointer}
+.rm-pill:hover{border-color:var(--line-2,#D1D5DB);background:var(--chalk,#F9FAFB)}
+.rm-pill.done{color:var(--ok,#2F7A3D)}.rm-pill.now{color:#fff;background:var(--red);border-color:var(--red)}
+.rm-pinned-open{font-size:13px;font-weight:600}
+.rm-step-suggestions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.rmw-shell .bank-chat-welcome .welcome-signed-in{font-size:38px!important;font-weight:600!important;margin:0}
+.rmw-shell .composer-note>span{display:block}
+/* "Next:" after an answer (design: pills right after the label, no divider) */
+.bank-chat-bubble .rm-next{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:6px 8px;margin-top:12px;padding:0;border:0;border-left:0}
+.bank-chat-bubble .rm-next>span{font-weight:600;color:var(--muted);font-size:13px}
+.bank-chat-bubble .rm-next .rmw-mini{min-height:30px;padding:4px 12px;border-radius:999px;font-size:12.5px}
+.bank-chat-bubble .rm-next .rmw-mini:first-of-type{color:#fff;background:var(--red);border-color:var(--red)}
+.rmw-shell .composer-note>span svg{display:inline;vertical-align:-2px;margin-right:6px}
+/* Meeting step 4 (design: FollowUp): editable drafts, one Send */
+.meeting-page .tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.meeting-page .tag.ok{background:#EAF5EC;color:#2F7A3D}.meeting-page .tag.warn{background:#FFFBF3;color:#6B4700;border:1px solid #F3E3C1}
+.meeting-page .in{width:100%;box-sizing:border-box;min-height:36px;padding:7px 10px;border:1px solid var(--line-2,#D1D5DB);border-radius:8px;font:14px/1.5 Inter,system-ui,sans-serif;background:#fff;color:var(--ink)}
+.meeting-page .in:disabled{background:var(--chalk,#F9FAFB);color:var(--muted)}
+.meeting-body.no-rail .meeting-main{flex-basis:100%}
+.meeting-followup{display:grid;gap:16px}
+.meeting-followup-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 16px}
+.meeting-followup-head h2{margin:0;font-size:18px}.meeting-followup-head p{margin:4px 0 0}
+
+.meeting-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+@media (max-width:900px){.meeting-draft-grid{grid-template-columns:1fr}}
+.meeting-draft-card{display:grid;gap:12px;margin:0}
+.meeting-handoffs{grid-column:1/-1}
+.meeting-draft-head{display:flex;align-items:center;gap:10px}.meeting-draft-head .tag{margin-left:auto}
+.meeting-draft-head label{display:flex;align-items:center;gap:10px;margin:0}.meeting-draft-head h3{margin:0;font-size:15px}
+.meeting-draft-head input[type=checkbox],.meeting-task-table input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--red)}
+.meeting-task-table{display:grid;gap:6px}
+.meeting-task-table [role=row]{display:grid;grid-template-columns:22px minmax(0,3fr) minmax(0,1.3fr) minmax(0,1.4fr);gap:6px;align-items:center}
+.meeting-task-table [role=row].off{color:var(--muted);font-size:13px}
+.meeting-task-table .head .eyebrow{font-size:11px}
+.meeting-recap-text{width:100%;box-sizing:border-box;min-height:150px;padding:10px 12px;border:1px solid var(--line-2,#D1D5DB);border-radius:8px;font:14px/1.55 Inter,system-ui,sans-serif;resize:vertical}
+.meeting-recap-text:disabled{background:var(--chalk,#F9FAFB)}
+.meeting-page .meeting-send-sticky{position:sticky;bottom:0;z-index:2;background:#fff;box-shadow:0 -4px 16px rgba(17,24,39,.06)}
+.meeting-redo{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.meeting-redo label{flex:1 1 260px;display:flex}
+.meeting-tracker{display:grid;gap:8px}.meeting-tracker h3{margin:0}.meeting-tracker h4{margin:8px 0 0}
+.meeting-task-table [role=row]{grid-template-columns:22px minmax(0,3fr) minmax(0,1.1fr) minmax(0,1.6fr)}
+.meeting-page .meeting-crumbs a,.meeting-page nav[aria-label=Breadcrumb] a,.meeting-crumbs button{color:var(--muted);text-decoration:none}
+/* Ticket inbox (redesign): one row per request, detail on the right */
+.rm-inbox .page-header-actions .icon-button{width:38px;height:38px;padding:9px;border-radius:8px}
+.rm-inbox-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.rm-inbox-bar .page-tabs{border-bottom:0;margin:0}
+.rm-chips{display:flex;flex-wrap:wrap;gap:6px;padding:6px 0}
+.rm-chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;font:600 13px Inter,system-ui,sans-serif;color:var(--ink-2,#374151);cursor:pointer}
+.rm-chip.on{background:var(--ink,#111827);border-color:var(--ink,#111827);color:#fff}
+.rm-inbox-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}
+@media (max-width:980px){.rm-inbox-grid{grid-template-columns:1fr}}
+.rm-inbox-list{padding:6px 18px;gap:0}
+.rm-inbox-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.rm-inbox-row:first-child{border-top:0}
+.rm-inbox-row.on{margin:0 -18px;padding:12px 18px;background:var(--tint,#FCEDEB);box-shadow:inset 3px 0 0 var(--red)}
+.rm-inbox-row>button:last-child{flex:none}
+.rm-inbox-pick{flex:1;min-width:0;display:flex;align-items:flex-start;gap:12px;padding:0;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer}
+.rm-inbox-pick>.rm-dot{margin-top:7px}
+.rm-issues{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.rm-issues span{padding:1px 8px;border-radius:6px;background:var(--canvas,#F3F4F6);font-size:12px;color:var(--ink-2,#374151)}
+.rm-inbox-row.on .rm-issues span{background:#fff}
+.rm-inbox-more{margin:0;padding:12px 0;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.rm-inbox-panel{position:sticky;top:16px;display:grid;gap:12px}
+.rm-panel-head{display:flex;align-items:center;justify-content:space-between}
+.rm-inbox-panel h3{margin:0;font-size:17px;line-height:1.3}
+.rm-fraud{margin:0;padding:10px 12px;border:1px solid #F3E3C1;border-radius:8px;background:#FFFBF3;color:#6B4700;font-size:13px;line-height:1.5}
+.rm-panel-part{display:grid;gap:4px}.rm-panel-part p{margin:0;font-size:13.5px;line-height:1.55}
+.rm-told-line b{display:block;font-size:12px;color:var(--muted);font-weight:600}
+.rm-same{padding-top:10px;border-top:1px solid var(--line)}
+.rm-same-item{display:flex;align-items:center;gap:8px;font-size:13.5px}.rm-same-item input{width:16px;height:16px;accent-color:var(--red)}
+.rm-note-preview{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:var(--chalk,#F9FAFB);font-size:13px!important}
+.rm-same .bank-chat-logout{justify-self:start}
+.rm-panel-actions{display:flex;flex-wrap:wrap;gap:8px}
+.rm-inbox-pick .rmw-why{display:block;margin-top:2px}

@@ -4,6 +4,7 @@ import DraftReview from './DraftReview';
 import DocumentationReview from './DocumentationReview';
 import {AvailabilityReview,DecisionReview} from './CalendarReview';
 import ConsentAskReview from './ConsentAskReview';
+import MeetingWorkspace from '../meetings/MeetingWorkspace';
 import {KIND_LABELS,REPORT_TITLES,allDrafts,reportText,validationNote} from '../../lib/rm';
 import {formatDateTime} from '../../lib/format';
 
@@ -16,6 +17,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
   // The RM can edit the report herself (rewrite or remove points, change the summary) instead of asking the assistant.
   // Edited points are marked "Edited by you"; their source numbers still show what the original point was based on.
   const [local,setLocal]=useState(null),[work,setWork]=useState(null);
+  const [meetingOpen,setMeetingOpen]=useState(false);
   const reply=local||given;
   const editing=!!work;
   function startEdit() {setWork({summary:reply.summary||'',sections:(reply.sections||[]).map(s=>({...s,items:s.items.map(i=>({...i}))}))});}
@@ -73,7 +75,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       <div className="rm-report-tools">
         {editing?<><button type="button" className="rmw-tool" onClick={()=>setWork(null)}>Cancel</button>
           <button type="button" className="rmw-tool primary" onClick={finishEdit}><Icon name="check"/>Done</button></>
-        :<button type="button" className="rmw-tool" onClick={startEdit}><Icon name="document"/>Edit</button>}
+        :!reply.meeting_brief&&<button type="button" className="rmw-tool" onClick={startEdit}><Icon name="document"/>Edit</button>}
         {!editing&&<><button type="button" className="rmw-tool" onClick={copy}><Icon name={copied?'check':'document'}/>{copied?'Copied':'Copy'}</button>
         <button type="button" className="rmw-tool" onClick={print}><Icon name="download"/>Print or save PDF</button></>}</div>
     </header>}
@@ -81,6 +83,9 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       :reply.summary&&<p className={report?'rm-report-summary':'rm-answer-summary'}>{reply.summary}</p>}
     {reply.edited&&!editing&&<p className="rm-validation"><Icon name="info"/>You edited this report. Edited points are yours, not the assistant’s; the numbers show the records the original point used.</p>}
     {reply.status==='denied'&&<p className="rm-denied" role="alert" data-testid="rm-access-denied"><Icon name="lock"/>Client-book and specialist access restrictions apply. No action was taken.</p>}
+    {reply.meeting_workspace&&<div className="meeting-actions"><button type="button" className="bank-chat-logout" data-testid="rm-open-saved-brief" onClick={()=>setMeetingOpen(true)}>Open the meeting</button>
+      {reply.meeting_brief&&<p className="rm-small" data-testid="rm-saved-brief-version">Saved brief version {reply.meeting_brief.version} · {reply.meeting_brief.sources_changed?'needs review':reply.meeting_brief.decision.replaceAll('_',' ')}</p>}</div>}
+    {meetingOpen&&reply.meeting_workspace&&<MeetingWorkspace meetingId={reply.meeting_workspace} token={token} onClose={()=>setMeetingOpen(false)}/>}
     {(reply.sections||[]).map((section,index)=><section className="rm-answer-section" key={index}>
       {section.heading&&<h3>{section.heading}</h3>}
       {runs(section.items).map((run,r)=>run.kind==='record'

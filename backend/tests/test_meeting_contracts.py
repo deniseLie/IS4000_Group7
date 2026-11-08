@@ -48,7 +48,7 @@ def test_examples_round_trip(model,data):
 
 
 @pytest.mark.parametrize('model,data',[
-    (MeetingEvent,{**EXAMPLES[MeetingEvent],'type':'meeting.started'}),
+    (MeetingEvent,{**EXAMPLES[MeetingEvent],'type':'meeting.unknown'}),
     (MeetingEvent,{**EXAMPLES[MeetingEvent],'client_text':'hello'}),
     (BriefItem,{'label':'record','text':'A fact with no source'}),
     (BriefCard,{**EXAMPLES[BriefCard],'consent':{'transactions':True}}),
@@ -60,8 +60,11 @@ def test_examples_round_trip(model,data):
     (TalkingPoint,{**POINT,'topic':'term_sheet'}),
     (TalkingPoint,{**POINT,'concerns':['rates','rates']}),
     (TalkingPoint,{**POINT,'last_seen':'2026-11-01'}),
+    (TalkingPoint,{**POINT,'kind':'etf'}),
+    (TalkingPoint,{**POINT,'kind':'condo'}),
+    (TalkingPoint,{**POINT,'concerns':['taxes']}),
 ],ids=['event_type','extra_field','uncited_record','consent_category','version','empty_quote','changes_without_note','error_code',
-    'point_text','point_topic','point_concern_twice','point_dates'])
+    'point_text','point_topic','point_concern_twice','point_dates','point_kind_of_another_topic','point_kind_unlisted','point_concern_unlisted'])
 def test_rejects_unknown_fields_values_and_broken_rules(model,data):
     with pytest.raises(ValidationError):model.model_validate(data)
 
@@ -74,7 +77,11 @@ def test_names_match_the_migration():
     folder=Path(__file__).parents[1]/'supabase'/'migrations'
     sql=(folder/'0105_meeting_seam.sql').read_text()
     quoted=lambda text:set(re.findall(r"'([a-z_.]+)'",text))
-    assert quoted(re.search(r'event_type in \(([^)]*)\)',sql)[1])==set(get_args(MeetingEventType))
+    assert quoted(re.search(r'event_type in \(([^)]*)\)',sql)[1])<=set(get_args(MeetingEventType))
+    # Applied migrations extend the seam additively; compare the runtime enum with the latest released constraint.
+    migrations='\n'.join(path.read_text() for path in sorted(folder.glob('*.sql')))
+    constraints=re.findall(r'add constraint events_event_type_check check\s*\(\s*event_type in\s*\(([^)]*)\)',migrations,re.I|re.S)
+    assert quoted(constraints[-1])==set(get_args(MeetingEventType))
     assert quoted(re.search(r'p_category not in \(([^)]*)\)',sql)[1])==set(get_args(ConsentCategory))
     assert quoted(re.search(r'unnest\(array\[([^\]]*)\]\)',sql)[1])==set(get_args(ConsentCategory))
     topics=re.search(r'function rm\.meeting_topics\(\).*?array\[([^\]]*)\]',(folder/'0106_meeting_requests.sql').read_text(),re.S)[1]
@@ -82,11 +89,14 @@ def test_names_match_the_migration():
 
 
 def test_a_talking_point_carries_no_client_text_and_renders_one_line():
-    assert set(TalkingPoint.model_fields)=={'point_id','topic','stage','timeframe','concerns','origin','first_seen','last_seen'}
+    # 0143 added kind (optional): both sides agreed the field set, and a point without a kind renders exactly as before.
+    assert set(TalkingPoint.model_fields)=={'point_id','topic','stage','timeframe','kind','concerns','origin','first_seen','last_seen'}
     inferred=TalkingPoint.model_validate(POINT)
-    assert inferred.line()=='Home loan · planning · within 12 months · inferred from chat' and inferred.brief_label()=='ai_suggestion'
+    assert inferred.kind is None and inferred.line()=='Property financing · planning · within 12 months · inferred from chat' and inferred.brief_label()=='ai_suggestion'
     shared=TalkingPoint.model_validate({**POINT,'topic':'fixed_deposit','stage':'concern','timeframe':'unknown','concerns':['rates','fees'],'origin':'confirmed'})
-    assert shared.line()=='Fixed deposit · concern · asks about rates, fees · shared by the client' and shared.brief_label()=='client_said'
+    assert shared.line()=='Time deposit · concern · asks about rates, fees · shared by the client' and shared.brief_label()=='client_said'
+    kind=TalkingPoint.model_validate({**POINT,'kind':'hdb_resale','concerns':['lock_in','rates']})
+    assert kind.line()=='Property financing · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat'
 
 
 def test_meetings_are_off_by_default_and_every_call_says_so(monkeypatch):

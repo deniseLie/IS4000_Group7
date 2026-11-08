@@ -14,7 +14,7 @@ from app.schemas.chat import ChatRequest,Message
 from app.schemas.contracts import AgentOutput,AgentResult,PlanTask,Principal,RequestContext
 from app.schemas.meetings import TalkingPoint
 from app.schemas.talking_points import InsightShareResult,TopicStatus
-from app.services import audit,authorization,llm_gateway,offers,orchestrator,talking_points as tp
+from app.services import audit,authorization,llm_gateway,offers,orchestrator,prompts,talking_points as tp
 from app.services.actions.registry import EXECUTORS
 from app.services.agents import registry,runner
 from app.services.guardrail import assess_request
@@ -93,7 +93,9 @@ def test_the_model_sees_only_her_redacted_messages() -> None:
 
 @pytest.fixture
 def background(monkeypatch: pytest.MonkeyPatch):
-    """Runs lane 1 with stubbed reads, writes and model; returns what it did."""
+    """Runs lane 1 v1 (kept for switching back in prompts.VERSIONS; v2 is in test_talking_points_state) with stubbed reads,
+    writes and model; returns what it did."""
+    monkeypatch.setitem(prompts.VERSIONS,'talking_points','v1')
     seen=SimpleNamespace(calls=[],rpcs=[],events=[],status=status(),reply=lambda p:result([]))
     async def call(prompt,system,messages,schema,model=None,retries=None):
         seen.calls.append({'prompt':prompt['id'],'messages':messages,'model':model,'retries':retries})
@@ -139,15 +141,10 @@ def test_without_her_chat_topics_grant_nothing_is_classified_and_only_the_skip_i
     assert background.calls==[] and actions(background.events)[-1][2]['reason']=='greeting'
 
 
-def test_a_care_signal_pauses_suggestions_without_a_read_or_a_model_call(background) -> None:
-    async def never(current):raise AssertionError('no status read under care')
-    background.status=None
-    tp.status,real=never,tp.status
-    try:turn=background.run('I lost my job and need to think about my home loan',care=True)
-    finally:tp.status=real
-    assert background.calls==[] and background.rpcs==[('customer_pause_suggestions',{'p_turn_id':str(turn)})]
-    assert actions(background.events)==[]  # the care flag is never logged; SQL records only {days: 60}
-    assert [e.details['tool'] for e in background.events if e.action=='policy.decided']==['insights.record']
+def test_a_care_signal_no_longer_pauses_chat_insights(background) -> None:
+    turn=background.run("I'm planning to buy a condo next year, but I lost my job last month",care=True)  # 0145 retired the care pause
+    assert len(background.calls)==1 and background.rpcs==[]  # the status read, code filter and model as on any turn; no pause
+    assert actions(background.events)==[('agent.talking_points_extracted','success',{'turn_id':str(turn),'proposed':0,'kept':0,'dropped':{},'outcomes':{}})]
 
 
 def test_a_classified_message_records_list_values_and_her_masked_quote(background) -> None:
@@ -209,9 +206,9 @@ def test_the_share_question_says_exactly_what_her_rm_would_see(monkeypatch: pyte
     assert (proposal.agent,proposal.type,proposal.task_id,proposal.target)==('relationship','insight.share','share',
         {'topic':'home_loan','stage':'planning','timeframe':'within_12m'})
     assert proposal.summary=='Let Sophie know you’re looking at home loans'
-    assert 'Sophie would see only: “Home loan · planning · within 12 months · shared by the client”, never your messages.' in question
+    assert 'Sophie would see only: “Property financing · planning · within 12 months · shared by the client”, never your messages.' in question
     assert 'Nothing is shared until you say yes' in question and text not in question
-    assert asyncio.run(tp.share_offer(text,risk(text).model_copy(update={'care':True}),ctx())) is None
+    assert asyncio.run(tp.share_offer(text,risk(text).model_copy(update={'care':True}),ctx())) is not None  # 0145: care no longer refuses it
     assert asyncio.run(tp.share_offer(text,risk(text),ctx('guest'))) is None
     assert asyncio.run(tp.share_offer('I lost my card while buying a condo',risk('I lost my card while buying a condo'),ctx())) is None
     async def broken(current):raise RuntimeError('down')
@@ -254,7 +251,7 @@ def test_compose_offers_one_share_when_the_reply_has_no_other_offer(composed) ->
     [proposal]=composed.saved
     assert (proposal.agent,proposal.type,proposal.target['topic'])==('relationship','insight.share','home_loan')
     assert [o.type for o in reply.offer.offers]==['insight.share']
-    assert reply.answer.startswith('Home loans are explained in the guide.') and 'Sophie would see only: “Home loan · planning' in reply.answer
+    assert reply.answer.startswith('Home loans are explained in the guide.') and 'Sophie would see only: “Property financing · planning' in reply.answer
     assert [s.task_id for s in reply.sections]==['t1','share'] and not reply.sections[-1].needs_human
 
 
@@ -285,7 +282,7 @@ def test_insight_actions_are_typed_on_the_ledger() -> None:
         {'point_id':point_id,'topic':'home_loan','stage':'planning','timeframe':'within_12m','origin':'confirmed','notified':True}))
     assert isinstance(shared.receipt.result,InsightShareResult)
     assert asyncio.run(orchestrator.outcome_text(shared,ctx()))==orchestrator.SHARED.format(
-        line='Home loan · planning · within 12 months · shared by the client')
+        line='Property financing · planning · within 12 months · shared by the client')
     deleted=ActionOutcome.model_validate(outcome('insight.delete',{'point_id':point_id,'topic':'home_loan'},
         {'point_id':point_id,'topic':'home_loan','status':'deleted'}))
     assert deleted.receipt.result.status=='deleted'
@@ -316,7 +313,7 @@ def test_insight_types_are_registered_and_only_relationship_offers_a_share() -> 
 def test_the_hold_or_a_pause_is_a_gap_on_the_rm_side_never_which_topic_or_why() -> None:
     base={'shared':True,'grant_id':'g1','as_of':'2026-11-05T09:00:00+08:00','pending':True}
     item=ev.talking_points_evidence({**base,'data':[]},1002)
-    assert item.data=={'points':0,'pending':True,'gap':item.data['gap'],'meaning':'No topics from the client\'s chats are available yet.'}
+    assert item.data=={'points':0,'pending':True,'gap':item.data['gap'],'meaning':'No client chat insights are available yet.'}
     assert 'do not guess which topics or why' in item.data['gap']
     row={'point_id':str(uuid4()),'topic':'investments','stage':'exploring','timeframe':'unknown','concerns':[],'origin':'confirmed',
         'first_seen':'2026-11-02','last_seen':'2026-11-04'}

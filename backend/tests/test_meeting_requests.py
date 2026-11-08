@@ -67,10 +67,10 @@ def test_the_seed_gives_michelle_a_scheduled_home_loan_meeting_and_queues_its_ev
     assert status=='scheduled'
     row=database.execute('select status,format,purpose,topics,extract(isodow from starts_at at time zone %s) from rm.appointments where appointment_id=%s',
         ('Asia/Singapore',meeting)).fetchone()
-    assert row==('confirmed','video','Home loan options',['home_loan','term_sheet','compliance_review'],4)
+    assert row==('confirmed','video','Property financing options',['home_loan','investments'],4)  # 0117: the storyline meeting
     [(kind,key,payload)]=events(database,meeting)
     assert kind=='meeting.scheduled' and key=='decision:00000000-0000-4000-8000-100200000072'
-    assert payload['request_id']==MICHELLE_REQUEST and payload['topics']==['home_loan','term_sheet','compliance_review'] and 'purpose' not in payload
+    assert payload['request_id']==MICHELLE_REQUEST and payload['topics']==['home_loan','investments'] and 'purpose' not in payload  # 0117
     assert database.execute('select status from rm.meeting_requests where request_id=%s',(MEI_LING_REQUEST,)).fetchone()==('requested',)
 
 

@@ -30,7 +30,7 @@ BRIEF_GAPS=('no_recorded_preferences','no_interaction_in_180_days')  # the brief
 BRIEF_ORDER=['The meeting','Who the client is','History and commitments','Open matters','What the client has told us',
     'Conversation starters','Suggested discussion points','Questions to ask','Gaps to check']
 OVERVIEW_ORDER=['Snapshot','Accounts and products','Open requests','Upcoming','Recent large movements','Transaction insights',
-    "Topics from the client's chats",'Preferences and recent interactions','Worth raising','Missing or unavailable']
+    'Client chat insights','Preferences and recent interactions','Worth raising','Missing or unavailable']
 # (key in the model's JSON, heading, at most, kind): what the model writes for each report
 BRIEF_POINTS=(('conversation_starters','Conversation starters',3),('discussion_points','Suggested discussion points',4),('questions','Questions to ask',3))
 OVERVIEW_POINTS=(('worth_raising','Worth raising',3),)
@@ -146,7 +146,7 @@ def open_items(data: dict) -> list[dict]:
 
 
 def topic_items(bundle: ev.Bundle,limit: int=TOP) -> list[dict]:
-    """Topics from her chats: inferred ones are suggestions ("Not confirmed by the client"), the ones she shared are hers;
+    """Client chat insights: inferred ones are suggestions ("Not confirmed by the client"), the ones she shared are hers;
     a gap when she has not shared them or some are not available yet."""
     topics=bundle.get('talking-points')
     if topics is None:return []
@@ -155,10 +155,10 @@ def topic_items(bundle: ev.Bundle,limit: int=TOP) -> list[dict]:
     items=[]
     for row in (rows if isinstance(rows,list) else [])[:limit]:
         inferred=row.get('label')=='ai_suggestion'
-        items.append(item(f"Topic from the client's chats: {row['line']} (last mentioned {row.get('last_seen')})."+(' Not confirmed by the client.' if inferred else ''),
+        items.append(item(f"Client chat insight: {row['line']} (last mentioned {row.get('last_seen')})."+(' Not confirmed by the client.' if inferred else ''),
             'suggestion' if inferred else 'client_stated','rm' if inferred else 'client',['talking-points']))
-    if topics.kind=='consent':items.append(gap('The client has not shared topics from their chats with you.',['talking-points']))
-    elif record.get('pending'):items.append(gap('Some topics from the client\'s chats are not available yet.',['talking-points']))
+    if topics.kind=='consent':items.append(gap('The client has not shared chat insights with you.',['talking-points']))
+    elif record.get('pending'):items.append(gap('Some client chat insights are not available yet.',['talking-points']))
     return items
 
 
@@ -222,6 +222,8 @@ def who_items(data: dict,products: bool=True) -> list[dict]:
             if rows:
                 names=list(dict.fromkeys(words(r.get('type') or r.get('name') or label) for r in rows))
                 parts.append(f"{plural(len(rows),label)} ({', '.join(names)})");ids.append(key)
+        if (pf:=data.get('portfolio')):
+            parts.append(f"an {words(pf.get('mandate'))} portfolio of {money(pf.get('total_value'),pf.get('currency'))}");ids.append('portfolio')
         if parts:items.append(item('Products: '+joined(parts)+'.','record','rm',ids))
     return items
 
@@ -262,7 +264,7 @@ def open_section(data: dict) -> dict:
 
 
 def told_section(data: dict,bundle: ev.Bundle) -> dict:
-    """Preferences, topics from her chats (inferred ones as suggestions), the shared handover note, and one gap per
+    """Preferences, client chat insights (inferred ones as suggestions), the shared handover note, and one gap per
     consent category she has not shared."""
     items=[*preference_items(data),*topic_items(bundle),*shared_items(bundle),*insights_gap(bundle)]
     if not items:items=[item('Nothing the client stated is recorded.','record','rm',['preferences'])]
@@ -296,6 +298,24 @@ def product_items(data: dict) -> list[dict]:
         rows.append(item(f"{words(loan.get('type')).capitalize()} loan: outstanding {money(loan.get('outstanding_amount'),loan.get('currency'))}, monthly repayment "
             f"{money(loan.get('monthly_repayment'),loan.get('currency'))}"+(f", next due {day(loan['next_due_date'])}" if loan.get('next_due_date') else '')
             +f", {words(loan.get('status'))}.",'record','rm',['loans']))
+    return rows+portfolio_items(data)
+
+
+COVER_WORDS={'covered':'covered by the lending value of the collateral','below_limit':'above the lending value of the collateral'}
+
+
+def portfolio_items(data: dict) -> list[dict]:
+    """0116: the portfolio by asset class (values as recorded), then Lombard borrowing against the collateral's lending value."""
+    rows,pf,fin=[],data.get('portfolio'),data.get('financing')
+    if pf:
+        parts=[f"{words(h.get('asset_class'))} {money(h.get('market_value'),h.get('currency'))}" for h in pf.get('holdings') or []]
+        rows.append(item(f"{words(pf.get('mandate')).capitalize()} portfolio: {money(pf.get('total_value'),pf.get('currency'))}"
+            +(f" as of {day(pf['as_of'])}" if pf.get('as_of') else '')+(f" ({joined(parts)})" if parts else '')+'.','record','rm',['portfolio']))
+    if fin:
+        status=fin.get('collateral_status')
+        line=f"Lombard borrowing {money(fin.get('lombard_outstanding'),fin.get('currency'))} against a lending value of {money(fin.get('lending_value'),fin.get('currency'))}"
+        line+=f": {COVER_WORDS.get(status,words(status))}"+(f", short by {money(fin.get('shortfall'),fin.get('currency'))}" if status=='below_limit' else '')+'.'
+        rows.append(item(line,'record','rm',['financing']))
     return rows
 
 
@@ -347,7 +367,7 @@ def overview_sections(data: dict,bundle: ev.Bundle) -> list[dict]:
         {'heading':'Upcoming','items':counted([*meeting_items(data),*review_items(data),*milestone_items(data),*task_items(data)],'item','the client page shows them')},
         {'heading':'Recent large movements','items':movement_items(bundle)},
         {'heading':'Transaction insights','items':insight_items(bundle)},
-        {'heading':"Topics from the client's chats",'items':topic_items(bundle)},
+        {'heading':'Client chat insights','items':topic_items(bundle)},
         {'heading':'Preferences and recent interactions','items':[*preference_items(data),*recent]},
         {'heading':'Missing or unavailable','items':gap_items(data)}]
 
@@ -415,6 +435,8 @@ def trimmed(e: ev.Evidence,keep: set[str]) -> Any:
     if e.id=='accounts':return [{k:r.get(k) for k in ('type','currency','balance','status')} for r in d]
     if e.id=='cards':return [{k:r.get(k) for k in ('name','status','currency','credit_limit','outstanding_balance','payment_due_date')} for r in d]
     if e.id=='loans':return [{k:r.get(k) for k in ('type','currency','outstanding_amount','monthly_repayment','next_due_date','status')} for r in d]
+    if e.id=='portfolio':return {k:d.get(k) for k in ('mandate','currency','total_value','as_of')}|{'asset_classes':[
+        {'asset_class':h.get('asset_class'),'market_value':h.get('market_value')} for h in d.get('holdings') or []]}
     if e.id in ('appointments','free-slots'):return None  # the selected meeting is its own record
     if e.id=='cash-events' and isinstance(d,list):return lists(sorted(d,key=lambda r:-abs(float(r.get('amount') or 0))))
     if e.id=='told' and isinstance(d,list):return [{**t,'text':clip(t.get('text'),TEXT_CHARS)} for t in d[-TOP:]]

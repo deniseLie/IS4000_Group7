@@ -14,7 +14,7 @@ export default function SharedTopics({token,onAsk}) {
     return ()=>controller.abort();
   },[]);  // eslint-disable-line react-hooks/exhaustive-deps
   return <section className="rmw-card" data-testid="rm-today-shared-topics">
-    <div className="rmw-card-head"><h3><Icon name="people"/>Topics clients shared with you</h3></div>
+    <div className="rmw-card-head"><h3><Icon name="people"/>Client chat insights shared with you</h3></div>
     {error&&<p role="alert" className="rm-error">{error}</p>}
     {!rows&&!error&&<p className="loading" role="status">Loading…</p>}
     {rows&&!rows.length&&<p className="rm-none">No client has shared a topic with you in the last 30 days.</p>}

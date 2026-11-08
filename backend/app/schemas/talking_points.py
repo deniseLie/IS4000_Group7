@@ -1,7 +1,7 @@
 """Talking points (migration 0108; RM copilot build plan phase 4). The client's side of the pipeline: her ledger actions
 (insight.delete, insight.mute and insight.resume run at once with a receipt; since 0110 a delete is undone within 7 days
-by insight.restore; insight.share is offered in chat and waits for her yes), what she sees under Data sharing > What Sophie sees (her points with her own quotes) and the status both
-lanes check first. The RM side only ever gets schemas/meetings.TalkingPoint (list values, dates and ids)."""
+by insight.restore; insight.share is offered in chat and waits for her yes), what she sees under Data sharing > Chat insights (her points as list values; since 0142 no words are kept)
+and the status both lanes check first. The RM side only ever gets schemas/meetings.TalkingPoint (list values, dates and ids)."""
 from typing import Annotated,Literal
 from uuid import UUID
 from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StrictBool,StrictInt,StringConstraints
@@ -9,7 +9,7 @@ from app.schemas.meetings import TalkingPoint,TalkingStage,TalkingTopic,Timefram
 
 
 class InsightPointTarget(BaseModel):
-    """Delete one of her talking points (and its quotes)."""
+    """Delete one of her talking points."""
     model_config=ConfigDict(extra='ignore')
     point_id: UUID
 
@@ -80,18 +80,14 @@ class InsightShareResult(BaseModel):
     notified: StrictBool
 
 
-class Quote(BaseModel):
-    model_config=ConfigDict(extra='ignore')
-    quote: Annotated[str,StringConstraints(min_length=1,max_length=200)]
-    recorded_at: AwareDatetime
-
-
 class MyTalkingPoint(TalkingPoint):
-    """Her own view of one point: the RM-side fields, plus the hold and her own words (never sent to the RM side)."""
+    """Her own view of one point: the RM-side fields plus the 24-hour hold and, since 0143, on hold (she said the plan is
+    off: shown to her, marked, and not to her RM). Never her words (0142)."""
     model_config=ConfigDict(extra='ignore')
     visible_from: AwareDatetime
     pending: StrictBool
-    evidence: list[Quote]=Field(default_factory=list,max_length=3)
+    on_hold: StrictBool=False
+    on_hold_at: AwareDatetime | None=None
 
 
 class Pause(BaseModel):

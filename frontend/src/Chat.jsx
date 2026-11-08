@@ -110,6 +110,7 @@ export default function Chat({session,onSignIn}) {
   const [freshDraftReply,setFreshDraftReply]=useState(null); // auto card only on a newly generated reply, not a saved transcript
 
   const [overviewFocus,setOverviewFocus]=useState(null);  // section to scroll to when Overview opens from the assistant
+  const [sharingFocus,setSharingFocus]=useState(null);  // the Data sharing detail to open (Manage under the composer opens chat topics)
   const messageList=useRef(null);
   const composer=useRef(null);
   const recall=useRef(null);
@@ -335,7 +336,7 @@ export default function Chat({session,onSignIn}) {
   }
 
   function navigate(page) {
-    setOverviewFocus(null);
+    setOverviewFocus(null);setSharingFocus(null);
     if(page===view){if(page!=='chat')setPageKey(key=>key+1);return;}  // choosing the open page reloads it
     if(page==='chat')history.pushState(null,'',location.pathname+location.search);else location.hash=page;
     setView(page);
@@ -416,7 +417,7 @@ export default function Chat({session,onSignIn}) {
   const topics=[
     {icon:'account',title:'Accounts & savings',detail:'Make sense of complex banking needs.',question:'What happens if I withdraw my fixed deposit early?'},
     {icon:'card',title:'Cards & payments',detail:'Understand payments and charges.',question:'Does paying only the minimum on my credit card avoid interest?'},
-    {icon:'loan',title:'Borrowing basics',detail:'Explore the different types of loans.',question:'What is the difference between a secured and unsecured loan?'},
+    {icon:'loan',title:'Financing options',detail:'Property financing and borrowing against investments.',question:'Which financing does DemoBank offer?'},
   ];
 
   function openInlineRequest(prefill={},index=null) {
@@ -579,7 +580,7 @@ export default function Chat({session,onSignIn}) {
               onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}else recallSent(e);}}/>
             <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
           </form><div className="composer-note"><span><Icon name="shield"/>{DISCLAIMER}</span>
-            {session&&chatTopics?.on&&<span data-testid="chat-topics-note">{chatTopicsNote(chatTopics.rm)} <a href="#sharing" onClick={event=>{event.preventDefault();navigate('sharing');}}>Manage</a></span>}
+            {session&&chatTopics?.on&&<span data-testid="chat-topics-note">{chatTopicsNote(chatTopics.rm)} <a href="#sharing" onClick={event=>{event.preventDefault();navigate('sharing');setSharingFocus('chat_topics');}}>Manage</a></span>}
             <details className="chat-about"><summary>How chats are saved</summary><p>{store==='database'?(session?'Redacted chats are saved to your demo profile; reopen them from Recent chats. Starting a new chat keeps earlier ones.':'This browser keeps access to your redacted guest chat for 24 hours. Starting a new chat clears that access.'):'Chat history is temporary. Refreshing or starting a new chat clears it.'} Older messages may be left out of long chats.</p></details></div></div>
         </section>
         {footer}
@@ -590,7 +591,7 @@ export default function Chat({session,onSignIn}) {
         {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
         {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
         {session&&view==='actions'&&<ActionsPanel key={pageKey}/>}
-        {session&&view==='sharing'&&<SharingPage key={pageKey} onReviewActions={openActions}/>}
+        {session&&view==='sharing'&&<SharingPage key={`${pageKey}-${sharingFocus||''}`} initial={sharingFocus} onReviewActions={openActions}/>}
         {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary} rmName={rmIntro?.current?.name} initialTab={ticketPrefill?.tab||'open'}/>}
         {session&&view==='compliance'&&<CompliancePage key={pageKey} submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>{setComplianceOpen(true);navigate('chat');return send(null,question,selection);}}/>}
         {footer}

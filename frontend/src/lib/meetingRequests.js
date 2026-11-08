@@ -4,7 +4,7 @@
 // booked from the form: every change is a confirm-type action (propose, then her own click confirms it).
 import {redact} from './chatTools.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const TOPICS={home_loan:'Home loan',investments:'Investments',fixed_deposit:'Fixed deposit',insurance:'Insurance',
+export const TOPICS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',
   term_sheet:'Loan terms (term sheet)',compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Something else'};
 export const MEETING_FORMATS=['video','phone','in_person'];
 export const MEETING_ACTIONS=['meeting.request','meeting.withdraw','meeting.counter_reply'];

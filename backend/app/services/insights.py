@@ -595,8 +595,10 @@ def timing(values) -> dict[str,Any]:
 def scorecard(agent: str,runs: list[dict],total: int,cases: list[dict],family: str | None,live: str | None,tools: list[dict] | None=None) -> dict[str,Any]:
     loops=[s for s in runs if s['meta'].get('path')=='loop']
     statuses=Counter(agent_status(s) for s in runs)
-    return {'agent':agent,'side':'rm' if agent.startswith('rm_') else 'client','runs':len(runs),
-        'share':ratio(min(len({s['trace_id'] for s in runs}),total),total),'outcomes':dict(statuses),
+    meeting=any(s['meta'].get('side')=='meeting' for s in runs)
+    side='meeting' if meeting else 'rm' if agent.startswith('rm_') else 'client'
+    return {'agent':agent,'side':side,'runs':len(runs),
+        'share':None if meeting else ratio(min(len({s['trace_id'] for s in runs}),total),total),'outcomes':dict(statuses),
         'bad_rate':ratio(sum(statuses.get(k,0) for k in BAD_AGENT),len(runs)),
         'paths':dict(Counter(s['meta'].get('path') or 'handler' for s in runs)),  # RM agents run one handler per intent
         'tool_calls_per_loop':mean(s['meta'].get('tool_calls') for s in loops),'refused':sum(s['meta'].get('refused') or 0 for s in loops),
@@ -677,7 +679,7 @@ def agents(rows: list[dict],steps: list[dict],experiments: list[dict],prompt_of:
     runs,tools=defaultdict(list),defaultdict(list)
     for s in agent_runs(steps):runs[s['meta']['agent']].append(s)
     for s in own_spans(steps,'tool_call'):tools[s['meta'].get('agent')].append(s)
-    total=len({r['trace_id'] for r in rows}) or len({s['trace_id'] for s in steps})
+    total=len({r['trace_id'] for r in rows}) or len({s['trace_id'] for s in steps if s['meta'].get('side')!='meeting'})
     cases=[c for e in experiments for c in e['cases']]
     names=[a for a in AGENT_ORDER if a in runs]+sorted(a for a in runs if a not in AGENT_ORDER)
     fixed=Counter(r['route'] for r in rows if r.get('route') in FIXED_ROUTES)

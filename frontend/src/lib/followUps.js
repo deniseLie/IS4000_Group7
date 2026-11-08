@@ -24,7 +24,7 @@ const TOPICS=[
   {key:'limit',match:/\blimit\b/i,ask:[
     ['What documents do I need for a higher limit?',false],['What is the status of my request?',true],['When is my card payment due?',true]]},
   {key:'loans',match:/\b(?:loans?|mortgages?|borrow\w*|refinanc\w*|property|condo|hdb|house)\b/i,ask:[
-    ['Which loans does DemoBank offer?',false],['What do I need to apply for a home loan?',false],['What is the difference between a secured and unsecured loan?',false]]},
+    ['Which financing does DemoBank offer?',false],['How is property financing arranged?',false],['Can I borrow against my investments?',false]]},
   {key:'investments',match:/\b(?:invest\w*|unit trusts?|funds?|portfolio|stocks?|shares|bonds?|wealth|retirement)\b/i,ask:[
     ['What is a unit trust?',false],['What are the risks of investing?',false]]},
   {key:'cards',match:/\b(?:card|credit|minimum payment|interest|annual fee)\b/i,ask:[

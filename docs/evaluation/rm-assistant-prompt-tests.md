@@ -136,7 +136,7 @@ Prompt versions are shown in the audit (`chat.rm_reply_sent` → `prompt_version
 ## 6. Changing a prompt
 
 1. Never edit a released version. Copy `backend/app/prompts/rm_assistant/v1/` to `v2/` (or `rm_planner/v2/`) and change the copy; each intent has its own task file (`brief.md`, `draft.md`, `documentation.md`, …).
-2. Point the code at it: `ASSISTANT_VERSION='v2'` (or `PLANNER_VERSION`) in `backend/app/services/rm/assistant.py`.
+2. Point the code at it: `'rm_assistant': 'v2'` (or `'rm_planner'`) in the `VERSIONS` table in `backend/app/services/prompts.py`.
 3. Add `docs/prompt-log/rm_assistant/v2.md` (copy `TEMPLATE.md`) and pin the new id in `backend/tests/test_prompts.py`.
 4. Re-run the tests in §3 that the change targets plus A1, B1, F2 and K2, and record before/after in the prompt log.
 5. The checks in `services/rm/checks.py` stay the same for every prompt version; a prompt change never switches them off.

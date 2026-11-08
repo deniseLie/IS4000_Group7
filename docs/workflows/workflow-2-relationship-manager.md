@@ -87,7 +87,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 
 - **What she gets**: topic lines only, for example *Home loan · planning · within 12 months*. Each is labelled *Inferred from chat* (AI suggestion) or *Shared by the client*. She never sees the client's words, and no RM role or `rm_*` function can read the quotes table.
 - **Client overview and meeting brief** read `rm_talking_points` as a fixed read (purpose `client_view` or `meeting_prep`, set by code). Inferred topics come back only while the client's grant covers `chat_topics`, after a 24-hour hold, and outside a 60-day care pause. A topic still on hold or paused becomes a gap ("some topics are not available yet"), never which topic or why. Topics the client shared herself always come back; without the grant the read is audited with `basis: client_shared`.
-- **Today → Topics clients shared with you**: confirmed topics from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
+- **Today → Client chat insights shared with you**: confirmed insights (topics she shared herself) from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
 - Reassigning the client ends access at once (book check first); one client per call.
 
 ## Consent v2: what clients share and asking for more (build plan phase 6, 0109–0113)
@@ -99,7 +99,7 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 
 ## Meeting notes and follow-up (meeting side, 0120–0124)
 
-Built by the meeting team (45e2ea9, 5 Nov; architecture §15) and works only with `MEETINGS_ENABLED=true` (the `/meetings` routes answer 503 otherwise). On *Schedule* → Appointments, *Propose a meeting to a client* (`components/meetings/MeetingProposal.jsx`) holds a free time until the client accepts it in her Meetings tab. Each confirmed meeting opens *Meeting notes and follow-up* (`components/meetings/MeetingWorkspace.jsx`): the recording and transcript notice, a Zoom link, a Zoom TXT/VTT transcript import or her written recollection, minutes drafted by the Minutes Writer (`minutes_writer/v1`; the meeting worker drafts from an imported transcript), then separate approvals for the minutes version, the follow-ups and the client recap. The client can withdraw transcript access for a meeting. The pre-meeting brief (build plan 5a) is not built: *Prepare briefing* still uses the copilot's `meeting_brief`.
+With `MEETINGS_ENABLED=true`, Schedule → Appointments lets the RM propose a time for the client to accept, then open its meeting workspace. The calendar loads the same 40-day horizon as the proposal slots; availability and working-hour controls retain their 14-day view. Briefing, the RM assistant and the meeting workspace use one canonical Brief Writer version with current-source checks and exact approval. The Minutes Writer drafts from imported transcript evidence or RM recollections; minutes, selected follow-ups and client recap sharing require separate approvals. [Architecture §15](../architecture.md#15-meeting-lifecycle-seam-rm-copilot-target-hybrid-slice-implemented) describes the agent boundaries, consent, durable graph, Zoom API intake and operating limits.
 
 ## Layout (Nov 2026 redesign)
 
@@ -143,7 +143,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 4. **Sophie's Today**: sign in as `demo.sophie@example.com`. Today shows:
    - *Do first*, with each item's score reasons;
    - the requests to answer (Mei Ling's and Michelle's);
-   - *Topics clients shared with you* (Michelle's home loan).
+   - *Client chat insights shared with you* (Michelle's home loan).
 5. **Plan my day**: one cited answer in the code's rank order (R24).
 6. **Answer a request**: in the copilot, "Accept Mei Ling's Monday 4:30 pm time". Sophie approves the card (R25). Then she accepts Michelle's request in Schedule → Requests. Michelle's Meetings shows it confirmed, with an Inbox notice.
 7. **Availability**: "Block Friday afternoon" gives a card, which Sophie approves (R26). Michelle's free times no longer include it.

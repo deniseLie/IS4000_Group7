@@ -2,16 +2,19 @@
 without her RM ever seeing her chat. Only list values cross to the RM side (schemas/meetings.TalkingPoint).
 
 Lane 1, inferred (`after_reply`): a background task after the `answer` event of a signed-in saved chat, with her request
-context and JWT. A care signal sets a 60-day pause and stores nothing. Otherwise it runs only while her chat_topics grant
-is active (else only the skip is audited) and after a code pre-filter (greetings, yes/no and offer replies, fixed safety
+context and JWT. It runs only while her chat_topics grant is active (else only the skip is audited) and after a code pre-filter (greetings, yes/no and offer replies, fixed safety
 turns, mostly redacted or sensitive messages, no topic word). One strict-JSON call (`talking_points/v1`, model
 TALKING_POINTS_MODEL, no retry) classifies her redacted message, with her previous message as context; code keeps a point
 only when the quote is her exact words, holds a word from the topic's list, the topic is listed and not muted, and no
-sensitive word matches; amounts are masked. A model failure is logged with ids only; the reply is never affected.
+sensitive word matches; amounts are masked. The database checks the quote again and keeps only the turn (0142: her
+words are never stored). A model failure is logged with ids only; the reply is never affected. With the talking_points
+prompt at v2, lane 1 reads her current points and this chat's active topics instead and proposes add, update or on hold
+(services/talking_points_state, migration 0143); the skip and extract audits then add the version, actions and carry-overs.
+Her care flag (guardrail.CARE) does not change either lane: the 60-day care pause was retired in 0145.
 
 Lane 2, shared (`share_offer`, called by orchestrator.compose): a rule, never the model, offers one insight.share when
-her message names a topic and a planning cue and nothing rules it out (care, mute, pause, a prompt for that topic in the
-last 30 days, an open meeting request on it). Nothing is stored unless she says yes."""
+her message names a topic and a planning cue and nothing rules it out (a mute, a prompt for that topic in the last 30
+days, an open meeting request on it). Nothing is stored unless she says yes."""
 import json
 import logging
 import re
@@ -31,7 +34,6 @@ from app.services import audit,llm_gateway,offers,prompts
 from app.services.authorization import require_permission
 from app.services.customer_data import _read
 
-PROMPT='v1'
 TOPICS=('home_loan','investments','fixed_deposit','insurance')
 STAGES=('curious','exploring','planning','ready','concern')
 TIMEFRAMES=('now','within_3m','within_12m','later','unknown')
@@ -128,7 +130,7 @@ async def status(ctx: RequestContext) -> TopicStatus:
 
 
 async def mine(ctx: RequestContext) -> CustomerEnvelope[MyTalkingPoints]:
-    """Her own points with her quotes, mutes and pause (Data sharing > What Sophie sees)."""
+    """Her own points (list values, never her words), removed points, mutes and pause (Data sharing > Chat insights)."""
     return await _read('insights.read','customer_read_talking_points',{},MINE,ctx)
 
 
@@ -149,7 +151,7 @@ async def _rpc(ctx: RequestContext,name: str,params: dict) -> dict:
 
 async def extract(ctx: RequestContext,turn_id: UUID,message: str,previous: str | None,muted: set[str]) -> dict:
     """One classification and the code checks; records the kept points under her JWT. Counts only come back."""
-    prompt=prompts.load('talking_points',PROMPT)
+    prompt=prompts.load('talking_points','v1')  # v1's own prompt; prompts.VERSIONS 'v2' runs talking_points_state instead
     result=await llm_gateway.call(prompt,system_text(prompt),model_input(message,previous),SCHEMA,model=settings.talking_points_model or None,retries=0)
     kept,dropped=validate(result.data.get('points') or [],message,muted)
     recorded=Counter()
@@ -175,22 +177,23 @@ async def _after_reply(ctx: RequestContext,batch: audit.AuditBatch,turn_id: UUID
     trace=start_trace()
     with span('talking_points','agent',turn_id=str(turn_id)) as attrs:
         try:
-            if risk.care:  # a care signal: nothing is read or stored, and suggestions pause for 60 days
-                require_permission(ctx.principal,'insights.record',{'customer_id':ctx.principal.customer_id},ctx)
-                await _rpc(ctx,'customer_pause_suggestions',{'p_turn_id':str(turn_id)})
-                attrs['outcome']='paused'
+            users=[m.content for m in history if m.role=='user']  # the saved history is redacted; the latest message by the guardrail
+            message,previous=risk.redacted_message or users[-1],(users[-2] if len(users)>1 else None)
+            from app.services import talking_points_state as v2  # lane 1 v2 (0143); imports this module
+            stateful=v2.version()=='v2'
+            current=await (v2.state(ctx,turn_id) if stateful else status(ctx))
+            reason=('no_consent' if not current.chat_topics else 'paused' if current.paused else  # paused: a pause from before 0145
+                v2.gate(message,risk,offer_reply,current.active_topics) if stateful else prefilter(message,risk,offer_reply))
+            attrs['outcome']=reason or 'extracted'
+            tag={'version':'v2'} if stateful else {}
+            if reason:batch.add('agent','agent.talking_points_skipped',details={'reason':reason,'turn_id':str(turn_id),**tag},**ACTOR)
             else:
-                users=[m.content for m in history if m.role=='user']  # the saved history is redacted; the latest message by the guardrail
-                message,previous=risk.redacted_message or users[-1],(users[-2] if len(users)>1 else None)
-                current=await status(ctx)
-                reason=('no_consent' if not current.chat_topics else 'paused' if current.paused else prefilter(message,risk,offer_reply))
-                attrs['outcome']=reason or 'extracted'
-                if reason:batch.add('agent','agent.talking_points_skipped',details={'reason':reason,'turn_id':str(turn_id)},**ACTOR)
-                else:
-                    counts=await extract(ctx,turn_id,message,previous,set(current.muted))
-                    attrs.update(kept=counts['kept'],proposed=counts['proposed'])
-                    batch.add('agent','agent.talking_points_extracted',details={'turn_id':str(turn_id),'proposed':counts['proposed'],
-                        'kept':counts['kept'],'dropped':counts['dropped'],'outcomes':counts['outcomes']},**ACTOR)
+                counts=await (v2.extract(ctx,turn_id,message,v2.earlier_messages(history),current) if stateful else
+                    extract(ctx,turn_id,message,previous,set(current.muted)))
+                attrs.update(kept=counts['kept'],proposed=counts['proposed'])
+                batch.add('agent','agent.talking_points_extracted',details={'turn_id':str(turn_id),'proposed':counts['proposed'],
+                    'kept':counts['kept'],'dropped':counts['dropped'],'outcomes':counts['outcomes'],
+                    **({'actions':counts['actions'],'carried':counts['carried'],**tag} if stateful else {})},**ACTOR)
         except llm_gateway.LLMError as error:
             attrs['outcome']='model_failed'
             log_event('talking_points_failed',logging.WARNING,turn_id=str(turn_id),reason=error.reason)
@@ -236,7 +239,7 @@ def share_question(target: InsightShareTarget,rm: str | None) -> str:
 
 async def share_offer(message: str,risk: RiskAssessment | None,ctx: RequestContext) -> tuple[OfferProposal,str] | None:
     """Lane 2's rule for compose: one insight.share from Relationship & Service, or None. A failed status read offers nothing."""
-    if risk is None or risk.care or risk.fixed_response is not None or risk.risk_flags:return None
+    if risk is None or risk.fixed_response is not None or risk.risk_flags:return None
     if ctx.principal.kind!='customer' or ctx.case_id is None or (target:=share_candidate(message)) is None:return None
     try:current=await status(ctx)
     except Exception as error:  # the answer stands without the offer

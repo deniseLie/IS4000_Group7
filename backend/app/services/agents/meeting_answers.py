@@ -38,11 +38,11 @@ EXISTING=re.compile(r'\b(?:my|the)\s+(?:next|upcoming|current|existing|booked|co
     r'|\b(?:meeting|appointment)\b[^.?!]{0,20}\b(?:cancel(?:led)?|moved?|rescheduled?|postponed?)\b',re.I)
 # Fixed topic codes (rm.meeting_topics(), 0106) from her words, in display order. A loan question adds term_sheet.
 TOPIC_WORDS: tuple[tuple[str,re.Pattern[str]],...]=(
-    ('home_loan',re.compile(r'\b(?:home|housing|hdb|condo|house|flat|apartment)\s+(?:loans?|financing)\b|\bmortgages?\b|\brefinanc\w*'
+    ('home_loan',re.compile(r'\b(?:home|housing|hdb|condo|house|flat|apartment)\s+(?:loans?|financing)\b|\bmortgages?\b|\brefinanc\w*|\bfinancing\b'
         r'|\bproperty\b|\b(?:buy(?:ing)?|purchas\w+)\s+(?:a\s+|an\s+|my\s+)?(?:new\s+)?(?:home|house|flat|condo|apartment|hdb)\b',re.I)),
     ('term_sheet',re.compile(r'\b(?:loans?|mortgages?|borrow(?:ing)?|refinanc\w*|term\s+sheets?)\b',re.I)),
     ('investments',re.compile(r'\binvest\w*|\bunit\s+trusts?\b|\b(?:mutual|bond|index|equity)\s+funds?\b|\bstocks?\b|\bshares\b|\bbonds?\b'
-        r'|\bportfolio\b|\bwealth\b|\bretirement\b|\betfs?\b',re.I)),
+        r'|\bportfolio\b|\bwealth\b|\bretirement\b|\betfs?\b|\blombard\b|\bborrow(?:ing)?\s+against\b',re.I)),
     ('fixed_deposit',re.compile(r'\b(?:fixed|time)\s+deposits?\b|\bFDs?\b',re.I)),
     ('insurance',re.compile(r'\b(?:insurance|insure[ds]?|life\s+cover|coverage)\b',re.I)),
     ('compliance_review',re.compile(r'\b(?:compliance|kyc)\b|\bmy\s+review\b|\breview\s+(?:documents?|deadline)\b|\btax\s+residency\b',re.I)),

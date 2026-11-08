@@ -22,5 +22,5 @@ Checked against the finalised product backlog (client stories CR1–CR17) on 31 
 | CR13 Failed / pending transaction | Met | Pending Lim Interiors transfer explained; fraud wording goes to the fraud flow; case only after confirmation | — |
 | CR14 Credit card enquiry | Met | `card_answers.py`: figures from records, "which card?" with one-tap replies, follow-ups stay on the card, topic switch does not carry it | — |
 | CR15 Account information | Met | Balances, recent transactions, fees and "what was this charge?" from records (`transaction_answers.py`); Go to Statements | Statement month retention: live check |
-| CR16 Loans | Partly | Home, personal and car loan articles (0086); no approval or rate promises | Run the five loan rows before marking complete |
+| CR16 Loans | Partly | Private-client financing since 0115: property financing, Lombard, `loans` v3 (personal and car loans retired); no approval or rate promises | Run the five loan rows before marking complete |
 | CR17 Book a meeting | Met | Free times in chat, 10-minute hold, booking summary, Confirm booking, expiry handling, My requests > Meetings | RM schedule sync (RM12): check on the RM interface |

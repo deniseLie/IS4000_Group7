@@ -72,8 +72,18 @@ RELEASED[('planner','v8')]='v8+2710b2ab'
 RELEASED[('relationship','v6')]='v6+eb7307b9'
 RELEASED[('relationship','v7')]='v7+e690200b'  # build plan 6e (consent v2): Data sharing explained, changes offered by rules
 RELEASED[('talking_points','v1')]='v1+254803bd'  # build plan 4 (0108): lane 1 classifier
+RELEASED[('talking_points','v2')]='v2+63a30afe'  # lane 1 v2 (0143): state-aware, carry-over, kind, on hold
 RELEASED[('planner','v10')]='v10+67067378'  # batch 3: a question needing another agent's data is two tasks; imports; threshold
 RELEASED[('compliance','v7')]='v7+51624f5a'  # batch 3 (P05): her account list from Accounts is citable
+
+RELEASED[('minutes_writer','v3')]='v3+94a92997'
+RELEASED[('minutes_writer','v4')]='v4+5dec283d'
+RELEASED[('minutes_overview','v1')]='v1+6138bb95'
+RELEASED[('minutes_overview','v2')]='v2+69bbc872'
+RELEASED[('brief_writer','v1')]='v1+25e786cb'
+RELEASED[('brief_writer','v2')]='v2+74f98536'
+RELEASED[('brief_writer','v3')]='v3+8ff73d94'
+RELEASED[('brief_writer','v4')]='v4+03eb16f4'  # storyline: recorded dates, funding-options question (0140)
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
@@ -83,11 +93,15 @@ def test_every_prompt_version_has_a_prompt_log_entry():
     assert set(RELEASED)<=set(prompts.released())
     for agent,version in prompts.released():assert (log/agent/f'{version}.md').is_file(),(agent,version)
 
-def test_agent_versions_are_configured_not_guessed(monkeypatch):
-    monkeypatch.setattr(settings,'prompt_version','v1')
-    assert prompts.current()['id']==RELEASED[('answer','v1')]
-    monkeypatch.setattr(settings,'prompt_versions',{})
-    with pytest.raises(ValueError):prompts.current('planner')
+def test_every_version_is_chosen_in_one_table():
+    """No setting picks a prompt; prompts.VERSIONS is the one table, and in_use adds only the meeting side's own pins."""
+    from app.services import llm
+    assert not {'prompt_version','prompt_versions'}&set(type(settings).model_fields)
+    assert llm.answer_prompt()==prompts.current('answer')==prompts.load('answer',prompts.VERSIONS['answer'])
+    used=prompts.in_use()
+    assert {k:used[k] for k in prompts.VERSIONS}==prompts.VERSIONS
+    assert set(used)-set(prompts.VERSIONS)=={'minutes_writer','minutes_overview','brief_writer','proposal_drafter'}
+    with pytest.raises(ValueError):prompts.current('fraud')  # retired (build plan 2b): not in the table
 
 
 def test_prompts_in_use_are_released_versions():

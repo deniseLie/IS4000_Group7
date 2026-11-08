@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from app.schemas.contracts import QUESTION, AgentOutput, AgentSpec, Principal, Read, RequestContext, ToolView
 from app.services import audit, tools
 from app.services.agents import registry
-from app.services.agents.registry import SPECS, TOOL_PERMISSION
+from app.services.agents.registry import CHAT_SPECS, TOOL_PERMISSION
 from app.services.authorization import BANK_ONLY_CARD_ACTIONS, CLIENT_ONLY_CARD_ACTIONS, KNOWN_TOOLS, PolicyDenied, decide
 
 CARD={'card_id':'card_4821','name':'Signature Card','network':'visa','last4':'4821','status':'active','currency':'SGD',
@@ -27,24 +27,24 @@ def ctx(agent=None,kind='customer') -> RequestContext:
 
 
 def test_every_spec_tool_is_a_registered_tool_with_known_permissions():
-    assert set(SPECS)=={'guide','accounts','compliance','relationship','rm_client','rm_requests','rm_calendar'}
+    assert set(CHAT_SPECS)=={'guide','accounts','compliance','relationship','rm_client','rm_requests','rm_calendar'}
     assert set(registry.CLIENT_SPECS)=={'guide','accounts','compliance','relationship'}  # build plan 2b: no Security agent
-    for spec in SPECS.values():
+    for spec in CHAT_SPECS.values():
         for tool in spec.tools:
             assert tool in tools.TOOLS and tool in TOOL_PERMISSION, (spec.name,tool)
             assert set(TOOL_PERMISSION[tool])<=KNOWN_TOOLS, (spec.name,tool)
         assert spec.offers<=KNOWN_TOOLS and not spec.offers&(BANK_ONLY_CARD_ACTIONS|CLIENT_ONLY_CARD_ACTIONS), spec.name
-        assert spec.hands_to<=set(SPECS)-{spec.name}
+        assert spec.hands_to<=set(CHAT_SPECS)-{spec.name}
     assert set(TOOL_PERMISSION)<=set(tools.TOOLS)
 
 
 def test_guide_sees_no_customer_rows():
-    assert SPECS['guide'].scope=='public' and not SPECS['guide'].offers
-    assert not registry.permissions(SPECS['guide'])-{'kb.search','tickets.categories'}
+    assert CHAT_SPECS['guide'].scope=='public' and not CHAT_SPECS['guide'].offers
+    assert not registry.permissions(CHAT_SPECS['guide'])-{'kb.search','tickets.categories'}
 
 
 def test_default_reads_name_real_tool_arguments_and_entities():
-    for spec in SPECS.values():
+    for spec in CHAT_SPECS.values():
         assert spec.intents, spec.name
         for intent,reads in spec.intents.items():
             assert reads or (spec.role,intent)==('rm','help'), (spec.name,intent)  # RM help reads nothing
@@ -52,14 +52,14 @@ def test_default_reads_name_real_tool_arguments_and_entities():
                 params=inspect.signature(tools.TOOLS[read.tool]).parameters
                 assert set(read.entities)|set(read.fixed)<=set(params), (spec.name,intent,read.tool)
                 assert all(entity and entity.isidentifier() for entity in read.entities.values())
-    assert any(read.entities=={'query':QUESTION} for reads in SPECS['guide'].intents.values() for read in reads)
+    assert any(read.entities=={'query':QUESTION} for reads in CHAT_SPECS['guide'].intents.values() for read in reads)
 
 
 def test_free_text_tools_are_never_loop_tools():
-    text={(s.name,t) for s in SPECS.values() for t,v in s.tools.items() if v.free_text}
+    text={(s.name,t) for s in CHAT_SPECS.values() for t,v in s.tools.items() if v.free_text}
     assert ('relationship','my_tickets') in text and ('compliance','my_compliance_case') in text
-    assert not any(t in SPECS[a].loop_tools for a,t in text if SPECS[a].role!='rm')  # RM loops hide such reads from the step (h_open)
-    base=SPECS['relationship'].model_dump()
+    assert not any(t in CHAT_SPECS[a].loop_tools for a,t in text if CHAT_SPECS[a].role!='rm')  # RM loops hide such reads from the step (h_open)
+    base=CHAT_SPECS['relationship'].model_dump()
     with pytest.raises(ValidationError,match='free-text loop tools'):
         AgentSpec.model_validate({**base,'loop_tools':base['loop_tools']|{'my_tickets'}})
     with pytest.raises(ValidationError,match='tools not in its spec'):
@@ -71,28 +71,28 @@ def test_free_text_tools_are_never_loop_tools():
 
 
 def test_field_views_drop_excluded_fields():
-    accounts=tools.shaped({'items':[CARD],'customer_id':1001,'call_id':'c1'},SPECS['accounts'].tools['my_cards'])
+    accounts=tools.shaped({'items':[CARD],'customer_id':1001,'call_id':'c1'},CHAT_SPECS['accounts'].tools['my_cards'])
     assert set(accounts)=={'items','call_id'} and 'card_id' not in accounts['items'][0]
     assert accounts['items'][0]['limit']==20000 and accounts['items'][0]['due_date']=='2026-11-25'
-    rm=tools.shaped({'data':RM},SPECS['relationship'].tools['my_rm'])['data']
+    rm=tools.shaped({'data':RM},CHAT_SPECS['relationship'].tools['my_rm'])['data']
     assert rm=={'current':{'name':'Sophie Lim (DEMO)','role':'RM','team':'Private','timezone':'Asia/Singapore',
         'contact':{'phone':'+65 6000 0000'},'started_on':'2026-01-01'},'previous':{'name':'Rachel (DEMO)','ended_on':'2025-12-31'}}
-    ticket=tools.shaped({'items':[TICKET]},SPECS['relationship'].tools['my_tickets'])['items'][0]
+    ticket=tools.shaped({'items':[TICKET]},CHAT_SPECS['relationship'].tools['my_tickets'])['items'][0]
     assert set(ticket)=={'reference','category_label','summary','status','owner_team'}
-    profile=tools.shaped({'data':{'name':'Michelle','preferred_language':'en','employment_status':'employed'}},SPECS['compliance'].tools['my_profile'])
+    profile=tools.shaped({'data':{'name':'Michelle','preferred_language':'en','employment_status':'employed'}},CHAT_SPECS['compliance'].tools['my_profile'])
     assert profile['data']=={'name':'Michelle','employment_status':'employed'}
     assert tools.shaped({'items':[CARD]},ToolView())=={'items':[CARD]}  # no field list: the whole record
 
 
 def test_limits_fill_in_or_refuse_windows_and_rows():
-    acc=ctx('accounts');view=SPECS['accounts'].tools['my_transactions']
+    acc=ctx('accounts');view=CHAT_SPECS['accounts'].tools['my_transactions']
     assert tools.bounded('my_transactions',{},view,acc)=={'days':90}
     assert tools.bounded('my_transactions',{'days':30,'status':'pending'},view,acc)=={'days':30,'status':'pending'}
     for days in (91,365,0):
         with pytest.raises(tools.ToolLimitExceeded):tools.bounded('my_transactions',{'days':days},view,acc)
     rows=tools.shaped({'items':[{'date':str(i)} for i in range(150)]},view)['items']
     assert len(rows)==view.max_rows==100
-    rel=ctx('relationship');slots=SPECS['relationship'].tools['free_slots'];first=tools.today(rel)
+    rel=ctx('relationship');slots=CHAT_SPECS['relationship'].tools['free_slots'];first=tools.today(rel)
     assert tools.bounded('free_slots',{},slots,rel)=={'to_date':(first+timedelta(days=13)).isoformat()}
     for args in ({'to_date':(first+timedelta(days=14)).isoformat()},{'from_date':(first-timedelta(days=1)).isoformat()},{'limit':21}):
         with pytest.raises(tools.ToolLimitExceeded):tools.bounded('free_slots',args,slots,rel)
@@ -105,8 +105,8 @@ def test_policy_reads_the_spec_for_new_agents():
         assert decide(c.principal,allowed,{'customer_id':1001},c).allow, (agent,allowed)
         assert decide(c.principal,forbidden,None,c).reasons==['agent_tool_forbidden'], (agent,forbidden)
     # Ticket guidance (knowledge_article) is the Requests agent's only knowledge read; Client and Calendar have none.
-    assert 'kb.search' in registry.permissions(SPECS['rm_requests'])
-    assert 'kb.search' not in registry.permissions(SPECS['rm_client'])|registry.permissions(SPECS['rm_calendar'])
+    assert 'kb.search' in registry.permissions(CHAT_SPECS['rm_requests'])
+    assert 'kb.search' not in registry.permissions(CHAT_SPECS['rm_client'])|registry.permissions(CHAT_SPECS['rm_calendar'])
     c=ctx('accounts')
     assert decide(c.principal,'card.temporary_block',{'customer_id':1001},c).reasons==['customer_only_action']
     assert decide(c.principal,'card.dispute',{'customer_id':1001},c).reasons==['bank_only_action']
@@ -164,11 +164,11 @@ def test_every_rm_data_tool_has_exactly_one_owning_agent():
 
 
 def test_no_loop_reaches_a_consent_gated_or_write_tool():
-    for spec in SPECS.values():
+    for spec in CHAT_SPECS.values():
         assert not spec.loop_tools&registry.CONSENT_GATED, spec.name
         assert not any(t.startswith(WRITES) or t in KNOWN_TOOLS-set(TOOL_PERMISSION) for t in spec.loop_tools), spec.name
         assert spec.loop_tools<=set(tools.TOOLS)|spec.external
-    assert not set(SPECS['rm_requests'].tools)&registry.CONSENT_GATED  # the Requests agent never sees consent-gated data
+    assert not set(CHAT_SPECS['rm_requests'].tools)&registry.CONSENT_GATED  # the Requests agent never sees consent-gated data
     assert all(registry.RM_OWNER[t]=='rm_client' for t in registry.CONSENT_GATED)
     assert not any(spec.offers for spec in registry.RM_SPECS.values())  # RM cards are approved through the /rm routes, never offers
 

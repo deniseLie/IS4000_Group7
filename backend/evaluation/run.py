@@ -17,7 +17,8 @@ import os
 from pathlib import Path
 import time
 from app.schemas.chat import ChatRequest
-from app.services import answers, prompts
+from app.services import answers
+from app.services.llm import answer_prompt
 from app.services.typos import for_search
 
 HERE = Path(__file__).parent
@@ -103,7 +104,7 @@ async def evaluate(live=False, suite='standard', db=None):
         'created_at':datetime.now(timezone.utc).isoformat(),
         'dataset_sha256':sha256(dataset.read_bytes()).hexdigest(),
         'knowledge_sha256':sha256(knowledge.encode()).hexdigest(),
-        'prompt_version':prompts.current()['id'],
+        'prompt_version':answer_prompt()['id'],
         'implementation_sha256':sha256(implementation).hexdigest(),
         'summary':{status:sum(r['status']==status for r in results) for status in ('pass','fail','error','needs_human_review')},
         'limits':LIMITS, 'results':results,

@@ -1,6 +1,6 @@
 """Consent-gated RM reads (0106, 0107) become cited evidence or an explicit gap, never an empty record."""
 import inspect
-from app.services.agents.registry import RM_CALENDAR,RM_CLIENT,SPECS,TOOL_PERMISSION
+from app.services.agents.registry import RM_CALENDAR,RM_CLIENT,CHAT_SPECS,TOOL_PERMISSION
 from app.services.rm import evidence as ev
 from app.services.tools import TOOLS
 
@@ -17,7 +17,7 @@ def test_a_read_the_client_has_not_shared_is_a_consent_gap_not_an_empty_record()
         assert (item.id,item.kind,item.data['shared'])==(source,'consent',False)
         assert 'transaction insights' in item.data['meaning'] and 'large_movements' not in item.data
     item=ev.talking_points_evidence(TOPICS,1007)
-    assert item.kind=='consent' and 'topics from their chats' in item.data['meaning'] and item.data['shared_by_client']==[]
+    assert item.kind=='consent' and 'chat insights' in item.data['meaning'] and item.data['shared_by_client']==[]
 
 
 def test_topics_she_shared_herself_still_reach_the_rm_without_the_chat_topics_grant() -> None:
@@ -49,4 +49,4 @@ def test_the_new_rm_reads_are_registered_tools_of_their_agents() -> None:
 def test_code_sets_the_purpose_of_a_gated_read_and_no_tool_loop_reaches_one() -> None:
     for name in GATED:
         assert inspect.signature(TOOLS[name]).parameters['purpose'].default is inspect.Parameter.empty
-    assert all(not spec.loop_tools&set(GATED) for spec in SPECS.values())
+    assert all(not spec.loop_tools&set(GATED) for spec in CHAT_SPECS.values())

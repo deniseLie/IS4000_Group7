@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import Icon from '../Icon';
-import {followupGroups,rmGet,rmPatch,rmPost} from '../../lib/rm';
+import {followupGroups,rmGet,rmPatch,rmPost,humanize} from '../../lib/rm';
 
 const GROUPS=[['overdue','Overdue'],['week','Next 7 days'],['later','Later'],['commitments','Recorded commitments (completion not tracked)'],['specialist','Specialist-managed, for awareness']];
 function sourceLabel(id) {
@@ -9,7 +9,7 @@ function sourceLabel(id) {
   if(id.startsWith('task:'))return 'your task list';
   return id.replace(/[-_]/g,' ');
 }
-const KIND_WORDS={rm_ticket:'Your request',specialist_ticket:'Specialist case',review_deadline:'Review deadline',milestone:'Maturity / review',task:'Your task',meeting:'Confirmed meeting',commitment:'Commitment'};
+const KIND_WORDS={rm_ticket:'Your request',specialist_ticket:'Specialist case',review_deadline:'Review deadline',milestone:'Maturity, review or alert',task:'Your task',meeting:'Confirmed meeting',commitment:'Commitment'};
 
 // RM11 (and RM10 tasks): follow-ups computed live from the records, each with its reason, date and source. The RM can
 // dismiss an item, open it with the assistant, or ask the assistant to prioritise. Nothing is sent to a client from here.
@@ -33,7 +33,7 @@ export default function FollowUpsPage({token,onAsk,today}) {
     {items&&GROUPS.map(([key,label])=>groups[key].length>0&&<section key={key} className="rm-follow-group"><h2 className="meetings-title">{label} <span className="count">{groups[key].length}</span></h2>
       <ul className="ticket-list">{groups[key].map(item=><li key={item.item_key} data-testid="rm-followup" className={item.overdue?'rm-overdue-item':''}>
         <div className="ticket-head"><strong>{item.client} · {item.title}</strong><span className="category-badge">{KIND_WORDS[item.kind]||item.kind}</span></div>
-        {item.detail&&<p>{item.detail}</p>}
+        {item.detail&&<p>{humanize(item.detail)}</p>}
         <small>{item.due_text?`${item.overdue?'Was due':'Due'} ${item.due_text} · `:''}source: {sourceLabel(item.source_id)}{item.confirmed_meeting?` · meeting confirmed ${item.confirmed_meeting}`:''}</small>
         <div className="rm-ticket-actions">
           <button className="bank-chat-logout" onClick={()=>onAsk(`Tell me about this follow-up for ${item.client}: ${item.title}`,{intent:item.kind==='meeting'?'meeting_brief':item.kind.includes('ticket')?'ticket_summary':'client_overview',

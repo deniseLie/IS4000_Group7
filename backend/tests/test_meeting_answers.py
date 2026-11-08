@@ -11,7 +11,7 @@ from app.schemas.actions import ActionOutcome,CreateAction
 from app.schemas.chat import Message
 from app.schemas.contracts import OfferProposal,Principal,RequestContext
 from app.schemas.meeting_requests import CounterReplyResult,MeetingRequestResult,MeetingRequestTarget
-from app.services import authorization,orchestrator
+from app.services import authorization,orchestrator,prompts
 from app.services.actions.registry import EXECUTORS
 from app.services.agents import meeting_answers,registry
 
@@ -62,7 +62,7 @@ def test_a_meeting_ask_drafts_one_request_with_fixed_topics_and_free_times() -> 
     assert len(times)==3 and len({t.date() for t in times})==3 and all(9<=t.day<=13 for t in times)  # next week, three days
     text=reply.result.text
     assert 'Sophie Lim' in text and '(DEMO)' not in text and meeting_answers.DRAFTED in text
-    assert '• Topics: Home loan, Loan terms (term sheet)' in text and '• Format: video call' in text
+    assert '• Topics: Property financing, Loan terms (term sheet)' in text and '• Format: video call' in text
     assert 'booked' not in text.lower() and 'sent' not in text.lower()
     MeetingRequestTarget.model_validate(target)  # the shape SQL normalises and validates again at offer time
 
@@ -148,7 +148,7 @@ def test_rule_planning_and_the_relationship_spec() -> None:
     spec=registry.SPECS['relationship']
     assert 'meeting.request' in spec.offers and not {'appointment.hold','appointment.confirm'}&spec.offers
     assert [read.tool for read in spec.intents['meeting_request']]==['my_rm','free_slots']
-    assert orchestrator.PLANNER=='v10'  # v8's meeting line is kept in v9 (2b) and v10 (batch 3)
+    assert prompts.VERSIONS['planner']=='v10'  # v8's meeting line is kept in v9 (2b) and v10 (batch 3)
 
 
 def outcome(kind: str,target: dict,result: dict) -> dict:

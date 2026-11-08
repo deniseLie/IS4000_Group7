@@ -1,10 +1,12 @@
 import MeetingWorkspace from '../meetings/MeetingWorkspace';
 import MeetingProposal from '../meetings/MeetingProposal';
-import {useEffect,useState} from 'react';
+import MeetingBrief from '../meetings/MeetingBrief';
+import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import {DECLINE_REASONS,FORMAT_WORDS,MOVE_REASONS,WEEKDAY_NAMES,dayCells,decisionBody,decisionNotice,freeTimes,groupByDate,idKeeper,isNewRequest,meetingsPerWeek,
-  moveNotice,needsAnswer,plusMinutes,requestLabel,rmDelete,rmGet,rmPost,rmPut,sgtInput,sgtInstant,slotProblemText,takeScheduleTab,topicLabel,weekStart} from '../../lib/rm';
+  meetingTitle,moveNotice,needsAnswer,plusMinutes,takeMeeting,requestLabel,rmDelete,rmGet,rmPost,rmPut,sgtInput,sgtInstant,slotProblemText,takeScheduleTab,topicLabel,weekStart} from '../../lib/rm';
 import {formatDate} from '../../lib/format';
+import MeetingReminders from '../meetings/MeetingReminders';
 
 const HOURS=Array.from({length:29},(_,i)=>`${String(7+Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`);
 const TABS=[['appointments','Appointments'],['requests','Requests'],['availability','Availability and hours']];
@@ -16,19 +18,29 @@ const REQUEST_VIEWS=[['open','Open'],['scheduled','Scheduled'],['closed','Declin
 // Requests (build plan 2a, 0106): she accepts one of the client's times, proposes another (held for the client) or
 // declines with a reason, and moves a confirmed meeting. Each is one request she presses; SQL checks the slot again.
 // Appointments also lets her propose a meeting (MeetingProposal, held for the client to accept in Meetings) and open each
-// meeting's notes, minutes and follow-ups (MeetingWorkspace, 0120-0124).
+// meeting as its own page (MeetingWorkspace: Prepare → Meet → Document → Follow up, 0120-0140).
 export default function SchedulePage({token,onAsk,today}) {
   const [tab,setTab]=useState(()=>takeScheduleTab()||'appointments');
   const [appointments,setAppointments]=useState(null),[availability,setAvailability]=useState(null);
   const [requests,setRequests]=useState(null),[shown,setShown]=useState('open'),[toAnswer,setToAnswer]=useState(null);
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const [ids]=useState(()=>idKeeper());
-  const [workspace,setWorkspace]=useState(null);
+  const [workspace,setWorkspace]=useState(()=>takeMeeting()),[briefFor,setBriefFor]=useState(null);  // the meeting page ({id,client}) and the quick briefing view
+  const openMeeting=(id,client)=>setWorkspace({id,client});
+  const [proposing,setProposing]=useState(false),proposeBox=useRef(null);
+  // The propose form drops down under its button (like an apps menu); a click outside it or Esc closes it.
+  useEffect(()=>{
+    if(!proposing)return;
+    const outside=e=>{if(proposeBox.current&&!proposeBox.current.contains(e.target))setProposing(false);};
+    const esc=e=>{if(e.key==='Escape')setProposing(false);};
+    document.addEventListener('mousedown',outside);document.addEventListener('keydown',esc);
+    return ()=>{document.removeEventListener('mousedown',outside);document.removeEventListener('keydown',esc);};
+  },[proposing]);
   async function load(view=shown) {
     setError('');
     try {
       const auth=await token();
-      const [a,v,r]=await Promise.all([rmGet('/appointments',auth),rmGet('/availability',auth),rmGet(`/meeting-requests?status=${view}`,auth)]);
+      const [a,v,r]=await Promise.all([rmGet('/appointments?future_days=40',auth),rmGet('/availability',auth),rmGet(`/meeting-requests?status=${view}`,auth)]);
       setAppointments(a.data);setAvailability(v);setRequests(r.data);
       if(view==='open')setToAnswer(r.data.filter(needsAnswer).length);
     } catch(failure) {setError(failure.message);}
@@ -53,10 +65,19 @@ export default function SchedulePage({token,onAsk,today}) {
     result=>moveNotice(result,a.client));
   const limit=availability?.rules?.weekly_meetings_per_client;
   const confirmed=(appointments||[]).filter(a=>a.status==='confirmed');
+  if(workspace)return <div className="app-page-body rmw-page" data-testid="rm-schedule">
+    <nav className="meeting-crumbs" aria-label="Breadcrumb"><button type="button" onClick={()=>{setWorkspace(null);load();}}>Schedule</button><span aria-hidden="true">›</span><button type="button" onClick={()=>{setTab('appointments');setWorkspace(null);load();}}>Appointments</button><span aria-hidden="true">›</span><span aria-current="page">{workspace.client||'Meeting'}</span></nav>
+    <MeetingWorkspace meetingId={workspace.id} client={workspace.client} token={token} onAsk={onAsk} onClose={()=>{setWorkspace(null);load();}}/>
+  </div>;
   return <div className="app-page-body rmw-page" data-testid="rm-schedule">
     <header className="page-header"><div><span className="eyebrow">Relationship manager</span><h1>Schedule</h1>
       <p>Your meetings, clients’ meeting requests, the times clients can book over the next 14 days, and your working hours.</p></div>
-      <div className="page-header-actions"><button className="bank-chat-logout" onClick={()=>load()} disabled={busy}><Icon name="refresh"/>Refresh</button></div></header>
+      <div className="page-header-actions rm-popover-anchor" ref={proposeBox}><button className="bank-chat-logout" onClick={()=>load()} disabled={busy}><Icon name="refresh"/>Refresh</button>
+        <button className="primary-button" data-testid="rm-propose-meeting" aria-expanded={proposing} aria-haspopup="dialog" onClick={()=>setProposing(v=>!v)}><Icon name="plus"/>Propose a meeting</button>
+        {/* Mounted (hidden) from the start so its clients and topics are loaded: it opens whole, not in two halves. */}
+        <div className="rm-popover" role="dialog" aria-label="Propose a meeting to a client" hidden={!proposing}>
+          <div className="rm-popover-head"><strong>Propose a meeting</strong><button type="button" className="icon-button" aria-label="Close" onClick={()=>setProposing(false)}><Icon name="close"/></button></div>
+          <MeetingProposal token={token} bare onScheduled={()=>{setProposing(false);load();setNotice('Time proposed. The client reviews and accepts it in Meetings.');}}/></div></div></header>
     <div className="rmw-tabs-row"><nav className="page-tabs" role="tablist">{TABS.map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} data-testid={`rm-schedule-${key}`} onClick={()=>setTab(key)}>{label}
       {key==='appointments'&&appointments&&<span className="count">{confirmed.length}</span>}
       {key==='requests'&&toAnswer!==null&&<span className="count">{toAnswer}</span>}</button>)}</nav>
@@ -66,9 +87,9 @@ export default function SchedulePage({token,onAsk,today}) {
     {error&&<p role="alert" className="rm-error">{error}</p>}
     {notice&&<p className="chat-toast" role="status"><Icon name="check"/>{notice}</p>}
     {!appointments&&!error&&<p className="loading" role="status">Loading your schedule…</p>}
-    {tab==='appointments'&&<MeetingProposal token={token} onScheduled={()=>load()}/>}
-    {workspace&&<MeetingWorkspace meetingId={workspace} token={token} onClose={()=>setWorkspace(null)}/>}
-    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={setWorkspace}/>}
+    <MeetingReminders token={token} onOpen={openMeeting}/>
+    {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
+    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={openMeeting} onBrief={setBriefFor}/>}
     {appointments&&tab==='requests'&&(!requests?<p className="loading" role="status">Loading meeting requests…</p>
       :<MeetingRequests requests={requests} shown={shown} availability={availability} busy={busy} onDecide={decide}/>)}
     {availability&&tab==='availability'&&<div className="rmw-avail-layout">
@@ -84,7 +105,7 @@ function dayTitle(date,today) {
 }
 function timeOf(when) {return (when||'').split(', ').at(-1);}
 
-function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,onWorkspace}) {
+function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,onWorkspace,onBrief}) {
   const [moving,setMoving]=useState(null);
   if(!appointments.length)return <p className="page-empty">No appointments in the next 14 days.</p>;
   const perWeek=meetingsPerWeek(appointments);
@@ -94,16 +115,15 @@ function Appointments({appointments,limit,today,onAsk,availability,busy,onMove,o
     {over.map(a=><p key={a.customer_id+a.date} className="rmw-warn" role="status"><Icon name="alert"/>{a.client} has {perWeek.get(`${a.customer_id}|${weekStart(a.date)}`)} meetings in the week of {formatDate(weekStart(a.date))}, above the limit of {limit}. They were booked before the limit applied; consider combining them.</p>)}
     {groupByDate(appointments).map(group=><section key={group.date} className="rmw-day-group">
       <h3>{dayTitle(group.date,today)}</h3>
-      <ul className="rmw-appointments">{group.items.map(a=><li key={a.appointment_id} className={`rmw-appointment ${a.status}`} data-testid="rm-appointment">
+      <ul className="rmw-appointments">{group.items.map(a=><li key={a.appointment_id} className={`rmw-appointment ${a.status}`} data-testid="rm-appointment" data-appointment-id={a.appointment_id}>
         <span className="rmw-time">{timeOf(a.when)}</span>
         <span className="meeting-icon"><Icon name={a.format==='phone'?'support':a.format==='video'?'chat':'pin'}/></span>
         <div className="rmw-appointment-main"><strong>{a.client}</strong>
-          <small>{FORMAT_WORDS[a.format]} · {a.purpose||'No purpose recorded'}{a.status==='held'?` · held until ${a.hold_expires}, not confirmed`:''}</small></div>
+          <small>{FORMAT_WORDS[a.format]} · {a.purpose?meetingTitle(a.purpose,a.topics):'No purpose recorded'}{a.status==='held'?` · held until ${a.hold_expires}, not confirmed`:''}</small></div>
         <span className={`ticket-status ${a.status==='held'?'waiting_on_client':'resolved'}`}>{a.status==='held'?'Held':'Confirmed'}</span>
         {a.status==='confirmed'&&<div className="rmw-appointment-actions" style={{display:'flex',flexWrap:'wrap',gap:8}}>
-          <button className="bank-chat-logout" data-testid="rm-open-meeting-workspace" disabled={busy} onClick={()=>onWorkspace(a.appointment_id)}>Notes and follow-up</button>
-          <button className="primary-button small" data-testid="rm-brief" onClick={()=>onAsk(`Brief me for my meeting with ${a.client} on ${a.when}`,
-            {intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}})}><Icon name="spark"/>Prepare briefing</button>
+          <button className="primary-button small" data-testid="rm-open-meeting-workspace" disabled={busy} onClick={()=>onWorkspace(a.appointment_id,a.client)}>Open meeting</button>
+          {!a.past&&<button className="bank-chat-logout" data-testid="rm-brief" disabled={busy} onClick={()=>onBrief(a)}><Icon name="spark"/>Briefing</button>}
           {!a.past&&<button className="bank-chat-logout" data-testid="rm-move" aria-expanded={moving===a.appointment_id} disabled={busy}
             onClick={()=>setMoving(moving===a.appointment_id?null:a.appointment_id)}><Icon name="clock"/>Move</button>}</div>}
         {moving===a.appointment_id&&<MoveForm a={a} free={freeTimes(availability,[a.starts_at])} busy={busy} onMove={onMove} onClose={()=>setMoving(null)}/>}

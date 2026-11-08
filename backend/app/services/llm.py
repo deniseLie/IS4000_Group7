@@ -3,8 +3,11 @@ import json
 from app.services import llm_gateway, prompts
 from app.services.llm_gateway import build_model  # re-exported for the contract tests
 
+def answer_prompt():
+    return prompts.current('answer')
+
 def answer_request(evidence, language, repair=None):
-    pv = prompts.current()
+    pv = answer_prompt()
     prompt = pv['system'] + pv['format']
     if not any(item['id']=='customer-records' for item in evidence):
         prompt += pv['public_only']

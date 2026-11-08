@@ -30,10 +30,9 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 | `card-limit-change` | Changing your credit card limit | DemoBank | v2 · main | Temporary or permanent limit requests (steps of SGD 1,000, up to 90 days, one per card every 30 days); the cards and credit team decides |
 | `card-controls` | Freezing, replacing and disputing a card | DemoBank | v1 · freeze, replace, dispute | Freeze and unfreeze your own card; replacement for a lost, stolen or damaged card; disputing a recognised charge within 60 days |
 | `sg-card-payments` | Singapore credit card payments | MoneySense | v1 · main | Credit limits, minimum payments, interest on unpaid balances, due dates |
-| `loans` | Demo loan enquiries | DemoBank | v2 · main | Home, personal and car loans; ask which one; only the bank decides; the chatbot cannot apply |
-| `home-loans` | Home loans | DemoBank | v1 · main | Buying or refinancing a home, general eligibility and documents, how to apply |
-| `personal-loans` | Personal loans | DemoBank | v1 · main | Unsecured personal loans, general eligibility, how to apply |
-| `car-loans` | Car loans | DemoBank | v1 · products, eligibility, apply | Car loan products, general eligibility, how to apply |
+| `loans` | Demo financing enquiries | DemoBank | v3 · main | Property financing and borrowing against investments; no personal or car loans; ask which one; arranged through the RM; only the bank decides (0115) |
+| `home-loans` | Home loans and property financing | DemoBank | v2 · main, steps, documents | Uncommitted, variable rate, no early repayment penalty; RM → mortgage specialist's borrowing plan → valuation and conveyancing → credit decision; documents (0115) |
+| `lombard-financing` | Lombard loans: borrowing against your investments | DemoBank | v1 · main, facilities, collateral, apply | Variable loan facility and fixed term advance; the bank decides collateral and lending values; what happens when values fall; through the RM (0115) |
 | `sg-loan-types` | Singapore loan types | MoneySense | v1 · main | Secured vs unsecured, term loans, revolving credit |
 | `statements` | Getting a statement | DemoBank | v3 · monthly, older-copies, missing | Overview → Statements for the last 3 full months; older, certified or paper copies and bank letters by request; why the current month or a pending payment is not shown |
 
@@ -90,7 +89,10 @@ The validator checks every figure in an answer against the cited section text. T
 Kept so old citations still open; search never returns them:
 - `app-login-recovery` v1
 - `card-limit-change` v1
-- `loans` v1
+- `car-loans` v1 (0115: not offered to private clients in this demo)
+- `home-loans` v1
+- `loans` v1–v2
+- `personal-loans` v1 (0115)
 - `lost-card` v1–v3
 - `overseas-transfers` v1
 - `security` v1
