@@ -82,14 +82,14 @@ export default function RmWorkspace({session}) {
     {view:'schedule',testid:'rm-open-schedule',icon:'calendar',label:'Schedule',short:'Schedule'},
   ].map(page=>({...page,onSelect:()=>navigate(page.view)}));
   const menu=[{testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut}];
-  const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · Synthetic data · No real banking services</span></footer>;
+  const footer=null;
   const shared={token,onAsk:askAssistant,today:profile?.today};
 
   return <div className="bank-chat-page rmw-shell" data-testid="rmw-shell">
     <a className="skip-link" href="#rm-composer">Skip to message</a>
     <header className="bank-chat-header">
-      <div className="bank-chat-brand"><span className="brand-name">DemoBank<span className="brand-dot">.</span></span>
-        <div className="brand-caption"><strong>Relationship manager workspace</strong><span className="demo-badge">Fictional demo data</span></div></div>
+      <div className="bank-chat-brand"><span className="brand-name">UBS Connect<span className="brand-dot">.</span></span>
+        <div className="brand-caption"><strong>Relationship manager workspace</strong></div></div>
       <div className="chat-actions">
         {profile&&<span className="rm-header-meta" data-testid="rm-book-size"><Icon name="people"/>{profile.book_size} clients in your book</span>}
         <span className="rm-role-badge" title="Signed in with the relationship manager role">RM · {profile?.advisor.team||'Signed in'}</span>

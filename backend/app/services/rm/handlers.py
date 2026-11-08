@@ -11,7 +11,7 @@ approves through the existing write routes), and what needs judgement is written
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v7 + the intent's task file) with strict JSON output and cited record ids. A model
+3. One model call (prompt rm_assistant/v8 + the intent's task file) with strict JSON output and cited record ids. A model
    call's time follows the tokens it writes (docs/planning/rm-answer-speed.md), so the client reports (meeting_brief,
    client_overview, handover_brief, meeting_history) give the model a bounded set of facts (brief_facts.facts) and ask it
    only for the judgement parts; code writes the record sections. For
@@ -34,7 +34,7 @@ from difflib import SequenceMatcher
 from typing import Any
 from app.schemas.contracts import RequestContext
 from app.schemas.rm import BOOK_WIDE,NEEDS_CLIENT,RmAssistantRequest
-from app.services import customer_data,llm_gateway,prompts,tools
+from app.services import llm_gateway,prompts,tools
 from app.services.agents import registry,runner
 from app.services.authorization import PolicyDenied
 from app.services.privacy import redact
@@ -756,8 +756,7 @@ async def h_draft(t: Turn,plan,client_id):
 
 
 async def _categories(t: Turn) -> list[dict]:
-    rows=await customer_data.get_categories(t.ctx)
-    return [r.model_dump(mode='json') for r in rows if r.customer_raisable]
+    return [r for r in (await t.read('request_categories',{}))['items'] if r.get('customer_raisable')]
 
 
 def documentation_reply(t: Turn,data: dict,bundle: ev.Bundle,sources: list[str],client_id: int,categories: list[dict],profile: dict,

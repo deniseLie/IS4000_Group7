@@ -866,7 +866,7 @@
         "say": "Can I get a personal loan of SGD 30,000? What do I need?"
       }
     ],
-    "check": "Says from the approved article that DemoBank does not offer personal loans in this demo and names what it does offer (property financing, borrowing against her investments), with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (ask her RM or request a meeting).",
+    "check": "Says from the approved article that UBS Connect does not offer personal loans in this demo and names what it does offer (property financing, borrowing against her investments), with sources; says the bank decides; no rate, eligibility or approval promise; offers a next step (ask her RM or request a meeting).",
     "cites_any": [
       "loans",
       "lombard-financing",

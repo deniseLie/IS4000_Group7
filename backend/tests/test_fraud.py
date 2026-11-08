@@ -98,7 +98,7 @@ def test_travel_evidence_supports_the_flagged_times_and_figures_but_not_new_ones
     evidence=[{'id':item.id,'text':item.text} for item in (evidence_for(value),travel)]
     answer=('Your card ending 4821 was used at Hawker Delight, Tanjong Pagar in Singapore at 7:15 pm on 17 Oct, then in the United States '
         'at SUNSET GRILL LA ($86.40, 9:42 pm) and TECHVAULT ELECTRONICS ($2,400.00, 21:58), about 2 hours later. That is too soon to travel, '
-        'so a DemoBank rule check flagged both US charges; you were in Singapore, so they do not fit. It is not proof of fraud.')
+        'so a UBS Connect rule check flagged both US charges; you were in Singapore, so they do not fit. It is not proof of fraud.')
     assert check_sources(answer,['travel-check'],evidence) is None
     assert check_sources(answer.replace('$86.40','$68.40'),['travel-check'],evidence)=='unsupported_figure'
     assert check_sources(answer.replace('9:42 pm','9:52 pm'),['travel-check'],evidence)=='unsupported_figure'

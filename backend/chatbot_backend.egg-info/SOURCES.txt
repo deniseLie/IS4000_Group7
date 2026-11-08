@@ -325,7 +325,6 @@ app/services/document_parsers.py
 app/services/document_templates.py
 app/services/document_uploads.py
 app/services/embeddings.py
-app/services/external.py
 app/services/guardrail.py
 app/services/handover.py
 app/services/insights.py
@@ -523,7 +522,6 @@ tests/test_document_uploads.py
 tests/test_documents.py
 tests/test_documents_browser.py
 tests/test_evaluation.py
-tests/test_external.py
 tests/test_flow_followups.py
 tests/test_fraud.py
 tests/test_fraud_agent_browser.py

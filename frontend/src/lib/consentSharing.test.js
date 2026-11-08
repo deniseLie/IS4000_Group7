@@ -25,7 +25,7 @@ test('Data sharing is read strictly: one card per category, her accounts and nex
   assert.deepEqual(view.categories.map(c=>[c.code,cardState(c).label]),[['profile_basics','Always shared'],['transaction_insights','Off'],['chat_topics','On'],
     ['meeting_recording','On for every meeting']]);
   assert.deepEqual(alwaysShared(view).map(c=>c.code),['profile_basics']);
-  assert.equal(scopeText('chat_topics',view.categories[2].grant.scope),'Home and property, investments');
+  assert.equal(scopeText('chat_topics',view.categories[2].grant.scope),'Property financing, investments');
   assert.equal(scopeText('chat_topics',{topic_areas:['home_property','investments','deposits','insurance','cards','everyday_banking']}),'All topic areas');
   assert.equal(scopeText('transaction_insights',{accounts:[10021],lookback_months:6},[{account_id:10021,type:'multi_currency',number:'****7734',currency:'SGD'}]),'Multi-currency ****7734 (no card spending) · last 6 months');
   assert.equal(scopeText('transaction_insights',{accounts:[10021],lookback_months:3},view.accounts),'Multi-currency ••••0021 (no card spending) · last 3 months');

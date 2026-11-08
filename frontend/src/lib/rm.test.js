@@ -207,7 +207,7 @@ test('meeting requests to answer: overdue first, new ones marked, waiting on the
   assert.deepEqual(due.map(r=>r.isNew),[false,false,true]);
   assert.deepEqual(list.map(needsAnswer),[true,true,false,true,false]);
   assert.deepEqual(list.map(requestLabel),['Waiting for you','Overdue','Waiting for the client','Proposal lapsed','Scheduled']);
-  assert.equal(topicLabel('term_sheet'),'Term sheet');assert.equal(topicLabel('new_code'),'new code');
+  assert.equal(topicLabel('term_sheet'),'Loan terms (term sheet)');assert.equal(topicLabel('new_code'),'new code');
   assert.equal(slotProblemText('weekly_limit'),'the client already has the most meetings allowed that week');assert.equal(slotProblemText(null),'');
 });
 
@@ -304,10 +304,11 @@ test('a saved briefing says what changed: stale records, withdrawn sharing, remo
 });
 
 test('the assistant home groups every starter by the moment of the day and suggests one next step per answer',async()=>{
-  const {STARTER_GROUPS,nextSteps}=await import('./rm.js');
+  const {STARTER_GROUPS,nextSteps,pageStep}=await import('./rm.js');
   assert.deepEqual(STARTER_GROUPS.map(g=>g.label),['Start my day','Before a meeting','After a meeting','Any time']);
   for(const g of STARTER_GROUPS)for(const s of g.starters)assert.ok(s.message&&s.intent||s.draft||s.navigate,s.title);
-  assert.equal(nextSteps({status:'ok',intent:'meeting_brief'})[0].navigate,'schedule');
+  assert.equal(pageStep({status:'ok',intent:'meeting_brief'}).navigate,'schedule');  // a page link inside the answer, not a Next pill
+  assert.deepEqual(nextSteps({status:'ok',intent:'meeting_brief'}),[]);
   assert.deepEqual(nextSteps({status:'ok',intent:'today',clarification:{question:'Which?'}}),[]);
   assert.deepEqual(nextSteps({status:'denied',intent:'today'}),[]);
 });

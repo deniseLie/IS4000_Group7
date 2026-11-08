@@ -1,11 +1,11 @@
-# How UBS explains client topics (research for DemoBank articles)
+# How UBS explains client topics (research for UBS Connect articles)
 
-DemoBank is a fictional coursework bank. To write clearer client guidance, we read how one real private bank, UBS, explains the same topics on its public website. We only read public pages: no logins and no forms. All checks were made on **2 Nov 2026**. Everything below is our own paraphrase. Nothing here is UBS policy for DemoBank, and no DemoBank article names UBS, copies its wording or uses its contact details, fees or limits.
+UBS Connect is a fictional coursework bank. To write clearer client guidance, we read how one real private bank, UBS, explains the same topics on its public website. We only read public pages: no logins and no forms. All checks were made on **2 Nov 2026**. Everything below is our own paraphrase. Nothing here is UBS policy for UBS Connect, and no UBS Connect article names UBS, copies its wording or uses its contact details, fees or limits.
 
 **How to read this:**
 - UBS has few Singapore client-help pages. Where no Singapore page exists, we used Swiss or global pages and say so. A few details come from Indian or Australian forms; those follow local regulators' rules and are not general UBS practice.
 - Pages were read with an automated fetch tool that summarises each page. Before quoting anything from a page, check the original.
-- Each topic ends with **Informs**: the DemoBank article it shaped. The articles are in migration `0098` and `backend/app/services/knowledge.py`.
+- Each topic ends with **Informs**: the UBS Connect article it shaped. The articles are in migration `0098` and `backend/app/services/knowledge.py`.
 
 ## 1. Periodic client review (KYC)
 
@@ -37,7 +37,7 @@ No Singapore or Swiss page lists the proof of address UBS accepts. The only conc
 - A certified copy is checked against the original by an authorised person (for example a lawyer or notary). That person writes that it is a true copy, then signs and dates it with their name and role.
 
 **Informs:**
-- `review-documents#proof-of-address`: document types, name must match, recency limit. The 3-month limit is DemoBank's own rule from `document_templates.py`, recorded in `kb.facts`.
+- `review-documents#proof-of-address`: document types, name must match, recency limit. The 3-month limit is UBS Connect's own rule from `document_templates.py`, recorded in `kb.facts`.
 - `review-documents#identity`: what a certifier writes on a copy.
 - `document-uploads#legibility`: certified English translation.
 
@@ -73,8 +73,8 @@ No Singapore or Swiss page lists the proof of address UBS accepts. The only conc
 **Informs:** `review-documents#tax-residency`:
 - why the form exists, in one sentence;
 - list every country, with its tax number;
-- tell the bank when your residency changes. No period is given, because none is approved for DemoBank.
-- DemoBank cannot give tax advice.
+- tell the bank when your residency changes. No period is given, because none is approved for UBS Connect.
+- UBS Connect cannot give tax advice.
 
 ## 5. Answering the bank's questions and sending documents
 
@@ -92,7 +92,7 @@ No Singapore or Swiss page lists the proof of address UBS accepts. The only conc
 
 **Informs:**
 - `bank-questions` (new): one official place to answer, specific answers, never include secrets.
-- `document-uploads` (new): formats, size and legibility. These come from DemoBank's own upload rules (migration `0051`, `schemas/document_uploads.py`), not from UBS.
+- `document-uploads` (new): formats, size and legibility. These come from UBS Connect's own upload rules (migration `0051`, `schemas/document_uploads.py`), not from UBS.
 
 ## 6. Updating personal details
 
@@ -127,7 +127,7 @@ No Singapore or Swiss page lists the proof of address UBS accepts. The only conc
 - In Singapore, clients can opt in to alerts when a new document arrives.
 - We found no public page on reminders for outstanding review items.
 
-**Informs:** `review-reminders` (new). It describes DemoBank's own behaviour:
+**Informs:** `review-reminders` (new). It describes UBS Connect's own behaviour:
 - reminders are service messages;
 - they clear when nothing is left to send (migrations `0078`–`0079`);
 - what to do when you cannot meet a deadline.
@@ -205,7 +205,7 @@ No Singapore or Swiss page lists the proof of address UBS accepts. The only conc
 - `older-copies`: older, certified or paper copies, and bank letters;
 - `missing`: why the current month or a pending payment is not shown.
 
-No retention period was added, because DemoBank has none approved.
+No retention period was added, because UBS Connect has none approved.
 
 ## 11. Local and international transfers
 
@@ -262,7 +262,7 @@ No retention period was added, because DemoBank has none approved.
 - **Mortgage solutions:** property financing and refinancing as a borrowing plan prepared with mortgage planning specialists, third-party valuation and conveyancing, subject to credit approval; an uncommitted mortgage with a variable rate and no early repayment penalty. No document list or rates are published.
 - **Digital banking:** advisor messaging, a document mailbox kept for 10 years, alerts (balances, transactions, orders, mailbox), FX and securities trading, research.
 
-**Informs:** the storyline's products (`docs/workflows/storyline-michelle.md`): Michelle's advised portfolio and time deposit (0116), the financing articles (0115), the `financing_specialist` request type and the meeting "Property financing options" (0117). DemoBank's articles invent no figures and name no bank.
+**Informs:** the storyline's products (`docs/workflows/storyline-michelle.md`): Michelle's advised portfolio and time deposit (0116), the financing articles (0115), the `financing_specialist` request type and the meeting "Property financing options" (0117). UBS Connect's articles invent no figures and name no bank.
 
 ## 14. AI that UBS describes publicly (checked 7 Nov 2026)
 
@@ -278,4 +278,4 @@ UBS has no public client page for any of these:
 - reminders for outstanding review items;
 - advisor changes.
 
-DemoBank's articles on these topics rely on DemoBank's own system rules (document templates, upload limits, reminder clean-up) and say nothing beyond them.
+UBS Connect's articles on these topics rely on UBS Connect's own system rules (document templates, upload limits, reminder clean-up) and say nothing beyond them.

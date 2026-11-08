@@ -35,7 +35,7 @@ test('saved customer chats reopen with real stored replies and sources',async({p
     await expect(page.getByTestId('chat-message-user')).toHaveCount(1);
     await page.getByTestId('answer-sources').first().locator('summary').click();
     await page.locator('[data-source-id^="kb:lost-card@"]').click();
-    await expect(page.locator('dialog[aria-label="Source details"]')).toBeVisible();
+    await expect(page.locator('[aria-label="Source details"]').first()).toBeVisible();
     await page.getByRole('button',{name:'Close source',exact:true}).click();
     await askSafety(page,'I want to talk to a person');
     await page.reload();

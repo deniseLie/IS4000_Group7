@@ -4,7 +4,6 @@ import {FORMAT_WORDS,awarenessList,display,meetingTitle,openMeetingPage,todayAct
 import {meetingRequest} from '../../lib/meetingLifecycle';
 import {sharedTopicRows} from '../../lib/talkingPoints';
 import {formatDate} from '../../lib/format';
-import MeetingBrief from '../meetings/MeetingBrief';
 
 const SHOWN=5;
 const KIND_WORDS={specialist_ticket:'With a bank team',commitment:'Recorded commitment',review_deadline:'Compliance review',milestone:'Date on record',task:'Your task'};
@@ -17,7 +16,9 @@ function daysAway(date,day) {const n=Math.round((Date.parse(date)-Date.parse(day
 // The order and reasons come from GET /rm/priorities (services/rm/priority.py); the page never scores.
 export default function TodayPage({token,onAsk,advisor,today}) {
   const [data,setData]=useState(null),[error,setError]=useState(''),[all,setAll]=useState(false);
-  const [briefFor,setBriefFor]=useState(null),[prepared,setPrepared]=useState(0);
+  const [prepared,setPrepared]=useState(0);
+  // Briefing opens the assistant and writes the brief there (one place for every generated answer), not under the button.
+  const brief=a=>onAsk(`Brief me for my meeting with ${a.client}`,{intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}});
   const preparation=useRef(null);
   async function load() {
     setError('');
@@ -54,19 +55,18 @@ export default function TodayPage({token,onAsk,advisor,today}) {
         <button className="icon-button" aria-label="Refresh" title="Refresh" onClick={load}><Icon name="refresh"/></button></div></header>
     {error&&<p role="alert" className="rm-error">{error}</p>}
     {!data&&!error&&<div className="loading-list" role="status" aria-label="Loading">{[0,1,2].map(k=><span key={k} className="skeleton-card"/>)}</div>}
-    {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
     {data&&<>
       {next&&<section className="rmw-card rm-nextmeet" data-testid="rm-today-next" aria-label="Next meeting">
         <div><span className="eyebrow">Next meeting · {next.when} · {daysAway(next.date,day)}</span>
           <strong>{next.client} · {meetingTitle(next.purpose,next.topics)}</strong>
           <small className="rmw-why">{FORMAT_WORDS[next.format]||'Meeting'}{next.format==='video'?' call':''}{prepared>0?' · briefing prepared':''}</small></div>
-        <div className="rm-nextmeet-actions"><button className="bank-chat-logout" data-testid="rm-today-brief" onClick={()=>setBriefFor(next)}>Briefing</button>
+        <div className="rm-nextmeet-actions"><button className="bank-chat-logout" data-testid="rm-today-brief" onClick={()=>brief(next)}>Briefing</button>
           <button className="primary-button" data-testid="rm-today-open-meeting" onClick={()=>openMeetingPage(next.appointment_id,next.client)}>Open meeting</button></div>
       </section>}
 
       <div className="rm-today-grid">
         <section className="rmw-card rm-first" data-testid="rm-today-first" aria-label={all?'Everything that needs you':'Do first'}>
-          <div className="rm-first-head"><h2>{all?'Everything that needs you':'Do first'}</h2><span className="rm-small">most important at the top · one step each</span></div>
+          <div className="rm-first-head"><h2>{all?'Everything that needs you':'Do first'}</h2></div>
           {!list.length&&<p className="rm-none">Nothing waiting for you. New requests, meetings and dates will appear here.</p>}
           {shown.map(x=>{const a=act(x);return <div key={x.key} className="rm-now-row" data-testid="rm-today-item">
             <span className={`rm-dot ${x.tone}`} aria-hidden="true"/>

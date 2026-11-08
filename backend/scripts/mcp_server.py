@@ -1,6 +1,6 @@
-"""Run the DemoBank tools as an MCP server over stdio (F21), for an external MCP client such as the MCP Inspector.
+"""Run the UBS Connect tools as an MCP server over stdio (F21), for an external MCP client such as the MCP Inspector.
 
-  python -m scripts.mcp_server                       # guest: the public tools (knowledge, request types, document templates, holidays, FX)
+  python -m scripts.mcp_server                       # guest: the public tools (knowledge, request types, document templates)
   DEMOBANK_ACCESS_TOKEN=<customer JWT> python -m scripts.mcp_server   # customer: also every my_* tool
 
 Needs SUPABASE_URL and SUPABASE_ANON_KEY (root .env). The token is a normal
@@ -42,7 +42,7 @@ def audited(function,ctx: RequestContext,db: object):
 def main() -> None:
     from mcp.server.mcpserver import MCPServer
     ctx,db=context()
-    server=MCPServer('demobank-tools',instructions='DemoBank coursework tools: read-only, permission-checked and audited.')
+    server=MCPServer('demobank-tools',instructions='UBS Connect coursework tools: read-only, permission-checked and audited.')
     for name,function in TOOLS.items():server.tool(name=name,description=(function.__doc__ or name).strip())(audited(function,ctx,db))
     server.run('stdio')
 

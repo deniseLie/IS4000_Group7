@@ -43,15 +43,15 @@ def evidence_for(records: RelationshipRecords) -> list[Evidence]:
         ('slots','Available appointment suggestions',{'search':records.search.model_dump(mode='json'),'slots':[
             {**row.model_dump(mode='json',exclude={'customer_id','advisor_id'}),'advisor_name':advisor_name(row.advisor_id,assignment)}
             for row in records.slots.data]},records.slots.as_of.isoformat())]
-    evidence=[Evidence(id='relationship-'+key,text=json.dumps({'records':data},ensure_ascii=False),publisher='DemoBank demo records',
+    evidence=[Evidence(id='relationship-'+key,text=json.dumps({'records':data},ensure_ascii=False),publisher='UBS Connect demo records',
         scope='Own-customer audited snapshot. Separate reads, not one atomic statement. Latest 200 requests/appointments; at most 20 suggestions within the recorded 14-day Singapore-date search. No consent, sharing, booking or financial execution.',
-        source=Source(id='relationship-'+key,title=title,url=None,version=as_of,publisher='DemoBank demo records'))
+        source=Source(id='relationship-'+key,title=title,url=None,version=as_of,publisher='UBS Connect demo records'))
         for key,title,data,as_of in rows]
     return evidence+transition_evidence(records)
 
 
 def transition_evidence(records: RelationshipRecords) -> list[Evidence]:
-    """Approved DemoBank change wording selected in SQL from the recorded reason; the reason code itself is withheld."""
+    """Approved UBS Connect change wording selected in SQL from the recorded reason; the reason code itself is withheld."""
     intro=records.introduction
     if intro is None or not intro.data.notice:return []
     first=intro.data.notice[0]
@@ -59,7 +59,7 @@ def transition_evidence(records: RelationshipRecords) -> list[Evidence]:
         'current_advisor':intro.data.current.name if intro.data.current else None,
         'approved_wording':[{'heading':item.heading,'text':item.body} for item in intro.data.notice]}
     return [Evidence(id='relationship-transition',text=json.dumps({'records':data},ensure_ascii=False),publisher=first.publisher,
-        scope='Approved DemoBank wording for this recorded relationship-manager change. The only permitted explanation of the change; no other reason is recorded.',
+        scope='Approved UBS Connect wording for this recorded relationship-manager change. The only permitted explanation of the change; no other reason is recorded.',
         source=Source(id='relationship-transition',title=first.title,url=f'/knowledge/sections/{first.article_id}/{first.version}/{first.anchor}',
             version=f'v{first.version}',publisher=first.publisher))]
 

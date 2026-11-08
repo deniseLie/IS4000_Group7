@@ -18,7 +18,7 @@ test('every topic reads exactly as the RM side renders it (schemas/meetings.Talk
     'Investments · exploring · within 3 months · asks about fees · shared by the client');
   assert.equal(line({...point(),timeframe:'unknown',origin:'confirmed'}),'Property financing · planning · shared by the client');
   assert.equal(line(point({kind:'hdb_resale',concerns:['lock_in','rates']})),  // 0143: the kind after the stage, concerns in words
-    'Property financing · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat');
+    'Property financing · planning · resale property · within 12 months · asks about lock-in, rates · inferred from chat');
   assert.equal(line(point({topic:'fixed_deposit',kind:'renewal',timeframe:'unknown',concerns:['down_payment']})),
     'Time deposit · planning · renewal · asks about down payment · inferred from chat');
 });
@@ -45,7 +45,7 @@ test('she reads each topic in plain words with the same facts as the RM line',()
   assert.equal(plainLine(point({stage:'curious',timeframe:'unknown'})),'You asked about property financing.');
   assert.equal(plainLine(point({topic:'fixed_deposit',stage:'curious',timeframe:'unknown',concerns:['rates']})),'You asked about time deposits. You mentioned rates.');
   assert.equal(plainLine(point({kind:'hdb_resale',concerns:['lock_in','rates']})),
-    "You're planning to finance a property (HDB resale) in the next 12 months. You mentioned lock-in and rates.");
+    "You're planning to finance a property (resale property) in the next 12 months. You mentioned lock-in and rates.");
   assert.equal(plainLine(point({topic:'investments',stage:'exploring',timeframe:'within_3m',concerns:['fees','rates','timing']})),
     "You're looking into investing, with the next 3 months in mind. You mentioned fees, rates and timing.");
   assert.equal(plainLine(point({topic:'fixed_deposit',stage:'ready',timeframe:'now'})),"You're ready to place a time deposit now.");

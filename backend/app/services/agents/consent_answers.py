@@ -19,8 +19,9 @@ from typing import NamedTuple
 from app.schemas.agents import Evidence
 from app.schemas.contracts import AgentResult,Citation,OfferProposal,RequestContext
 from app.schemas.consent_sharing import ConsentSharing
+from app.schemas.talking_points import MyTalkingPoints
 from app.schemas.events import Source
-from app.services import customer_data,talking_points
+from app.services import talking_points,tools
 
 CATEGORY_WORDS=(
     ('chat_topics',re.compile(r"\b(?:chat\s+topics?|topics?\s+(?:from|in|of)\s+(?:my\s+)?chats?|my\s+chats?|what\s+i\s+(?:talk|chat)\s+about)\b")),
@@ -70,9 +71,9 @@ class Reply(NamedTuple):
 
 def evidence_for(as_of,body: dict) -> list[Evidence]:
     """What the reply was built from: codes, ids and dates of her own settings (no free text)."""
-    return [Evidence(id='consent-sharing',text=json.dumps(body,ensure_ascii=False,default=str),publisher='DemoBank consent records',
+    return [Evidence(id='consent-sharing',text=json.dumps(body,ensure_ascii=False,default=str),publisher='UBS Connect consent records',
         scope='Her own data sharing settings; read for this request only.',source=Source(id='consent-sharing',
-        title='Your data sharing settings',url=None,version=as_of.isoformat(),publisher='DemoBank consent records'))]
+        title='Your data sharing settings',url=None,version=as_of.isoformat(),publisher='UBS Connect consent records'))]
 
 
 def reply(task_id: str,text: str,as_of,body: dict,proposals: list[OfferProposal]|None=None) -> Reply:
@@ -146,7 +147,7 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
     if (found:=wanted(question)) is None:return None
     text,deleting,category,stopping=found
     if deleting:
-        mine=await talking_points.mine(ctx)
+        mine=await tools.snapshot('my_talking_points',{},ctx,MyTalkingPoints)
         topic=next(t for t,rx in TOPIC_WORDS.items() if rx.search(text))
         rm=mine.data.rm_first_name or 'Your relationship manager'
         point=next((p for p in mine.data.points if p.topic==topic),None)
@@ -156,7 +157,7 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
             'you can undo it on Data sharing for 7 days.',mine.as_of,body,
             [OfferProposal(task_id=task_id,agent='relationship',type='insight.delete',target={'point_id':str(point.point_id)},
                 summary=f'Delete the {talking_points.TOPIC_NAME[topic].lower()} topic from what {rm} sees')])
-    envelope=await customer_data.get_consent_sharing_record(ctx)
+    envelope=await tools.snapshot('my_consent_sharing',{},ctx,ConsentSharing)
     sharing=envelope.data
     if category=='meeting_recording':  # her choice on each meeting (0122), whoever her RM is; nothing to offer
         active=sharing.active(category)
@@ -183,7 +184,7 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
 async def meeting_shares(task_id: str,ctx: RequestContext) -> list[OfferProposal]:
     """The optional grants a meeting request carries: each category she does not share yet, until the request is answered
     (chained after the meeting.request, 0109; a switch that is off by default, 0114). None when there is no RM."""
-    try:sharing=(await customer_data.get_consent_sharing_record(ctx)).data
+    try:sharing=(await tools.snapshot('my_consent_sharing',{},ctx,ConsentSharing)).data
     except Exception:return []  # the meeting request stands without the switches
     if sharing.rm is None:return []
     rm=display(sharing.rm.name)

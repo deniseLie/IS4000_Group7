@@ -1,6 +1,5 @@
 import MeetingWorkspace from '../meetings/MeetingWorkspace';
 import MeetingProposal from '../meetings/MeetingProposal';
-import MeetingBrief from '../meetings/MeetingBrief';
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import {DECLINE_REASONS,FORMAT_WORDS,MOVE_REASONS,WEEKDAY_NAMES,dayCells,decisionBody,decisionNotice,freeTimes,groupByDate,idKeeper,isNewRequest,meetingsPerWeek,
@@ -25,7 +24,7 @@ export default function SchedulePage({token,onAsk,today}) {
   const [requests,setRequests]=useState(null),[shown,setShown]=useState('open'),[toAnswer,setToAnswer]=useState(null);
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const [ids]=useState(()=>idKeeper());
-  const [workspace,setWorkspace]=useState(()=>takeMeeting()),[briefFor,setBriefFor]=useState(null);  // the meeting page ({id,client}) and the quick briefing view
+  const [workspace,setWorkspace]=useState(()=>takeMeeting());  // the meeting page ({id,client}); Briefing opens the assistant
   const openMeeting=(id,client)=>setWorkspace({id,client});
   const [proposing,setProposing]=useState(false),proposeBox=useRef(null);
   // The propose form drops down under its button (like an apps menu); a click outside it or Esc closes it.
@@ -88,8 +87,7 @@ export default function SchedulePage({token,onAsk,today}) {
     {notice&&<p className="chat-toast" role="status"><Icon name="check"/>{notice}</p>}
     {!appointments&&!error&&<p className="loading" role="status">Loading your schedule…</p>}
     <MeetingReminders token={token} onOpen={openMeeting}/>
-    {briefFor&&<MeetingBrief meetingId={briefFor.appointment_id} client={briefFor.client} token={token} onAsk={onAsk} onClose={()=>setBriefFor(null)}/>}
-    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={openMeeting} onBrief={setBriefFor}/>}
+    {appointments&&tab==='appointments'&&<Appointments appointments={appointments} limit={limit} today={today} onAsk={onAsk} availability={availability} busy={busy} onMove={move} onWorkspace={openMeeting} onBrief={a=>onAsk(`Brief me for my meeting with ${a.client}`,{intent:'meeting_brief',context:{client_id:a.customer_id,appointment_id:a.appointment_id}})}/>}
     {appointments&&tab==='requests'&&(!requests?<p className="loading" role="status">Loading meeting requests…</p>
       :<MeetingRequests requests={requests} shown={shown} availability={availability} busy={busy} onDecide={decide}/>)}
     {availability&&tab==='availability'&&<div className="rmw-avail-layout">

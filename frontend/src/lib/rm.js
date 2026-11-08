@@ -129,7 +129,7 @@ export function reportText(reply,client) {
   }
   for(const d of allDrafts(reply))lines.push(`Draft${d.client?` to ${d.client}`:''} (not sent):`,d.text,'');
   if(sources.length)lines.push('Sources',...sources.map((s,i)=>`[${i+1}] ${s.title}`));
-  lines.push('','AI-generated from DemoBank demo records. Check the sources before acting.');
+  lines.push('','AI-generated from your UBS Connect records. Check the sources before acting.');
   return lines.join('\n');
 }
 
@@ -198,8 +198,8 @@ export const WEEKDAY_NAMES=['Monday','Tuesday','Wednesday','Thursday','Friday','
 
 // Meeting requests (build plan 2a, SQL 0106). Topics are the fixed codes of rm.meeting_topics(); the purpose is the
 // client's own words and is only ever rendered as text. Every decision and move is a separate request she presses.
-export const TOPIC_LABELS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',term_sheet:'Term sheet',
-  compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Other'};
+export const TOPIC_LABELS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',term_sheet:'Loan terms (term sheet)',
+  compliance_review:'Periodic review',account_review:'Accounts and everyday banking',card_review:'Cards',other:'Something else'};
 export function topicLabel(code) {return TOPIC_LABELS[code]||String(code||'').replace(/_/g,' ');}
 export const DECLINE_REASONS=[['answered_by_message','I will answer in a message'],['redirected','Passed to the team that handles it'],['not_needed','No meeting needed']];
 export const MOVE_REASONS=[['client_asked','The client asked'],['rm_unavailable','I am unavailable then'],['other','Other reason']];
@@ -441,16 +441,21 @@ const NEXT={
   today:[{label:'Brief me for my next meeting',message:'What meetings do I have in the next two weeks?',intent:'schedule'}],
   ticket_inbox:[{label:'Who should I follow up with?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'}],
   priorities:[{label:'Plan my day',message:'What’s on today?',intent:'today'}],
-  meeting_requests:[{label:'Answer in Schedule → Requests',navigate:'schedule'}],
+  meeting_requests:[{label:'Answer in Schedule → Requests',link:'Answer meeting requests',navigate:'schedule'}],
   schedule:[{label:'Meeting requests waiting',message:'Which meeting requests are waiting for me?',intent:'meeting_requests'}],
-  meeting_brief:[{label:'After the call: open the meeting page',navigate:'schedule'}],
+  meeting_brief:[{label:'After the call: open the meeting page',link:'Open the meeting page',navigate:'schedule'}],
   client_overview:[{label:'Brief me for her next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'},{label:'Draft a message',draft:'Draft a message to this client about '}],
   meeting_history:[{label:'Brief me for the next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'}],
   handover_brief:[{label:'Summarise this client',message:'Give me an overview of this client',intent:'client_overview'}],
   book_question:[{label:'Plan my day',message:'What’s on today?',intent:'today'}]};
 export function nextSteps(reply) {
   if(!reply||reply.status!=='ok'||reply.clarification)return [];
-  return NEXT[reply.intent]||[];
+  return (NEXT[reply.intent]||[]).filter(n=>!n.navigate&&!n.meetingPage);  // going to a page is a link inside the answer (pageStep)
+}
+// The page an answer points to ("Open Schedule · Requests"), shown inside the answer under its sources, like the client side.
+export function pageStep(reply) {
+  if(!reply||reply.status!=='ok'||reply.clarification)return null;
+  return (NEXT[reply.intent]||[]).find(n=>n.navigate||n.meetingPage)||null;
 }
 
 // Clarity pass (first-time users) -------------------------------------------------------------------------------------

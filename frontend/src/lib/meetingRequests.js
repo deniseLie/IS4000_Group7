@@ -5,7 +5,7 @@
 import {redact} from './chatTools.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const TOPICS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',
-  term_sheet:'Loan terms (term sheet)',compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Something else'};
+  term_sheet:'Loan terms (term sheet)',compliance_review:'Periodic review',account_review:'Accounts and everyday banking',card_review:'Cards',other:'Something else'};
 export const MEETING_FORMATS=['video','phone','in_person'];
 export const MEETING_ACTIONS=['meeting.request','meeting.withdraw','meeting.counter_reply'];
 export const STATUS={requested:'Waiting for your RM',countered:'New time suggested',scheduled:'Meeting booked',declined:'Answered without a meeting',withdrawn:'Withdrawn'};

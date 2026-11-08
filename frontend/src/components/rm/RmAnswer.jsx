@@ -14,7 +14,7 @@ import {DocSection,NotKnown,OneLine,Point} from '../DocParts';
 // numbered references to the records it came from; a number opens that record in the Sources list at the end of the
 // report (in place, no side panel). Drafts, documentation and the Calendar's decision and availability cards are review
 // cards: nothing is sent, saved or changed until approved.
-export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChange,onDocumentationChange,onAsk,latest,client,compact=false}) {
+export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChange,onDocumentationChange,onAsk,latest,client,compact=false,link=null}) {
   // The RM can edit the report herself (rewrite or remove points, change the summary) instead of asking the assistant.
   // Edited points are marked "Edited by you"; their source numbers still show what the original point was based on.
   const [local,setLocal]=useState(null),[work,setWork]=useState(null);
@@ -59,7 +59,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       <textarea aria-label="Edit point" rows={Math.max(1,Math.ceil(w.text.length/90))} value={w.text} disabled={w.removed}
         onChange={e=>setItem(si,ii,{text:e.target.value})}/>
       <button type="button" className="rmw-mini" onClick={()=>setItem(si,ii,{removed:!w.removed})}>{w.removed?'Keep':'Remove'}</button></li>;}
-    const refs=(item.source_ids||[]).filter(id=>number.has(id)).map(id=>({key:id,id,title:sources[number.get(id)-1].title,onClick:()=>show(id)}));
+    const refs=(item.source_ids||[]).filter(id=>number.has(id)).map(id=>({key:id,id,n:number.get(id),title:sources[number.get(id)-1].title,onClick:()=>show(id)}));
     return <li key={ii} className="doc-li"><Point kind={item.kind==='client_stated'?'client_said':item.kind==='suggestion'?'ai_suggestion':item.kind||'record'} edited={item.edited}
       tail={item.owner==='specialist'&&<span className="rm-owner"> (specialist team)</span>} sources={refs}>{item.text}</Point></li>;
   }
@@ -85,8 +85,7 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       :reply.summary&&(report?<OneLine>{reply.summary}</OneLine>:<p className="rm-answer-summary">{reply.summary}</p>)}
     {reply.edited&&!editing&&<p className="rm-validation"><Icon name="info"/>You edited this report. Edited points are yours, not the assistant’s; the numbers show the records the original point used.</p>}
     {reply.status==='denied'&&<p className="rm-denied" role="alert" data-testid="rm-access-denied"><Icon name="lock"/>Client-book and specialist access restrictions apply. No action was taken.</p>}
-    {reply.meeting_workspace&&<div className="meeting-actions"><button type="button" className="bank-chat-logout" data-testid="rm-open-saved-brief" onClick={()=>setMeetingOpen(true)}>Open the meeting</button>
-      {reply.meeting_brief&&<p className="rm-small" data-testid="rm-saved-brief-version">Saved brief version {reply.meeting_brief.version} · {reply.meeting_brief.sources_changed?'needs review':reply.meeting_brief.decision.replaceAll('_',' ')}</p>}</div>}
+
     {meetingOpen&&reply.meeting_workspace&&<MeetingWorkspace meetingId={reply.meeting_workspace} token={token} onClose={()=>setMeetingOpen(false)}/>}
     {(reply.sections||[]).map((section,index)=>{
       // Design (DocAnswers): numbered sections, one label on every point, its source beside it; gaps go to "Not known yet".
@@ -116,6 +115,11 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
         {open.has(s.id)&&<SourceDetails source={s}/>}
       </li>)}</ol>
     </details>}
+    {/* Pages this answer points to, inside the answer under its sources (same as the client side: a line, then the links). */}
+    {(reply.meeting_workspace||link)&&!compact&&<div className="answer-foot rm-answer-foot"><div className="answer-page-links">
+      {reply.meeting_workspace&&<button type="button" className="answer-page-link" data-testid="rm-open-saved-brief" onClick={()=>setMeetingOpen(true)}>Open the meeting <span aria-hidden="true">→</span></button>}
+      {link&&<button type="button" className={reply.meeting_workspace?'answer-page-second':'answer-page-link'} data-testid="rm-page-link" onClick={link.go}>{link.label} <span aria-hidden="true">→</span></button>}
+      {reply.meeting_brief&&<span className="rm-small" data-testid="rm-saved-brief-version">Saved brief version {reply.meeting_brief.version} · {reply.meeting_brief.sources_changed?'needs review':reply.meeting_brief.decision.replaceAll('_',' ')}</span>}</div></div>}
     {report&&!compact&&!editing&&<footer className="doc-foot"><span><Icon name="check"/>{checked} point{checked===1?'':'s'} checked against your records</span>
       {gaps.length>0&&<span>{gaps.length} not known yet</span>}</footer>}
   </article>;

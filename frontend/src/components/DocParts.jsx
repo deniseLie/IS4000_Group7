@@ -15,7 +15,7 @@ export function DocSection({n,title,children,extra=null}) {
 export function Point({kind='record',children,sources=[],edited=false,tail=null}) {
   return <p className="doc-point" data-kind={kind}><span className={`doc-label ${TONE[kind]||'rec'}`}>{DOC_LABELS[kind]||kind}</span>
     <span className="doc-text">{children}{edited&&<span className="rm-edited"> Edited by you</span>}{tail}</span>
-    {sources.map(s=>s.onClick?<button key={s.key} type="button" className="doc-src" data-source-id={s.id} title={s.title} onClick={s.onClick}>{s.title}</button>
+    {sources.map(s=>s.onClick?<button key={s.key} type="button" className={`doc-src ${s.n?'num':''}`} data-source-id={s.id} title={s.title} aria-label={s.n?`Source ${s.n}: ${s.title}`:undefined} onClick={s.onClick}>{s.n||s.title}</button>
       :<span key={s.key} className="doc-src">{s.title}</span>)}</p>;
 }
 export function NotKnown({children}) {

@@ -19,6 +19,16 @@ from app.services.typos import for_search
 STUB=False
 
 
+# The product is UBS Connect (0148 renames the stored text). Until a project has applied 0148, sections read from an
+# older knowledge base still say "DemoBank"; the name is replaced here, before anything is cited or shown.
+NAMED=('title','heading','body','publisher')
+def renamed(rows: list | None) -> list:
+    def one(row):
+        if not isinstance(row,dict):return row
+        return {k:(v.replace('DemoBank coursework project','UBS Connect').replace('DemoBank','UBS Connect') if k in NAMED and isinstance(v,str) else v) for k,v in row.items()}
+    return [one(row) for row in rows or []]
+
+
 class KnowledgeResponseError(ValueError):
     """A knowledge RPC returned inconsistent or ambiguous records."""
 
@@ -44,7 +54,7 @@ async def search(query: KnowledgeQuery,ctx: RequestContext,db: SyncPostgrestClie
     # A missing key is a set-up choice; a provider failure is worth a warning.
     log_event('knowledge_search',logging.WARNING if failure and failure!='not_configured' else logging.INFO,mode=mode,
         embedding_error=failure,result_count=len(response.data or []),**timing)
-    sections=TypeAdapter(list[KnowledgeSection]).validate_python(response.data)
+    sections=TypeAdapter(list[KnowledgeSection]).validate_python(renamed(response.data))
     if len(sections)>query.k or len({item.cite for item in sections})!=len(sections):
         raise KnowledgeResponseError('kb_search returned too many results or duplicate citations')
     if any(item.score<=0 or not item.current for item in sections):
@@ -59,7 +69,7 @@ async def get_article(article_id: str,ctx: RequestContext,db: SyncPostgrestClien
     require_permission(ctx.principal,'kb.search',None,ctx)
     identifier=TypeAdapter(ArticleId).validate_python(article_id)
     response=await execute(lambda:db.rpc('kb_get_article',{'p_article_id':identifier}).execute(),'kb.search')
-    sections=TypeAdapter(list[KnowledgeSection]).validate_python(response.data)
+    sections=TypeAdapter(list[KnowledgeSection]).validate_python(renamed(response.data))
     if any(item.article_id!=identifier or not item.current for item in sections) or len({item.cite for item in sections})!=len(sections):
         raise KnowledgeResponseError('kb_get_article returned another article, an out-of-review section or duplicates')
     audit.add('data','data.read',resource_type='kb.sections',details={'tool':'kb.search','result_count':len(sections)})
@@ -70,7 +80,7 @@ async def get_section(key: SectionKey,ctx: RequestContext,db: SyncPostgrestClien
     require_permission(ctx.principal,'kb.search',None,ctx)
     response=await execute(lambda:db.rpc('kb_get_section',{'p_article_id':key.article_id,
         'p_version':key.version,'p_anchor':key.anchor}).execute(),'kb.search')
-    sections=TypeAdapter(list[StoredSection]).validate_python(response.data)
+    sections=TypeAdapter(list[StoredSection]).validate_python(renamed(response.data))
     if len(sections)>1 or any(item.key!=key for item in sections):
         raise KnowledgeResponseError('kb_get_section returned an ambiguous or different section')
     audit.add('data','data.read',resource_type='kb.sections',details={'tool':'kb.search','result_count':len(sections)})

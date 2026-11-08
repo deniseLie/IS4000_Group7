@@ -2,7 +2,7 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-urgent card and login wording, an explicit request for a person, greetings), then one planner/v10 call, then the rule
+urgent card and login wording, an explicit request for a person, greetings), then one planner/v12 call, then the rule
 overrides and a plan check against registry.CHAT_SPECS. Each task runs on its agent through runner.run_agent, except an
 urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
 offer from code, never the model (build plan 2b: there is no Security agent). Agents never
@@ -311,6 +311,21 @@ async def model_plan(history: list[Message]) -> list[PlanTask]:
         for i, row in enumerate(rows)]
 
 
+PORTFOLIO = dict(ACCOUNT_INTENTS)['portfolio']
+MINE = re.compile(r'\b(?:my|mine|i have|i hold)\b', re.I)
+
+
+def portfolio_task(item: PlanTask) -> PlanTask:
+    """Her own time deposit, holdings or maturity date is read from her portfolio, also when the planner split it out of a
+    longer message as a general (Guide) question or gave it another Accounts intent ("When does my time deposit mature?
+    What did I spend last month?" answered the first part with "I cannot tell you the maturity date")."""
+    text = typos.normalise(item.question)
+    if not (PORTFOLIO.search(item.question) or PORTFOLIO.search(text)) or not MINE.search(text) or is_urgent(item):return item
+    if item.agent == 'guide' or (item.agent == 'accounts' and item.intent not in ('portfolio', 'account_balance')):
+        return item.model_copy(update={'agent': 'accounts', 'intent': 'portfolio'})
+    return item
+
+
 def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
     """Rules win over the model for urgent card wording, login and explicit asks for a person; ordinary words never override it."""
     message = risk.redacted_message
@@ -325,7 +340,7 @@ def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
             item = item.model_copy(update={'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
         elif RM_REQUEST.search(text) and not handovers and not rm_handover.MEETING.search(text):
             item = item.model_copy(update={'agent': 'relationship', 'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
-        routed.append(item)
+        routed.append(portfolio_task(item))
     if handovers:  # one handover per part she asked a person about, in her words; an urgent card request stays
         if len(routed) == 1 and not is_urgent(routed[0]):routed = []
         else:routed = [t for t in routed if is_urgent(t) or (t.agent != 'relationship' and not rm_handover.needs_person(t.question))]
@@ -665,7 +680,7 @@ def after_gather(state: Turn) -> list[Send] | str:
 def receipt_source(command_id: UUID) -> Source:
     # Keep UUID groups separate from card-number patterns in saved replies.
     identifier: str = str(command_id).replace('-', '_')
-    return Source(id=f'action-receipt-{identifier}', title='Recorded action receipt', url=None, version='v1', publisher='DemoBank action ledger')
+    return Source(id=f'action-receipt-{identifier}', title='Recorded action receipt', url=None, version='v1', publisher='UBS Connect action ledger')
 
 
 async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str | None = None) -> str:

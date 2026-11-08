@@ -63,7 +63,7 @@ def test_free_text_tools_are_never_loop_tools():
     with pytest.raises(ValidationError,match='free-text loop tools'):
         AgentSpec.model_validate({**base,'loop_tools':base['loop_tools']|{'my_tickets'}})
     with pytest.raises(ValidationError,match='tools not in its spec'):
-        AgentSpec.model_validate({**base,'intents':{'x':[{'tool':'my_cards'}]}})
+        AgentSpec.model_validate({**base,'intents':{'x':[{'tool':'my_loans'}]}})
     with pytest.raises(ValidationError,match='not a listed intent'):
         AgentSpec.model_validate({**base,'intents':{'open':[{'tool':'my_rm'}]}})
     with pytest.raises(ValidationError,match='entity or a fixed value'):
@@ -167,7 +167,7 @@ def test_no_loop_reaches_a_consent_gated_or_write_tool():
     for spec in CHAT_SPECS.values():
         assert not spec.loop_tools&registry.CONSENT_GATED, spec.name
         assert not any(t.startswith(WRITES) or t in KNOWN_TOOLS-set(TOOL_PERMISSION) for t in spec.loop_tools), spec.name
-        assert spec.loop_tools<=set(tools.TOOLS)|spec.external
+        assert spec.loop_tools<=set(tools.TOOLS)
     assert not set(CHAT_SPECS['rm_requests'].tools)&registry.CONSENT_GATED  # the Requests agent never sees consent-gated data
     assert all(registry.RM_OWNER[t]=='rm_client' for t in registry.CONSENT_GATED)
     assert not any(spec.offers for spec in registry.RM_SPECS.values())  # RM cards are approved through the /rm routes, never offers

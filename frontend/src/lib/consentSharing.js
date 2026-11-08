@@ -7,8 +7,9 @@ const CODE=/^[a-z][a-z0-9_.]{0,60}$/;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 export const GATED=['transaction_insights','chat_topics','meeting_recording'];
 export const SWITCHABLE=['transaction_insights','chat_topics'];
-export const TOPIC_AREAS={home_property:'Home and property',investments:'Investments',deposits:'Deposits',insurance:'Insurance',cards:'Cards',
-  everyday_banking:'Everyday banking'};
+// Same names as the meeting topics, so a topic reads the same in Data sharing, meetings and the RM's brief.
+export const TOPIC_AREAS={home_property:'Property financing',investments:'Investments',deposits:'Time deposit',insurance:'Insurance',cards:'Cards',
+  everyday_banking:'Accounts and everyday banking'};
 export const LOOKBACK=[3,6,12];
 export const UNTIL={date:'Until a date',meeting:'Until my next meeting ends',request:'Until my meeting request is answered'};
 export const ASK_REASONS={meeting_prep:'to prepare for your meeting',review:'for your relationship review',advice:'to suggest options that fit your plans'};

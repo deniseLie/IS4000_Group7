@@ -42,7 +42,7 @@ export default function RecordsPanel({onClose,onReviewActions}) {
   }
   const footer=<><span>{records?<>Recorded as of <time dateTime={records.profile.as_of}>{formatDateTime(records.profile.as_of)}</time>. Read only.</>:'Read only'}</span><button className="bank-chat-logout" onClick={onClose}>Close</button></>;
   return <Panel label="Customer records" eyebrow="Read only" title="Your records" closeLabel="Close records" onClose={onClose} size="wide" footer={footer}>
-    <p className="panel-notice">Read the synthetic records linked to your sign-in. Card changes are only proposed here and run after you confirm them in Actions. Checklist preparation marks can be saved separately below.</p>
+    <p className="panel-notice">Read the records linked to your sign-in. Card changes are only proposed here and run after you confirm them in Actions. Checklist preparation marks can be saved separately below.</p>
     <form className="records-filters records-filter-bar" onSubmit={refresh}>
       <label>Transactions from<input data-testid="records-from" type="date" value={from} onChange={event=>setFrom(event.target.value)}/></label>
       <label>Transactions to<input data-testid="records-to" type="date" value={to} onChange={event=>setTo(event.target.value)}/></label>

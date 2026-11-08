@@ -11,8 +11,19 @@ export function ticketParts(summary) {
   return {topic,lead,cards,words};
 }
 // The row title: what it is about, in plain words, plus the first amount she mentions.
+// A title in plain words: system wording a hand-over line may carry ("Recorded case status: documents_requested…")
+// becomes the request type, internal phrasing for the RM is reworded for her, and very long lines are cut at a sentence.
+function plain(text,who) {
+  let value=String(text||'');
+  if(/recorded case status|requested item status|preliminary outcome/i.test(value))return who==='you'?'Help with your periodic review':'Periodic review support';
+  if(who==='you')value=value.replace(/^client question for you:\s*/i,'Your question: ');
+  value=value.replace(/\b([a-z]+)_([a-z_]+)\b/g,(m)=>m.replace(/_/g,' '));
+  if(value.length>110){const cut=value.slice(0,110);const end=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf(': '));value=end>20?cut.slice(0,end):`${cut.replace(/\s+\S*$/,'')}…`;}
+  return value;
+}
 export function ticketTitle(t,who='she') {
-  const {lead,words}=ticketParts(t.summary);
+  const {lead:rawLead,words}=ticketParts(t.summary);
+  const lead=rawLead&&plain(rawLead,who);
   const base=(who==='you'?(lead||t.category_label||'Request').replace(/\bthe client does not\b/gi,'you don’t').replace(/\bthe client\b/gi,'you'):(lead||t.category_label||'Request').replace(/\bthe client\b/gi,'she').replace(/\bdoes not\b/g,'doesn’t')).replace(/^./,c=>c.toLowerCase());
   const amount=(words||t.summary||'').match(/\b(?:SGD|USD|S\$)\s?[\d,]+(?:\.\d+)?/i)?.[0];
   const money=amount&&!base.includes(amount)?amount.toUpperCase().replace(/^S\$/,'SGD '):'';

@@ -134,7 +134,7 @@ def test_external_source_host_constraints(database: 'Connection[SqlRow]', url: s
 def test_workflow_one_guidance_is_searchable(database: 'Connection[SqlRow]', query: str, expected: str) -> None:
     database.execute('set local role anon')
     rows=search(database,query,[],4)
-    assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
+    assert rows and rows[0][1]==expected and rows[0][4]=='UBS Connect'
 
 
 @pytest.mark.parametrize('query,expected',[('can i get a home loan','home-loans'),('refinance my mortgage','home-loans'),
@@ -145,7 +145,7 @@ def test_loan_guidance_is_searchable(database: 'Connection[SqlRow]', query: str,
     # 0115: private-client financing (property financing v2, Lombard) replaces personal and car loans; earlier versions stay citable.
     database.execute('set local role anon')
     rows=search(database,query,[],4)
-    assert rows and rows[0][1]==expected and rows[0][4]=='DemoBank coursework project'
+    assert rows and rows[0][1]==expected and rows[0][4]=='UBS Connect'
     assert database.execute("select article_id,version from kb.articles where article_id in ('loans','home-loans','lombard-financing') and status='published' order by 1").fetchall()==[
         ('home-loans',2),('loans',3),('lombard-financing',1)]
     assert database.execute("select article_id from kb.articles where article_id in ('personal-loans','car-loans') and status='published'").fetchall()==[]
@@ -167,7 +167,7 @@ def test_unexpected_code_guidance_publishes_login_recovery_v2(database: 'Connect
     rows=search(database,'also i got a weird OTP last night and now my app is locked',[],4)
     assert rows and rows[0][1]=='app-login-recovery' and rows[0][2]==2
     body=database.execute("select body from public.kb_get_section('app-login-recovery',2,'unexpected-code')").fetchone()[0]
-    for guidance in ['did not request','the lock is protecting you','only inside the official DemoBank app','Never use a link in an SMS',
+    for guidance in ['did not request','the lock is protecting you','only inside the official UBS Connect app','Never use a link in an SMS',
         'including callers, bank staff and this chat','cannot see sign-in attempts, devices or where a sign-in came from']:
         assert guidance in body  # the section orchestrator.linked_evidence fetches by id
     assert database.execute("select article_id from public.kb_get_section('app-login-recovery',1,'steps')").fetchall()==[('app-login-recovery',)]

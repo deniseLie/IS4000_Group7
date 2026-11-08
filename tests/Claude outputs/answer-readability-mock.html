@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easier answers mock</title>
+<style>
+:root{--ink:#1F2430;--muted:#6B7280;--line:#E5E7EB;--red:#D7262B}
+*{box-sizing:border-box}body{margin:0;background:#F7F8FA;font:15px/1.55 Inter,system-ui,sans-serif;color:var(--ink)}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.intro{color:var(--muted);font-size:14px;margin:0 0 22px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}@media(max-width:860px){.cols{grid-template-columns:1fr}}
+.tag{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;display:block}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.old{font-size:14.5px;color:#374151}
+.btn{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;font-size:13.5px;font-weight:600;margin:10px 6px 0 0}.btn.main{background:var(--red);border-color:var(--red);color:#fff}
+.lead{font-size:15px;margin:0 0 10px}.lead b{font-weight:700}
+.chip{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:1px 9px;margin-left:6px}.due{background:#FEF3C7;color:#92400E}
+.row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}.row:first-of-type{border-top:0}
+.st{flex:none;font-size:11.5px;font-weight:700;border-radius:999px;padding:1px 8px;margin-top:2px}.to{background:#FEE2E2;color:#991B1B}.with{background:#EEF2FF;color:#3730A3}
+.row small{display:block;color:var(--muted);font-size:12.5px}
+.src{display:inline-block;margin-top:12px;border:1px solid var(--line);background:#F9FAFB;border-radius:8px;padding:5px 10px;font-size:13px}
+.link{display:block;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);color:var(--red);font-weight:600;font-size:13.5px}
+.link span{color:var(--muted);font-weight:500;margin-left:12px}
+.next{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}.next b{color:var(--muted);font-size:13px}
+.pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px}.pill.main{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
+.rules{margin-top:28px}.rules li{margin:6px 0;font-size:14px}
+</style></head><body><div class="wrap">
+<h1>Making answers easier to read</h1>
+<p class="intro">Same answer, before and after. The rules at the bottom apply to every answer, not just this one.</p>
+<div class="cols">
+<div><span class="tag">Today</span><div class="card old">For your periodic review titled "Periodic review 2026," you still need to send the signed sale agreement for your Bangkok property. Your proof of address has been submitted and is with the bank for review. Please send the outstanding document by 30 November 2026. You can upload it under Compliance review.<br><span class="src">▸ Sources · 2</span></div>
+<span class="btn main">Go to Periodic review ↗</span><span class="btn">Show review here</span>
+<div class="next"><b>Next:</b><span class="pill main">What do I still need to send for my review?</span><span class="pill">When is my review due?</span><span class="pill">How do I answer the bank's question?</span></div></div>
+<div><span class="tag">Proposed</span><div class="card">
+<p class="lead"><b>1 document left</b> for your periodic review <span class="chip due">Due 30 Nov</span></p>
+<div class="row"><span class="st to">To send</span><div>Sale agreement for your Bangkok property<small>Signed, every page. Add an English translation if it's in Thai.</small></div></div>
+<div class="row"><span class="st with">With the bank</span><div>Proof of address<small>Sent 5 Nov · being checked</small></div></div>
+<span class="src">▸ Sources · 2</span>
+<span class="link">Open Periodic review → <span>or show it here</span></span></div>
+<div class="next"><b>Next:</b><span class="pill main">What should the agreement show?</span><span class="pill">How do I upload it?</span></div></div>
+</div>
+<div class="rules card"><b>Rules for every answer</b><ul>
+<li><b>Lead with the answer in a few words</b> ("1 document left", "Matures 11 Nov", "SGD 48,210.55"), bold, with the key date as a small chip.</li>
+<li><b>Lists become rows</b>: documents, transactions, requests and options each get one row with a status tag, not a paragraph.</li>
+<li><b>No repeating the question</b> ("For your periodic review titled…") and no old page names: "Compliance review" → "Periodic review", "My requests" → "Requests".</li>
+<li><b>Page links live inside the answer</b>, under the sources (like Open Statements). "Show it here" becomes a quiet text link next to it, not a second big button.</li>
+<li><b>Next only suggests new questions</b>: never the one just answered ("What do I still need to send?" after this answer), at most 2–3.</li>
+<li><b>Short</b>: 2–3 sentences of plain text at most; anything longer is split into rows.</li>
+</ul></div>
+</div></body></html>

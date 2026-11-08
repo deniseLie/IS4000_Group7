@@ -24,7 +24,7 @@ URL=re.compile(r'https?://',re.I)
 # citable after a revision; tests/test_knowledge_checks.py checks that each pin is the current section and the text matches.
 def pinned(article_id: str,version: int,anchor: str,title: str) -> dict:
     return Source(id=f'kb:{article_id}@v{version}#{anchor}',title=title,url=f'/knowledge/sections/{article_id}/{version}/{anchor}',
-        version=f'v{version}',publisher='DemoBank coursework project').model_dump()
+        version=f'v{version}',publisher='UBS Connect').model_dump()
 PINNED={'security':pinned('security',2,'never-share','Protecting private information'),
     'lost-card':pinned('lost-card',4,'main','Lost or stolen card guidance'),
     'support':pinned('support',5,'main','Getting human support'),

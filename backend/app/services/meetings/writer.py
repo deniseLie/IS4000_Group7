@@ -4,7 +4,7 @@ The complete draft retains at most ten distinct decisions and ten actions, match
 Exceeding a bound fails explicitly. No action list, transcript or supporting quote is silently truncated.
 """
 import asyncio,json
-from typing import NamedTuple
+from typing import Any,NamedTuple
 from uuid import UUID,uuid5
 from app.core.config import settings
 from app.core.observability import log_event,span
@@ -55,8 +55,18 @@ def estimated_charge(system: str,payload: str,schema: dict[str,object]) -> int:
     return len(system.encode())+len(payload.encode())+len(json.dumps(schema).encode())+settings.max_tokens
 
 
+def model_schema(node: Any) -> Any:
+    """The schema the model is sent: the same, without `pattern` keywords. On the API transport (OpenRouter) the providers
+    reject MinutesProposal's ten `\\S` patterns as "Schema is too complex", and only after 2-3 minutes, so the gateway
+    timeout reported it as a timeout (8 Nov 2026). Every reply is still validated against the full Pydantic model,
+    which keeps the non-blank rule; a blank field fails as generated_draft_invalid."""
+    if isinstance(node,dict):return {k:model_schema(v) for k,v in node.items() if not (k=='pattern' and isinstance(v,str))}
+    if isinstance(node,list):return [model_schema(v) for v in node]
+    return node
+
+
 async def model_step(prompt: dict[str,str],system: str,payload: str,schema: dict[str,object]) -> LLMResult:
-    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],schema,model=settings.meeting_model or None),timeout=240)
+    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],model_schema(schema),model=settings.meeting_model or None),timeout=240)
     except TimeoutError as error:raise LLMTimeout('Meeting model step exceeded 240 seconds; persisted completed chunks can be resumed') from error
     log_event('meeting_model_completed',prompt_version=prompt['id'],input_tokens=result.input_tokens,output_tokens=result.output_tokens,model=result.model,latency_ms=result.latency_ms)
     return result

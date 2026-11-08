@@ -125,7 +125,7 @@
     },
     {
       "question": "什么是抵押贷款和无抵押贷款？",
-      "answer": "抵押贷款以资产作为担保；如果借款人未能还款，贷款方可能收回并出售该资产。无抵押贷款不需要提供抵押品，利率往往较高。以上是 MoneySense 提供的一般性说明，并不代表 DemoBank 的具体资格或条款。",
+      "answer": "抵押贷款以资产作为担保；如果借款人未能还款，贷款方可能收回并出售该资产。无抵押贷款不需要提供抵押品，利率往往较高。以上是 MoneySense 提供的一般性说明，并不代表 UBS Connect 的具体资格或条款。",
       "sources": [
         {
           "id": "sg-loan-types"
@@ -135,7 +135,7 @@
       "response_origin": "ai"
     },
     {
-      "question": "What is the exact annual fee for the DemoBank Platinum card?",
+      "question": "What is the exact annual fee for the UBS Connect Platinum card?",
       "answer": "The exact annual fee cannot be confirmed because no matching product record was supplied.",
       "sources": [
         {
@@ -146,8 +146,8 @@
       "response_origin": "ai"
     },
     {
-      "question": "Is the MoneySense credit card guidance DemoBank's own credit card policy?",
-      "answer": "No. It is general Singapore banking education from MoneySense, not DemoBank’s own product policy.",
+      "question": "Is the MoneySense credit card guidance UBS Connect's own credit card policy?",
+      "answer": "No. It is general Singapore banking education from MoneySense, not UBS Connect’s own product policy.",
       "sources": [
         {
           "id": "sg-card-payments"

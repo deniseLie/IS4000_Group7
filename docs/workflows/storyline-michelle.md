@@ -1,7 +1,7 @@
 # Storyline: "Michelle says it once" (demo script, 7 Nov 2026)
 
 One connected client story from her first question to the follow-up, aligned with how a private bank in Singapore
-serves a wealth client (research: [ubs-practices.md](../research/ubs-practices.md) §12–14). DemoBank is fictional; no
+serves a wealth client (research: [ubs-practices.md](../research/ubs-practices.md) §12–14). UBS Connect is fictional; no
 page names UBS. Synthetic data only.
 
 **Cast.** Michelle Ng (1002): advised portfolio (SGD 1.18m, including time deposit ****4410 maturing soon),

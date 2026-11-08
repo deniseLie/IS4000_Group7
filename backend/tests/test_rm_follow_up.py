@@ -59,3 +59,15 @@ def test_no_earlier_answer_needs_no_model_call():
 def test_help_is_a_plain_reply_not_couldnt_verify():
     reply=handlers.chat_reply('help',{'status':'ok','summary':'I can help with your clients, requests and meetings.','sections':[]},ev.Bundle(),{})
     assert reply['status']=='ok' and reply['summary'].startswith('I can help') and reply['sections']==[]
+
+
+def test_her_time_deposit_in_a_longer_message_reads_her_portfolio():
+    from app.schemas.contracts import PlanTask
+    from app.services import orchestrator
+    guide=PlanTask(id='t1',agent='guide',intent='general',question='When does my time deposit mature?')
+    other=PlanTask(id='t2',agent='accounts',intent='transactions',question='When does my fixed deposit mature?')
+    spend=PlanTask(id='t3',agent='accounts',intent='transactions',question='What did I spend last month?')
+    general=PlanTask(id='t4',agent='guide',intent='general',question='What is a time deposit?')
+    assert (orchestrator.portfolio_task(guide).agent,orchestrator.portfolio_task(guide).intent)==('accounts','portfolio')
+    assert orchestrator.portfolio_task(other).intent=='portfolio'
+    assert orchestrator.portfolio_task(spend)==spend and orchestrator.portfolio_task(general)==general

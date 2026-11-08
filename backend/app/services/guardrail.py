@@ -25,7 +25,7 @@ THIRD_PARTY = re.compile(
 # transactions" never match; the record words are not. Words that are not names are listed (NOT_A_NAME).
 NOT_A_NAME = ('What|That|There|Here|It|Let|Who|Where|When|How|Why|He|She|This|Today|Tomorrow|Yesterday|Tonight|Week|Month|Year|'
     'Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|'
-    'October|November|December|Bank|DemoBank|Singapore|Visa|Mastercard|Apple|Google|Mother|Father|Valentine|Christmas|New Year')
+    'October|November|December|Bank|UBS Connect|UBS|Connect|Singapore|Visa|Mastercard|Apple|Google|Mother|Father|Valentine|Christmas|New Year')
 # Financial records only: "Sophie's details" (her own RM's contact) is not another client's data.
 NAMED_RECORDS = re.compile(
     r"\b(?!(?:" + NOT_A_NAME + r")['’]s\b)[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?['’]s\s+"

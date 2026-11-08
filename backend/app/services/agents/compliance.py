@@ -79,9 +79,9 @@ def evidence_for(snapshot: CustomerEnvelope[ComplianceCase | None]) -> list[Evid
         ('items','Authenticated synthetic review checklist',[item.model_dump(mode='json',exclude={'item_id'}) for item in case.requested_items] if case else []),
         ('history','Authenticated synthetic review status history',[item.model_dump(mode='json') for item in case.status_history] if case else []),
         ('requests','Authenticated synthetic review information requests',[item.model_dump(mode='json',exclude={'request_id'}) for item in case.info_requests] if case else [])]
-    return [Evidence(id='compliance-'+key,text=json.dumps({'records':records},ensure_ascii=False),publisher='DemoBank synthetic records',
+    return [Evidence(id='compliance-'+key,text=json.dumps({'records':records},ensure_ascii=False),publisher='UBS Connect records',
         scope='One audited own-customer snapshot of the latest client-visible review. Each child collection is bounded to 200 rows. No internal assessment or document contents.',
-        source=Source(id='compliance-'+key,title=title,url=None,version=snapshot.as_of.isoformat(),publisher='DemoBank synthetic records'))
+        source=Source(id='compliance-'+key,title=title,url=None,version=snapshot.as_of.isoformat(),publisher='UBS Connect records'))
         for key,title,records in rows]
 
 
