@@ -31,8 +31,7 @@ AGENT_ACTIONS = {
     'fraud':frozenset({'card.order_replacement'}),
     'relationship':frozenset({'appointment.hold','appointment.confirm','appointment.cancel','requests.create',
         'rm.share_summary','consent.grant','consent.revoke','meeting.request',
-        'insight.share','insight.delete',  # the chat offers a meeting request (2a), Let-Sophie-know (0108, lane 2) and topic deletion (6e)
-        'ticket.create'}),  # 0146: "stop recording my meetings" is a consent_withdrawal request (agents/consent_answers)
+        'insight.share','insight.delete'}),  # the chat offers a meeting request (2a), Let-Sophie-know (0108, lane 2) and topic deletion (6e)
 }
 KNOWN_TOOLS = frozenset(tool for tools in TOOLS.values() for tool in tools) | AUTO_TYPES | CONFIRM_TYPES | STAFF_TYPES | {'compliance.workspace','documents.precheck','actions.read','actions.list','actions.create_case','consent.records','agenda.list','documents.list','documents.prepare_upload','documents.download','documents.inspect','notifications.list','notifications.read','appointments.meeting_options','tickets.list','tickets.categories','tickets.follow_up','tickets.attach','tickets.open_rm','meeting_requests.list','insights.read','insights.status','insights.record','consent.sharing','consent.access_log','consent.asks','customer.get_portfolio'}  # 0116: Overview only, no agent reads it
 

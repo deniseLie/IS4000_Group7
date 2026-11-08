@@ -387,7 +387,7 @@ def test_narrowing_her_topic_areas_removes_the_inferred_topics_outside_them(data
         "values(1002,'health','curious','inferred',now(),now())",())=='23514'  # never stored
 
 
-# 6d (0112, 0113): the access log, the RM's ask and Delete all my data -------------------------------------------------
+# 6d (0112, 0113; 0147): the access log, the RM's ask and no request to a team -----------------------------------
 LOG_KEYS={'call_id','at','advisor_id','relation','tool','category','purpose','meeting_id','outcome','basis','grant_id'}
 CODE=r'^[a-z][a-z0-9_.]{0,60}$'
 UUID_RE=r'^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$'
@@ -525,17 +525,31 @@ def test_an_ask_never_leaks_her_records_to_another_client_or_the_rm(database: 'C
     assert stored and all(set(d)<={'category','reason','meeting_id','reference','tool','purpose'} for (d,) in stored)
 
 
-def test_delete_all_my_data_is_a_request_with_a_ten_business_day_target(database: 'Connection[SqlRow]') -> None:
-    target={'category':'data_deletion','summary':'Delete all my data','urgency':'normal','details':{}}
-    first=act(database,'ticket.create',target)
-    assert first['command']['state']=='succeeded' and first['receipt']['result']['created'] is True
-    ActionOutcome.model_validate(first)
+def raise_ticket(db: 'Connection[SqlRow]',category: str,customer: int=1002) -> str|None:
+    set_customer(db,customer)
+    case=uuid4()
+    db.execute('select public.action_create_case(%s,%s)',(uuid4(),case))
+    target={'category':category,'summary':'Stop using my data','urgency':'normal','details':{}}
+    return sqlstate(db,'select public.action_propose(%s,%s,%s,%s::jsonb,%s)',(uuid4(),case,'ticket.create',json.dumps(target),f'{case}:t1:ticket.create'))
+
+
+def test_consent_has_no_request_to_a_team_only_the_instant_controls(database: 'Connection[SqlRow]') -> None:
+    """0147: Delete all my data (0113) and Stop using my data (0146) are gone. Neither she nor her RM can raise them, the
+    owner's helpers and the recording opt-out are dropped, and a grant can no longer end as withdrawn by request."""
     database.execute('reset role')
-    owner,due,days=database.execute("""select owner_team,(target_at at time zone 'Asia/Singapore'),(select count(*) from generate_series(
-        (created_at at time zone 'Asia/Singapore')::date+1,(target_at at time zone 'Asia/Singapore')::date,interval '1 day') d where extract(isodow from d)<6)
-        from support.tickets where reference=%s""",(first['receipt']['result']['reference'],)).fetchone()
-    assert owner=='Data protection team' and days==10 and due.isoweekday()<6 and (due.hour,due.minute)==(18,0)
-    assert act(database,'ticket.create',target)['receipt']['result']['created'] is False  # asking twice shows the open request
+    assert database.execute("select count(*) from support.request_categories where category in ('consent_withdrawal','data_deletion')").fetchone()==(0,)
+    for category in ('consent_withdrawal','data_deletion'):
+        assert raise_ticket(database,category)=='22023'
+        database.execute('reset role')
+        as_rm(database)
+        assert sqlstate(database,'select public.rm_create_service_request(%s,1002,%s,%s,%s::jsonb,%s,true)',(str(uuid4()),category,
+            'Michelle asked to stop using her data.','{}','normal'))=='22023'  # actions.ticket_target refuses her RM too
+        database.execute('reset role')
+    assert database.execute("""select to_regprocedure('consent.withdraw_by_request(text,text)'),to_regprocedure('consent.recording_opted_out(bigint)'),
+        to_regprocedure('support.add_internal_note(text,text)'),to_regprocedure('support.data_deletion_target()'),
+        to_regclass('consent.recording_opt_outs')""").fetchone()==(None,)*5
+    assert database.execute("select count(*) from pg_trigger where tgname in ('consent_withdrawal_target','data_deletion_target')").fetchone()==(0,)
+    assert sqlstate(database,"update consent.grants set end_reason='withdrawn',revoked_at=now() where grant_id=%s",(MICHELLE_GRANT,))=='23514'
 
 
 # ---- 6e: switches inside an offer group (0114) and the Data sharing reads as the app parses them ----

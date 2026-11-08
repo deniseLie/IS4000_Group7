@@ -3,21 +3,22 @@ import Icon from './Icon';
 import SharingCategory from './SharingCategory';
 import {supabase} from '../lib/supabase';
 import {confirmAction,createActionCase,proposeAction} from '../lib/actions';
-import {DELETE_ALL,DELETE_ALL_NOTE,accessGroups,alwaysLine,alwaysShared,askLine,loadAccessLog,loadAsks,loadSharing,openAsks,rowLine,rowState} from '../lib/consentSharing';
+import {accessGroups,alwaysLine,alwaysShared,askLine,loadAccessLog,loadAsks,loadSharing,openAsks,rowLine,rowState} from '../lib/consentSharing';
 import {loadTalkingPoints} from '../lib/talkingPoints';
 import {displayName,firstName,formatDate,formatDateTime,initials} from '../lib/format';
 
 // Data sharing (redesign 8 Nov 2026): the top level answers one question, what her relationship manager can see, with
 // one row per category (a status and one line); each row opens its detail one tap down, where she switches it, changes
 // it and, for chat topics, sees each topic in plain words with Delete. Her words are never shown (0142). Every change is
-// one ledger action she confirms here; the receipt is in Actions.
+// one ledger action she confirms here and takes effect at once; the receipt is in Actions. Nothing here sends a request to
+// a team (0147 removed Delete all my data).
 const ICONS={transaction_insights:'card',chat_topics:'chat',meeting_recording:'mic'};
 const cap=text=>text[0].toUpperCase()+text.slice(1);
 
 export default function SharingPage({onReviewActions,initial=null}) {
   const [sharing,setSharing]=useState(null),[asks,setAsks]=useState([]),[log,setLog]=useState(null),[topics,setTopics]=useState(null);
   const [busy,setBusy]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[topicsError,setTopicsError]=useState(''),[done,setDone]=useState('');
-  const [view,setView]=useState(initial||'list'),[deleting,setDeleting]=useState(false),[all,setAll]=useState(false);
+  const [view,setView]=useState(initial||'list'),[all,setAll]=useState(false);
   const active=useRef(null),top=useRef(null);
   useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);
   useEffect(()=>{top.current?.scrollIntoView?.({block:'start'});},[view]);
@@ -49,7 +50,7 @@ export default function SharingPage({onReviewActions,initial=null}) {
       if(result.command.state==='proposed')result=await confirmAction(result.command.command_id,key,controller.signal);
       if(controller.signal.aborted)return false;
       if(result.receipt?.outcome!=='succeeded')throw new Error('This change did not go through because something changed first. Refresh, then try again.');
-      setDone(message);setDeleting(false);await refresh();return true;
+      setDone(message);await refresh();return true;
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);return false;}
     finally {if(!controller.signal.aborted)setSaving(false);}
   }
@@ -104,12 +105,5 @@ export default function SharingPage({onReviewActions,initial=null}) {
           <small>{rows.length?`Last: ${formatDateTime(rows[0].at)}`:'No one has looked yet'}</small></span>
         <span className="sharing-go" aria-hidden="true"><Icon name="chevron"/></span></button></li>
     </ul>}
-    {sharing&&<div className="sharing-foot">
-      {!deleting?<button type="button" className="sharing-link danger" data-testid="consent-delete-all" disabled={off} onClick={()=>{setDeleting(true);setDone('');}}>Delete all my data</button>:
-      <div className="sharing-confirm" data-testid="consent-delete-all-review"><p>{DELETE_ALL_NOTE}</p>
-        <div className="panel-actions"><button type="button" className="primary-button" data-testid="consent-delete-all-confirm" disabled={off}
-          onClick={()=>act('ticket.create',DELETE_ALL,'Your request is with our data protection team. You can follow it in My requests.')}>Send the request</button>
-          <button type="button" className="bank-chat-logout" disabled={saving} onClick={()=>setDeleting(false)}>Cancel</button></div></div>}
-    </div>}
   </section>;
 }

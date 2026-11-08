@@ -102,29 +102,29 @@ def test_deleting_a_topic_offers_insight_delete_for_the_point_she_has(records):
     assert found.proposals==[] and found.result.text==consent_answers.NO_TOPIC.format(rm='Sophie',topic='insurance')
 
 
-def test_stopping_meeting_recording_offers_a_request_to_the_data_protection_team(records):
-    """0146: recording is on under the meeting notice, so the chat offers a consent_withdrawal ticket, never a revoke."""
+def test_stopping_meeting_recording_points_to_withdraw_on_the_meeting_and_offers_nothing(records):
+    """0147: a meeting's transcript is her choice on that meeting (I agree / Withdraw, 0122), at once; no request to a team."""
     for text in ('Please stop recording my meetings','I don’t want my meetings with Sophie recorded','Do not record my calls',
             'I want to opt out of meeting recording','Withdraw my consent for recording my meetings'):
         found=ask(text)
-        [offer]=found.proposals
-        assert (offer.type,offer.agent,offer.target)==('ticket.create','relationship',consent_answers.RECORDING_REQUEST),text
-        assert '10 business days' in found.result.text and 'Sophie Lim' in found.result.text and 'Nothing changes until they reply' in found.result.text
+        assert found.proposals==[] and found.result.text==consent_answers.RECORDING.format(rm='Sophie Lim'),text
+        assert 'Withdraw' in found.result.text and 'at once' in found.result.text and 'team' not in found.result.text
         assert found.evidence[0].id=='consent-sharing' and 'Sophie Lim' not in found.evidence[0].text
     records['sharing']=sharing(rm=False)
-    assert ask('Stop recording my meetings').proposals[0].type=='ticket.create'  # a request to the bank, whoever her RM is
+    found=ask('Stop recording my meetings')
+    assert found.proposals==[] and found.result.text==consent_answers.RECORDING.format(rm='your relationship manager')
     for text in ('Do you record my meetings?','Please record my next meeting','Don’t forget to record the meeting',
             'I don’t need a record of that','Stop sharing my records'):
         found=ask(text)
-        assert found is None or all(p.type!='ticket.create' for p in found.proposals),text
+        assert found is None or 'Withdraw' not in found.result.text,text
 
 
-def test_the_relationship_agent_may_offer_the_request_only_with_her_confirmation():
+def test_the_relationship_agent_cannot_raise_a_request_and_recording_wording_is_planned_by_rule():
     from app.services.agents import registry
     from app.services.authorization import decide
     ctx=context().request.model_copy(update={'agent':'relationship'})
-    assert decide(ctx.principal,'ticket.create',{'customer_id':ctx.principal.customer_id},ctx).obligations==['require:confirmation']
-    assert 'ticket.create' in registry.CHAT_SPECS['relationship'].offers
+    assert decide(ctx.principal,'ticket.create',{'customer_id':ctx.principal.customer_id},ctx).allow is False
+    assert 'ticket.create' not in registry.CHAT_SPECS['relationship'].offers
     req=ChatRequest(messages=[{'role':'user','content':'Please stop recording my meetings with Sophie'}],mode='personal')
     risk=assess_request(req)
     assert [(t.agent,t.intent) for t in orchestrator.overridden(orchestrator.rule_plan(req,risk,req.messages),risk)]==[('relationship','consent')]

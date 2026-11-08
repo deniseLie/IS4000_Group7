@@ -174,9 +174,6 @@ export function rowLine(card,sharing,rm,format,topics=null) {
   return grant?join(until):card.description;
 }
 export const openAsks=(asks,category)=>asks.filter(a=>a.status==='open'&&(!category||a.category===category));
-// Delete all my data (0113): a request to the data protection team, answered within 10 business days.
-export const DELETE_ALL={category:'data_deletion',summary:'Please delete all my data.',urgency:'normal',details:{}};
-export const DELETE_ALL_NOTE='This sends a request to our data protection team. They decide what the law requires the bank to keep and reply within 10 business days. Nothing is deleted yet.';
 
 // Who looked (0112): rows of ids, codes and dates only; the words come from here.
 const ALWAYS={profile_basics:'your profile',products:'your products',requests_and_meetings:'your requests and meetings',compliance_status:'your document review status'};
