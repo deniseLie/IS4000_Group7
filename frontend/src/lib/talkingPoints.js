@@ -12,8 +12,8 @@ export const CONCERNS=['rates','fees','eligibility','timing','lock_in','down_pay
 const CONCERN_TEXT={lock_in:'lock-in',down_payment:'down payment'};  // = schemas/meetings.CONCERN_TEXT (the rest read as their code)
 export const KINDS={home_loan:['hdb_bto','hdb_resale','private_property','landed','refinance'],investments:['etf','unit_trust','stocks','bonds','robo'],
   fixed_deposit:['new_deposit','renewal'],insurance:['life','home','travel']};
-export const KIND_TEXT={hdb_bto:'HDB BTO',hdb_resale:'HDB resale',private_property:'private property',landed:'landed',refinance:'refinancing',etf:'ETFs',
-  unit_trust:'unit trusts',stocks:'stocks',bonds:'bonds',robo:'robo-advisor',new_deposit:'new deposit',renewal:'renewal',life:'life',home:'home',travel:'travel'};
+export const KIND_TEXT={hdb_bto:'new launch property',hdb_resale:'resale property',private_property:'private property',landed:'landed property',refinance:'refinancing',etf:'ETFs',
+  unit_trust:'unit trusts',stocks:'stocks',bonds:'bonds',robo:'managed portfolio',new_deposit:'new deposit',renewal:'renewal',life:'life',home:'home',travel:'travel'};
 export const ORIGINS={inferred:'inferred from chat',confirmed:'shared by the client'};
 export const INSIGHT_ACTIONS=['insight.delete','insight.mute','insight.resume','insight.share','insight.restore'];  // restore: 0110 Undo
 export const REMOVED_REASONS={client:'You deleted it',muted:'You asked not to suggest it',chat_topics_revoked:'You stopped sharing chat topics',
@@ -37,14 +37,14 @@ function kind(code,value) {if(value===null||value===undefined)return null;if(!KI
 const concernText=c=>CONCERN_TEXT[c]||c;
 
 // The one rendering (schemas/meetings.TalkingPoint.line): 'Property financing · planning · within 12 months · inferred from chat',
-// with the kind after the stage when she named one ('Property financing · planning · HDB resale · within 12 months · …').
+// with the kind after the stage when she named one ('Property financing · planning · resale property · within 12 months · …').
 export function line(point) {
   return [TOPICS[point.topic],point.stage,...(point.kind?[KIND_TEXT[point.kind]]:[]),...(point.timeframe&&point.timeframe!=='unknown'?[TIMEFRAMES[point.timeframe]]:[]),
     ...(point.concerns?.length?[`asks about ${point.concerns.map(concernText).join(', ')}`]:[]),ORIGINS[point.origin]].join(' · ');
 }
 
 // Her view in plain words: the same facts as line(), without the list codes, in the labels since 0117 (Property financing,
-// Time deposit). 'You're planning to finance a property (HDB resale) in the next 12 months.'
+// Time deposit). 'You're planning to finance a property (resale property) in the next 12 months.'
 const ABOUT={home_loan:'property financing',investments:'investing',fixed_deposit:'time deposits',insurance:'insurance'};
 const PLAN={home_loan:'to finance a property',investments:'to invest',fixed_deposit:'a time deposit',insurance:'to get insurance cover'};
 const ACT={home_loan:'apply for property financing',investments:'start investing',fixed_deposit:'place a time deposit',insurance:'take up insurance cover'};

@@ -70,6 +70,18 @@ def capabilities(ctx: Annotated[RequestContext,Depends(get_ctx)]) -> dict[str,bo
     if ctx.principal.jwt is None:raise ApiError(401,'auth_required','Sign in to view meeting capabilities.')
     return {'enabled':settings.meetings_enabled,'zoom_configured':settings.zoom_oauth_directory is not None,'zoom_automation_enabled':settings.zoom_capture_enabled}
 
+class TranscriptStanding(Model):
+    on: bool
+
+# 0149: the client's one yes for every meeting's transcript (Data sharing › Meeting recording). Before the {meeting} routes.
+@router.get('/meetings/transcript-standing')
+def transcript_standing(claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
+    return call('meeting_transcript_standing',{},claims)
+
+@router.post('/meetings/transcript-standing')
+def set_transcript_standing(body: TranscriptStanding,claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
+    return call('meeting_set_transcript_standing',{'p_on':body.on},claims)
+
 @router.get('/meetings/session')
 def session(claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
     return call('meeting_identity',{},claims)

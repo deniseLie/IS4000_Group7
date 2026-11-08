@@ -1,5 +1,6 @@
 import {useState} from 'react';
 import TalkingPoints from './TalkingPoints';
+import TranscriptStanding from './TranscriptStanding';
 import {LOOKBACK,TOPIC_AREAS,accountName,askLine,cardState,choiceSummary,defaultChoice,grantTarget,latestEnd,plusDays,revokeConsequence,scopeText,untilText} from '../lib/consentSharing';
 import {formatDate,formatDateTime} from '../lib/format';
 
@@ -24,13 +25,13 @@ export default function SharingCategory({card,sharing,rm,asks,topics,topicsError
     {status}
     <p className="sharing-lead">{card.description}</p>
     {asks.map(ask=><div key={ask.ask_id} className="sharing-ask" data-testid="consent-ask"><p>{askLine(ask,formatDateTime)}</p></div>)}
-    <div className="sharing-switch">
+    {card.code==='meeting_recording'?<TranscriptStanding rm={rm}/>:<div className="sharing-switch">
       <div><strong>{state.switchable?`Sharing with ${Rm}`:state.label}</strong>
         <small data-testid="consent-card-scope">{grant?.basis==='notice'?'Your choice on each meeting: before the call you say whether a transcript may be used for the minutes, and you can withdraw it on that meeting at any time (My requests, Meetings). Approved minutes stay.':grant?[scopeText(card.code,grant.scope,sharing.accounts),untilText(grant,grant.until==='date'?formatDate:formatDateTime)].filter(Boolean).join(' · '):
           state.switchable?`${Rm} can't see this.`:card.reason||''}</small></div>
       {state.switchable&&sharing.rm&&<button type="button" role="switch" aria-checked={!!grant} aria-label={`Share ${card.label.toLowerCase()} with ${Rm}`}
         className="sharing-toggle" data-testid={grant?'consent-card-stop':'consent-card-edit'} disabled={off} onClick={toggle}><span/></button>}
-    </div>
+    </div>}
     {grant?.renewal_due&&<p className="page-note" data-testid="consent-card-renewal">This ends soon. Switch it on again if you want {rm} to keep seeing it.</p>}
     {state.switchable&&sharing.rm&&grant&&!editing&&!stopping&&<button type="button" className="sharing-link" data-testid="consent-card-change" disabled={off} onClick={edit}>Change what you share</button>}
     {error&&<p role="alert" className="sharing-alert">{error}</p>}

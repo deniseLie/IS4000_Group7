@@ -38,8 +38,10 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk,r
       request(`/${meetingId}/lifecycle`,'GET',null,signal),
       who.advisor_id&&workspace?request(`/${meetingId}/minutes/review`,'GET',null,signal):null,
       workspace?request(`/${meetingId}/recap`,'GET',null,signal):null]);
+    // 0149: the client's standing yes for every meeting (Data sharing); the RM has none to give.
+    const standing=who.advisor_id?null:await request('/transcript-standing','GET',null,signal).catch(()=>null);
     if(!signal.aborted&&!workspace)setOutcome(o=>o||appointment.purpose||'');
-    if(!signal.aborted){setData({enabled:true,who,appointment,workspace,link,linkError,capability,zoomEvidence,recovery,preparation,pack,lifecycle,review,recap});setSelected(workspace?.draft?.approved&&!workspace.followups.length?workspace.draft.content.actions.filter(a=>a.commitment==='agreed'&&a.owner!=='unassigned').map(a=>a.action_id):[]);}
+    if(!signal.aborted){setData({enabled:true,who,appointment,workspace,link,linkError,capability,zoomEvidence,recovery,preparation,pack,lifecycle,review,recap,standing});setSelected(workspace?.draft?.approved&&!workspace.followups.length?workspace.draft.content.actions.filter(a=>a.commitment==='agreed'&&a.owner!=='unassigned').map(a=>a.action_id):[]);}
   }
   async function run(work,message){
     const control=new AbortController();active.current?.abort();active.current=control;setBusy(true);setError('');setNotice('');
@@ -158,7 +160,9 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk,r
           {!w&&<><p className="muted">{RmFirst} opens the meeting page before the call. You can also open it now.</p>
             <button className="bank-chat-logout" data-testid="meeting-start" disabled={busy||!a?.purpose} onClick={()=>post('/start',{notice_id:data.who.notice.notice_id,purpose:a.purpose,outcome:a.purpose,command_id:command(`start:${a.purpose}`)},'Meeting opened.')}>Open the meeting page</button></>}
           {w&&<div className="meeting-notice"><h4>Can {rmFirst} use a transcript of this call to write the minutes?</h4><p className="rm-small">{w.notice}</p>
-            {!w.notice_seen?<button className="primary-button" data-testid="meeting-notice-seen" disabled={busy} onClick={()=>post('/notice-seen',{notice_id:w.notice_id,revision:w.revision},'Thank you. You agreed for this meeting.')}>I agree</button>
+            {data.standing?.on&&!w.notice_seen?<p className="rm-small" data-testid="meeting-standing-consent"><Icon name="check"/> You agreed for every meeting in Data sharing, so you don’t need to do anything here.{w.recording_allowed&&<> <button type="button" className="link-button" data-testid="meeting-revoke-transcript" disabled={busy} onClick={()=>post('/transcript-revoke',{command_id:command('revoke')},'Not for this meeting. Typed notes are used instead.')}>Not for this meeting</button></>}</p>
+            :!w.notice_seen?<><button className="primary-button" data-testid="meeting-notice-seen" disabled={busy} onClick={()=>post('/notice-seen',{notice_id:w.notice_id,revision:w.revision},'Thank you. You agreed for this meeting.')}>I agree</button>
+              <p className="rm-small">To stop being asked each time, agree once for every meeting in Data sharing › Meeting recording.</p></>
               :<p className="rm-small"><Icon name="check"/> You agreed. Nothing is recorded by this; {rmFirst} reviews the minutes before anything is shared. <button type="button" className="link-button" data-testid="meeting-revoke-transcript" disabled={busy} onClick={()=>post('/transcript-revoke',{command_id:command('revoke')},'Transcript access withdrawn. Existing minutes remain retained.')}>Withdraw</button></p>}</div>}
           {data.link&&<a className="primary-button" data-testid="meeting-zoom-join" href={data.link.join_url} target="_blank" rel="noopener noreferrer">Join video call</a>}
           {w&&data.pack&&<MeetingPack pack={data.pack} isRm={false} busy={busy} onDownload={()=>download(`/pack/pdf?document_id=${data.pack.document_id}&version=${data.pack.version}&content_hash=${data.pack.content_hash}`,`meeting-pack-v${data.pack.version}.pdf`)}/>}</section>}
@@ -207,10 +211,10 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk,r
       </div>}
 
       {shown===1&&w&&<div className="meeting-step-panel meeting-card" data-testid="meeting-panel-meet"><h2>The meeting</h2><p className="muted">In person or by video. You advise; the assistant does not.</p>
-        <div className="meeting-notice"><h4>Can this meeting be documented from a transcript?</h4><p>{w.notice}</p>
-          {!w.notice_seen&&<button className="bank-chat-logout" data-testid="meeting-notice-seen" disabled={busy} onClick={()=>post('/notice-seen',{notice_id:w.notice_id,revision:w.revision},'Notice read for this meeting.')}>I agree</button>}
+        <div className="meeting-notice"><h4>Transcript for the minutes</h4>
+          {/* 0149: the bank records the call, so the RM gives no agreement; only the client's yes counts (this meeting or every meeting). */}
           {!isRm&&<button className="bank-chat-logout" data-testid="meeting-revoke-transcript" disabled={busy} onClick={()=>post('/transcript-revoke',{command_id:command('revoke')},'Transcript access withdrawn. Existing minutes remain retained.')}>Withdraw transcript access</button>}
-          <p className="rm-small">{w.recording_allowed?'You both agreed: a transcript can be added after the call.':`A transcript can be added once you and ${client?.split(' ')[0]||'the client'} both agree (she agrees in her app). Typed notes work either way.`} Agreeing does not start any recording.</p></div>
+          <p className="rm-small">{w.recording_allowed?`${client?.split(' ')[0]||'The client'} agreed: a transcript can be added after the call.`:`${client?.split(' ')[0]||'The client'} hasn’t agreed to a transcript for this meeting yet (she agrees in her app). Typed notes work either way.`}</p></div>
         {data.linkError&&<p className="rm-error" role="alert">{data.linkError}</p>}
         {data.link&&<a className="primary-button" data-testid="meeting-zoom-join" href={data.link.join_url} target="_blank" rel="noopener noreferrer">Join Zoom meeting</a>}
         {isRm&&!data.link&&data.appointment.format==='video'&&Date.parse(data.appointment.starts_at)>Date.now()&&<button className="bank-chat-logout" data-testid="meeting-create-zoom" disabled={busy||!data.capability.zoom_configured}

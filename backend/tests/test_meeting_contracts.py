@@ -96,7 +96,7 @@ def test_a_talking_point_carries_no_client_text_and_renders_one_line():
     shared=TalkingPoint.model_validate({**POINT,'topic':'fixed_deposit','stage':'concern','timeframe':'unknown','concerns':['rates','fees'],'origin':'confirmed'})
     assert shared.line()=='Time deposit · concern · asks about rates, fees · shared by the client' and shared.brief_label()=='client_said'
     kind=TalkingPoint.model_validate({**POINT,'kind':'hdb_resale','concerns':['lock_in','rates']})
-    assert kind.line()=='Property financing · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat'
+    assert kind.line()=='Property financing · planning · resale property · within 12 months · asks about lock-in, rates · inferred from chat'
 
 
 def test_meetings_are_off_by_default_and_every_call_says_so(monkeypatch):

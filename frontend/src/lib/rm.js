@@ -198,8 +198,8 @@ export const WEEKDAY_NAMES=['Monday','Tuesday','Wednesday','Thursday','Friday','
 
 // Meeting requests (build plan 2a, SQL 0106). Topics are the fixed codes of rm.meeting_topics(); the purpose is the
 // client's own words and is only ever rendered as text. Every decision and move is a separate request she presses.
-export const TOPIC_LABELS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',term_sheet:'Term sheet',
-  compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Other'};
+export const TOPIC_LABELS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',term_sheet:'Loan terms (term sheet)',
+  compliance_review:'Periodic review',account_review:'Accounts and everyday banking',card_review:'Cards',other:'Something else'};
 export function topicLabel(code) {return TOPIC_LABELS[code]||String(code||'').replace(/_/g,' ');}
 export const DECLINE_REASONS=[['answered_by_message','I will answer in a message'],['redirected','Passed to the team that handles it'],['not_needed','No meeting needed']];
 export const MOVE_REASONS=[['client_asked','The client asked'],['rm_unavailable','I am unavailable then'],['other','Other reason']];

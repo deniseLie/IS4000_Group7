@@ -39,7 +39,8 @@ PUBLIC=frozenset({'meeting_start_workflow','meeting_document_call_start','meetin
  'meeting_current_brief','meeting_decide_brief',
  'meeting_approve_pack','meeting_share_pack','meeting_current_pack',
  'meeting_review_minutes','meeting_regenerate_minutes','meeting_minutes_review','meeting_lifecycle_status','meeting_recap_document',
- 'meeting_reminders','meeting_acknowledge_reminder','meeting_request_discovery','meeting_request_zoom'})
+ 'meeting_reminders','meeting_acknowledge_reminder','meeting_request_discovery','meeting_request_zoom',
+ 'meeting_transcript_standing','meeting_set_transcript_standing'})
 
 class MeetingStoreError(RuntimeError):
     def __init__(self,code: str,message: str) -> None:

@@ -46,8 +46,8 @@ TalkingOrigin = Literal['inferred', 'confirmed']  # inferred from chat, or share
 TOPIC_NAME = {'home_loan': 'Property financing', 'investments': 'Investments', 'fixed_deposit': 'Time deposit', 'insurance': 'Insurance'}  # labels since 0117 (codes unchanged)
 KINDS = {'home_loan': ('hdb_bto', 'hdb_resale', 'private_property', 'landed', 'refinance'),
     'investments': ('etf', 'unit_trust', 'stocks', 'bonds', 'robo'), 'fixed_deposit': ('new_deposit', 'renewal'), 'insurance': ('life', 'home', 'travel')}
-KIND_TEXT = {'hdb_bto': 'HDB BTO', 'hdb_resale': 'HDB resale', 'private_property': 'private property', 'landed': 'landed', 'refinance': 'refinancing',
-    'etf': 'ETFs', 'unit_trust': 'unit trusts', 'stocks': 'stocks', 'bonds': 'bonds', 'robo': 'robo-advisor', 'new_deposit': 'new deposit',
+KIND_TEXT = {'hdb_bto': 'new launch property', 'hdb_resale': 'resale property', 'private_property': 'private property', 'landed': 'landed property', 'refinance': 'refinancing',
+    'etf': 'ETFs', 'unit_trust': 'unit trusts', 'stocks': 'stocks', 'bonds': 'bonds', 'robo': 'managed portfolio', 'new_deposit': 'new deposit',
     'renewal': 'renewal', 'life': 'life', 'home': 'home', 'travel': 'travel'}
 CONCERN_TEXT = {'rates': 'rates', 'fees': 'fees', 'eligibility': 'eligibility', 'timing': 'timing', 'lock_in': 'lock-in',
     'down_payment': 'down payment', 'tenure': 'tenure', 'risk': 'risk'}
@@ -79,7 +79,7 @@ class TalkingPoint(Contract):
     def line(self) -> str:
         """The one rendering every reader uses (RM copilot, meeting brief, the client's Data sharing page):
         'Property financing · planning · within 12 months · inferred from chat', with the kind after the stage when she
-        named one ('Property financing · planning · HDB resale · within 12 months · asks about lock-in, rates · inferred from chat')."""
+        named one ('Property financing · planning · resale property · within 12 months · asks about lock-in, rates · inferred from chat')."""
         parts = [TOPIC_NAME[self.topic], self.stage]
         if self.kind is not None:
             parts.append(KIND_TEXT[self.kind])

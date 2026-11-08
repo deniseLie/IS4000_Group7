@@ -207,7 +207,7 @@ test('meeting requests to answer: overdue first, new ones marked, waiting on the
   assert.deepEqual(due.map(r=>r.isNew),[false,false,true]);
   assert.deepEqual(list.map(needsAnswer),[true,true,false,true,false]);
   assert.deepEqual(list.map(requestLabel),['Waiting for you','Overdue','Waiting for the client','Proposal lapsed','Scheduled']);
-  assert.equal(topicLabel('term_sheet'),'Term sheet');assert.equal(topicLabel('new_code'),'new code');
+  assert.equal(topicLabel('term_sheet'),'Loan terms (term sheet)');assert.equal(topicLabel('new_code'),'new code');
   assert.equal(slotProblemText('weekly_limit'),'the client already has the most meetings allowed that week');assert.equal(slotProblemText(null),'');
 });
 
