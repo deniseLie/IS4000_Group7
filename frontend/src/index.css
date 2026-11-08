@@ -2836,3 +2836,13 @@ button.mrc-chip{cursor:pointer}button.mrc-chip:disabled{opacity:.45;cursor:defau
 .mrc-foot{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .mrc-foot .link-button{display:inline-flex;align-items:center;gap:6px;font-size:13px}.mrc-foot svg{width:13px;height:13px}
 .mrc+.answer-disclaimer,.mrc~.answer-disclaimer{margin-top:8px}
+
+/* The meeting request card is its own white card in the chat, as in the design. */
+.bank-chat-bubble .mrc{margin-top:4px;padding:18px 20px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 1px 2px #0000000a}
+.bank-chat-bubble .mrc .mrc-actions .bank-chat-logout,.bank-chat-bubble .mrc .mrc-actions .primary-button{min-height:38px}
+.bank-chat-bubble .mrc .mrc-foot .link-button{font-size:12.5px;color:var(--muted)}
+
+/* Breathing room between the buttons and the "Nothing is sent" line, and before the Meetings link. */
+.bank-chat-bubble .mrc .mrc-actions{margin-top:16px}
+.bank-chat-bubble .mrc [data-testid="offer-expiry"]{margin:10px 0 0}
+.bank-chat-bubble .mrc .mrc-foot{margin-top:16px;padding-top:12px}

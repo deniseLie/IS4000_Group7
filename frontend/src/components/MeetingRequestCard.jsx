@@ -92,7 +92,7 @@ export default function MeetingRequestCard({draft,offer,state,busy,onDecide,onSe
       {error&&<p role="alert" className="rm-error">{error}</p>}
       <div className="mrc-actions">
         <button type="button" className="primary-button" data-testid="offer-confirm" disabled={expired||busy} onClick={()=>onDecide('confirm',{})}>Send to {first}</button>
-        <button type="button" className="bank-chat-logout" data-testid="mrc-edit" disabled={expired||busy} onClick={edit}><Icon name="document"/>Edit</button>
+        <button type="button" className="bank-chat-logout" data-testid="mrc-edit" disabled={expired||busy} onClick={edit}>Edit</button>
         <button type="button" className="bank-chat-logout" data-testid="offer-cancel" disabled={expired||busy} onClick={()=>onDecide('cancel',{})}>Cancel</button></div>
       <p className="rm-small" data-testid="offer-expiry">{expired?EXPIRED_LINE:`Nothing is sent until you press Send · ${expiresIn(offer).toLowerCase()}`}</p></>}
     {/* One quiet way to the Meetings page inside the card, instead of a second red button under it. */}
