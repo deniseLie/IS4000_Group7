@@ -1,0 +1,88 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Client answer mock</title>
+<style>
+:root{--ink:#1F2430;--muted:#6B7280;--line:#E5E7EB;--red:#D7262B;--bg:#F7F8FA}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px/1.55 Inter,system-ui,sans-serif;color:var(--ink)}
+.wrap{max-width:920px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:20px;margin:0 0 4px}.intro{color:var(--muted);margin:0 0 26px;font-size:14px}
+.case{margin-bottom:46px}.case>h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}.cols>div>small{display:block;font-weight:600;color:var(--muted);margin-bottom:6px;font-size:12px}
+@media(max-width:820px){.cols{grid-template-columns:1fr}}
+.q{display:flex;justify-content:flex-end;margin-bottom:12px}.q span{background:var(--ink);color:#fff;padding:9px 16px;border-radius:12px;font-size:14.5px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.eyebrow{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.tools{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}.tools button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;font:inherit;font-weight:600;color:var(--ink)}
+.title{font-size:17px;font-weight:700;margin:8px 0 10px}
+.one{background:#F1F2F4;border-radius:10px;padding:12px 14px;font-size:15px}
+.sec{margin-top:16px}.sec h3{margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pt{margin:6px 0;font-size:14.5px}
+.lab{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;margin-right:6px}
+.rec{background:#EEF2FF;color:#3730A3}.said{background:#ECFDF5;color:#065F46}.next{background:#FFF7ED;color:#9A3412}.gap{background:#F3F4F6;color:#4B5563}
+.src{display:inline-block;margin-left:6px;padding:0 7px;border-radius:5px;background:#F3F4F6;color:var(--muted);font-size:11.5px}
+.foot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.pills{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pills b{color:var(--muted);font-size:13px}
+.pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 13px;font:inherit;font-size:13px;color:var(--ink)}.pill.main{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
+.old{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:14.5px;color:#374151}
+.old .s{margin-top:12px;display:inline-block;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px}
+.old .f{margin-top:12px;font-size:12px;color:var(--muted)}
+.note{margin-top:10px;font-size:12.5px;color:var(--muted)}
+.rules{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;font-size:14px}.rules td{padding:5px 12px 5px 0;vertical-align:top}.rules th{text-align:left;font-size:12px;color:var(--muted);padding-bottom:6px}
+</style></head><body><div class="wrap">
+<h1>Client assistant answers: same layout as the RM side</h1>
+<p class="intro">Left: what Michelle sees today. Right: the new card, built the same way as the RM's request summary, but written in plain words for her. Short answers (a balance, a yes/no) stay as one plain sentence with no card.</p>
+
+<!-- 1. Request -->
+<div class="case"><h2>1 · She asks about a request</h2><div class="cols">
+<div><small>Today</small><div class="q"><span>What's happening with my London charge?</span></div>
+<div class="old">We're looking into the SGD 3,850 charge you reported. Your card has been frozen. Your relationship manager replied on 6 Nov. We'll update you soon.<br><span class="s">Sources</span><div class="f">You could also ask · Talk to my RM · Show my cards</div></div></div>
+<div><small>New</small><div class="q"><span>What's happening with my London charge?</span></div>
+<div class="card">
+ <div class="head"><span class="eyebrow">Your request · from your records</span><span class="tools">Updated 2:19 pm <button>Copy</button></span></div>
+ <div class="title">TCK-001079 · a card charge you don't recognise</div>
+ <div class="one">Your card is frozen and the SGD 3,850 charge is being checked. It's 1 day past the date we promised; Sophie, your relationship manager, is following up.</div>
+ <div class="sec"><h3>What you told us</h3><p class="pt"><span class="lab said">You said</span>“Why is there a SGD 3,850 charge in London? I was in Singapore the whole day.”<span class="src">Your request · 5 Nov</span></p></div>
+ <div class="sec"><h3>What we know</h3>
+  <p class="pt"><span class="lab rec">Your records</span>Card ****7310 is frozen. Nobody can use it.<span class="src">Your cards · 8 Nov</span></p>
+  <p class="pt"><span class="lab rec">Your records</span>You sent the same question twice. We're handling both as one.<span class="src">Requests</span></p></div>
+ <div class="sec"><h3>What we've told you</h3><p class="pt"><span class="lab rec">Your records</span>Sophie, 6 Nov: we're reviewing it; don't share codes with anyone.<span class="src">Your request · 6 Nov</span></p></div>
+ <div class="sec"><h3>What happens next</h3><p class="pt"><span class="lab next">Next step</span>The cards team checks the charge. You'll hear from Sophie with the result and timing.<span class="src">Bank process</span></p></div>
+ <div class="sec"><h3>Not known yet</h3><p class="pt"><span class="lab gap">Waiting</span>When the cards team will finish the check.<span class="src">not on record yet</span></p></div>
+ <div class="foot"><span>✓ Checked against 4 of your records</span><span class="pills"><b>Next:</b><button class="pill main">Open the request</button><button class="pill">Message Sophie</button></span></div>
+</div></div></div></div>
+
+<!-- 2. Meeting -->
+<div class="case"><h2>2 · She asks about her meeting with the RM</h2><div class="cols">
+<div><small>Today</small><div class="q"><span>What's my meeting with Sophie about?</span></div>
+<div class="old">Your meeting with Sophie is on Mon, 9 Nov 2026, 3:00 pm, about property financing. Please bring any documents you have.<br><span class="s">Sources</span><div class="f">You could also ask · Reschedule · Open meeting</div></div></div>
+<div><small>New</small><div class="q"><span>What's my meeting with Sophie about?</span></div>
+<div class="card">
+ <div class="head"><span class="eyebrow">Your meeting · from your records</span><span class="tools"><button>Copy</button></span></div>
+ <div class="title">Mon 9 Nov, 3:00 pm · Property financing options</div>
+ <div class="one">An in-person meeting with Sophie to talk about financing your Bangkok property. One thing would help before then: the sale agreement.</div>
+ <div class="sec"><h3>What it's about</h3>
+  <p class="pt"><span class="lab rec">Your records</span>Booked by you on 2 Nov · Property financing, Investments.<span class="src">Meetings</span></p>
+  <p class="pt"><span class="lab said">You said</span>You're looking at a condo in Bangkok and want to move within a year.<span class="src">Chat · 2 Nov</span></p></div>
+ <div class="sec"><h3>What to bring</h3><p class="pt"><span class="lab next">Next step</span>The sale agreement, if you have it. You can also send it in Periodic review.<span class="src">Periodic review</span></p></div>
+ <div class="sec"><h3>After the meeting</h3><p class="pt"><span class="lab rec">Your records</span>Sophie sends a recap and your to-dos on the Meetings page. Nothing is shared without her checking it.<span class="src">Meetings</span></p></div>
+ <div class="sec"><h3>Not known yet</h3><p class="pt"><span class="lab gap">Waiting</span>The purchase price. Sophie may ask about it.<span class="src">not on record</span></p></div>
+ <div class="foot"><span>✓ Checked against 3 of your records</span><span class="pills"><b>Next:</b><button class="pill main">Open meeting</button><button class="pill">Send the agreement</button><button class="pill">Reschedule</button></span></div>
+</div></div></div></div>
+
+<!-- 3. Short -->
+<div class="case"><h2>3 · A short question stays short</h2><div class="cols">
+<div><small>Today</small><div class="q"><span>What's my balance?</span></div><div class="old">Your savings account balance is S$48,210.55.<br><span class="s">Sources</span></div></div>
+<div><small>New</small><div class="q"><span>What's my balance?</span></div><div class="old" style="color:var(--ink)">Your savings account balance is <b>S$48,210.55</b> as of today.<span class="src">Your accounts · today</span>
+<div class="pills" style="margin-top:12px"><b>Next:</b><button class="pill main">See transactions</button><button class="pill">When is my card due?</button></div></div>
+<p class="note">No card: one line, the source tag beside it, and the same Next buttons.</p></div></div></div>
+
+<div class="case"><h2>How the client words differ from the RM's</h2><div class="rules"><table>
+<tr><th>RM sees</th><th>Client sees</th><th>Why</th></tr>
+<tr><td>Record</td><td>Your records</td><td>Same meaning, her point of view</td></tr>
+<tr><td>Client said</td><td>You said</td><td>Her own words, quoted back</td></tr>
+<tr><td>AI suggestion</td><td>Next step</td><td>Clients get the bank's next step, not advice</td></tr>
+<tr><td>Gap</td><td>Waiting</td><td>“Gap” sounds like her fault</td></tr>
+<tr><td>“Draft a reply”, “Close as same request”</td><td>“Open the request”, “Message Sophie”</td><td>Only things she can do</td></tr>
+</table><p class="note">Hidden from the client: internal notes, fraud flags, and which bank team holds the case.</p></div></div>
+</div></body></html>

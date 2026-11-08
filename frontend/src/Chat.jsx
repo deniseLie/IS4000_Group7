@@ -15,7 +15,11 @@ import SavedChats from './components/SavedChats';
 import ActionsPanel from './components/ActionsPanel';
 import InboxPage from './components/InboxPage';
 import RecordsPanel from './components/RecordsPanel';
+import MeetingsPage from './components/MeetingsPage';
+import ClientWelcome from './components/ClientWelcome';
 import OfferBlock from './components/OfferBlock';
+import MeetingRequestCard from './components/MeetingRequestCard';
+import {parseMeetingDraft} from './lib/meetingRequests';
 import SharingPage from './components/SharingPage';
 import {chatTopicsNote,loadTalkingPoints} from './lib/talkingPoints';
 import ComplianceWorkspace from './components/ComplianceWorkspace';
@@ -31,7 +35,7 @@ import { supabase } from './lib/supabase';
 import { boundedHistory, handoffMessage, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
 import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
 import {OFFER_REPLIES,fill,offerReply,offerState,parseOffer,placeholders} from './lib/offers';
-import {createActionCase,proposeAction,rejectAction} from './lib/actions';
+import {createActionCase,loadActions,proposeAction,rejectAction} from './lib/actions';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const GUEST_SESSION = globalThis.crypto?.randomUUID?.();  // needs a secure context (https or localhost); correlation id for guest requests; signed-in sessions use the token's session_id
@@ -45,7 +49,7 @@ const ERRORS = {
   personal_unavailable:'Your records are unavailable right now. Please retry later.',
   rate_limited:'Too many messages in a short time. Please wait a moment and retry.', payload_too_large:'This conversation is too long to send. Start a new chat and try again.',
 };
-const PAGES=['chat','overview','inbox','compliance','requests','actions','sharing'];  // one client view (the RM and admin pages are not shown)
+const PAGES=['chat','overview','meetings','inbox','compliance','requests','actions','sharing'];  // one client view (the RM and admin pages are not shown)
 // CR8 routing for "Talk to a person". Michelle is a private-banking client, so her relationship manager is her person for
 // general, account and compliance questions (the RM coordinates with the compliance team). Fraud and lost cards go
 // to the chat's urgent card request to the RM (build plan 2b); card limit changes go to the cards and credit team's request form.
@@ -91,7 +95,7 @@ export default function Chat({session,onSignIn}) {
     setHistoryClosing(true);
     historyTimer.current=setTimeout(()=>{historyTimer.current=null;setHistoryClosing(false);setSavedChats(false);},260);
   }
-  const [recordsOpen,setRecordsOpen]=useState(false);
+  const [recordsOpen,setRecordsOpen]=useState(false),[toConfirm,setToConfirm]=useState(0);  // Activity badge: actions waiting for her OK
   const [complianceOpen,setComplianceOpen]=useState(null);
   const [complianceBusy,setComplianceBusy]=useState(false);
   const [complianceReceipt,setComplianceReceipt]=useState(null);
@@ -153,7 +157,10 @@ export default function Chat({session,onSignIn}) {
         if(controller.signal.aborted)return;
         setStore(available);
         if(available==='database') {
-          const access=readActive(session?.user.id||null);
+          let fresh=false;
+          try {fresh=!!session&&sessionStorage.getItem('demobank.fresh-sign-in')==='1';sessionStorage.removeItem('demobank.fresh-sign-in');} catch {}
+          if(fresh)clearActive(session.user.id);  // just signed in: start on the welcome page, not the last saved chat
+          const access=fresh?null:readActive(session?.user.id||null);
           if(access) {
             const history=await loadConversation(access,await sessionHeaders(),controller.signal);
             if(!controller.signal.aborted)restore(history,access);
@@ -489,7 +496,7 @@ export default function Chat({session,onSignIn}) {
     if(index===lastCompliance)return null; // One compliance navigation action; the optional inline review is separate.
     const link=!message.error&&message.source_check!=='rejected'&&message.response_origin!=='validation'&&!/Here’s what I’d send|Answer withheld|couldn’t confirm|couldn.t verify/i.test(message.content)?pageLink(asked):null;
     if(!link)return null;
-    const go={meetings:()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');},requests:()=>{setTicketPrefill(null);navigate('requests');},
+    const go={meetings:()=>navigate('meetings'),requests:()=>{setTicketPrefill(null);navigate('requests');},
       compliance:()=>navigate('compliance'),inbox:()=>{closeOverlays();navigate('inbox');}}[link.key]
       ||(()=>{navigate('overview');setOverviewFocus({section:link.key,key:Date.now()});});
     return <button className="bank-chat-logout rm-handoff" data-testid="page-link" onClick={go}>{link.label}<Icon name="arrow"/></button>;
@@ -497,6 +504,11 @@ export default function Chat({session,onSignIn}) {
   // Compliance replies end with a hand-off to the review page, plus a toggle for the in-chat review panel under the latest one.
   const lastCompliance=messages.findLastIndex(m=>m.sections?.some(section=>['compliance','document'].includes(section.domain)));
   // Suggested next questions under the latest answer, for clients not sure what to ask next (fixed lists, lib/followUps.js).
+  // A meeting request the assistant drafted (one meeting.request offer in its fixed wording) is shown as an editable card.
+  function meetingDraft(message) {
+    if(message.role!=='assistant'||!session||message.offer?.offers?.length!==1||message.offer.offers[0].type!=='meeting.request')return null;
+    return parseMeetingDraft([message.content,...(message.sections||[]).map(section=>section.answer)].filter(Boolean).join('\n'));
+  }
   function nextQuestions(message,index) {
     if(index!==messages.length-1||loading||pending)return null;
     const asked=messages.filter(m=>m.role==='user').map(m=>m.content);
@@ -507,29 +519,32 @@ export default function Chat({session,onSignIn}) {
   }
   function complianceStep(message,index) {
     if(index!==lastCompliance||!session||mode!=='personal'||message.error||message.response_origin==='validation')return null;
-    return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Go to Compliance review<Icon name="arrow"/></button>
+    return <div className="rm-handoff-row"><button className="primary-button rm-handoff" data-testid="compliance-handoff" onClick={()=>navigate('compliance')}>Go to Periodic review<Icon name="arrow"/></button>
       <button className="bank-chat-logout rm-handoff" data-testid="toggle-compliance-workspace" aria-expanded={showCompliance} onClick={()=>setComplianceOpen(!showCompliance)}>{showCompliance?'Hide review here':'Show review here'}</button></div>;
   }
   const showCompliance=complianceOpen===true;
   const footer=<footer className="bank-chat-footer"><span>IS4000 · Coursework demo · No real banking services</span></footer>;  // who is signed in is shown by the sidebar profile
   function openActions() {closeOverlays();navigate('actions');}
+  useEffect(()=>{if(!session)return;const c=new AbortController();(async()=>{try{const {data}=await supabase.auth.getSession();if(!data.session)return;
+    const items=await loadActions(data.session.access_token,c.signal);if(!c.signal.aborted)setToConfirm(items.filter(item=>item.command.state==='proposed').length);}catch{}})();return ()=>c.abort();},[session?.user.id,view,pageKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   const review={label:'Review in Actions',onSelect:openActions},requests={label:'Open My requests',onSelect:()=>navigate('requests')},compliance={label:'Open compliance review',onSelect:()=>navigate('compliance')};
   function closeOverlays() {setSummary(null);setArticle(null);setSavedChats(false);setRecordsOpen(false);}
   async function signOut() {request.current?.abort();await endSession();history.replaceState(null,'',location.pathname+location.search);try{await supabase.auth.signOut();}catch{setNotice('Unable to sign out. Please retry.');}}
   const menu=[
-    {testid:'open-records',ariaLabel:'View your customer records',icon:'user',label:'Records',onSelect:()=>{closeOverlays();setRecordsOpen(true);}},
-    ...(store==='database'?[{testid:'open-saved-chats',desktop:true,ariaLabel:'Open saved conversations',icon:'history',label:'Saved chats',onSelect:()=>{closeOverlays();navigate('chat');setSavedChats(true);}}]:[]),
-    {testid:'open-actions',desktop:true,ariaLabel:'Open actions',icon:'history',label:'Actions',onSelect:openActions},
+    // Records is on Home (Your details › See all your records), Saved chats is "Recent chats" in the assistant and
+    // Activity is in the menu, so only Data sharing stays here.
     {testid:'open-data-sharing',ariaLabel:'Open data sharing',icon:'shield',label:'Data sharing',onSelect:()=>{closeOverlays();navigate('sharing');}},
     {testid:'sign-out',icon:'logout',label:'Sign out',danger:true,onSelect:signOut},
   ];
   // The sidebar and the mobile tab bar list the same pages; for guests every page but the assistant is a sign-in prompt.
   const pages=[
-    {view:'overview',testid:'open-overview',icon:'account',label:'Overview',short:'Home'},
+    // Client menu (redesign): Home, Assistant, Meetings (its own page), Requests, Periodic review, Activity.
+    {view:'overview',testid:'open-overview',icon:'account',label:'Home',short:'Home'},
     {view:'chat',testid:'open-chat',icon:'chat',label:'Assistant',short:'Assistant'},
-    {view:'actions',testid:'nav-actions',icon:'history',label:'Actions',short:'Actions',onSelect:session?openActions:null},
-    {view:'compliance',testid:'open-compliance',icon:'document',label:'Compliance review',short:'Review'},
-    {view:'requests',testid:'open-requests',icon:'clip',label:'My requests',short:'Requests'},
+    {view:'meetings',testid:'open-meetings',icon:'calendar',label:'Meetings',short:'Meetings'},
+    {view:'requests',testid:'open-requests',icon:'clip',label:'Requests',short:'Requests'},
+    {view:'compliance',testid:'open-compliance',icon:'document',label:'Periodic review',short:'Review'},
+    {view:'actions',testid:'nav-actions',icon:'history',label:'Activity',short:'Activity',onSelect:session?openActions:null,badge:toConfirm,badgeLabel:'to confirm'},
   ].map(page=>({...page,locked:!session&&page.view!=='chat',onSelect:page.onSelect||(()=>{if(page.view!=='chat')closeOverlays();navigate(page.view);})}));
   const current=view;
 
@@ -556,15 +571,18 @@ export default function Chat({session,onSignIn}) {
           {notice&&(noticeToast?<p key={noticeKey} className="chat-toast" role="status"><Icon name="check"/>{notice}</p>
             :<p key={noticeKey} className="chat-notice-bar" role="status"><Icon name="info"/><span>{notice}</span><button className="icon-button" aria-label="Dismiss message" onClick={()=>setNoticeText('')}><Icon name="close"/></button></p>)}
           <div ref={messageList} className={`bank-chat-messages ${messages.length?'has-messages':''}`} aria-live="polite" aria-relevant="additions text">
-            {!messages.length&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in" aria-busy={profileName===null}>{profileName===null?<><span className="skeleton-text heading" aria-hidden="true"/><span className="sr-only">How can I help today?</span></>:profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Ask about your accounts, cards and loans or your compliance review. If I can't help, I'll pass your question to your relationship manager.</p></>
-              :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Understand your accounts, cards and loans. Start with a question.</p></>}<div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></div>}
+            {!messages.length&&<div className="bank-chat-welcome">{session?<><h1 className="welcome-signed-in" aria-busy={profileName===null}>{profileName===null?<><span className="skeleton-text heading" aria-hidden="true"/><span className="sr-only">How can I help today?</span></>:profileName?`Hi ${profileName.split(' ')[0]}, how can I help?`:'How can I help today?'}</h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>I answer from your own records and show where each answer comes from. If I can't help, I'll pass your question to your relationship manager.</p><ClientWelcome onDraft={draft} onNavigate={navigate}/></>
+              :<><span className="eyebrow welcome-eyebrow">A little clarity goes a long way</span><h1>Banking questions.<br/><span>Clearly answered.</span></h1><p className="chat-greeting" data-testid="chat-greeting">I'm DemoBank's AI assistant. I give general information, not advice.</p><p>Understand your accounts, cards and loans. Start with a question.</p><div className="bank-chat-suggestions">{topics.map(t=><button key={t.icon} onClick={()=>draft(t.question)}><Icon name={t.icon}/><strong>{t.title}</strong><span>{t.detail}</span><span className="topic-arrow" aria-hidden="true">↗</span></button>)}</div><div className="quick-help"><span>Need help now?</span><button onClick={()=>draft('I lost my card')}>I lost my card <span aria-hidden="true">↗</span></button><button onClick={()=>draft('How do I find my statement?')}>Find my statement <span aria-hidden="true">↗</span></button></div></>}</div>}
             {messages.map((m,i)=><div key={i} data-testid={`chat-message-${m.role}`} className={`bank-chat-message ${m.role}`} data-response-origin={m.response_origin} data-prompt-version={m.prompt_version}>
               {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
               <div className={`bank-chat-bubble ${m.error?'error':''}`}>
                 {m.role==='assistant'&&<div className="answer-heading">Banking assistant{m.response_origin&&<small className="answer-origin">{m.response_origin==='ai'?'AI-generated':m.response_origin==='safety'?'Safety guidance':'Could not verify'}</small>}</div>}
-                <Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
-                <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={(decision,on)=>decideOffer(m,decision,on)}/>
-                {ticketStep(m,i)}{inlineCardFor(m,i)}{complianceStep(m,i)}{nextQuestions(m,i)}
+                {meetingDraft(m)?<MeetingRequestCard draft={meetingDraft(m)} offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending}
+                  onDecide={(decision,on)=>decideOffer(m,decision,on)} onAsk={text=>send(null,text)} onNavigate={navigate}
+                  onMeetings={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}/>
+                :<><Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource}/>
+                <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={(decision,on)=>decideOffer(m,decision,on)}/></>}
+                {!meetingDraft(m)&&ticketStep(m,i)}{inlineCardFor(m,i)}{complianceStep(m,i)}{!meetingDraft(m)&&nextQuestions(m,i)}
                 {m.disclaimer&&<details className="answer-disclaimer"><summary><Icon name="info"/>General info, not advice</summary><p>{m.disclaimer}</p></details>}
               </div>
             </div>)}
@@ -576,7 +594,7 @@ export default function Chat({session,onSignIn}) {
             {view==='chat'&&session&&mode==='personal'&&showCompliance&&<ComplianceWorkspace key="compliance-workspace" submissionReceipt={complianceReceipt} onSubmitted={setComplianceReceipt} onReviewLoaded={setComplianceReview} onSupport={prepareReviewSupport} onBusyChange={setComplianceBusy} chatBusy={loading||booting||!!bootError||!!pending} onAsk={(question,selection)=>send(null,question,selection)}/>}
           </div>
           <div className="composer-area"><form className="bank-chat-composer" onSubmit={send}>
-            <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>{recall.current=null;setInput(e.target.value);}} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder="Ask a banking question…"
+            <textarea ref={composer} id="chat-composer" aria-label="Your message" rows={1} value={input} onChange={e=>{recall.current=null;setInput(e.target.value);}} disabled={loading||complianceBusy||booting||!!bootError||!!pending} maxLength={4000} placeholder={session?"Ask about your accounts, cards, plans or documents…":"Ask a banking question…"}
               onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form.requestSubmit();}else recallSent(e);}}/>
             <button className="composer-send" data-testid="send-message" aria-label={loading?'Please wait':'Send'} title={loading?'Please wait':'Send'} disabled={loading||complianceBusy||booting||!!bootError||!!pending||!input.trim()}><Icon name="send"/></button>
           </form><div className="composer-note"><span><Icon name="shield"/>{DISCLAIMER}</span>
@@ -588,8 +606,9 @@ export default function Chat({session,onSignIn}) {
       {view==='chat'&&savedChats&&<SavedChats closing={historyClosing} current={conversation?.session_id} onLoaded={setChatCount} onClose={closeHistory} onOpen={async item=>{await reopen(item);navigate('chat');}}/>}
       {view!=='chat'&&<main className="app-page page-enter" key={view}>
         {!session&&<LockedPage page={view} onSignIn={onSignIn} onBack={()=>navigate('chat')}/>}
-        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
-        {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:requests,Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
+        {session&&view==='meetings'&&<MeetingsPage key={pageKey} rmName={rmIntro?.current?.name}/>}
+        {session&&view==='overview'&&<OverviewPage key={pageKey} onNavigate={navigate} onRecords={()=>{closeOverlays();setRecordsOpen(true);}} onSupport={prepareSummary} onAsk={question=>{navigate('chat');draft(question);}} onRequestStatement={()=>requestStatement('')} onRaise={prefill=>{setTicketPrefill({...prefill,key:Date.now()});navigate('requests');}} focus={overviewFocus?.section}/>}
+        {session&&view==='inbox'&&<InboxPage key={pageKey} onActions={openActions} links={{Cards:review,Support:requests,Appointments:{label:'Open Meetings',onSelect:()=>navigate('meetings')},Requests:requests,'My requests':requests,Relationship:requests,Compliance:compliance,Documents:compliance}}/>}
         {session&&view==='actions'&&<ActionsPanel key={pageKey}/>}
         {session&&view==='sharing'&&<SharingPage key={`${pageKey}-${sharingFocus||''}`} initial={sharingFocus} onReviewActions={openActions}/>}
         {session&&view==='requests'&&<TicketsPage key={pageKey} prefill={ticketPrefill} onReviewActions={openActions} onSupport={prepareSummary} rmName={rmIntro?.current?.name} initialTab={ticketPrefill?.tab||'open'}/>}

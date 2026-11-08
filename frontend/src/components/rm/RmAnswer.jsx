@@ -5,8 +5,9 @@ import DocumentationReview from './DocumentationReview';
 import {AvailabilityReview,DecisionReview} from './CalendarReview';
 import ConsentAskReview from './ConsentAskReview';
 import MeetingWorkspace from '../meetings/MeetingWorkspace';
-import {KIND_LABELS,REPORT_TITLES,allDrafts,reportText,validationNote} from '../../lib/rm';
+import {REPORT_TITLES,allDrafts,reportText,validationNote} from '../../lib/rm';
 import {formatDateTime} from '../../lib/format';
+import {DocSection,NotKnown,OneLine,Point} from '../DocParts';
 
 // One RM assistant reply, laid out as a short report: a title, the summary, then sections of points. Recorded facts are
 // plain text; only what is not a recorded fact is marked (Client said, AI suggestion, Gap, Guidance). Each point ends with
@@ -32,10 +33,10 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
   }
   const sources=reply.sources||[];
   const number=new Map(sources.map((s,i)=>[s.id,i+1]));
-  const [open,setOpen]=useState(()=>new Set()),[copied,setCopied]=useState(false);
+  const [open,setOpen]=useState(()=>new Set()),[copied,setCopied]=useState(false),[listOpen,setListOpen]=useState(false);
   const root=useRef(null);
   function show(id) {
-    setOpen(previous=>new Set(previous).add(id));
+    setOpen(previous=>new Set(previous).add(id));setListOpen(true);
     requestAnimationFrame(()=>{const row=root.current?.querySelector(`[data-source-row="${CSS.escape(id)}"]`);row?.scrollIntoView({behavior:'smooth',block:'nearest'});row?.focus({preventScroll:true});});
   }
   function toggle(id) {setOpen(previous=>{const next=new Set(previous);next.has(id)?next.delete(id):next.add(id);return next;});}
@@ -58,20 +59,21 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
       <textarea aria-label="Edit point" rows={Math.max(1,Math.ceil(w.text.length/90))} value={w.text} disabled={w.removed}
         onChange={e=>setItem(si,ii,{text:e.target.value})}/>
       <button type="button" className="rmw-mini" onClick={()=>setItem(si,ii,{removed:!w.removed})}>{w.removed?'Keep':'Remove'}</button></li>;}
-    return <li key={ii} className={`rm-item kind-${item.kind}`} data-kind={item.kind}>
-      <span className="rm-item-text">{item.text}{item.edited&&<span className="rm-edited"> Edited by you</span>}
-        {item.owner==='specialist'&&<span className="rm-owner"> (specialist team)</span>}
-        {item.source_ids?.filter(id=>number.has(id)).map(id=><button key={id} type="button" className="rm-ref" data-source-id={id}
-          aria-label={`Source ${number.get(id)}: ${sources[number.get(id)-1].title}`} title={sources[number.get(id)-1].title} onClick={()=>show(id)}>{number.get(id)}</button>)}</span>
-    </li>;
+    const refs=(item.source_ids||[]).filter(id=>number.has(id)).map(id=>({key:id,id,title:sources[number.get(id)-1].title,onClick:()=>show(id)}));
+    return <li key={ii} className="doc-li"><Point kind={item.kind==='client_stated'?'client_said':item.kind==='suggestion'?'ai_suggestion':item.kind||'record'} edited={item.edited}
+      tail={item.owner==='specialist'&&<span className="rm-owner"> (specialist team)</span>} sources={refs}>{item.text}</Point></li>;
   }
   const index_of=section=>(reply.sections||[]).indexOf(section);
   const title=REPORT_TITLES[reply.intent]||'RM assistant';
-  const report=(reply.sections||[]).length>0&&reply.status!=='denied';
+  // Only real documents are drawn as a report (title, In one line, numbered sections, Copy/PDF/Edit, checked footer).
+  // Help, follow-up questions about the last answer and other short replies are a plain chat reply.
+  const report=REPORT_INTENTS.has(reply.intent)&&reply.format!=='answer'&&(reply.sections||[]).length>0&&reply.status!=='denied';
+  const gaps=(reply.sections||[]).flatMap((section,si)=>section.items.map((item,ii)=>({item,si,ii}))).filter(x=>x.item.kind==='gap');
+  const checked=reply.validation?.checked??reply.validation?.claims_checked??(reply.sections||[]).reduce((n,s)=>n+s.items.filter(i=>i.kind!=='gap'&&i.source_ids?.length).length,0);
   return <article ref={root} className={`rm-answer ${report?'rm-report':''} ${compact?'compact':''}`} data-testid="rm-answer" data-intent={reply.intent} data-status={reply.status}>
     {report&&!compact&&<header className="rm-report-head">
-      <div><span className="eyebrow">{reply.origin==='ai'?'AI-generated from your records':'From your records'}</span>
-        <h2>{title}{client?<span> · {client}</span>:null}</h2></div>
+      <div><span className="eyebrow">{title} · {reply.origin==='ai'?'AI-drafted from your records':'from your records'}</span>
+        <h2>{client||title}</h2></div>
       <div className="rm-report-tools">
         {editing?<><button type="button" className="rmw-tool" onClick={()=>setWork(null)}>Cancel</button>
           <button type="button" className="rmw-tool primary" onClick={finishEdit}><Icon name="check"/>Done</button></>
@@ -80,19 +82,20 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
         <button type="button" className="rmw-tool" onClick={print}><Icon name="download"/>Print or save PDF</button></>}</div>
     </header>}
     {editing?<textarea className="rm-report-summary rm-edit-summary" aria-label="Edit summary" rows={3} value={work.summary} onChange={e=>setWork({...work,summary:e.target.value})}/>
-      :reply.summary&&<p className={report?'rm-report-summary':'rm-answer-summary'}>{reply.summary}</p>}
+      :reply.summary&&(report?<OneLine>{reply.summary}</OneLine>:<p className="rm-answer-summary">{reply.summary}</p>)}
     {reply.edited&&!editing&&<p className="rm-validation"><Icon name="info"/>You edited this report. Edited points are yours, not the assistant’s; the numbers show the records the original point used.</p>}
     {reply.status==='denied'&&<p className="rm-denied" role="alert" data-testid="rm-access-denied"><Icon name="lock"/>Client-book and specialist access restrictions apply. No action was taken.</p>}
     {reply.meeting_workspace&&<div className="meeting-actions"><button type="button" className="bank-chat-logout" data-testid="rm-open-saved-brief" onClick={()=>setMeetingOpen(true)}>Open the meeting</button>
       {reply.meeting_brief&&<p className="rm-small" data-testid="rm-saved-brief-version">Saved brief version {reply.meeting_brief.version} · {reply.meeting_brief.sources_changed?'needs review':reply.meeting_brief.decision.replaceAll('_',' ')}</p>}</div>}
     {meetingOpen&&reply.meeting_workspace&&<MeetingWorkspace meetingId={reply.meeting_workspace} token={token} onClose={()=>setMeetingOpen(false)}/>}
-    {(reply.sections||[]).map((section,index)=><section className="rm-answer-section" key={index}>
-      {section.heading&&<h3>{section.heading}</h3>}
-      {runs(section.items).map((run,r)=>run.kind==='record'
-        ?<ul key={r} className="rm-points">{run.items.map(({item,index})=>point(item,index_of(section),index))}</ul>
-        :<div key={r} className={`rm-group kind-${run.kind}`} data-kind={run.kind}><span className={`rm-kind ${run.kind}`}>{GROUP_LABELS[run.kind]||KIND_LABELS[run.kind]||run.kind}</span>
-          <ul className="rm-points">{run.items.map(({item,index})=>point(item,index_of(section),index))}</ul></div>)}
-    </section>)}
+    {(reply.sections||[]).map((section,index)=>{
+      // Design (DocAnswers): numbered sections, one label on every point, its source beside it; gaps go to "Not known yet".
+      const items=section.items.map((item,i)=>({item,i})).filter(({item})=>editing||item.kind!=='gap');
+      if(!items.length)return null;
+      const n=(reply.sections||[]).slice(0,index+1).filter(s=>editing||s.items.some(x=>x.kind!=='gap')).length;
+      return <div className="rm-answer-section" key={index}><DocSection n={report&&!compact?n:null} title={section.heading||''}>
+        <ul className="doc-points">{items.map(({item,i})=>point(item,index,i))}</ul></DocSection></div>;})}
+    {!editing&&gaps.length>0&&<NotKnown><ul className="doc-points">{gaps.map(({item,si,ii})=>point(item,si,ii))}</ul></NotKnown>}
     {reply.clarification&&<div className="follow-ups rm-options" data-testid="rm-clarification"><span>{reply.clarification.question}</span>
       {reply.clarification.options.map(option=><button key={option.label} type="button" disabled={!latest} onClick={()=>onOption(option)}>{option.label}</button>)}</div>}
     {allDrafts(reply).map((draft,i)=><DraftReview key={`${draft.customer_id}-${i}`} draft={draft} token={token} onChange={onDraftChange} onAsk={onAsk} latest={latest}/>)}
@@ -103,26 +106,24 @@ export default function RmAnswer({reply:given,onEdit,onOption,token,onDraftChang
     {(reply.consent_asks||[]).map(card=><ConsentAskReview key={`${card.customer_id}-${card.category}`} card={card} token={token} latest={latest}/>)}
     {validationNote(reply.validation)&&<p className="rm-validation" data-testid="rm-validation"><Icon name="shield"/>{validationNote(reply.validation)}</p>}
     {reply.notice&&<p className="rm-validation"><Icon name="info"/>{reply.notice}</p>}
-    {sources.length>0&&<section className="rm-sources" data-testid="rm-sources">
-      <h3>Sources</h3>
-      <p className="rm-sources-hint">Numbers in the text point to these records. Select a record to see what it says.</p>
+    {sources.length>0&&<details className="rm-sources answer-sources" data-testid="rm-sources" open={listOpen} onToggle={e=>setListOpen(e.currentTarget.open)}>
+      <summary>Sources · {sources.length}</summary>
+      <p className="rm-sources-hint">The records each point came from. Select one to see what it says.</p>
       <ol>{sources.map((s,i)=><li key={s.id} data-source-row={s.id} tabIndex={-1} className={open.has(s.id)?'open':''}>
         <button type="button" className="rm-source-toggle" aria-expanded={open.has(s.id)} onClick={()=>toggle(s.id)}>
           <span className="rm-source-num">{i+1}</span><span className="rm-source-title">{s.title}</span>
           <small>{kindWord(s.kind)}{asOf(s.as_of)?` · ${asOf(s.as_of)}`:''}</small><Icon name="chevron"/></button>
         {open.has(s.id)&&<SourceDetails source={s}/>}
       </li>)}</ol>
-    </section>}
+    </details>}
+    {report&&!compact&&!editing&&<footer className="doc-foot"><span><Icon name="check"/>{checked} point{checked===1?'':'s'} checked against your records</span>
+      {gaps.length>0&&<span>{gaps.length} not known yet</span>}</footer>}
   </article>;
 }
 
-const GROUP_LABELS={client_stated:'Client said',suggestion:'AI suggestions',gap:'Gaps',guidance:'Bank guidance'};
-// Consecutive points of the same kind share one label (one "Client said" above three statements, not three tags).
-function runs(items) {
-  const out=[];
-  items.forEach((item,index)=>{const last=out.at(-1);if(last&&last.kind===item.kind)last.items.push({item,index});else out.push({kind:item.kind,items:[{item,index}]});});
-  return out;
-}
+
+const REPORT_INTENTS=new Set(['client_overview','meeting_history','meeting_brief','ticket_summary','handover_brief','document_interaction',
+  'actions_from_note','today','priorities','ticket_inbox','reviews','schedule','book_question','meeting_requests']);
 
 function kindWord(kind) {return kind==='client_stated'?'Client said':kind==='guidance'?'Bank guidance':kind==='note'?'Meeting note':kind==='ticket'?'Request':kind==='calendar'?'Calendar':kind==='consent'?'Shared by client':'Bank record';}
 function asOf(value) {if(!value||value==='None')return '';const d=new Date(value);return Number.isNaN(d.getTime())?value:`as of ${formatDateTime(d)}`;}

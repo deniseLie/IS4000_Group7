@@ -66,7 +66,7 @@ TRANSFER_STATUS=re.compile(
     r"|\bwhy\s+(?:is|has|did|hasn['’]?t|isn['’]?t|was)\b",re.I)
 HOW_TO=re.compile(r"^\s*(?:how\s+(?:do|can|should|would|does)\s+(?:i|you|one|it)|what\s+(?:is|are)\s+the\s+(?:fees?|limits?|charges?|steps|process|cut[- ]?off)"
     r"|can\s+i\s+(?:make|send|do)\s+(?:an?\s+)?(?:international|overseas|foreign|telegraphic)?\s*(?:transfers?|payments?)\b)",re.I)
-# Asking for a meeting is self-service (a meeting request since 2a; My requests > Meetings), so it is never handed over.
+# Asking for a meeting is self-service (a meeting request since 2a; the Meetings page), so it is never handed over.
 MEETING=re.compile(r'\b(?:meet|meeting|appointment|book(?:ing)?|schedule|catch[- ]?up|(?:phone|video)\s+call)\b',re.I)
 # Kept for callers and tests that use the combined rule.
 HANDOVER=re.compile('|'.join(f'(?:{p.pattern})' for p in (ADVICE,FEES,COMPLAINT,CONTACT)),re.I)
@@ -263,9 +263,9 @@ def handed_over(reference: str | None,reused: bool=False) -> str:
     where=f' ({reference})' if reference else ''
     if reused:
         return (f"You already have an open request with your relationship manager about this{where}, so I haven't opened "
-            "another one. I've added your question to it, and they'll reply there. You can follow it in My requests.")
+            "another one. I've added your question to it, and they'll reply there. You can follow it in Requests.")
     where=f' Your reference is {reference}.' if reference else ''
-    return f"I've passed your question to your relationship manager.{where} They usually reply within one working day, and you can follow it in My requests."
+    return f"I've passed your question to your relationship manager.{where} They usually reply within one working day, and you can follow it in Requests."
 
 
 @dataclass(frozen=True)
@@ -436,14 +436,14 @@ URGENT_GUEST='If you’re a client, sign in and ask again, and I can send it to 
 URGENT_OFFER={'charge':'Send the charge you don’t recognise to your relationship manager as urgent',
     'lost':'Tell your relationship manager as urgent that your card is lost or stolen'}
 URGENT_SENT=('I’ve sent this to your relationship manager as urgent{reference}. They will contact you. Don’t wait for them if your card '
-    'is at risk: '+FREEZE+'. I can’t freeze the card or reverse a charge from here. You can follow it in My requests.')
+    'is at risk: '+FREEZE+'. I can’t freeze the card or reverse a charge from here. You can follow it in Requests.')
 URGENT_REUSED=('You already have an open urgent card request with your relationship manager{reference}, so I haven’t opened another one. '
-    'Don’t wait for them: '+FREEZE+'. You can follow it in My requests.')
+    'Don’t wait for them: '+FREEZE+'. You can follow it in Requests.')
 URGENT_DECLINED='Okay, I haven’t sent anything to your relationship manager. If your card is at risk, '+FREEZE+' now.'
 URGENT_FAILED=('I couldn’t prepare an urgent request to your relationship manager just now, so nothing has been sent. Please '+FREEZE
     +' straight away.')
 URGENT_SEPARATE=('This chat already has an open request with your relationship manager, so I’ve sent your card problem to them as a '
-    'separate request{reference}. They will contact you. Don’t wait for them if your card is at risk: '+FREEZE+'. You can follow it in My requests.')
+    'separate request{reference}. They will contact you. Don’t wait for them if your card is at risk: '+FREEZE+'. You can follow it in Requests.')
 
 
 def urgent(summary: str) -> bool:

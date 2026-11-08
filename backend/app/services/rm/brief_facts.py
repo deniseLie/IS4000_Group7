@@ -202,6 +202,14 @@ def note_items(note: dict,source_id: str,summary: bool=True) -> list[dict]:
     return items
 
 
+# Profile values in plain words ("self_employed" -> "Self-employed", "SGD 20,000 and above / month" -> "SGD 20,000 and above a month").
+EMPLOYMENT={'self_employed':'Self-employed','employed':'Employed','unemployed':'Not employed','retired':'Retired','student':'Student'}
+LANGUAGES={'en':'English','zh':'Chinese','ms':'Malay','ta':'Tamil','th':'Thai'}
+def income(value: Any) -> str:
+    text=str(value).strip().replace(' / month',' a month').replace('/month',' a month')
+    return text[0].lower()+text[1:] if text[:2].lower()=='up' else text
+
+
 def withheld_gap(withheld: int) -> list[dict]:
     return [gap(f"{plural(withheld,'private note')} by other relationship managers {'is' if withheld==1 else 'are'} not available.",['notes-withheld'])] if withheld else []
 
@@ -212,9 +220,10 @@ def who_items(data: dict,products: bool=True) -> list[dict]:
     if rel.get('inherited') and rel.get('previous_advisor'):
         line+=f" Inherited from {rel['previous_advisor']}"+(f" on {rel['previous_to_text']}" if rel.get('previous_to_text') else '')+'.'
     items=[item(line,'record','rm',['profile'])]
-    details=[x for x in (p.get('employment_status') and f"employment: {words(p['employment_status'])}",
-        p.get('income_range') and f"income range: {p['income_range']}",p.get('preferred_language') and f"preferred language: {p['preferred_language']}") if x]
-    if details:items.append(item('; '.join(details).capitalize()+'.','record','rm',['profile']))
+    details=[x for x in (p.get('employment_status') and EMPLOYMENT.get(p['employment_status'],words(p['employment_status']).capitalize()),
+        p.get('income_range') and f"Income {income(p['income_range'])}",
+        p.get('preferred_language') and f"Prefers {LANGUAGES.get(str(p['preferred_language']).lower(),p['preferred_language'])}") if x]
+    if details:items.append(item('. '.join(details)+'.','record','rm',['profile']))
     if products:
         parts,ids=[],[]
         for key,label in (('accounts','account'),('cards','credit card'),('loans','loan')):

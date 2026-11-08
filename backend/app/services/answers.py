@@ -36,7 +36,7 @@ LOST_CARD=('If your card is lost or stolen, freeze it straight away: on Overview
     'recognise, report them in the chat: they go to the fraud team as urgent. You can unfreeze a card yourself only if you froze it and '
     'nothing is open with the fraud team or card operations. Never share your PIN, password, OTP, CVV or full card number.')
 HUMAN_SUPPORT=('When you are signed in, Talk to a person shows a short summary; approving it passes your question to your relationship '
-    'manager with a reference to follow in My requests. Charges you do not recognise and lost or stolen cards go to the fraud team as urgent '
+    'manager with a reference to follow in Requests. Charges you do not recognise and lost or stolen cards go to the fraud team as urgent '
     'instead. As a guest you can review, edit and copy a summary for your own use; copying does not send anything. For a real issue, contact '
     'your bank using its official app or website. The assistant cannot make payments, block or cancel cards, close accounts, dispute, refund '
     'or reverse charges, or change banking records.')

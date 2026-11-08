@@ -47,7 +47,7 @@ def test_default_reads_name_real_tool_arguments_and_entities():
     for spec in CHAT_SPECS.values():
         assert spec.intents, spec.name
         for intent,reads in spec.intents.items():
-            assert reads or (spec.role,intent)==('rm','help'), (spec.name,intent)  # RM help reads nothing
+            assert reads or (spec.role,intent) in {('rm','help'),('rm','follow_up')}, (spec.name,intent)  # RM help and follow-up read no records
             for read in reads:
                 params=inspect.signature(tools.TOOLS[read.tool]).parameters
                 assert set(read.entities)|set(read.fixed)<=set(params), (spec.name,intent,read.tool)

@@ -18,6 +18,8 @@ export default function Login({onBack}) {
 
     try {
       if (!supabase) throw new Error('Sign-in is not configured.');
+      // A new sign-in always opens a fresh assistant page; saved chats stay under Recent chats (a refresh still reopens).
+      try { sessionStorage.setItem('demobank.fresh-sign-in', '1'); } catch { /* storage blocked: the last chat reopens */ }
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       // CR1: one message for every sign-in failure, so it never reveals whether an account exists.
       if (error) setError("Incorrect email or password. Please try again.");
