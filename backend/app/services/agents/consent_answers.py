@@ -7,6 +7,8 @@
 2. "Delete the home loan topic" offers insight.delete for that topic as her RM sees it (Undo for 7 days on Data sharing).
 3. A meeting request (meeting_answers) gets optional "share until this request is answered" grants for what she does not
    share yet: switches in the offer, off unless she switches them on (0114). A typed yes sends the request only.
+4. "Stop recording my meetings" offers a consent_withdrawal request to the data protection team (0146): recording is on
+   under the meeting notice, so it is not a switch she can turn off; the team ends it with consent.withdraw_by_request.
 Each offer waits for her yes (services/offers.py). A question about sharing ("do you share …?", "how do I …?") is left to
 relationship/v7, which explains and never claims a change; a share with someone other than her RM is not ours to offer.
 """
@@ -30,6 +32,11 @@ STOP=re.compile(r"\b(?:stop|withdraw|revoke|end|turn\s+off|switch\s+off|no\s+lon
 SHARE=re.compile(r"\b(?:share|sharing)\b|\blet\s+(?:\w+\s+){0,3}?see\b|\b(?:turn|switch)\s+on\s+(?:\w+\s+){0,3}?sharing\b")
 QUESTION=re.compile(r"^\s*(?:do|does|did|is|are|was|were|what|who|why|how|when|which|has|have)\b")
 MEETING=re.compile(r'\b(?:meeting|meet|catch[\s-]?up|appointment)\b')  # meeting_answers drafts it, with the switches below
+# Meeting recording (0146): a stop word before "record", and either the verb form or what is recorded ("a record of" is not).
+STOP_RECORDING=re.compile(r"\b(?:stop|end|turn\s+off|switch\s+off|opt\s+out\s+of|withdraw\s+(?:my\s+)?consent\s+(?:to|for))\s+(?:\w+\s+){0,3}?record"
+    r"|\b(?:don'?t|do\s+not|never|no\s+longer)\s+(?!forget|miss|fail)(?:\w+\s+){0,3}?record|\bnot\s+(?:to\s+)?be\s+recorded\b"
+    r"|\b(?:don'?t|do\s+not)\s+want\s+(?:\w+\s+){0,5}?recorded\b")
+RECORDED=re.compile(r'\brecord(?:ing|ed)\b|\b(?:meetings?|calls?|appointments?|zoom|video)\b')
 RECIPIENT=re.compile(r"\b(?:with|let)\s+(?:my\s+|the\s+|our\s+)?(\w+)")
 RM_WORDS={'rm','relationship','banker','her','him','them','you'}
 DELETE=re.compile(r'\b(?:delete|remove|forget|erase)\b')
@@ -48,6 +55,10 @@ NO_RM='You don’t have a relationship manager recorded right now, so there is n
 NOT_SHARED='You are not sharing {label} with {rm}, so there is nothing to stop.'
 ALREADY='You already share {label} with {rm}. You can change what and until when on Data sharing.'
 NO_TOPIC='{rm} doesn’t see a {topic} insight from your chats, so there is nothing to delete.'
+RECORDING=('Your meetings with {rm} are recorded under the meeting notice, so this is not a switch on Data sharing. I can send a request '
+    'to our data protection team to stop recording them. They check what the bank must keep by law and reply within 10 business days; '
+    'minutes already approved are kept. Nothing changes until they reply.')
+RECORDING_REQUEST={'category':'consent_withdrawal','summary':'Please stop recording my meetings.','urgency':'normal','details':{'what':'Meeting recordings'}}
 CONSEQUENCE={'transaction_insights':'If you stop, {rm} stops seeing your transaction insights at once, and briefs for your meetings say you have not shared them.',
     'chat_topics':'If you stop, {rm} stops seeing insights picked up from your chats, and they are removed at once. Insights you shared yourself stay.'}
 
@@ -124,6 +135,7 @@ def wanted(question: str) -> Wanted|None:
     decide the offer."""
     text=(question or '').lower().replace('’',"'")
     deleting=bool(DELETE.search(text) and re.search(r'\btopics?\b',text) and any(rx.search(text) for rx in TOPIC_WORDS.values()))
+    if not deleting and STOP_RECORDING.search(text) and RECORDED.search(text):return Wanted(text,False,'meeting_recording',True)
     category=category_in(text)
     stopping=bool(category and STOP.search(text))
     sharing=bool(category and not stopping and SHARE.search(text) and not QUESTION.search(text) and not MEETING.search(UNTIL_MEETING.sub('',text)))
@@ -147,6 +159,13 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
                 summary=f'Delete the {talking_points.TOPIC_NAME[topic].lower()} topic from what {rm} sees')])
     envelope=await customer_data.get_consent_sharing_record(ctx)
     sharing=envelope.data
+    if category=='meeting_recording':  # a request to the data protection team, whoever her RM is (0146)
+        active=sharing.active(category)
+        body={'category':category,'advisor_id':str(sharing.rm.advisor_id) if sharing.rm else None,'grant_id':str(active.grant_id) if active else None,
+            'basis':active.basis if active else None}
+        return reply(task_id,RECORDING.format(rm=display(sharing.rm.name) if sharing.rm else 'your relationship manager'),envelope.as_of,body,
+            [OfferProposal(task_id=task_id,agent='relationship',type='ticket.create',target=json.loads(json.dumps(RECORDING_REQUEST)),
+                summary='Ask the data protection team to stop recording your meetings')])
     if sharing.rm is None:return reply(task_id,NO_RM,envelope.as_of,{'category':category,'rm':None})
     rm,active=display(sharing.rm.name),sharing.active(category)
     if not for_her_rm(text,rm):return None
