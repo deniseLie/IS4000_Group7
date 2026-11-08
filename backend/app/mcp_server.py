@@ -1,7 +1,7 @@
 """UBS Connect tools as a Model Context Protocol server (F21; `mcp` v2 is a core dependency).
 
 In-process: tools.call() sends every tool read to this server as a real MCP tools/call, through one shared client per
-event loop (opened once, kept until the loop ends). The server runs the tool inline in the caller's task, so the tool_call
+event loop (the API opens it at startup, core/lifecycle.tool_lifespan, so the first chat does not pay the SDK import). The server runs the tool inline in the caller's task, so the tool_call
 span, audit batch and trace are the caller's. The caller's identity is never a tool argument: each call registers its
 RequestContext under an opaque one-time key in CALLS and sends only the key in the request's `_meta`; the server looks it
 up per call and refuses a call without one. The server is read-only: writes (actions, offers, approved RM writes, uploads,
@@ -92,6 +92,14 @@ async def client() -> Any:
         ready: asyncio.Future[Any]=loop.create_future()
         held=_clients[loop]=(ready,loop.create_task(_hold(ready),context=contextvars.Context()))
     return await asyncio.shield(held[0])
+
+
+async def close() -> None:
+    """Close this event loop's client (API shutdown); a later call opens a new one."""
+    held=_clients.pop(asyncio.get_running_loop(),None)
+    if held is None:return
+    held[1].cancel()
+    await asyncio.gather(held[1],return_exceptions=True)
 
 
 async def call_in_process(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:

@@ -123,3 +123,14 @@ def test_compliance_tools_keep_owned_records_and_policy_through_mcp(local_data_a
             tools.call('my_compliance_case',{},ctx),return_exceptions=True)
         assert isinstance(denied,PolicyDenied) and allowed['data']['case_id']==case.data['case_id']
     asyncio.run(read())
+
+
+def test_the_api_opens_the_tool_client_at_startup_and_closes_it_at_shutdown() -> None:
+    from app.core.lifecycle import tool_lifespan
+    async def run():
+        loop=asyncio.get_running_loop()
+        async with tool_lifespan(None):
+            ready,holder=mcp_server._clients[loop]
+            assert ready.done() and not holder.done() and await mcp_server.client() is ready.result()
+        assert loop not in mcp_server._clients and holder.done()
+    asyncio.run(run())

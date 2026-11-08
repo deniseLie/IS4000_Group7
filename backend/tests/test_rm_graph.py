@@ -572,6 +572,7 @@ def test_each_rm_turn_traces_its_steps_with_ids_codes_and_counts_only(records, m
         read = one(gap, 'tool_call', tool=tool)
         assert (read['allowed'], read['shared'], read['category'], read['grant_id']) == (True, False, category, None)
     assert one(gap, 'agent')['status'] == 'ok'
+    assert {m['transport'] for spans in (fixed, loop, gap) for n, m in spans if n == 'tool_call'} == {'mcp'}  # every RM read is an MCP tools/call
     for spans in (fixed, loop, gap):
         for name, meta in spans:
             text = json.dumps(meta, ensure_ascii=False, default=str)
