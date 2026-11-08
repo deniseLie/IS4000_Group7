@@ -63,7 +63,7 @@ def test_free_text_tools_are_never_loop_tools():
     with pytest.raises(ValidationError,match='free-text loop tools'):
         AgentSpec.model_validate({**base,'loop_tools':base['loop_tools']|{'my_tickets'}})
     with pytest.raises(ValidationError,match='tools not in its spec'):
-        AgentSpec.model_validate({**base,'intents':{'x':[{'tool':'my_cards'}]}})
+        AgentSpec.model_validate({**base,'intents':{'x':[{'tool':'my_loans'}]}})
     with pytest.raises(ValidationError,match='not a listed intent'):
         AgentSpec.model_validate({**base,'intents':{'open':[{'tool':'my_rm'}]}})
     with pytest.raises(ValidationError,match='entity or a fixed value'):

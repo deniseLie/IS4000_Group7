@@ -48,7 +48,7 @@ def records(monkeypatch: pytest.MonkeyPatch):
     async def read(ctx):return found['sharing']
     async def mine(ctx):return found['topics']
     monkeypatch.setattr(customer_data,'get_consent_sharing_record',read)
-    monkeypatch.setattr(talking_points,'mine',mine)
+    monkeypatch.setattr(customer_data,'get_talking_points_record',mine)  # the tools read the data layer
     return found
 
 

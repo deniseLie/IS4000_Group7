@@ -96,7 +96,7 @@ def records_evidence(name: str, args: dict[str, Any], result: dict[str, Any], ct
         return [Evidence(id=s.cite, text=s.body, publisher=s.publisher, scope=s.scope, source=s.source()) for s in found]
     id_ = unique(name, taken)
     publisher = result.get('source') or RECORDS
-    body = {key: value for key, value in result.items() if key not in {'call_id', 'source', 'items', 'data'}}
+    body = {key: value for key, value in result.items() if key not in {'call_id', 'as_of', 'source', 'items', 'data'}}  # read metadata is not a record
     if args and name not in tools.external.TOOLS:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
     records = result.get('items', result.get('data', []))
     body['records'] = [readable(row) for row in records] if isinstance(records, list) else readable(records)

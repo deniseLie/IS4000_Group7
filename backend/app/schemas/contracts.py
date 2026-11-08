@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, model_v
 
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 urgent card > P2 regulatory deadline or RM handover > P3 everything else (P1 unused since 2b)
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
-AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
+# talking_points: the chat insights lane after a reply (services/talking_points.lane), allowed only her topic status.
+AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship', 'talking_points']
 # v5 agents (architecture §5.6.1): four client agents (Security removed in build plan 2b) and three RM agents (build
 # plan 3a). `compliance` and `relationship` keep their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still
 # calls the v4 responders under these names.

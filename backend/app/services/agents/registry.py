@@ -23,7 +23,9 @@ TOOLS: dict[AgentName, tuple[str, ...]] = {
     'relationship': ('kb.search','customer.get_profile','rm.get_assignment','rm.get_introduction','requests.list',
         'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create',
         'meeting_requests.list',  # agents/meeting_answers counts her open meeting requests before offering another (0106 allows 3)
-        'consent.sharing','insights.read'),  # consent v2 (6e): agents/consent_answers reads her cards and topics to offer a change
+        'consent.sharing','insights.read',  # consent v2 (6e): agents/consent_answers reads her cards and topics to offer a change
+        'tickets.list','customer.get_credit_cards'),  # rm_handover: her open requests and, for an urgent card request, last 4 and status
+    'talking_points': ('insights.status',),  # the chat insights lane (lanes 1 and 2) reads her topic status and state only
 }
 
 # Model-facing tool -> the permissions its service read checks. document_templates is fixed public configuration.
@@ -34,7 +36,9 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
     'travel_flags':('customer.get_credit_cards','customer.get_transactions'),'my_tickets':('tickets.list',),
     'my_compliance_case':('compliance.get_case',),'my_document_checks':('compliance.workspace',),
     'my_rm':('rm.get_assignment',),'my_appointments':('appointments.list',),'free_slots':('appointments.find_slots',),
-    'my_consents':('consent.records',),
+    'my_consents':('consent.records',),'my_requests':('requests.list',),'my_introduction':('rm.get_introduction',),
+    'my_consent_sharing':('consent.sharing',),'my_meeting_requests':('meeting_requests.list',),'my_talking_points':('insights.read',),
+    'my_topic_status':('insights.status',),'my_topic_state':('insights.status',),
     # RM reads: SQL checks the verified rm login and the book (rm.current_advisor, rm.in_book; 0089) and audits each read.
     **{name:() for name in ('rm_book','rm_match_clients','rm_client_profile','rm_meeting_notes','rm_shared_summary','rm_tickets',
         'rm_ticket','rm_review_status','rm_appointments','rm_availability','rm_followups','rm_handover_sources','rm_cash_events','rm_book_facts',
@@ -58,7 +62,8 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
     answers='The client\'s own accounts, cards, loans, investment portfolio (holdings, her time deposit and its maturity) and transactions: '
         'balances, limits, due dates, fees, payments, transfers and statements, and whether her savings stay above an amount after paying her card balances. '
         'Card-limit and statement-copy requests.',
-    tools={'my_accounts':ToolView(fields=frozenset({'type','number','currency','balance','status'})),
+    tools={'my_profile':ToolView(fields=frozenset({'name'})),  # the rules' retail snapshot (agents/retail_records)
+        'my_accounts':ToolView(fields=frozenset({'type','number','currency','balance','status'})),
         'my_cards':ToolView(fields=CARD_FIELDS),
         'my_loans':ToolView(fields=frozenset({'type','currency','principal','outstanding','next_payment','next_amount','status'})),
         'my_portfolio':ToolView(fields=frozenset({'asset_class','description','currency','market_value','mandate','as_of','portfolio_total'})),  # 0116
@@ -113,7 +118,20 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
             'grants.revoked_at','grants.expires_at'})),
         'my_tickets':ToolView(fields=frozenset({'reference','category_label','summary','urgency','status','owner_team','decided_by',
             'created_at','updated_at','target_at','overdue','last_update'}),max_rows=50,free_text=True),
-        'request_categories':ToolView(),'knowledge_search':KB},
+        'request_categories':ToolView(),'knowledge_search':KB,
+        # The rules' reads (agents/relationship_records, consent_answers, meeting_answers; rm_handover's urgent card summary).
+        'my_requests':ToolView(fields=frozenset({'who','what','urgency','deadline','country','currency','status','customer_action',
+            'created_at','updated_at'}),max_rows=50,free_text=True),
+        'my_introduction':ToolView(fields=frozenset({'current.name','current.role','current.team','current.started_on','previous.name',
+            'previous.ended_on','notice.cite','notice.heading','notice.body'})),
+        'my_consent_sharing':ToolView(fields=frozenset({'rm.name','categories.code','categories.label','categories.gated',
+            'categories.grant.basis','categories.grant.until','categories.grant.expires_at','categories.grant.scope',
+            'accounts.type','accounts.number','accounts.currency','next_meeting.starts_at','topic_areas','today'})),
+        'my_meeting_requests':ToolView(fields=frozenset({'purpose','topics','format','status','respond_by','preferred_times',
+            'decline_reason','created_at'}),max_rows=50,free_text=True),  # the purpose is her own words
+        'my_talking_points':ToolView(fields=frozenset({'rm_first_name','chat_topics','points.topic','points.stage','points.timeframe','points.origin',
+            'points.pending','points.on_hold','muted'})),
+        'my_cards':ToolView(fields=frozenset({'last4','status'}))},
     intents={'my_rm':(Read(tool='my_rm'),),
         'meeting_times':(Read(tool='my_rm'),Read(tool='free_slots',entities={'from_date':'from_date','to_date':'to_date'})),
         # 2a: a meeting is a request (purpose, topics, up to 3 free times) she confirms; the chat never books directly.

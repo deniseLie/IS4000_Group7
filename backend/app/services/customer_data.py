@@ -23,6 +23,8 @@ from app.schemas.document_uploads import DocumentLocation,DocumentUploadContext
 from app.schemas.document_inspection import DocumentObject
 from app.schemas.tickets import CustomerTicket,RequestCategory
 from app.schemas.meeting_requests import MeetingRequestRecord
+from app.schemas.talking_points import MyTalkingPoints,TopicStatus
+from app.schemas.talking_points_state import TopicState
 from app.services.authorization import require_permission
 
 STUB=False
@@ -51,6 +53,9 @@ DOCUMENT_UPLOAD_CONTEXT=TypeAdapter(CustomerEnvelope[DocumentUploadContext])
 DOCUMENT_LOCATION=TypeAdapter(CustomerEnvelope[DocumentLocation | None])
 DOCUMENT_OBJECT=TypeAdapter(CustomerEnvelope[DocumentObject | None])
 TICKETS=TypeAdapter(CustomerEnvelope[Annotated[list[CustomerTicket],Field(max_length=200)]])
+TALKING_POINTS=TypeAdapter(CustomerEnvelope[MyTalkingPoints])
+TOPIC_STATUS=TypeAdapter(CustomerEnvelope[TopicStatus])
+TOPIC_STATE=TypeAdapter(CustomerEnvelope[TopicState])
 CATEGORIES=TypeAdapter(Annotated[list[RequestCategory],Field(max_length=50)])
 
 
@@ -204,6 +209,21 @@ async def get_consent_sharing_record(ctx: RequestContext) -> CustomerEnvelope[Co
 
 async def get_consent_sharing(ctx: RequestContext) -> ToolResult:
     return _result(await get_consent_sharing_record(ctx))
+
+
+async def get_talking_points_record(ctx: RequestContext) -> CustomerEnvelope[MyTalkingPoints]:
+    """0108: her own points (list values, never her words), removed points, mutes and pause (Data sharing > Chat insights)."""
+    return await _read('insights.read','customer_read_talking_points',{},TALKING_POINTS,ctx)
+
+
+async def get_topic_status_record(ctx: RequestContext) -> CustomerEnvelope[TopicStatus]:
+    """0108: whether chat topics are shared, her RM, mutes, prompts and meeting topics (lane 1 v1 gate, lane 2 offer)."""
+    return await _read('insights.status','customer_topic_status',{},TOPIC_STATUS,ctx)
+
+
+async def get_topic_state_record(turn_id: UUID,ctx: RequestContext) -> CustomerEnvelope[TopicState]:
+    """0143: the status plus her current points and the topics active in this chat's last turns (lane 1 v2 input)."""
+    return await _read('insights.status','customer_topic_state',{'p_turn_id':str(turn_id)},TOPIC_STATE,ctx)
 
 
 async def get_consent_asks(ctx: RequestContext) -> ToolResult:

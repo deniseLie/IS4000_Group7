@@ -18,8 +18,8 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,Citation,OfferProposal,RequestContext
-from app.schemas.meeting_requests import FORMAT_LABEL,TOPIC_LABEL
-from app.services import customer_data
+from app.schemas.meeting_requests import FORMAT_LABEL,TOPIC_LABEL,MeetingRequestRecord
+from app.services import tools
 from app.services.privacy import redact
 from app.services.typos import normalise
 
@@ -211,7 +211,7 @@ def display(name: str) -> str:return re.sub(r'\s*\(DEMO\)\s*$','',name)
 
 
 async def open_requests(ctx: RequestContext) -> int:
-    envelope=await customer_data.get_meeting_request_records(ctx)
+    envelope=await tools.snapshot('my_meeting_requests',{},ctx,list[MeetingRequestRecord])
     return sum(row.status in ('requested','countered') for row in envelope.data)
 
 

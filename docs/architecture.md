@@ -175,7 +175,7 @@ Pydantic models in `backend/app/schemas/contracts.py` (shared) and `schemas/even
   "agent": "guide|accounts|compliance|relationship|rm_client|rm_requests|rm_calendar|<v4 name>|null",
   "locale": "en-SG", "received_at": "iso8601" }
 ```
-`agent` is set only by backend dispatch and never read from model output; Authorisation uses it for the spec or allow-list. The v4 names (`retail`, `fraud`, `compliance`, `document`, `relationship`) remain valid because the rules still call the v4 responders under them (§5.6.2).
+`agent` is set only by backend dispatch and never read from model output; Authorisation uses it for the spec or allow-list. The v4 names (`retail`, `fraud`, `compliance`, `document`, `relationship`) remain valid because the rules still call the v4 responders under them (§5.6.2). `talking_points` (8 Nov 2026, additive) is the chat insights lane's context (`talking_points.lane`): its allow-list (`registry.TOOLS`) is her topic status only, read through `my_topic_status` and `my_topic_state`.
 
 **RiskAssessment** (Input Guardrail → Orchestrator)
 ```json

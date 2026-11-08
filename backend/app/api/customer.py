@@ -47,7 +47,7 @@ async def talking_point_list(request: Request,ctx: RequestContext=Depends(get_ct
     (TalkingPoint.line) and pending during the 24-hour hold, her own quotes (never sent to the RM side), her muted topics
     and any pause. Delete, mute and resume are automatic actions (POST /commands)."""
     async def read() -> ToolResult:
-        envelope=await talking_points.mine(ctx)
+        envelope=await customer_data.get_talking_points_record(ctx)
         return ToolResult(data=talking_points.points_with_lines(envelope)['data'],call_id=envelope.call_id,as_of=envelope.as_of)
     return await read_result(read,request,ctx,'insights.read')
 

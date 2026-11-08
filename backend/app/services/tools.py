@@ -18,7 +18,8 @@ from pydantic import JsonValue
 from app.core import data_api
 from app.core.config import settings
 from app.core.observability import span
-from app.schemas.contracts import RequestContext,ToolView
+from app.schemas.contracts import RequestContext,ToolResult,ToolView
+from app.schemas.customer_data import CustomerEnvelope
 from app.schemas.knowledge import KnowledgeQuery
 from app.schemas.meeting_agents import MeetingAccess
 from app.schemas.relationship import SlotsQuery
@@ -64,6 +65,12 @@ async def knowledge_article(article_id: str) -> dict[str,Any]:
     return {'items':[item.model_dump(mode='json') for item in sections]}
 
 
+def _out(result: ToolResult,key: str='items') -> dict[str,Any]:
+    """A Customer Data read as a tool result: its records under `items` (a list) or `data` (one record), with the read's
+    call_id and as_of, so a rule cites the same audited read the model would."""
+    return {key:result.data,'call_id':str(result.call_id),'as_of':result.as_of.isoformat()}
+
+
 async def request_categories() -> dict[str,Any]:
     """List the request categories, what each needs and which team decides."""
     return {'items':[item.model_dump(mode='json') for item in await customer_data.get_categories(_ctx())]}
@@ -71,40 +78,34 @@ async def request_categories() -> dict[str,Any]:
 
 async def my_tickets() -> dict[str,Any]:
     """The signed-in customer's own requests with plain-language status (no internal notes)."""
-    result=await customer_data.get_tickets(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_tickets(_ctx()))
 
 
 async def my_cards() -> dict[str,Any]:
     """The signed-in customer's own cards, masked to the last four digits."""
-    result=await customer_data.get_credit_cards(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_credit_cards(_ctx()))
 
 
 async def my_transactions(status: str | None=None,days: int | None=None) -> dict[str,Any]:
-    """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones, optionally the last `days` days."""
+    """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones, optionally the last `days` days (to today)."""
     ctx=_ctx()
     since=today(ctx)-timedelta(days=days) if days else None
-    result=await customer_data.get_transactions(ctx,since,None,{'status':status} if status else None)
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_transactions(ctx,since,today(ctx) if days else None,{'status':status} if status else None))
 
 
 async def my_profile() -> dict[str,Any]:
     """The signed-in customer's own profile."""
-    result=await customer_data.get_profile(_ctx())
-    return {'data':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_profile(_ctx()),'data')
 
 
 async def my_accounts() -> dict[str,Any]:
     """The signed-in customer's own bank accounts, numbers masked to the last four digits."""
-    result=await customer_data.get_accounts(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_accounts(_ctx()))
 
 
 async def my_loans() -> dict[str,Any]:
     """The signed-in customer's own loans and next payments."""
-    result=await customer_data.get_loans(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_loans(_ctx()))
 
 
 async def my_portfolio() -> dict[str,Any]:
@@ -112,7 +113,7 @@ async def my_portfolio() -> dict[str,Any]:
     result=await customer_data.get_portfolio(_ctx())
     p=result.data
     items=[{**h,'mandate':p['mandate'],'as_of':p['as_of'],'portfolio_total':p['total_value']} for h in p['holdings']] if p else []
-    return {'items':items,'call_id':str(result.call_id)}
+    return {'items':items,'call_id':str(result.call_id),'as_of':result.as_of.isoformat()}
 
 
 async def travel_flags() -> dict[str,Any]:
@@ -124,20 +125,53 @@ async def travel_flags() -> dict[str,Any]:
 
 async def my_rm() -> dict[str,Any]:
     """The signed-in customer's current and previous relationship manager."""
-    result=await customer_data.get_rm_assignment(_ctx())
-    return {'data':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_rm_assignment(_ctx()),'data')
 
 
 async def my_appointments() -> dict[str,Any]:
     """The signed-in customer's held, confirmed and past appointments with her relationship manager."""
-    result=await customer_data.get_appointments(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_appointments(_ctx()))
 
 
 async def my_consents() -> dict[str,Any]:
     """The signed-in customer's consent requests and grants (purpose, recipient, status, expiry)."""
-    result=await customer_data.get_consent_records(_ctx())
-    return {'data':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_consent_records(_ctx()),'data')
+
+
+async def my_requests() -> dict[str,JsonValue]:
+    """The signed-in customer's own requests to her relationship manager (who, what, urgency, deadline, status)."""
+    return (await customer_data.get_request_records(_ctx())).model_dump(mode='json')
+
+
+async def my_introduction() -> dict[str,JsonValue]:
+    """Her current and previous relationship manager with the approved wording for a change of RM (never the reason code)."""
+    return (await customer_data.get_introduction_record(_ctx())).model_dump(mode='json')
+
+
+async def my_consent_sharing() -> dict[str,JsonValue]:
+    """What the signed-in customer shares with her relationship manager, per category (consent v2), with her open accounts,
+    her RM and next meeting."""
+    return (await customer_data.get_consent_sharing_record(_ctx())).model_dump(mode='json')
+
+
+async def my_meeting_requests() -> dict[str,JsonValue]:
+    """The signed-in customer's own meeting requests to her relationship manager, newest first (the purpose is her own words)."""
+    return (await customer_data.get_meeting_request_records(_ctx())).model_dump(mode='json')
+
+
+async def my_talking_points() -> dict[str,JsonValue]:
+    """Her client chat insights as list values (never her words), with removed points, mutes and pause (Data sharing)."""
+    return (await customer_data.get_talking_points_record(_ctx())).model_dump(mode='json')
+
+
+async def my_topic_status() -> dict[str,JsonValue]:
+    """Her chat-insights status: whether chat topics are shared, her RM, mutes, recent prompts and meeting topics."""
+    return (await customer_data.get_topic_status_record(_ctx())).model_dump(mode='json')
+
+
+async def my_topic_state(turn_id: UUID) -> dict[str,JsonValue]:
+    """Her chat-insights status with her current points and the topics active in this chat's last turns before `turn_id`."""
+    return (await customer_data.get_topic_state_record(turn_id,_ctx())).model_dump(mode='json')
 
 
 async def document_templates_guide() -> dict[str,Any]:
@@ -259,6 +293,8 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
     'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'my_portfolio':my_portfolio,'travel_flags':travel_flags,
     'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
+    'my_requests':my_requests,'my_introduction':my_introduction,'my_consent_sharing':my_consent_sharing,'my_meeting_requests':my_meeting_requests,
+    'my_talking_points':my_talking_points,'my_topic_status':my_topic_status,'my_topic_state':my_topic_state,
     **external.TOOLS,  # public data, codes only; an agent may call those named in its spec's `external`
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
@@ -352,6 +388,18 @@ async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,An
         finally:TOOL_CTX.reset(token)
         facts.update(result_facts(name,args,result))
     return shaped(result,view) if view is not None else result
+
+
+def envelope(result: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
+    """A record tool's result as the snapshot a rule validates (customer, call_id, as_of, data). The tool already checked
+    the customer scope (customer_data._snapshot); a result without its own customer_id is the caller's."""
+    return {'customer_id':result.get('customer_id',ctx.principal.customer_id),'call_id':result['call_id'],'as_of':result['as_of'],
+        'data':result['items'] if 'items' in result else result['data']}
+
+
+async def snapshot(name: str,args: dict[str,Any],ctx: RequestContext,model: Any) -> CustomerEnvelope:
+    """One record tool through call(), validated as CustomerEnvelope[model] for the rule that answers from it."""
+    return CustomerEnvelope[model].model_validate(envelope(await call(name,args,ctx),ctx))
 
 
 def result_facts(name: str,args: dict[str,Any],result: Any) -> dict[str,JsonValue]:

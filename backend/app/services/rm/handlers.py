@@ -34,7 +34,7 @@ from difflib import SequenceMatcher
 from typing import Any
 from app.schemas.contracts import RequestContext
 from app.schemas.rm import BOOK_WIDE,NEEDS_CLIENT,RmAssistantRequest
-from app.services import customer_data,llm_gateway,prompts,tools
+from app.services import llm_gateway,prompts,tools
 from app.services.agents import registry,runner
 from app.services.authorization import PolicyDenied
 from app.services.privacy import redact
@@ -756,8 +756,7 @@ async def h_draft(t: Turn,plan,client_id):
 
 
 async def _categories(t: Turn) -> list[dict]:
-    rows=await customer_data.get_categories(t.ctx)
-    return [r.model_dump(mode='json') for r in rows if r.customer_raisable]
+    return [r for r in (await t.read('request_categories',{}))['items'] if r.get('customer_raisable')]
 
 
 def documentation_reply(t: Turn,data: dict,bundle: ev.Bundle,sources: list[str],client_id: int,categories: list[dict],profile: dict,
