@@ -16,8 +16,7 @@ Let-your-RM-know offer on a case labelled with no topic is a false prompt.
 
 Cases in talking_points_cases.json are synthetic and labelled by hand: `expect` maps each topic that should be recorded
 to its stage (empty: nothing should be stored). Groups: positive, multi, previous (her earlier message as context),
-negative, sensitive, care (job loss, debt, bereavement: since 0145 no pause, so they reach the model like any message and
-the prompt and the sensitive-word filter must keep them out) and injection.
+negative, sensitive and injection. (The care group, C01-C04 and CV09, was removed with the care pause in 0145.)
 
 Conversation cases (talking_points_conversations.json) are a starting state (`start`, `muted`), her messages in one or
 more chats (`chats`: a new chat starts with no active topic) and the expected final state: `expect` per topic (stage,

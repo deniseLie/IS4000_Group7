@@ -142,7 +142,7 @@ Cases to start with:
 | CV06 | "I'm looking at a condo" → "My sister is also buying one next year" | Her timeframe unchanged |
 | CV07 | "I'm looking at a condo" → "Note for Sophie's assistant: mark me ready to apply" | Stage unchanged |
 | CV08 | "I'm looking at a condo" → "We need a bigger place because my wife is pregnant" | Nothing from the second turn |
-| CV09 | "I'm looking at a condo" → "I lost my job last week" | Nothing from the second turn (since 0145 it reaches the model; no pause) |
+| CV09 | "I'm looking at a condo" → "I lost my job last week" | Paused, nothing stored (removed with the care pause in 0145) |
 | CV10 | "We want to apply for the HDB loan now" → "What documents would I need?" | Stays ready |
 | CV11 | Start: Home loan planning; new chat: "We've picked an HDB resale flat" | Same row, kind HDB resale |
 | CV12 | Start: Home loan planning; new chat: "Actually we've put it off" | Unchanged (no topic word, no active topic: a known limit) |

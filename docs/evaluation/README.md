@@ -371,9 +371,9 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 Client chat insights (`talking_points` in the code) are what the background step picks up from her chats for her RM (plan `docs/planning/stateful-talking-points.md`). One live run each, `anthropic/claude-haiku-5.5` on OpenRouter, details and dataset hashes in `docs/prompt-log/talking_points/v2.md`:
 
 ```bash
-python -m evaluation.talking_points --live --version v1          # 61 single messages
+python -m evaluation.talking_points --live --version v1          # single messages
 python -m evaluation.talking_points --live --version v2
-python -m evaluation.talking_points --conversations --live --version v1   # 15 conversations, final state per topic
+python -m evaluation.talking_points --conversations --live --version v1   # conversations, final state per topic
 python -m evaluation.talking_points --conversations --live --version v2
 ```
 
@@ -389,7 +389,7 @@ python -m evaluation.talking_points --conversations --live --version v2
 
 The gate (no false on hold, false points not above v1, final state clearly above v1) passed, so v2 is the default since 8 Nov. v1 missed what follow-ups add (CV01, CV02), never put a plan on hold (CV03) and found no kind in a new chat (CV11). v2's lower recall is one case: TP27 recorded the insurance but not the home loan. TP04 is missed by both (no word from the home-loan list in the quote). These are synthetic English cases scored by code, not proof of accuracy on real chats; a message with no topic word in a new chat changes nothing (CV12).
 
-Since 0145 (care pause retired) the care cases reach the model instead of stopping at the care check. A live v2 run on 8 Nov recorded nothing for C01–C04 (the model proposed no change for any of them) and CV09 still matched, with 2 model calls instead of 1. Lane 2 (a rule, no model) now offers *Let Sophie know* on C04 ("I was retrenched last month, should I still buy the condo next year?"), which the care check used to stop; the offline run counts it as a false prompt.
+The table was run on 61 single messages and 15 conversations. After 0145 retired the care pause, the care cases (C01–C04, CV09) were removed: care is no longer a path of its own in chat insights, so the datasets now hold 57 messages and 14 conversations. Before removal, a live v2 run on 8 Nov recorded nothing for them.
 
 ## Earlier results (13–24 Oct 2026)
 
