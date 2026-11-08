@@ -23,7 +23,7 @@ from tests.test_orchestrator_graph import context
 from tests.test_runner import CARD,TXN
 
 SERVICES=Path(__file__).resolve().parents[1]/'app'/'services'
-READERS={'customer_data','kb','external'}  # the read services behind the tools; their error classes and types may be imported
+READERS={'customer_data','kb'}  # the read services behind the tools; their error classes and types may be imported
 RPC_READS=('customer_read_','customer_topic_','kb_search','kb_hybrid_search','kb_get_')  # the read RPCs behind the tools
 # The data layer behind tool functions (only tools.py calls their reads): fraud_records backs tools.travel_flags, rm/records
 # the rm_* tools. agents/fraud.py is retired with the Security agent (build plan 2b): its respond() runs only in tests.
@@ -40,7 +40,7 @@ HOPS={'to_thread','run_in_threadpool'}
 
 
 def reads(path: Path) -> list[str]:
-    """What a module takes from customer_data, kb or external other than a class (an error or a type), and the read RPC
+    """What a module takes from customer_data or kb other than a class (an error or a type), and the read RPC
     names it spells out."""
     tree=ast.parse(path.read_text(encoding='utf-8'))
     aliases,used=set(),[]
@@ -204,12 +204,12 @@ def test_agent_read_keeps_the_connector_s_refusals(monkeypatch: pytest.MonkeyPat
 
 def test_the_guard_sees_a_direct_read(tmp_path: Path) -> None:
     sample=tmp_path/'sample.py'
-    sample.write_text('from app.services import customer_data,kb\nfrom app.services.external import ExternalError,fx_rate\n'
+    sample.write_text('from app.services import customer_data,kb\nfrom app.services.customer_data import CustomerDataIntegrityError,get_credit_cards\n'
         'async def f(ctx,db):\n    await customer_data.get_tickets(ctx)\n    await kb.search(None,ctx,db)\n'
         "    db.rpc('customer_read_tickets',{})\n    raise customer_data.CustomerDataIntegrityError('x')\n",encoding='utf-8')
     import tests.test_tool_boundary as guard
     real,guard.SERVICES=guard.SERVICES,tmp_path  # the fraud_records rule names a module by its path under app/services
-    try:assert sorted(reads(sample))==['app.services.external.fx_rate','customer_data.get_tickets','customer_read_tickets','kb.search']
+    try:assert sorted(reads(sample))==['app.services.customer_data.get_credit_cards','customer_data.get_tickets','customer_read_tickets','kb.search']
     finally:guard.SERVICES=real
 
 

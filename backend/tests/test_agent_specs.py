@@ -167,7 +167,7 @@ def test_no_loop_reaches_a_consent_gated_or_write_tool():
     for spec in CHAT_SPECS.values():
         assert not spec.loop_tools&registry.CONSENT_GATED, spec.name
         assert not any(t.startswith(WRITES) or t in KNOWN_TOOLS-set(TOOL_PERMISSION) for t in spec.loop_tools), spec.name
-        assert spec.loop_tools<=set(tools.TOOLS)|spec.external
+        assert spec.loop_tools<=set(tools.TOOLS)
     assert not set(CHAT_SPECS['rm_requests'].tools)&registry.CONSENT_GATED  # the Requests agent never sees consent-gated data
     assert all(registry.RM_OWNER[t]=='rm_client' for t in registry.CONSENT_GATED)
     assert not any(spec.offers for spec in registry.RM_SPECS.values())  # RM cards are approved through the /rm routes, never offers

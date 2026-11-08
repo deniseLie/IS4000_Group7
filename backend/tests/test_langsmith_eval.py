@@ -117,13 +117,6 @@ def test_dependency_checks():
     assert found['exports']['comment']=='not passed: accounts>relationship:due_dates'
     assert 'waves' not in scores(evaluators.checks(out(),{'trajectory_v5':t}))  # an output without dependency facts (v4 runs)
 
-def test_the_external_fault_fails_the_public_call(monkeypatch):
-    from app.services import external
-    with targets.inject('external_down') as applied:
-        assert applied
-        with pytest.raises(external.ExternalError):asyncio.run(external.public_holidays('JP',None))
-
-
 def test_the_consent_fault_reads_the_grant_as_revoked(monkeypatch):
     async def rpc(name,params,ctx,tool):
         shared={'consent_active':True,'shared':[{'content':'note'}]}

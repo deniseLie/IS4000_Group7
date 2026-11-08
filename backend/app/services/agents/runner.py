@@ -24,7 +24,6 @@ from app.schemas.knowledge import KnowledgeSection
 from app.core import data_api
 from app.services import audit, customer_data, kb, llm_gateway, prompts, tools
 from app.services.authorization import PolicyDenied
-from app.services.external import ExternalError
 from app.services.llm_gateway import LLMError
 from app.services.agents import derived, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
@@ -33,7 +32,7 @@ PROMPTED = frozenset({'guide', 'accounts'})  # agents with their own runner prom
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
 RECORDS = 'UBS Connect records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_portfolio': 'Your investments', 'my_transactions': 'Your transactions',
-    'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
+    'request_categories': 'Request types'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
 # services/agents/rules.py registers them: (spec, task, ctx, history, language, inputs). inputs are the upstream exports
 # this agent imports (wave 2); a rule's own exports go out only with an `ok` answer (rules.out), as on the model path.
@@ -97,12 +96,11 @@ def records_evidence(name: str, args: dict[str, Any], result: dict[str, Any], ct
     id_ = unique(name, taken)
     publisher = result.get('source') or RECORDS
     body = {key: value for key, value in result.items() if key not in {'call_id', 'as_of', 'source', 'items', 'data'}}  # read metadata is not a record
-    if args and name not in tools.external.TOOLS:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
+    if args:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
     records = result.get('items', result.get('data', []))
     body['records'] = [readable(row) for row in records] if isinstance(records, list) else readable(records)
-    scope = (f'An indicative public reference from {publisher}; not UBS Connect data or a rate UBS Connect applies.' if name in tools.external.TOOLS
-        else 'The signed-in customer\'s own records from one audited read (read_with gives its arguments); today in Singapore is '
-            f'{tools.today(ctx).isoformat()}. An empty or short list does not prove that other records do not exist.')
+    scope = ('The signed-in customer\'s own records from one audited read (read_with gives its arguments); today in Singapore is '
+        f'{tools.today(ctx).isoformat()}. An empty or short list does not prove that other records do not exist.')
     return [Evidence(id=id_, text=json.dumps(body, ensure_ascii=False, default=str), publisher=publisher, scope=scope,
         source=Source(id=id_, title=TITLES.get(name, 'UBS Connect records'), url=None, version=tools.today(ctx).isoformat(), publisher=publisher))]
 
@@ -116,9 +114,6 @@ async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[
         log_event('agent_read', agent=ctx.agent, tool=name, outcome='limit')
         return [note(unique(f'{name}-limit', taken), f'This read was not run because it asked for more than is allowed ({error}).')]
     except PolicyDenied:raise  # a tool outside the spec is a runner or spec bug, never a note
-    except ExternalError as error:
-        log_event('agent_read', agent=ctx.agent, tool=name, outcome='external_'+error.reason)
-        return [note(unique(f'{name}-unavailable', taken), 'This public reference could not be checked right now.')]
     except Exception as error:
         log_event('agent_read', agent=ctx.agent, tool=name, outcome='error', error_type=type(error).__name__)
         return [note(unique(f'{name}-unavailable', taken), 'These records could not be read right now.')]

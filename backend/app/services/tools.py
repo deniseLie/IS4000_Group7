@@ -27,7 +27,7 @@ from app.schemas.customer_data import CustomerEnvelope
 from app.schemas.knowledge import KnowledgeQuery
 from app.schemas.meeting_agents import MeetingAccess
 from app.schemas.relationship import SlotsQuery
-from app.services import customer_data,document_templates,external,kb,prechecks
+from app.services import customer_data,document_templates,kb,prechecks
 from app.services.agents import fraud_records,registry
 from app.services.authorization import PolicyDenied,require_permission,require_tool
 from app.services.rm import records as rm_records
@@ -300,7 +300,6 @@ TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':know
     'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
     'my_requests':my_requests,'my_introduction':my_introduction,'my_consent_sharing':my_consent_sharing,'my_meeting_requests':my_meeting_requests,
     'my_talking_points':my_talking_points,'my_topic_status':my_topic_status,'my_topic_state':my_topic_state,
-    **external.TOOLS,  # public data, codes only; an agent may call those named in its spec's `external`
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
