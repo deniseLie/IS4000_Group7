@@ -30,7 +30,7 @@ backend/
       agents/       the v5 agent specs (registry.py: guide, accounts, compliance, relationship and the three RM agents),
                     the runner, rules and the v4 responders they call (retail, compliance, document, relationship)
       rm/           the RM assistant graph, handlers and priority score
-      meetings/     the meeting lifecycle (minutes graph, worker, transcripts; meeting team)
+      meetings/     the meeting lifecycle (lifecycle graph, brief/pack/minutes agents, worker, Zoom; meeting team)
       actions/      every change goes through here (handoff, ticket, meeting, upload, answer…)
     prompts/        prompts by agent and version (never edit a released version)
     schemas/        Pydantic models

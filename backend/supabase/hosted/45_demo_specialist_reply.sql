@@ -1,8 +1,8 @@
 -- Storyline scene 4 (demo only, synthetic data): the bank teams reply to Sophie's hand-offs.
 -- The specialist and compliance teams work tickets in the bank's own case tools, which are outside the prototype
 -- (architecture box 19, "Bank teams"). This script stands in for them: it records one public reply on Michelle's
--- latest open financing-specialist and compliance-question tickets. Michelle sees the note in My requests and her
--- Inbox; Sophie sees it in Ticket inbox; the next brief lists the request with its new status.
+-- latest open financing-specialist and compliance-question tickets. Michelle sees the note in My requests (a status
+-- change sends no Inbox notice); Sophie sees it in Ticket inbox; the next brief lists the request with its new status.
 -- Run in the SQL Editor after Sophie has sent the hand-offs in scene 3. Safe to run again: closed tickets are skipped.
 do $$
 declare t record;replies int:=0;
