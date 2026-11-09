@@ -791,6 +791,8 @@ a,.source-link{color:#DA0000}a:hover,.source-link:hover{color:var(--red-dark)}
 .ib-list li.unread .ib-state{color:var(--red);font-weight:500}.ib-state .dot{width:5px;height:5px}
 .ib-list h3{margin:10px 0 0;font-size:16px;font-weight:600}
 .ib-list p{color:#3F413F}
+.ib-zoom-link{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px;padding:6px 0;min-height:32px;color:var(--red-dark);font-weight:650;text-decoration:underline;text-underline-offset:3px}
+.ib-zoom-link:hover{color:var(--ink)}
 .ib-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #EEEDE7}
 .ib-foot code{font-size:11px;color:var(--muted);background:none}
 .ib-link{border:0;background:none;padding:6px 4px;font-size:13px;color:var(--ink);font-weight:500}.ib-link.strong{color:var(--red);font-weight:600}.ib-link:hover{color:var(--red-dark);text-decoration:underline}
@@ -2553,3 +2555,14 @@ button.cell.past:disabled{opacity:.35}
 .rm-same .bank-chat-logout{justify-self:start}
 .rm-panel-actions{display:flex;flex-wrap:wrap;gap:8px}
 .rm-inbox-pick .rmw-why{display:block;margin-top:2px}
+
+.meeting-recap{margin:18px 0;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#f7f9fa)}
+.meeting-recap-head{display:flex;align-items:flex-start;gap:12px}
+.meeting-recap-icon{display:grid;place-items:center;flex:0 0 36px;height:36px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--red-dark)}
+.meeting-recap-head h3,.meeting-recap-preview h4{margin:0}
+.meeting-recap-head .rm-small{margin:4px 0 0}
+.meeting-recap-copy{margin:12px 0 0;white-space:pre-wrap;line-height:1.6}
+.meeting-recap-preview{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.meeting-recap-preview .rm-small{margin:10px 0 0}
+.meeting-recap-actions{margin-top:14px}
+.meeting-recap-actions button{display:inline-flex;align-items:center;gap:8px}

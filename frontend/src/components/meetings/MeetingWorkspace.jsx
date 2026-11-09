@@ -6,6 +6,7 @@ import MeetingRecovery from './MeetingRecovery';
 import MeetingPreparation from './MeetingPreparation';
 import MeetingPack from './MeetingPack';
 import MeetingMinutesReview from './MeetingMinutesReview';
+import MeetingRecap from './MeetingRecap';
 import {MEETING_STEPS,approvalFor,checkedWorkspace,downloadMeetingPdf,guessRoles,meetingRequest,meetingStep,minutesAsNotes,notesCues,speakerList,stepState,transcriptSpeakers,transcriptSummary,clientWords,meetingTitle,stageWords,topicName} from '../../lib/meetingLifecycle';
 
 // RM only, loaded on demand so the client app never loads the RM assistant code.
@@ -235,11 +236,12 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk})
             return <div className="meeting-send-bar meeting-send-sticky"><span><strong>{n} of {total} selected</strong> <span className="muted">· each is saved and audited as its own change{total===0?' · everything here was sent':''}</span></span>
               <button className="primary-button" data-testid="meeting-send-followup" disabled={busy||!n||badEdit} onClick={sendFollowUp}>Send {n} item{n===1?'':'s'}</button></div>;})()}
         </>}
-        {data.recap&&<button className="bank-chat-logout" data-testid="meeting-download-recap" disabled={busy} onClick={()=>download(`/recap/pdf?document_id=${data.recap.document_id}&version=${data.recap.version}&content_hash=${data.recap.content_hash}`,`meeting-recap-v${data.recap.version}.pdf`)}>Download approved recap PDF</button>}
+        <MeetingRecap published={data.recap} sharedText={w.shared_recap} draft={null} busy={busy}
+          onDownload={()=>download(`/recap/pdf?document_id=${data.recap.document_id}&version=${data.recap.version}&content_hash=${data.recap.content_hash}`,`meeting-recap-v${data.recap.version}.pdf`)} onShare={null}/>
         {(w.followups.length>0||w.shared_recap||!isRm)&&<section className="rmw-card meeting-tracker"><h3>After sending</h3>
           <h4>Follow-up tracker</h4>{!w.followups.length&&<p className="page-empty">No approved follow-ups yet.</p>}{w.followups.map(item=><div className="meeting-action-item" key={item.followup_id}><p><strong>{item.owner==='rm'?'You':client||'Client'}:</strong> {item.text}</p><p className="rm-small">{item.status}{item.due_on?` · due ${item.due_on}`:''}</p>
           {item.status==='open'&&item.owner===(isRm?'rm':'client')&&<form onSubmit={e=>{e.preventDefault();post(`/followups/${item.followup_id}/complete`,{evidence:completion[item.followup_id],command_id:command(`complete:${item.followup_id}:${completion[item.followup_id]}`)},'Your follow-up was completed.');}}><label className="form-field">Completion evidence<input data-testid={`meeting-evidence-${item.followup_id}`} value={completion[item.followup_id]||''} maxLength={500} required disabled={busy} onChange={e=>setCompletion(values=>({...values,[item.followup_id]:e.target.value}))}/></label><button className="bank-chat-logout" data-testid={`meeting-complete-${item.followup_id}`} disabled={busy}>Mark my action complete</button></form>}</div>)}
-          <h4>Shared recap</h4><p data-testid="meeting-shared-recap">{w.shared_recap||'No recap has been shared yet.'}</p></section>}
+        </section>}
       </div>}
       {shown>0&&!w&&<p className="rmw-warn">Open the meeting in step 1 first.</p>}
       </div>

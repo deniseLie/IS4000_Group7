@@ -15,6 +15,15 @@ export function parseNotification(value) {
     template_version:value.template_version,locale:value.locale,priority:value.priority,title:value.title,body:value.body,is_service:value.is_service,
     read_at:value.read_at===null?null:timestamp(value.read_at),created_at:timestamp(value.created_at)};
 }
+export function zoomNoticeLink(item) {
+  if(item.template_key!=='meeting.zoom_ready')return null;
+  const link=item.body.match(/\bJoin Zoom: (https:\/\/[^\s<>]+?)(?:\.(?=\s|$)|(?=\s|$))/);
+  if(!link)return null;
+  const href=link[1];
+  if(!/^https:\/\/(?:[a-z0-9-]+\.)*zoom\.us\/j\/\d{1,16}(?:\?[^\s<>#]*)?$/i.test(href))return null;
+  const body=[item.body.slice(0,link.index).trim(),item.body.slice(link.index+link[0].length).trim()].filter(Boolean).join(' ');
+  return {href,body};
+}
 export function parseInbox(value) {
   if(!value||!Number.isSafeInteger(value.customer_id)||value.customer_id<=0||!Array.isArray(value.items)||value.items.length>50)throw invalid();
   const items=value.items.map(parseNotification);
