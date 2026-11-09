@@ -47,7 +47,7 @@ def test_default_reads_name_real_tool_arguments_and_entities():
     for spec in CHAT_SPECS.values():
         assert spec.intents, spec.name
         for intent,reads in spec.intents.items():
-            assert reads or (spec.role,intent)==('rm','help'), (spec.name,intent)  # RM help reads nothing
+            assert reads or (spec.role,intent) in {('rm','help'),('rm','follow_up')}, (spec.name,intent)  # RM help and follow-up read no records
             for read in reads:
                 params=inspect.signature(tools.TOOLS[read.tool]).parameters
                 assert set(read.entities)|set(read.fixed)<=set(params), (spec.name,intent,read.tool)
@@ -63,7 +63,7 @@ def test_free_text_tools_are_never_loop_tools():
     with pytest.raises(ValidationError,match='free-text loop tools'):
         AgentSpec.model_validate({**base,'loop_tools':base['loop_tools']|{'my_tickets'}})
     with pytest.raises(ValidationError,match='tools not in its spec'):
-        AgentSpec.model_validate({**base,'intents':{'x':[{'tool':'my_cards'}]}})
+        AgentSpec.model_validate({**base,'intents':{'x':[{'tool':'my_loans'}]}})
     with pytest.raises(ValidationError,match='not a listed intent'):
         AgentSpec.model_validate({**base,'intents':{'open':[{'tool':'my_rm'}]}})
     with pytest.raises(ValidationError,match='entity or a fixed value'):
@@ -160,14 +160,15 @@ def test_every_rm_data_tool_has_exactly_one_owning_agent():
         assert all(registry.RM_OWNER[t]!=name for t in borrowed)
     assert set(registry.BORROWED)=={'rm_requests'}  # the Client and Calendar agents read only their own class
     assert set(rm['rm_calendar'].tools)=={'rm_appointments','rm_availability','rm_meeting_requests'}  # never client financial data
-    assert all(rm[name].loop_tools<={t for t in rm[name].tools if registry.RM_OWNER.get(t)==name} for name in rm)  # loops read their own class
+    assert all(rm[name].loop_tools<={t for t in rm[name].tools if registry.RM_OWNER.get(t)==name}|rm[name].external for name in rm)  # loops read their own class
+    assert {name:spec.external for name,spec in rm.items() if spec.external}=={'rm_calendar':registry.ZOOM_EXTERNAL}  # and Calendar its Zoom check
 
 
 def test_no_loop_reaches_a_consent_gated_or_write_tool():
     for spec in CHAT_SPECS.values():
         assert not spec.loop_tools&registry.CONSENT_GATED, spec.name
         assert not any(t.startswith(WRITES) or t in KNOWN_TOOLS-set(TOOL_PERMISSION) for t in spec.loop_tools), spec.name
-        assert spec.loop_tools<=set(tools.TOOLS)|spec.external
+        assert spec.loop_tools<=set(tools.TOOLS)
     assert not set(CHAT_SPECS['rm_requests'].tools)&registry.CONSENT_GATED  # the Requests agent never sees consent-gated data
     assert all(registry.RM_OWNER[t]=='rm_client' for t in registry.CONSENT_GATED)
     assert not any(spec.offers for spec in registry.RM_SPECS.values())  # RM cards are approved through the /rm routes, never offers

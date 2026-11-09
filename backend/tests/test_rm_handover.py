@@ -52,7 +52,7 @@ def test_handover_is_marked_on_the_task_but_never_on_fraud() -> None:
 
 def test_reply_wording_is_plain_and_has_no_internal_codes() -> None:
     text=rm_handover.handed_over('TCK-000123')
-    assert 'TCK-000123' in text and 'My requests' in text and '_' not in text
+    assert 'TCK-000123' in text and 'in Requests' in text and '_' not in text
     assert 'not able to help' in rm_handover.SORRY and 'relationship manager' in rm_handover.SORRY
     assert rm_handover.summary_for('  should   I invest? ')=='[Investment or product advice] Client question for you: should I invest?'
     assert 'already have an open request' in rm_handover.handed_over('TCK-000123',reused=True)

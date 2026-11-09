@@ -11,7 +11,7 @@ approves through the existing write routes), and what needs judgement is written
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v6 + the intent's task file) with strict JSON output and cited record ids. A model
+3. One model call (prompt rm_assistant/v9 + the intent's task file) with strict JSON output and cited record ids. A model
    call's time follows the tokens it writes (docs/planning/rm-answer-speed.md), so the client reports (meeting_brief,
    client_overview, handover_brief, meeting_history) give the model a bounded set of facts (brief_facts.facts) and ask it
    only for the judgement parts; code writes the record sections. For
@@ -34,7 +34,7 @@ from difflib import SequenceMatcher
 from typing import Any
 from app.schemas.contracts import RequestContext
 from app.schemas.rm import BOOK_WIDE,NEEDS_CLIENT,RmAssistantRequest
-from app.services import customer_data,llm_gateway,prompts,tools
+from app.services import external,llm_gateway,prompts,tools,typos
 from app.services.agents import registry,runner
 from app.services.authorization import PolicyDenied
 from app.services.privacy import redact
@@ -42,11 +42,10 @@ from app.services.rm import brief_facts,checks,priority
 from app.services.rm import evidence as ev
 from app.services.rm.records import RmDenied
 
-ASSISTANT_VERSION='v6'
 SGT=timezone(timedelta(hours=8))
 TASK_FILE={'ticket_inbox':'inbox','priorities':'priorities','reviews':'reviews','schedule':'schedule','client_overview':'overview',
     'meeting_history':'meetings','meeting_brief':'brief','ticket_summary':'ticket','draft_message':'draft','document_interaction':'documentation',
-    'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help',
+    'actions_from_note':'actions','handover_brief':'handover','book_question':'book','help':'help','follow_up':'follow_up',
     'meeting_requests':'meeting_requests','availability_change':'availability','open':'open','today':'today'}  # decide_request: a card from code, no model
 # Hidden reasoning per intent: one table, set by code, never by a model. Off for every RM answer: those tokens count against
 # MAX_TOKENS and vary per call (1,300-3,600 measured), so with reasoning on 7 of 11 QA1 RM cases and 3 of 5 call notes (R13) hit the
@@ -277,7 +276,7 @@ class Turn:
 
     async def model(self,intent: str,bundle: ev.Bundle,schema: dict,client_id: int|None,extra: str='',task: str|None=None) -> dict:
         """task: another task file than the intent's (a client question, the meeting history's summary)."""
-        pv=prompts.load('rm_assistant',ASSISTANT_VERSION)
+        pv=prompts.current('rm_assistant')
         self.prompt_ids.append(pv['id'])
         situation={'today':day_text(today()),'active_client':self.name(client_id),'rm':'the signed-in relationship manager'}
         system=(pv['system']+'\n\n'+pv[task or TASK_FILE[intent]]+'\nSituation (untrusted): '+json.dumps(situation,ensure_ascii=False)+extra
@@ -470,6 +469,24 @@ async def h_reviews(t: Turn,plan,client_id):
     return brief_reply('reviews',await t.model('reviews',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
 
 
+ZOOM=re.compile(r"\bzoom\b|\b(?:meeting|join|joining|video|call)[ -]?link\b|\bjoined\b|\b(?:call|meeting)\s+(?:has\s+|have\s+)?(?:started|begun|running|live)\b"
+    r"|\bstart(?:ed)?\s+the\s+(?:call|meeting)\b",re.I)
+ZOOM_SHOWN=3  # a schedule answer checks at most this many meetings in Zoom; a count line says how many more
+
+
+def wants_zoom(message: str) -> bool:
+    """Whether the RM asks about a meeting's Zoom link or call (the schedule intent then adds the read-only Zoom check)."""
+    return bool(ZOOM.search(typos.normalise(message)))
+
+
+async def zoom_items(t: 'Turn',row: dict) -> ev.Evidence:
+    """The Zoom check for one of her appointments, by the id in her own calendar rows (never a model-supplied id)."""
+    if row.get('format')!='video':return ev.zoom_not_checked(row,'not_video')
+    try:result=await t.read('zoom_meeting_check',{'appointment_id':str(row['appointment_id'])})
+    except (external.ExternalError,RmDenied,PolicyDenied):return ev.zoom_not_checked(row,'unavailable')
+    return ev.zoom_evidence(result,row)
+
+
 async def h_schedule(t: Turn,plan,client_id):
     await t.say('Reading your appointments…')
     rows=await t.read('rm_appointments',{'start':today().isoformat(),'end':(today()+timedelta(days=30)).isoformat()})
@@ -486,6 +503,13 @@ async def h_schedule(t: Turn,plan,client_id):
     bundle.add(ev.appointments_evidence(rows,client_id))
     if selected:bundle.add(ev.Evidence('selected-appointment',f"Selected appointment: {selected['client']}, {selected['when']}",'calendar',
         {k:v for k,v in selected.items() if k not in ('starts_at','ends_at','customer_id')},str(rows.get('as_of')),selected['customer_id']))
+    if wants_zoom(t.message):  # the selected meeting, else her next confirmed meetings (for the client, if one is named)
+        picks=[selected] if selected else sorted([r for r in rows['data'] if r.get('status')=='confirmed' and not r.get('past')
+            and (client_id is None or r['customer_id']==client_id)],key=lambda r:str(r['starts_at']))
+        await t.say('Checking Zoom…')
+        for row in picks[:ZOOM_SHOWN]:bundle.add(await zoom_items(t,row))
+        if len(picks)>ZOOM_SHOWN:bundle.add(ev.Evidence('zoom-not-checked',f'{len(picks)-ZOOM_SHOWN} more upcoming meetings not checked in Zoom here',
+            'record',{'not_checked':len(picks)-ZOOM_SHOWN,'meaning':'Name the client or the time to check one of these.'},None))
     ctx=t.context(selected['customer_id'] if selected else client_id,appointment_id=str(selected['appointment_id']) if selected else None)
     return brief_reply('schedule',await t.model('schedule',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx)
 
@@ -495,7 +519,7 @@ def fixed(intent: str,tool: str) -> dict:
     return dict(next(r.fixed for r in registry.RM_CLIENT.intents[intent] if r.tool==tool))
 
 
-ASK_LABELS={'transaction_insights':'Transaction insights','chat_topics':'Topics from her chats'}
+ASK_LABELS={'transaction_insights':'Transaction insights','chat_topics':'Chat insights'}
 
 
 def ask_cards(reads: list[dict],client_id: int,client: str|None,meeting: dict|None) -> list[dict]:
@@ -534,7 +558,7 @@ async def h_overview(t: Turn,plan,client_id):
     reads,ctx,name=[r['cash'],r['insights'],r['points']],t.context(client_id),t.name(client_id)
     if not wants_report(t,'client_overview',OVERVIEW):
         reply=brief_reply('client_overview',await t.model('client_overview',bundle,brief_schema(bundle.ids()),client_id,task='question'),bundle,ctx)
-        return with_asks(reply,ask_cards(reads,client_id,name,None))
+        return with_asks({**reply,'format':'answer'},ask_cards(reads,client_id,name,None))  # a direct question: a chat answer, not a report
     data=r['profile']['data']
     records=brief_facts.overview_sections(data,bundle)
     await t.show(brief_facts.in_order(records,brief_facts.OVERVIEW_ORDER),bundle)
@@ -565,7 +589,7 @@ async def h_history(t: Turn,plan,client_id):
     if not notes:bundle.add(ev.Evidence('notes-none','Meeting notes','record',{'notes_recorded':0},str(read.get('as_of')),client_id))
     ctx,name=t.context(client_id),t.name(client_id)
     if not wants_report(t,'meeting_history',HISTORY):
-        return brief_reply('meeting_history',await t.model('meeting_history',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx)
+        return {**brief_reply('meeting_history',await t.model('meeting_history',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx),'format':'answer'}
     records=brief_facts.history_sections(notes,withheld)
     order=[s['heading'] for s in records]+['Gaps to check']
     if not notes:
@@ -757,8 +781,7 @@ async def h_draft(t: Turn,plan,client_id):
 
 
 async def _categories(t: Turn) -> list[dict]:
-    rows=await customer_data.get_categories(t.ctx)
-    return [r.model_dump(mode='json') for r in rows if r.customer_raisable]
+    return [r for r in (await t.read('request_categories',{}))['items'] if r.get('customer_raisable')]
 
 
 def documentation_reply(t: Turn,data: dict,bundle: ev.Bundle,sources: list[str],client_id: int,categories: list[dict],profile: dict,
@@ -987,9 +1010,44 @@ async def h_book(t: Turn,plan,client_id):
     return brief_reply('book_question',await t.model('book_question',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
 
 
+def chat_reply(intent: str,data: dict,bundle: ev.Bundle,context: dict) -> dict:
+    """A plain chat reply (help, follow-up questions): the checked summary is the answer and sections are optional, so a
+    short answer is not turned into a report or replaced by "couldn't verify". Facts in it must still be in the evidence."""
+    if data.get('status')=='needs_clarification' and (q:=(data.get('clarification_question') or '').strip()) and not checks.safety(q):
+        return {**clarify(q,[{'label':o,'message':o} for o in data.get('clarification_options') or [] if o.strip() and not checks.safety(o)],intent,context,'ai'),'origin':'ai'}
+    report=checks.Report()
+    sections=checks.check_sections(data.get('sections') or [],bundle,report,False)
+    summary=checks.check_summary(data.get('summary',''),bundle,report)
+    if not summary and not sections:
+        summary='I couldn’t answer that from your records or my last answer. Try asking about a client, a request or a meeting.'
+    cited=[i for s in sections for item in s['items'] for i in item['source_ids']]
+    return {'status':'ok' if summary or sections else 'unverified','intent':intent,'summary':summary,'sections':sections,'clarification':None,
+        'context':context,'sources':_sources(bundle,cited),'validation':report.as_dict(),'origin':'ai','format':'answer'}
+
+
 async def h_help(t: Turn,plan,client_id):
     bundle=ev.Bundle()
-    return brief_reply('help',await t.model('help',bundle,brief_schema([]),None),bundle,t.context(t.req.context.client_id))
+    return chat_reply('help',await t.model('help',bundle,brief_schema([]),None),bundle,t.context(t.req.context.client_id))
+
+
+def last_answer(req: RmAssistantRequest) -> str:
+    """The assistant's latest reply in this conversation (as the page sent it, redacted), for a follow-up question."""
+    turn=next((x for x in reversed(req.history) if x.role=='assistant' and x.content.strip()),None)
+    return redact(turn.content)[0][:6000] if turn else ''
+
+
+async def h_follow_up(t: Turn,plan,client_id):
+    """A question about the previous answer ("1 not known is what"): explained from that answer only (evidence
+    previous-reply), in one or two sentences. No records are read and nothing new is claimed."""
+    previous=last_answer(t.req)
+    context=t.context(t.req.context.client_id)
+    if not previous:
+        return {'status':'ok','intent':'follow_up','summary':'I don’t have an earlier answer in this chat to explain. Ask your question in full and I’ll check your records.',
+            'sections':[],'clarification':None,'context':context,'sources':[],'validation':checks.Report().as_dict(),'origin':'records'}
+    bundle=ev.Bundle()
+    bundle.add(ev.Evidence(id='previous-reply',title='My last answer',kind='record',data={'answer':previous}))
+    await t.say('Reading my last answer…')
+    return chat_reply('follow_up',await t.model('follow_up',bundle,brief_schema(bundle.ids()),None),bundle,context)
 
 
 # Calendar agent (build plan 3a) ---------------------------------------------------------------------------------------
@@ -1224,7 +1282,9 @@ TOOL_HELP={'rm_client_profile':'{"client": "<name in your book>"}: one client\'s
     'rm_ticket':'{"reference": "TCK-…"}: one ticket','rm_followups':'{}: deadlines, tickets, tasks and meetings across the book',
     'request_categories':'{}: the request types and what each needs','knowledge_article':'{"article_id": "<id>"}: one approved article',
     'rm_appointments':'{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}: your appointments (default the next 14 days)',
-    'rm_availability':'{}: your working hours and free times for 14 days','rm_meeting_requests':'{"status": "open" | "scheduled" | "closed"}: clients\' meeting requests'}
+    'rm_availability':'{}: your working hours and free times for 14 days','rm_meeting_requests':'{"status": "open" | "scheduled" | "closed"}: clients\' meeting requests',
+    'zoom_meeting_check':'{"client": "<name in your book>", "when": "<day or time, e.g. Thursday 10am>"}: whether that meeting\'s Zoom link is set up '
+        'and matches the booked time, and whether Zoom shows the call waiting or started (read live from Zoom)'}
 STOPPED={'cap':'I can’t answer that fully: I reached the limit of {limit} reads for one question. Here is what I found; ask a narrower question for the rest.',
     'malformed':'I can’t answer that fully: I could not finish looking it up. Here is what I found so far.'}
 
@@ -1245,6 +1305,7 @@ def loop_items(name: str,args: dict,result: dict,message: str) -> list[ev.Eviden
     if name=='rm_appointments':return [ev.appointments_evidence(result)]
     if name=='rm_availability':return [ev.availability_evidence(result)]
     if name=='rm_meeting_requests':return ev.meeting_requests_bundle(result).items
+    if name=='zoom_meeting_check':return [ev.zoom_evidence(result)]
     if name=='request_categories':return [ev.Evidence('request-types','Request types the RM can raise for a client','guidance',result.get('items') or [],None)]
     if name=='knowledge_article':
         rows=result.get('items') or []
@@ -1257,15 +1318,27 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
     """An open question: the runner's bounded loop over this agent's loop_tools with its own context (tools.call allows
     only this spec), then one checked answer. The step model never sees the text of a free-text read, only its ids and
     titles; a loop that stops at the cap says it could not answer fully, with what it found."""
-    pv=prompts.load('rm_assistant',ASSISTANT_VERSION)
+    pv=prompts.current('rm_assistant')
     bundle,hidden,got=ev.Bundle(),set(),runner.Gathered()
     for name,export in inputs.items():
         value=[{k:v for k,v in x.items() if k!='customer_id'} if isinstance(x,dict) else x for x in export.value] if isinstance(export.value,list) else export.value
         bundle.add(ev.Evidence(f'input-{name}','From another part of this answer','record',{name:value,'computed_from':export.source_ids},None))
     await t.say('Looking through your records…')
+    async def meeting(call: runner.Call) -> str:
+        """The appointment a step names by client and day or time, picked by code from her own calendar (30 days back to
+        14 ahead); a model-supplied appointment id is never used."""
+        name,when=call.args.get('client'),call.args.get('when')
+        ids=[c['customer_id'] for c in t.book if names_match(name,c['name'])] if isinstance(name,str) and name.strip() else [client_id] if client_id else []
+        if len(ids)>1:raise runner.StepRefused('which_client')
+        if isinstance(name,str) and name.strip() and not ids:raise runner.StepRefused('not_in_book')
+        rows=(await t.read('rm_appointments',{'start':(today()-timedelta(days=30)).isoformat(),'end':(today()+timedelta(days=14)).isoformat()}))['data']
+        found=match_appointments(rows,when if isinstance(when,str) else '',ids[0] if ids else None)
+        if len(found)!=1:raise runner.StepRefused('which_meeting')
+        return str(found[0]['appointment_id'])
     async def run(call: runner.Call) -> list[ev.Evidence]:
         params=inspect.signature(tools.TOOLS[call.tool]).parameters
-        args={k:v for k,v in call.args.items() if k in params and k!='customer_id'}
+        args={k:v for k,v in call.args.items() if k in params and k not in ('customer_id','appointment_id')}
+        if 'appointment_id' in params:args['appointment_id']=await meeting(call)
         if 'customer_id' in params:
             name=call.args.get('client')
             ids=[c['customer_id'] for c in t.book if names_match(name,c['name'])] if isinstance(name,str) and name.strip() else [client_id] if client_id else []
@@ -1273,8 +1346,11 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
             args['customer_id']=ids[0]
         try:result=await t.read(call.tool,args)
         except (RmDenied,PolicyDenied) as error:raise runner.StepRefused('not_in_book' if isinstance(error,RmDenied) else 'limit') from error
+        except external.ExternalError:  # an external read that could not answer is said so, never filled in
+            return [bundle.get(i) for i in ev.merge(bundle,[ev.Evidence(f'{call.tool}-unavailable','Not checked','record',
+                {'checked':False,'meaning':'This could not be checked right now, so say it was not checked.'},None)])]
         found=[bundle.get(i) for i in ev.merge(bundle,loop_items(call.tool,args,result,t.message))]
-        if spec.tools[call.tool].free_text:hidden.update(e.id for e in found)
+        if spec.tools.get(call.tool,registry.WHOLE).free_text:hidden.update(e.id for e in found)  # an external tool has no view
         return found
     def system(state: runner.LoopState) -> str:
         shown=[e.for_model() if e.id not in hidden else {'id':e.id,'title':e.title,'kind':e.kind,'record':'(written by people: hidden from this step; the answer step reads it)'}
@@ -1298,5 +1374,5 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
 
 HANDLERS={'ticket_inbox':h_inbox,'priorities':h_priorities,'reviews':h_reviews,'schedule':h_schedule,'client_overview':h_overview,
     'meeting_history':h_history,'meeting_brief':h_brief,'ticket_summary':h_ticket,'draft_message':h_draft,'document_interaction':h_document,
-    'actions_from_note':h_actions,'handover_brief':h_handover,'shared_note':h_shared,'book_question':h_book,'help':h_help,
+    'actions_from_note':h_actions,'handover_brief':h_handover,'shared_note':h_shared,'book_question':h_book,'help':h_help,'follow_up':h_follow_up,
     'meeting_requests':h_meeting_requests,'decide_request':h_decide,'availability_change':h_availability,'today':h_today}

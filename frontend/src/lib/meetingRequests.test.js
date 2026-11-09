@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseAction} from './actions.js';
-import {LIMITS,TOPICS,meetingRequestTarget,openCount,parseMeetingRequests,requestAppointmentIds,requestChoices,suggestedTime,toggleTime,toggleTopic} from './meetingRequests.js';
+import {LIMITS,TOPICS,meetingRequestTarget,parseMeetingDraft,slotLabel,openCount,parseMeetingRequests,requestAppointmentIds,requestChoices,suggestedTime,toggleTime,toggleTopic} from './meetingRequests.js';
 
 const RM='00000000-0000-4000-8000-100200000002',REQUEST='12345678-1234-1234-1234-123456789020',HELD='12345678-1234-1234-1234-123456789021';
 const T1='2026-11-10T02:00:00Z',T2='2026-11-09T06:30:00Z',T3='2026-11-11T02:00:00Z',T4='2026-11-12T02:00:00Z';
@@ -68,4 +68,17 @@ test('meeting actions are verified on the ledger (Activity and the Meetings tab)
     action('meeting.request',{advisor_id:RM,purpose:'Home loan',topics:['crypto'],format:'video',preferred_times:[T1]},{request_id:REQUEST,status:'requested',respond_by:T1,respond_by_text:'x'}),
     {...sent,command:{...action('meeting.request',{advisor_id:RM,purpose:'x',topics:['other'],format:'video',preferred_times:[T1]},{}).command,confirmed_at:null}},
   ])assert.throws(()=>parseAction(bad));
+});
+
+test('the chat meeting request draft is read back into fields',()=>{
+  const text='I can send your relationship manager, Sophie Lim, this meeting request:\n• What it’s about: “I’m thinking of buying a home.”\n• Topics: Property financing, Investments\n• Format: video call\n• Times that suit you (Singapore time): Mon 16 Nov, 9:00 am; Tue 17 Nov, 9:00 am\nThey accept one of these times…';
+  const draft=parseMeetingDraft(text);
+  assert.equal(draft.rm,'Sophie Lim');assert.equal(draft.purpose,'I’m thinking of buying a home.');
+  assert.equal(parseMeetingDraft(text.replace('a home.”','a home. Can I meet my relationship manager?”')).purpose,'I’m thinking of buying a home.');
+  assert.equal(parseMeetingDraft(text.replace('I’m thinking of buying a home.','Can I meet my RM?')).purpose,'Can I meet my RM?');
+  assert.deepEqual(draft.topics,['home_loan','investments']);assert.equal(draft.format,'video');
+  assert.deepEqual(draft.times,['Mon 16 Nov, 9:00 am','Tue 17 Nov, 9:00 am']);
+  assert.equal(parseMeetingDraft('Your balance is SGD 10.'),null);
+  assert.equal(slotLabel('2026-11-16T01:00:00Z'),'Mon 16 Nov, 9:00 am');
+  assert.equal(slotLabel('2026-11-17T06:30:00Z'),'Tue 17 Nov, 2:30 pm');
 });

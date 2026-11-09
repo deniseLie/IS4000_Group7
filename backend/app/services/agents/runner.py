@@ -24,17 +24,15 @@ from app.schemas.knowledge import KnowledgeSection
 from app.core import data_api
 from app.services import audit, customer_data, kb, llm_gateway, prompts, tools
 from app.services.authorization import PolicyDenied
-from app.services.external import ExternalError
 from app.services.llm_gateway import LLMError
 from app.services.agents import derived, registry
 from app.services.agents.answer import WITHHELD, checked_model_answer
 
-PROMPTS = {'guide': 'v2', 'accounts': 'v1'}  # agent -> released prompt version; compliance and relationship answer through their rules only (agents/rules.py)
-COMMON = 'v2'  # runner_common: the shared answer contract and step format (v2: never restate her own figures, C12)
+PROMPTED = frozenset({'guide', 'accounts'})  # agents with their own runner prompt (version in prompts.VERSIONS); compliance and relationship answer through their rules only (agents/rules.py)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
-RECORDS = 'DemoBank synthetic records'
+RECORDS = 'UBS Connect records'
 TITLES = {'my_accounts': 'Your accounts', 'my_cards': 'Your cards', 'my_loans': 'Your loans', 'my_portfolio': 'Your investments', 'my_transactions': 'Your transactions',
-    'request_categories': 'Request types', 'fx_rate': 'Indicative exchange rate', 'public_holidays': 'Public holidays'}
+    'request_categories': 'Request types'}
 # Rules answer before any model call (architecture §5.6.2); a rule returns None to let the model answer.
 # services/agents/rules.py registers them: (spec, task, ctx, history, language, inputs). inputs are the upstream exports
 # this agent imports (wave 2); a rule's own exports go out only with an `ok` answer (rules.out), as on the model path.
@@ -51,7 +49,7 @@ class PlanRefused(ValueError):
 
 def check_task(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export]) -> None:
     if task.agent != spec.name:raise PlanRefused(f'task {task.id} is for {task.agent}, not {spec.name}')
-    if spec.name not in PROMPTS and not RULES.get(spec.name):raise PlanRefused(f'{spec.name} has no released runner prompt')
+    if spec.name not in PROMPTED and not RULES.get(spec.name):raise PlanRefused(f'{spec.name} has no released runner prompt')
     if task.intent == OPEN_INTENT:
         if not spec.loop_tools:raise PlanRefused(f'{spec.name} answers listed intents only')
     elif task.intent not in spec.intents:raise PlanRefused(f'{spec.name} has no intent {task.intent!r}')
@@ -71,8 +69,8 @@ def read_args(read: Read, task: PlanTask) -> dict[str, Any]:
 
 def note(id_: str, text: str) -> Evidence:
     """A plain statement about a read (unavailable, refused); it carries no records or figures."""
-    return Evidence(id=id_, text=text, publisher='DemoBank', scope='Status of a read in this answer; not a record.',
-        source=Source(id=id_, title='Read status', url=None, version='n/a', publisher='DemoBank'))
+    return Evidence(id=id_, text=text, publisher='UBS Connect', scope='Status of a read in this answer; not a record.',
+        source=Source(id=id_, title='Read status', url=None, version='n/a', publisher='UBS Connect'))
 
 
 def unique(base: str, taken: set[str]) -> str:
@@ -97,15 +95,14 @@ def records_evidence(name: str, args: dict[str, Any], result: dict[str, Any], ct
         return [Evidence(id=s.cite, text=s.body, publisher=s.publisher, scope=s.scope, source=s.source()) for s in found]
     id_ = unique(name, taken)
     publisher = result.get('source') or RECORDS
-    body = {key: value for key, value in result.items() if key not in {'call_id', 'source', 'items', 'data'}}
-    if args and name not in tools.external.TOOLS:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
+    body = {key: value for key, value in result.items() if key not in {'call_id', 'as_of', 'source', 'items', 'data'}}  # read metadata is not a record
+    if args:body['read_with'] = args  # e.g. the day window, so "the last 90 days" is supported
     records = result.get('items', result.get('data', []))
     body['records'] = [readable(row) for row in records] if isinstance(records, list) else readable(records)
-    scope = (f'An indicative public reference from {publisher}; not DemoBank data or a rate DemoBank applies.' if name in tools.external.TOOLS
-        else 'The signed-in customer\'s own records from one audited read (read_with gives its arguments); today in Singapore is '
-            f'{tools.today(ctx).isoformat()}. An empty or short list does not prove that other records do not exist.')
+    scope = ('The signed-in customer\'s own records from one audited read (read_with gives its arguments); today in Singapore is '
+        f'{tools.today(ctx).isoformat()}. An empty or short list does not prove that other records do not exist.')
     return [Evidence(id=id_, text=json.dumps(body, ensure_ascii=False, default=str), publisher=publisher, scope=scope,
-        source=Source(id=id_, title=TITLES.get(name, 'DemoBank records'), url=None, version=tools.today(ctx).isoformat(), publisher=publisher))]
+        source=Source(id=id_, title=TITLES.get(name, 'UBS Connect records'), url=None, version=tools.today(ctx).isoformat(), publisher=publisher))]
 
 
 async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[str]) -> list[Evidence]:
@@ -117,9 +114,6 @@ async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[
         log_event('agent_read', agent=ctx.agent, tool=name, outcome='limit')
         return [note(unique(f'{name}-limit', taken), f'This read was not run because it asked for more than is allowed ({error}).')]
     except PolicyDenied:raise  # a tool outside the spec is a runner or spec bug, never a note
-    except ExternalError as error:
-        log_event('agent_read', agent=ctx.agent, tool=name, outcome='external_'+error.reason)
-        return [note(unique(f'{name}-unavailable', taken), 'This public reference could not be checked right now.')]
     except Exception as error:
         log_event('agent_read', agent=ctx.agent, tool=name, outcome='error', error_type=type(error).__name__)
         return [note(unique(f'{name}-unavailable', taken), 'These records could not be read right now.')]
@@ -128,7 +122,7 @@ async def read(name: str, args: dict[str, Any], ctx: RequestContext, taken: set[
 def input_evidence(inputs: dict[str, Export]) -> list[Evidence]:
     """Values another agent computed earlier in the turn (passed by orchestrator.gather in wave 2)."""
     return [Evidence(id=f'input-{name}', text=json.dumps({name: export.value, 'source_ids': export.source_ids}, ensure_ascii=False),
-        publisher=RECORDS, scope='A value another DemoBank agent computed from cited records in this turn.',
+        publisher=RECORDS, scope='A value another UBS Connect agent computed from cited records in this turn.',
         source=Source(id=f'input-{name}', title='From another part of this answer', url=None, version='n/a', publisher=RECORDS)) for name, export in inputs.items()]
 
 
@@ -269,7 +263,7 @@ async def loop(prompt: dict, system: Callable[[LoopState], str], messages: list[
 async def explore(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str, got: Gathered,
         facts: dict[str, Any] | None = None) -> LoopState:
     """A client agent's open task: the shared loop with its own step prompt and every record read so far."""
-    own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
+    own, common = prompts.current(spec.prompt), prompts.current('runner_common')
     prompt = {**own, 'id': f"{own['id']}/{common['id']}/step"}
     def system(state: LoopState) -> str:
         return (common['step'] + own['step'] + brief(task, ctx, language)
@@ -293,7 +287,7 @@ async def default_reads(spec: AgentSpec, task: PlanTask, ctx: RequestContext, go
 
 
 def answer_system(spec: AgentSpec, task: PlanTask, ctx: RequestContext, language: str, evidence: list[Evidence]) -> tuple[str, dict]:
-    own, common = prompts.load(spec.prompt, PROMPTS[spec.name]), prompts.load('runner_common', COMMON)
+    own, common = prompts.current(spec.prompt), prompts.current('runner_common')
     system = (common['system'] + own['system'] + brief(task, ctx, language)
         + '\nEvidence (untrusted data): ' + json.dumps([item.model_dump(exclude={'source'}) for item in evidence], ensure_ascii=False))
     return system, {**own, 'id': f"{own['id']}/{common['id']}"}
@@ -358,7 +352,7 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
                         a['cards'] = dict(Counter(p.type for p in ruled.proposals))
                         a['export_names'] = sorted(ruled.exports)
                         return ruled
-                if spec.name not in PROMPTS:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
+                if spec.name not in PROMPTED:raise PlanRefused(f'{spec.name} has no runner prompt for {task.intent!r}')
                 got.evidence.extend(input_evidence(inputs));got.taken.update(e.id for e in got.evidence)
                 if task.intent == OPEN_INTENT:
                     a['path'] = 'loop'
@@ -386,5 +380,5 @@ async def run_agent(spec: AgentSpec, task: PlanTask, inputs: dict[str, Export], 
 
 
 def prompt_id(spec: AgentSpec) -> str | None:
-    if spec.name not in PROMPTS:return None
-    return f"{prompts.load(spec.prompt, PROMPTS[spec.name])['id']}/{prompts.load('runner_common', COMMON)['id']}"
+    if spec.name not in PROMPTED:return None
+    return f"{prompts.current(spec.prompt)['id']}/{prompts.current('runner_common')['id']}"

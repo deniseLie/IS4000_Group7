@@ -4,7 +4,7 @@ import {coveringGrant,meetingDays,noteLines,organiseAgenda,parseHandoverDraft,pa
 
 const RM='00000000-0000-4000-8000-100300000002';
 const CALL='00000000-0000-4000-8000-000000000001';
-function section(anchor) {return {cite:`kb:rm-change@v1#${anchor}`,article_id:'rm-change',version:1,anchor,title:'Changes to your relationship manager',heading:'Heading',body:'Approved text.',publisher:'DemoBank coursework project'};}
+function section(anchor) {return {cite:`kb:rm-change@v1#${anchor}`,article_id:'rm-change',version:1,anchor,title:'Changes to your relationship manager',heading:'Heading',body:'Approved text.',publisher:'UBS Connect'};}
 function intro(data) {return {call_id:CALL,as_of:'2026-10-26T09:00:00+08:00',data};}
 const current={rm_id:RM,name:'Marcus Chua (DEMO)',role:'Senior Relationship Manager',team:'Private Clients Team B',contact:{email:'marcus.chua@demobank.example',phone:'+65 6000 0000'},started_on:'2026-10-15'};
 const previous={name:'Rachel Goh (DEMO)',role:'Relationship Manager',team:'Private Clients Team A',started_on:'2024-03-01',ended_on:'2026-10-14'};

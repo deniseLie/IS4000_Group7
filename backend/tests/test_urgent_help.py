@@ -151,10 +151,9 @@ def test_the_rm_hears_her_own_words_about_the_card_never_the_planners() -> None:
 
 
 def test_personal_agents_use_the_v5_runner_and_the_moved_v4_prompts() -> None:
-    from app.services import orchestrator
-    from app.services.agents import retail,runner
-    assert runner.PROMPTS=={'guide':'v2','accounts':'v1'} and orchestrator.PLANNER=='v10'
-    assert retail.PROMPT=='v11'  # the computed-checks path keeps its released prompt
+    from app.services.agents import runner
+    assert runner.PROMPTED=={'guide','accounts'} and (prompts.VERSIONS['guide'],prompts.VERSIONS['accounts'],prompts.VERSIONS['planner'])==('v4','v3','v12')
+    assert prompts.VERSIONS['retail']=='v12'  # the computed-checks path keeps its released prompt
     assert set(runner.RULES)=={'guide','accounts','compliance','relationship'}
 
 
@@ -309,7 +308,7 @@ def test_card_figures_are_supported_with_their_recorded_currency() -> None:
     assert 'currency unrecorded' not in next(item for item in evidence_for(retail_records([travel])) if item.id=='retail-cards').source.title
     assert check_sources('Your Travel Card ending 5592 has an outstanding balance of SGD 316.20.',['retail-cards'],evidence) is None
     assert check_sources('Your Travel Card ending 5592 has an outstanding balance of USD 316.20.',['retail-cards'],evidence)=='unsupported_unit'
-    assert 'currency recorded on that same card or loan record' in prompts.load('retail',retail.PROMPT)['system']
+    assert 'currency recorded on that same card or loan record' in prompts.current('retail')['system']
 
 
 def test_two_cards_need_a_which_card_question_without_figures() -> None:
@@ -324,14 +323,14 @@ def test_two_cards_need_a_which_card_question_without_figures() -> None:
     assert validate_draft(task,raw,evidence).status=='needs_clarification'
     suffixed=raw.replace('credit cards do you mean','cards, ending 4821 or 7755, do you mean')
     assert validate_draft(task,suffixed,evidence).status=='error'
-    assert 'more than one card record' in prompts.load('retail',retail.PROMPT)['system']
+    assert 'more than one card record' in prompts.current('retail')['system']
 
 
 def test_car_loan_question_routes_to_retail_with_the_financing_article() -> None:
     # Car loans are not offered since 0115; the loans article says so (test_knowledge_checks.py, retrieval cases).
     issue=simple_task('can i get a car loan','English')
     assert issue is not None and (issue.agent,issue.intent)==('accounts','loans')
-    assert 'never say or imply that this customer is eligible' in prompts.load('retail',retail.PROMPT)['system']
+    assert 'never say or imply that this customer is eligible' in prompts.current('retail')['system']
 
 
 @pytest.mark.parametrize('raw',['not json',json.dumps({'answer':'Contact your bank.','source_ids':['customer-records']}),

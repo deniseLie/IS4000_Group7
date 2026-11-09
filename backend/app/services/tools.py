@@ -1,24 +1,29 @@
 """Local tool layer (F21): each tool is one audited service call with the caller's own RequestContext.
 
-Agents reach these tools directly (TOOL_TRANSPORT=direct, the default) or through the Model Context Protocol
-(TOOL_TRANSPORT=mcp): app/mcp_server.py exposes the same functions as an MCP server, used in-process by the
-orchestrator and over stdio by external MCP clients (python -m scripts.mcp_server). Either way, policy
-(require_permission), JWT + RLS and audit are applied inside the tool, never by the caller or the model.
+Every read that feeds a model or an agent's rules is a tool here and goes through call(), which checks the agent's
+spec (require_tool, bounded, shaped) and sends the call through the Model Context Protocol: app/mcp_server.py serves
+these functions in-process (one shared client per event loop), and over stdio to external MCP clients
+(python -m scripts.mcp_server). Policy (require_permission), JWT + RLS and audit run inside the tool, never in the caller
+or the model. Writes are not tools: actions, offers, approved RM writes, uploads and insight actions call their services.
+The meeting agents' reads (MEETING_READS) are MCP tools too, sent by meeting_read with the RM's context and the agent's
+MeetingAccess; their drafts and the meeting worker's lease-fenced calls stay direct (meeting_call).
 """
+import asyncio
 import inspect
 from collections import Counter
 from collections.abc import Awaitable,Callable,Iterator
 from contextlib import contextmanager
-from datetime import date,timedelta
+from datetime import date,datetime,timedelta
 from contextvars import ContextVar
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 from pydantic import JsonValue
 from app.core import data_api
-from app.core.config import settings
 from app.core.observability import span
-from app.schemas.contracts import RequestContext,ToolView
+from app.schemas.contracts import RequestContext,ToolResult,ToolView
+from app.schemas.customer_data import CustomerEnvelope
 from app.schemas.knowledge import KnowledgeQuery
 from app.schemas.meeting_agents import MeetingAccess
 from app.schemas.relationship import SlotsQuery
@@ -30,6 +35,7 @@ from app.services.rm import records as rm_records
 SGT=ZoneInfo('Asia/Singapore')
 
 TOOL_CTX: ContextVar[RequestContext | None]=ContextVar('tool_ctx',default=None)
+MEETING_ACCESS: ContextVar[MeetingAccess | None]=ContextVar('meeting_access',default=None)  # set per call for a meeting read
 
 
 class ToolContextMissing(PermissionError):
@@ -51,17 +57,23 @@ class ToolLimitExceeded(PolicyDenied):
 
 
 async def knowledge_search(query: str,k: int=4) -> dict[str,Any]:
-    """Search approved DemoBank knowledge (public scope). Returns cited sections."""
+    """Search approved UBS Connect knowledge (public scope). Returns cited sections."""
     ctx=_ctx()
     with data_api.connect(ctx) as db:sections=await kb.search(KnowledgeQuery(query=query,scope='public',k=k),ctx,db)
     return {'items':[item.model_dump(mode='json') for item in sections]}
 
 
 async def knowledge_article(article_id: str) -> dict[str,Any]:
-    """One approved DemoBank article by id (published, in-review sections in anchor order); empty when retired or unknown."""
+    """One approved UBS Connect article by id (published, in-review sections in anchor order); empty when retired or unknown."""
     ctx=_ctx()
     with data_api.connect(ctx) as db:sections=await kb.get_article(article_id,ctx,db)
     return {'items':[item.model_dump(mode='json') for item in sections]}
+
+
+def _out(result: ToolResult,key: str='items') -> dict[str,Any]:
+    """A Customer Data read as a tool result: its records under `items` (a list) or `data` (one record), with the read's
+    call_id and as_of, so a rule cites the same audited read the model would."""
+    return {key:result.data,'call_id':str(result.call_id),'as_of':result.as_of.isoformat()}
 
 
 async def request_categories() -> dict[str,Any]:
@@ -71,40 +83,34 @@ async def request_categories() -> dict[str,Any]:
 
 async def my_tickets() -> dict[str,Any]:
     """The signed-in customer's own requests with plain-language status (no internal notes)."""
-    result=await customer_data.get_tickets(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_tickets(_ctx()))
 
 
 async def my_cards() -> dict[str,Any]:
     """The signed-in customer's own cards, masked to the last four digits."""
-    result=await customer_data.get_credit_cards(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_credit_cards(_ctx()))
 
 
 async def my_transactions(status: str | None=None,days: int | None=None) -> dict[str,Any]:
-    """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones, optionally the last `days` days."""
+    """The signed-in customer's recent transactions, optionally only 'pending' or 'posted' ones, optionally the last `days` days (to today)."""
     ctx=_ctx()
     since=today(ctx)-timedelta(days=days) if days else None
-    result=await customer_data.get_transactions(ctx,since,None,{'status':status} if status else None)
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_transactions(ctx,since,today(ctx) if days else None,{'status':status} if status else None))
 
 
 async def my_profile() -> dict[str,Any]:
     """The signed-in customer's own profile."""
-    result=await customer_data.get_profile(_ctx())
-    return {'data':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_profile(_ctx()),'data')
 
 
 async def my_accounts() -> dict[str,Any]:
     """The signed-in customer's own bank accounts, numbers masked to the last four digits."""
-    result=await customer_data.get_accounts(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_accounts(_ctx()))
 
 
 async def my_loans() -> dict[str,Any]:
     """The signed-in customer's own loans and next payments."""
-    result=await customer_data.get_loans(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_loans(_ctx()))
 
 
 async def my_portfolio() -> dict[str,Any]:
@@ -112,7 +118,7 @@ async def my_portfolio() -> dict[str,Any]:
     result=await customer_data.get_portfolio(_ctx())
     p=result.data
     items=[{**h,'mandate':p['mandate'],'as_of':p['as_of'],'portfolio_total':p['total_value']} for h in p['holdings']] if p else []
-    return {'items':items,'call_id':str(result.call_id)}
+    return {'items':items,'call_id':str(result.call_id),'as_of':result.as_of.isoformat()}
 
 
 async def travel_flags() -> dict[str,Any]:
@@ -124,20 +130,53 @@ async def travel_flags() -> dict[str,Any]:
 
 async def my_rm() -> dict[str,Any]:
     """The signed-in customer's current and previous relationship manager."""
-    result=await customer_data.get_rm_assignment(_ctx())
-    return {'data':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_rm_assignment(_ctx()),'data')
 
 
 async def my_appointments() -> dict[str,Any]:
     """The signed-in customer's held, confirmed and past appointments with her relationship manager."""
-    result=await customer_data.get_appointments(_ctx())
-    return {'items':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_appointments(_ctx()))
 
 
 async def my_consents() -> dict[str,Any]:
     """The signed-in customer's consent requests and grants (purpose, recipient, status, expiry)."""
-    result=await customer_data.get_consent_records(_ctx())
-    return {'data':result.data,'call_id':str(result.call_id)}
+    return _out(await customer_data.get_consent_records(_ctx()),'data')
+
+
+async def my_requests() -> dict[str,JsonValue]:
+    """The signed-in customer's own requests to her relationship manager (who, what, urgency, deadline, status)."""
+    return (await customer_data.get_request_records(_ctx())).model_dump(mode='json')
+
+
+async def my_introduction() -> dict[str,JsonValue]:
+    """Her current and previous relationship manager with the approved wording for a change of RM (never the reason code)."""
+    return (await customer_data.get_introduction_record(_ctx())).model_dump(mode='json')
+
+
+async def my_consent_sharing() -> dict[str,JsonValue]:
+    """What the signed-in customer shares with her relationship manager, per category (consent v2), with her open accounts,
+    her RM and next meeting."""
+    return (await customer_data.get_consent_sharing_record(_ctx())).model_dump(mode='json')
+
+
+async def my_meeting_requests() -> dict[str,JsonValue]:
+    """The signed-in customer's own meeting requests to her relationship manager, newest first (the purpose is her own words)."""
+    return (await customer_data.get_meeting_request_records(_ctx())).model_dump(mode='json')
+
+
+async def my_talking_points() -> dict[str,JsonValue]:
+    """Her client chat insights as list values (never her words), with removed points, mutes and pause (Data sharing)."""
+    return (await customer_data.get_talking_points_record(_ctx())).model_dump(mode='json')
+
+
+async def my_topic_status() -> dict[str,JsonValue]:
+    """Her chat-insights status: whether chat topics are shared, her RM, mutes, recent prompts and meeting topics."""
+    return (await customer_data.get_topic_status_record(_ctx())).model_dump(mode='json')
+
+
+async def my_topic_state(turn_id: UUID) -> dict[str,JsonValue]:
+    """Her chat-insights status with her current points and the topics active in this chat's last turns before `turn_id`."""
+    return (await customer_data.get_topic_state_record(turn_id,_ctx())).model_dump(mode='json')
 
 
 async def document_templates_guide() -> dict[str,Any]:
@@ -237,7 +276,7 @@ async def rm_transaction_insights(customer_id: int,purpose: str,days: int=90) ->
 
 
 async def rm_talking_points(customer_id: int,purpose: str) -> dict[str,Any]:
-    """Topics from one book client's chats (list values and dates only). Inferred topics only under the client's chat_topics
+    """Client chat insights of one book client (list values and dates only). Inferred topics only under the client's chat_topics
     consent; data is always a list, and without that consent it holds only topics she shared herself.
     purpose: meeting_prep (a meeting brief) or client_view, set by code from the intent, never by a model (audited)."""
     return await rm_records.talking_points(_ctx(),customer_id,purpose)
@@ -253,18 +292,88 @@ async def rm_book_facts() -> dict[str,Any]:
     return await rm_records.book_facts(_ctx())
 
 
+ZOOM_LIVE={'not_configured':'not_configured','not_authorised':'not_authorised'}  # any other ExternalError reason: unavailable
+
+
+def sgt_words(value: datetime) -> str:
+    """'Thu 12 Nov 2026, 10:00 am', as rm.sgt writes times (portable: no %-d on Windows)."""
+    local=value.astimezone(SGT)
+    return f"{local:%a} {local.day} {local:%b %Y}, {local.hour%12 or 12}:{local:%M} {'am' if local.hour<12 else 'pm'}"
+
+
+async def zoom_meeting_check(appointment_id: UUID) -> dict[str,Any]:
+    """Read only: whether one of the signed-in relationship manager's appointments (in her book) has a Zoom link that
+    still matches the booked time, and whether Zoom has that meeting, at that time, waiting or started. Codes only: never
+    the join link, Zoom ids or anyone's name. Needs the RM's own sign-in."""
+    ctx=_ctx()
+    if ctx.principal.kind!='customer' or ctx.principal.jwt is None:raise PolicyDenied('Tool access denied: rm_login_required')
+    record=await rm_records.zoom_check(ctx,appointment_id)  # her book first (refused and audited), before Zoom or the cache
+    row=record['data']
+    now=datetime.now(SGT)
+    out: dict[str,JsonValue]={'meeting':row['meeting'],'format':row['format'],'status':row['status'],'link':row['link'],
+        'zoom_time_matches':None,'call':None,'live':'not_checked','checked_at':sgt_words(now)}
+    if row['link']=='set_up':
+        starts,ends=datetime.fromisoformat(str(row['starts_at'])),datetime.fromisoformat(str(row['ends_at']))
+        try:meeting=await external.zoom_meeting('zoom_meeting_check',int(row['provider_id']))
+        except external.ExternalError as error:
+            if error.reason=='not_found':out.update(link='missing_in_zoom',live='ok')
+            else:out['live']=ZOOM_LIVE.get(error.reason,'unavailable')
+        else:
+            from app.services.meetings.zoom import ours
+            if not ours(meeting.topic,appointment_id):out.update(link='missing_in_zoom',live='ok')  # the number is not this meeting
+            else:
+                out.update(live='ok',zoom_time_matches=meeting.start_time==starts.replace(microsecond=0)
+                    and meeting.duration*60==int((ends-starts).total_seconds()),
+                    call='in_progress' if meeting.status=='started' else 'not_started' if starts>now else 'not_running')
+    return {'data':out,'call_id':str(record.get('call_id')),'as_of':str(record.get('as_of'))}
+
+
 TOOLS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'knowledge_search':knowledge_search,'knowledge_article':knowledge_article,
     'request_categories':request_categories,
     'my_tickets':my_tickets,'my_cards':my_cards,'my_transactions':my_transactions,
     'my_compliance_case':my_compliance_case,'my_document_checks':my_document_checks,
     'free_slots':free_slots,'my_profile':my_profile,'my_accounts':my_accounts,'my_loans':my_loans,'my_portfolio':my_portfolio,'travel_flags':travel_flags,
     'my_rm':my_rm,'my_appointments':my_appointments,'my_consents':my_consents,'document_templates':document_templates_guide,
-    **external.TOOLS,  # public data, codes only; an agent may call those named in its spec's `external`
+    'my_requests':my_requests,'my_introduction':my_introduction,'my_consent_sharing':my_consent_sharing,'my_meeting_requests':my_meeting_requests,
+    'my_talking_points':my_talking_points,'my_topic_status':my_topic_status,'my_topic_state':my_topic_state,
     'rm_book':rm_book,'rm_match_clients':rm_match_clients,'rm_client_profile':rm_client_profile,'rm_meeting_notes':rm_meeting_notes,
     'rm_shared_summary':rm_shared_summary,'rm_tickets':rm_tickets,'rm_ticket':rm_ticket,'rm_review_status':rm_review_status,
     'rm_appointments':rm_appointments,'rm_availability':rm_availability,'rm_followups':rm_followups,'rm_handover_sources':rm_handover_sources,
     'rm_cash_events':rm_cash_events,'rm_book_facts':rm_book_facts,'rm_transaction_insights':rm_transaction_insights,
-    'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests}
+    'rm_talking_points':rm_talking_points,'rm_meeting_requests':rm_meeting_requests,
+    'zoom_meeting_check':zoom_meeting_check}  # RM only; reads Zoom with the bank's own login (registry.ZOOM_EXTERNAL)
+
+
+# Meeting agents' reads (architecture §15): fixed connectors the code selects, never a model. Each is the assigned RM's
+# own meeting record, read with her JWT after the meeting policy (registry.MEETING_TOOLS, require_permission); SQL checks
+# the live assignment and consent again. Served in-process only: not in TOOLS (so never through call() or the stdio server).
+async def _meeting_rpc(name: str,p_meeting_id: UUID,args: dict[str,Any]) -> dict[str,JsonValue]:
+    access,ctx=MEETING_ACCESS.get(),_ctx()
+    if access is None:raise ToolContextMissing('Meeting tools run only with a meeting agent access set by the backend')
+    require_permission(ctx.principal,name,{'meeting_id':str(p_meeting_id)},access)
+    from app.services.meetings.database import ApplicationDatabase
+    return {'data':await asyncio.to_thread(ApplicationDatabase(ctx).read,name,{'p_meeting_id':p_meeting_id,**args})}
+
+
+async def meeting_preparation_inputs(p_meeting_id: UUID) -> dict[str,JsonValue]:
+    """Brief Writer: the assigned RM's currently permitted preparation records for one meeting, as cited references."""
+    return await _meeting_rpc('meeting_preparation_inputs',p_meeting_id,{})
+
+
+async def meeting_pack_inputs(p_meeting_id: UUID,p_amounts: list[dict[str,JsonValue]]) -> dict[str,JsonValue]:
+    """Proposal Drafter: one meeting's agreed agenda, approved catalogue and the RM's stated amounts (labels redacted)."""
+    from psycopg.types.json import Jsonb
+    return await _meeting_rpc('meeting_pack_inputs',p_meeting_id,{'p_amounts':Jsonb(p_amounts)})
+
+
+async def meeting_notes_context(p_meeting_id: UUID) -> dict[str,JsonValue]:
+    """Minutes Writer: one meeting's reviewed RM notes, with their source hash, revision and consent epoch."""
+    return await _meeting_rpc('meeting_notes_context',p_meeting_id,{})
+
+
+MEETING_READS: dict[str,Callable[...,Awaitable[dict[str,Any]]]]={'meeting_preparation_inputs':meeting_preparation_inputs,
+    'meeting_pack_inputs':meeting_pack_inputs,'meeting_notes_context':meeting_notes_context}
+SERVED=MappingProxyType({**TOOLS,**MEETING_READS})  # the MCP server's tool list and schemas; a call runs TOOLS[name] or MEETING_READS[name] (tests may swap one)
 
 
 def project(value: Any,fields: frozenset[str]) -> Any:
@@ -314,7 +423,8 @@ def shaped(result: dict[str,Any],view: ToolView) -> dict[str,Any]:
 
 @contextmanager
 def meeting_call(name: str,meeting: UUID | None,ctx: MeetingAccess) -> Iterator[dict[str,str|bool]]:
-    """Gate a code-selected meeting connector with the shared policy and metadata-only tool tracing."""
+    """Gate a code-selected meeting connector that stays off MCP (an agent's draft write, or the worker's lease-fenced
+    call on its private login) with the shared policy and metadata-only tool tracing. Reads go through meeting_read."""
     tool = name if name in registry.MEETING_TOOLS else 'unregistered_tool'
     with span('meeting.tool_call','tool',tool=tool,agent=ctx.agent,side='meeting',transport='direct') as facts:
         try:
@@ -326,11 +436,29 @@ def meeting_call(name: str,meeting: UUID | None,ctx: MeetingAccess) -> Iterator[
         yield facts
 
 
+async def meeting_read(name: str,args: dict[str,JsonValue],ctx: RequestContext,access: MeetingAccess) -> JsonValue:
+    """A meeting agent's read as an MCP tools/call (app/mcp_server.py): the RM's RequestContext and the agent's access go
+    in the call's one-time `_meta` key, never in the arguments; the tool runs the meeting policy, then the SQL reader with
+    her JWT. Same span and refusal facts as meeting_call, with transport=mcp."""
+    if name not in MEETING_READS:raise KeyError(f'Unknown meeting read {name}')
+    from app.mcp_server import call_in_process
+    from app.services.meetings.database import MeetingStoreError
+    with span('meeting.tool_call','tool',tool=name,agent=access.agent,side='meeting',transport='mcp') as facts:
+        facts['allowed']=True
+        try:result=await call_in_process(name,args,ctx,access)
+        except PolicyDenied as error:
+            facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1]);raise
+        except MeetingStoreError as error:
+            if error.code=='42501':facts.update(allowed=False,reason='meeting_scope_denied')
+            raise
+    return result['data']
+
+
 async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
-    """The one way agents call a tool. The transport is a setting; the tool, policy and audit are the same.
+    """The one way agents and rules call a tool: as an MCP tools/call (app/mcp_server.py) with the caller's context.
     A v5 agent (registry.spec_for) may call only its spec's tools, within its limits, and receives only its field view."""
     if name not in TOOLS:raise KeyError(f'Unknown tool {name}')
-    with span('tool_call','tool',tool=name,agent=ctx.agent,transport=settings.tool_transport) as facts:
+    with span('tool_call','tool',tool=name,agent=ctx.agent,transport='mcp') as facts:
         try:
             require_tool(name,ctx)
             spec=registry.spec_for(ctx.agent)
@@ -339,19 +467,26 @@ async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,An
         except PolicyDenied as error:
             facts.update(allowed=False,reason='limit' if isinstance(error,ToolLimitExceeded) else str(error).rsplit(': ',1)[-1][:40]);raise
         facts['allowed']=True
-        token=TOOL_CTX.set(ctx)
-        try:
-            if settings.tool_transport=='mcp':
-                from app.mcp_server import call_in_process
-                result=await call_in_process(name,args)
-            else:result=await TOOLS[name](**args)
+        from app.mcp_server import call_in_process
+        try:result=await call_in_process(name,args,ctx)
         except rm_records.RmDenied:
             facts.update(allowed=False,reason='not_in_book');raise
         except PolicyDenied as error:
             facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1][:40]);raise
-        finally:TOOL_CTX.reset(token)
         facts.update(result_facts(name,args,result))
     return shaped(result,view) if view is not None else result
+
+
+def envelope(result: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
+    """A record tool's result as the snapshot a rule validates (customer, call_id, as_of, data). The tool already checked
+    the customer scope (customer_data._snapshot); a result without its own customer_id is the caller's."""
+    return {'customer_id':result.get('customer_id',ctx.principal.customer_id),'call_id':result['call_id'],'as_of':result['as_of'],
+        'data':result['items'] if 'items' in result else result['data']}
+
+
+async def snapshot(name: str,args: dict[str,Any],ctx: RequestContext,model: Any) -> CustomerEnvelope:
+    """One record tool through call(), validated as CustomerEnvelope[model] for the rule that answers from it."""
+    return CustomerEnvelope[model].model_validate(envelope(await call(name,args,ctx),ctx))
 
 
 def result_facts(name: str,args: dict[str,Any],result: Any) -> dict[str,JsonValue]:
@@ -365,4 +500,6 @@ def result_facts(name: str,args: dict[str,Any],result: Any) -> dict[str,JsonValu
             purpose=args.get('purpose'))
     if name=='rm_talking_points' and isinstance(rows,list):
         out['origins']=dict(Counter(str(r.get('origin')) for r in rows if isinstance(r,dict)))
+    if name=='zoom_meeting_check' and isinstance(rows,dict):
+        out.update({k:rows.get(k) for k in ('link','call','live','zoom_time_matches')})
     return out

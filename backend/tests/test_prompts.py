@@ -59,6 +59,7 @@ RELEASED[('rm_assistant','v2')]='v2+bdcb8a3f'
 RELEASED[('rm_planner','v5')]='v5+dd5370bc'  # build plan 3b: the today intent
 RELEASED[('rm_assistant','v5')]='v5+6738eb5a'  # build plan 3b: today.md, ranked priorities.md
 RELEASED[('rm_assistant','v6')]='v6+77a77a52'  # RM answer speed: code writes the client reports' record sections (the live runs' v6+251d64ae and v6+6a16d22f were drafts before the actions.md changes)
+RELEASED[('rm_assistant','v7')]='v7+9edeb2a0'  # help is a plain chat reply; follow_up explains the previous answer
 RELEASED[('accounts','v1')]='v1+872a384c'
 RELEASED[('runner_common','v1')]='v1+0c95684c'
 RELEASED[('runner_common','v2')]='v2+659e0d0c'  # batch 2 (C12): never restate a figure from her own message
@@ -72,6 +73,7 @@ RELEASED[('planner','v8')]='v8+2710b2ab'
 RELEASED[('relationship','v6')]='v6+eb7307b9'
 RELEASED[('relationship','v7')]='v7+e690200b'  # build plan 6e (consent v2): Data sharing explained, changes offered by rules
 RELEASED[('talking_points','v1')]='v1+254803bd'  # build plan 4 (0108): lane 1 classifier
+RELEASED[('talking_points','v2')]='v2+63a30afe'  # lane 1 v2 (0143): state-aware, carry-over, kind, on hold
 RELEASED[('planner','v10')]='v10+67067378'  # batch 3: a question needing another agent's data is two tasks; imports; threshold
 RELEASED[('compliance','v7')]='v7+51624f5a'  # batch 3 (P05): her account list from Accounts is citable
 
@@ -84,6 +86,24 @@ RELEASED[('brief_writer','v2')]='v2+74f98536'
 RELEASED[('brief_writer','v3')]='v3+8ff73d94'
 RELEASED[('brief_writer','v4')]='v4+03eb16f4'  # storyline: recorded dates, funding-options question (0140)
 
+# 8 Nov 2026: the product is named UBS Connect; each family below is its previous version with "DemoBank" renamed, nothing else.
+RELEASED[('answer','v4')]='v4+7c757bc5'
+RELEASED[('planner','v11')]='v11+e5506594'
+RELEASED[('guide','v3')]='v3+3eec8ebc'
+RELEASED[('accounts','v2')]='v2+50c6b0ab'
+RELEASED[('runner_common','v3')]='v3+9cc8694c'
+RELEASED[('retail','v12')]='v12+e2b249d0'
+RELEASED[('compliance','v8')]='v8+4c71d46e'
+RELEASED[('relationship','v8')]='v8+3ac41170'
+RELEASED[('document','v6')]='v6+d4f5ed2b'
+RELEASED[('rm_planner','v6')]='v6+08f9a7ff'
+RELEASED[('rm_assistant','v8')]='v8+ea931216'
+# 8 Nov 2026: the public holiday and FX tools are removed; each is its previous version without their lines.
+RELEASED[('accounts','v3')]='v3+ccdade61'
+RELEASED[('guide','v4')]='v4+eb11931a'
+RELEASED[('planner','v12')]='v12+77ebe779'
+RELEASED[('rm_assistant','v9')]='v9+fb6bbed5'  # Zoom check in the schedule intent
+
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid
 
@@ -92,11 +112,15 @@ def test_every_prompt_version_has_a_prompt_log_entry():
     assert set(RELEASED)<=set(prompts.released())
     for agent,version in prompts.released():assert (log/agent/f'{version}.md').is_file(),(agent,version)
 
-def test_agent_versions_are_configured_not_guessed(monkeypatch):
-    monkeypatch.setattr(settings,'prompt_version','v1')
-    assert prompts.current()['id']==RELEASED[('answer','v1')]
-    monkeypatch.setattr(settings,'prompt_versions',{})
-    with pytest.raises(ValueError):prompts.current('planner')
+def test_every_version_is_chosen_in_one_table():
+    """No setting picks a prompt; prompts.VERSIONS is the one table, and in_use adds only the meeting side's own pins."""
+    from app.services import llm
+    assert not {'prompt_version','prompt_versions'}&set(type(settings).model_fields)
+    assert llm.answer_prompt()==prompts.current('answer')==prompts.load('answer',prompts.VERSIONS['answer'])
+    used=prompts.in_use()
+    assert {k:used[k] for k in prompts.VERSIONS}==prompts.VERSIONS
+    assert set(used)-set(prompts.VERSIONS)=={'minutes_writer','minutes_overview','brief_writer','proposal_drafter'}
+    with pytest.raises(ValueError):prompts.current('fraud')  # retired (build plan 2b): not in the table
 
 
 def test_prompts_in_use_are_released_versions():

@@ -82,11 +82,6 @@ async def _receipt_failed(*args,**kw):
     raise RuntimeError('injected fault: offer executor failed')
 
 
-async def _external_down(tool,*args,**kw):
-    from app.services.external import ExternalError
-    raise ExternalError(tool,'unavailable')
-
-
 from app.services.rm import records as _rm_records
 _RM_RPC=_rm_records.rpc
 
@@ -101,7 +96,7 @@ async def _consent_revoked(name,params,ctx,tool):
 
 
 # fault -> (patch target, replacement); None would mean the piece is not built yet.
-FAULTS={'external_down':('app.services.external.fetch',_external_down),'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
+FAULTS={'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
     'receipt_failed':('app.services.offers.confirm',_receipt_failed),'consent_revoked':('app.services.rm.records.rpc',_consent_revoked)}
 
 

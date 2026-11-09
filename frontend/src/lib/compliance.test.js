@@ -6,9 +6,9 @@ const report={check_id:id,document_id:doc,case_id:id,item_id:item,customer_id:10
 function snapshot(){return {call_id:id,as_of:report.checked_at,data:{policy:{validity_hours:24,status_stale_days:7,statement_period_mode:'completed_months'},review:{case_id:id,status:'awaiting_client_documents',status_updated_at:report.checked_at,title:'Demo review',notice_text:'Demo notice',requested_items:[{item_id:item,label:'Address',client_mark:'prepared',submission_status:'not_submitted'}],info_requests:[]},documents:[],rules:{},current_documents:{[item]:doc},checks:[{...report}]}};}
 test('bank state outranks preparation and preliminary findings',()=>{
  assert.equal(primaryStatus({client_mark:'prepared',submission_status:'unknown'}),'Unknown');
- assert.equal(primaryStatus({client_mark:'not_prepared',submission_status:'submitted_awaiting_review'}),'Submitted – awaiting review');
+ assert.equal(primaryStatus({client_mark:'not_prepared',submission_status:'submitted_awaiting_review'}),'With the bank – awaiting review');
  assert.equal(primaryStatus({client_mark:'prepared',submission_status:'accepted'}),'Accepted by bank');
- assert.equal(primaryStatus({client_mark:'prepared',submission_status:'not_submitted'}),'Prepared');
+ assert.equal(primaryStatus({client_mark:'prepared',submission_status:'not_submitted'}),'Ready to send');
 });
 test('a closed bank question is accepted only when its recorded outcome says so',()=>{
  assert.equal(closedRequestOutcome('accepted').tone,'ok');

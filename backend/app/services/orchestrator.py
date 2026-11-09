@@ -2,7 +2,7 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-urgent card and login wording, an explicit request for a person, greetings), then one planner/v10 call, then the rule
+urgent card and login wording, an explicit request for a person, greetings), then one planner/v12 call, then the rule
 overrides and a plan check against registry.CHAT_SPECS. Each task runs on its agent through runner.run_agent, except an
 urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
 offer from code, never the model (build plan 2b: there is no Security agent). Agents never
@@ -44,7 +44,6 @@ from app.services.guardrail import FRAUD
 MAX_TASKS = 5
 WITH_RELATIONSHIP = rules.WITH_RELATIONSHIP  # an Accounts task's entity, set only by checked()
 MAX_ITEMS = 5  # fan-out cap per list export
-PLANNER = 'v10'  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3)
 MULTIPLE = re.compile(r'\b(?:and|also|plus|another|as well)\b|;|\?\s*\S|,\s+[A-Za-z]', re.I)
 GREETING = re.compile(r'\s*(?:hi|hello|hey|thanks|thank you)[!.\s]*', re.I)
 LOGIN = re.compile(r"\b(?:locked\s+out|lockout|log\s*in|sign\s*in|password|passcode|can['’]?t\s+(?:get\s+into|access|open)\s+(?:the|my)\s+app"
@@ -87,9 +86,9 @@ STEP_FAILED = 'That couldn’t be completed, so nothing was changed. Please try 
 DONE = 'Done. You can see the receipt in Activity.'
 GRANTED = 'Done: {rm} can now see your {label} {until}. You can switch it off on Data sharing at any time.'
 GRANT_UNTIL = {'date': 'until {date}', 'meeting': 'until your meeting ends', 'request': 'until your meeting request is answered'}
-TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in My requests.'
+TICKET_RAISED = 'Done: your {label} request is raised (reference {reference}). You can follow it in Requests.'
 MEETING_SENT = ('Sent: your meeting request is with your relationship manager. They will answer by {respond_by} (Singapore time): '
-    'they accept one of your times, suggest another or reply in a message. You can follow it in My requests → Meetings.')  # 0106
+    'they accept one of your times, suggest another or reply in a message. You can follow it in the Meetings page.')  # 0106
 SHARED = ('Done: your relationship manager can now see “{line}”, and nothing else from this chat. You can remove it at any time '
     'under Data sharing.')  # 0108, lane 2
 LINKED = ' It is linked to your earlier request {reference}.'
@@ -296,7 +295,7 @@ def plan_schema() -> dict:
 
 
 async def model_plan(history: list[Message]) -> list[PlanTask]:
-    pv = prompts.load('planner', PLANNER)
+    pv = prompts.current('planner')
     result = await llm_gateway.call(pv, pv['system'] + '\n' + catalogue(), [(m.role, m.content) for m in history], plan_schema())
     rows = result.data.get('tasks') if isinstance(result.data, dict) else None
     if not isinstance(rows, list) or not rows:raise llm_gateway.LLMBadOutput('The planner returned no tasks')
@@ -310,6 +309,21 @@ async def model_plan(history: list[Message]) -> list[PlanTask]:
         'entities': {item['name']: item['value'] for item in row['entities'] if isinstance(item, dict)},
         **({'depends_on': up, 'condition': name(row, 'condition'), 'for_each': name(row, 'for_each')} if (up := upstream(i, row)) else {})})
         for i, row in enumerate(rows)]
+
+
+PORTFOLIO = dict(ACCOUNT_INTENTS)['portfolio']
+MINE = re.compile(r'\b(?:my|mine|i have|i hold)\b', re.I)
+
+
+def portfolio_task(item: PlanTask) -> PlanTask:
+    """Her own time deposit, holdings or maturity date is read from her portfolio, also when the planner split it out of a
+    longer message as a general (Guide) question or gave it another Accounts intent ("When does my time deposit mature?
+    What did I spend last month?" answered the first part with "I cannot tell you the maturity date")."""
+    text = typos.normalise(item.question)
+    if not (PORTFOLIO.search(item.question) or PORTFOLIO.search(text)) or not MINE.search(text) or is_urgent(item):return item
+    if item.agent == 'guide' or (item.agent == 'accounts' and item.intent not in ('portfolio', 'account_balance')):
+        return item.model_copy(update={'agent': 'accounts', 'intent': 'portfolio'})
+    return item
 
 
 def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
@@ -326,7 +340,7 @@ def overridden(tasks: list[PlanTask], risk: RiskAssessment) -> list[PlanTask]:
             item = item.model_copy(update={'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
         elif RM_REQUEST.search(text) and not handovers and not rm_handover.MEETING.search(text):
             item = item.model_copy(update={'agent': 'relationship', 'intent': OPEN_INTENT, 'entities': {**item.entities, 'handover': 'rm'}})
-        routed.append(item)
+        routed.append(portfolio_task(item))
     if handovers:  # one handover per part she asked a person about, in her words; an urgent card request stays
         if len(routed) == 1 and not is_urgent(routed[0]):routed = []
         else:routed = [t for t in routed if is_urgent(t) or (t.agent != 'relationship' and not rm_handover.needs_person(t.question))]
@@ -666,7 +680,7 @@ def after_gather(state: Turn) -> list[Send] | str:
 def receipt_source(command_id: UUID) -> Source:
     # Keep UUID groups separate from card-number patterns in saved replies.
     identifier: str = str(command_id).replace('-', '_')
-    return Source(id=f'action-receipt-{identifier}', title='Recorded action receipt', url=None, version='v1', publisher='DemoBank action ledger')
+    return Source(id=f'action-receipt-{identifier}', title='Recorded action receipt', url=None, version='v1', publisher='UBS Connect action ledger')
 
 
 async def outcome_text(outcome: ActionOutcome, ctx: RequestContext, earlier: str | None = None) -> str:

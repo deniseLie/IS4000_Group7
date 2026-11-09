@@ -59,13 +59,13 @@ function receiptText(item) {
   if(item.command.type==='compliance.update_checklist_item')return 'This command saved your preparation mark only. It did not submit or verify a document or change the bank review status. Reload Records for the current mark.';
   if(item.command.type==='document.register')return 'This command recorded a private uploaded file. It did not accept the document for the bank, complete a preliminary check or change the review case status. Reload Records for its current status.';
   if(item.command.type==='document.submit')return 'This command submitted the checked file against its requested item. It is awaiting bank review, not accepted or approved.';
-  if(item.command.type==='ticket.create')return `${item.receipt.result.created?'Recorded':'You already had an open request of this kind, so it was reused'}: ${item.receipt.result.reference}. The ${item.receipt.result.owner_team.toLowerCase()} decides the outcome, not the assistant. Check My requests for its status.`;
+  if(item.command.type==='ticket.create')return `${item.receipt.result.created?'Recorded':'You already had an open request of this kind, so it was reused'}: ${item.receipt.result.reference}. The ${item.receipt.result.owner_team.toLowerCase()} decides the outcome, not the assistant. Check Requests for its status.`;
   if(item.command.type==='requests.create')return 'This command recorded the reviewed request with status sent. This does not mean the service is fulfilled or a real advisor was contacted. Check Requests for its current status.';
   if(item.command.type==='agenda.save')return 'This command saved a private agenda draft. It did not share data. Check Data sharing for the current draft version.';
   if(item.command.type==='rm.share_summary')return 'This command recorded the reviewed snapshot for the relationship manager. Later edits or consent revocation do not erase that shared copy. No real advisor was contacted.';
-  if(item.command.type==='meeting.request')return `Your meeting request was sent. Your relationship manager answers by ${item.receipt.result.respond_by_text} (Singapore time). Follow it in My requests → Meetings.`;
+  if(item.command.type==='meeting.request')return `Your meeting request was sent. Your relationship manager answers by ${item.receipt.result.respond_by_text} (Singapore time). Follow it in Meetings.`;
   if(item.command.type==='meeting.withdraw')return 'You withdrew this meeting request. No meeting was booked.';
-  if(item.command.type==='meeting.counter_reply')return item.receipt.result.reply==='accept'?`Your meeting is booked${item.receipt.result.when?` for ${item.receipt.result.when}`:''}. You can see it in My requests → Meetings.`:'You declined the suggested time and the request was closed. No meeting was booked.';
+  if(item.command.type==='meeting.counter_reply')return item.receipt.result.reply==='accept'?`Your meeting is booked${item.receipt.result.when?` for ${item.receipt.result.when}`:''}. You can see it in Meetings.`:'You declined the suggested time and the request was closed. No meeting was booked.';
   if(item.command.type==='insight.share')return `Your relationship manager can now see “${line(item.receipt.result)}”${item.receipt.result.notified?' and has a notice in their workspace':''}. You can remove it under Data sharing.`;
   if(item.command.type==='insight.delete')return 'This topic and the words it came from were deleted. Your relationship manager no longer sees it.';
   if(item.command.type==='insight.mute')return 'This topic will not be suggested again from your chats. You can resume it under Data sharing.';
@@ -184,7 +184,7 @@ function activity(command) {
   }
 }
 function chip(command,receipt) {
-  if(command.state==='proposed')return ['Needs your OK','wait'];
+  if(command.state==='proposed')return ['Waiting for you','wait'];
   if(command.state==='confirmed')return ['In progress','wait'];
   if(command.state==='rejected')return ['You cancelled this','muted'];
   if(command.state==='expired')return ['Expired','muted'];
@@ -196,12 +196,12 @@ function meaning(item) {
   if(!receipt)return '';
   if(receipt.outcome==='failed')return 'Nothing changed, because the record changed before this could run.';
   switch(command.type) {
-    case 'document.register':return 'Your file is saved privately. It goes to the bank only after its preliminary check passes (Preliminary Check – Not Formal Compliance Approval).';
-    case 'document.submit':return 'The bank has the file. Only the bank can accept it; you will see the outcome in Compliance review and your Inbox.';
+    case 'document.register':return 'Your file is saved privately. It goes to the bank once our quick check finds it complete and you press Send.';
+    case 'document.submit':return 'The bank has the file. Only the bank can accept it; you will see the outcome in Periodic review and your Inbox.';
     case 'compliance.update_checklist_item':return 'Only your own checklist mark changed.';
     case 'compliance.answer_request':return 'Your answer was sent to the bank. The bank decides whether it is enough.';
-    case 'handoff.create':return 'Your relationship manager has the question and will reply. Follow it in My requests.';
-    case 'ticket.create':return `Reference ${receipt.result.reference}. ${receipt.result.owner_team} decides; follow it in My requests.`;
+    case 'handoff.create':return 'Your relationship manager has the question and will reply. Follow it in Requests.';
+    case 'ticket.create':return `Reference ${receipt.result.reference}. ${receipt.result.owner_team} decides; follow it in Requests.`;
     default:return receiptText(item);
   }
 }
@@ -209,7 +209,7 @@ function dayLabel(value) {
   const day=new Date(value),today=new Date(),key=d=>d.toDateString(),yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
   return key(day)===key(today)?'Today':key(day)===key(yesterday)?'Yesterday':formatDate(value);
 }
-const FILTERS=[['all','All'],['pending','Needs your OK'],['Compliance','Documents'],['Requests','Requests & help'],['Cards','Cards']];
+const FILTERS=[['all','All'],['Requests','Requests'],['Compliance','Documents'],['Cards','Cards'],['Appointments','Meetings'],['Data sharing','Data sharing']];
 const inFilter=(item,filter)=>filter==='all'||(filter==='pending'?item.command.state==='proposed':filter==='Requests'?['Requests','Support'].includes(groupOf(item.command)):groupOf(item.command)===filter);
 
 // Reopening shows the last loaded list at once; decisions stay disabled (busy) until the refreshed list arrives.
@@ -260,56 +260,63 @@ export default function ActionsPanel() {
   const needle=query.trim().toLowerCase();
   const visible=[...all].sort((a,b)=>(a.command.state==='proposed'?0:1)-(b.command.state==='proposed'?0:1)||Date.parse(b.receipt?.created_at||b.command.proposed_at)-Date.parse(a.receipt?.created_at||a.command.proposed_at))
     .filter(item=>inFilter(item,filter)&&(!needle||[...activity(item.command).slice(1),item.receipt?.receipt_id||'',formatDate(item.command.proposed_at)].join(' ').toLowerCase().includes(needle)));
-  const days=[];for(const item of visible){const label=item.command.state==='proposed'?'Needs your OK':dayLabel(item.receipt?.created_at||item.command.proposed_at);const last=days[days.length-1];if(last&&last[0]===label)last[1].push(item);else days.push([label,[item]]);}
-  return <section className="app-page-body activity-page" aria-label="Actions" data-testid="actions-page">
-    <header className="page-header"><div><span className="eyebrow">Account</span><h1>Actions</h1><p>A record of actions on your account.</p></div>
-      <div className="page-header-actions"><button data-testid="reload-actions" className="bank-chat-logout" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/>Refresh</button>
-      <button className="bank-chat-logout" disabled={!all.length} onClick={()=>exportCsv(all)}><Icon name="download"/>Download (.csv)</button></div></header>
-    <nav className="page-tabs" role="tablist" aria-label="Filter actions">{FILTERS.map(([key,label])=>{const count=all.filter(item=>inFilter(item,key)).length;
-      return (key==='all'||count>0)&&<button key={key} role="tab" aria-selected={filter===key} onClick={()=>setFilter(key)}>{label}<span className="count">{count}</span></button>;})}</nav>
-    {all.length>0&&<label className="act-search activity-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Search actions" value={query} onChange={event=>setQuery(event.target.value)}/></label>}
-    {busy&&<p className="loading" role="status">{deciding?'Saving your decision…':items?'Updating…':'Loading your actions…'}</p>}
+  // Waiting for you to confirm: the same request asked more than once is one row (one confirmation sends it; the
+  // older copies are cancelled in the same step). Everything else is a simple history by day.
+  const proposed=all.filter(item=>item.command.state==='proposed').sort((a,b)=>Date.parse(b.command.proposed_at)-Date.parse(a.command.proposed_at));
+  const groups=[];for(const item of proposed){const key=`${item.command.type}|${activity(item.command)[1]}`,found=groups.find(g=>g.key===key);if(found)found.items.push(item);else groups.push({key,items:[item]});}
+  const history=visible.filter(item=>item.command.state!=='proposed');
+  const days=[];for(const item of history){const label=dayLabel(item.receipt?.created_at||item.command.proposed_at);const last=days[days.length-1];if(last&&last[0]===label)last[1].push(item);else days.push([label,[item]]);}
+  async function confirmGroup(group) {
+    const [latest,...older]=group.items,command=latest.command;
+    await submit(command.type==='card.dispute'?(id,key,signal)=>confirmAction(id,key,signal,{card_in_possession:answer}):confirmAction,command.command_id);
+    for(const item of older)await submit(rejectAction,item.command.command_id);
+  }
+  return <section className="app-page-body activity-page" aria-label="Activity" data-testid="actions-page">
+    <header className="page-header"><div><span className="eyebrow">Your account</span><h1>Activity</h1><p>What you asked for or confirmed, newest first. Nothing happens until you confirm it.</p></div>
+      <div className="page-header-actions"><button className="link-button activity-csv" disabled={!all.length} onClick={()=>exportCsv(all)}>Download as a spreadsheet</button>
+      <button data-testid="reload-actions" className="icon-button" aria-label="Refresh" title="Refresh" disabled={busy} onClick={()=>{const controller=new AbortController();active.current=controller;refresh(controller);}}><Icon name="refresh"/></button></div></header>
+    {busy&&<p className="loading" role="status">{deciding?'Saving your decision…':items?'Updating…':'Loading your activity…'}</p>}
     {busy&&!items&&!deciding&&<div className="loading-list" aria-hidden="true">{[0,1,2].map(key=><span key={key} className="skeleton-card large"/>)}</div>}
     {error&&<p role="alert" data-testid="actions-error">{error} Refresh, then try again.</p>}
-    {items?.length===0&&<p className="act-empty" data-testid="actions-empty">Nothing yet. Uploads, requests and anything you approve will show up here.</p>}
-    {items?.length>0&&visible.length===0&&<p className="act-empty">Nothing matches this view.</p>}
-    <div data-testid="commands-list" className="tab-fade" key={filter}>{days.map(([label,group])=><section key={label} className="activity-day"><h2 className={label==='Needs your OK'?'attention':''}>{label}</h2>
-     <ul className="activity-list">{group.map(item=>{
-      const command=item.command,receipt=item.receipt,chosen=selected===command.command_id,[icon,title,detail]=activity(command),status=chip(command,receipt);
-      return <li key={command.command_id} data-command-id={command.command_id} className={`activity-item ${status?status[1]:''}`}>
-        <span className={`activity-icon ${groupOf(command).toLowerCase().replace(' ','-')}`} aria-hidden="true"><Icon name={icon}/></span>
-        <div className="activity-body">
-          <div className="activity-line"><h3>{title}</h3><time dateTime={receipt?.created_at||command.proposed_at}>{formatTime(receipt?.created_at||command.proposed_at)}</time></div>
-          {detail&&<p className="activity-detail" data-testid={command.type==='compliance.update_checklist_item'?'command-checklist':command.type.startsWith('consent.')?'command-consent-scope':undefined}>{detail}</p>}
-          {status&&<span className={`act-pill ${status[1]}`}>{status[0]}</span>}
-          {item.workflow?.state==='failed'&&<div data-testid="command-workflow" className="act-note"><p>Your decision is saved, but the chat reply didn't finish.</p></div>}
-          {command.state==='proposed'&&<>
-            {!chosen&&<div className="act-actions"><button className="primary-button" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);setAnswer('');}}><Icon name="check"/>Review</button>
-              <span className="act-meta">Open until {formatTime(command.expires_at)}</span></div>}
-            {chosen&&<div className="command-review act-review" data-testid="command-review">
-              <p>{review(command.type)[0]}</p>
-              {command.type==='card.dispute'&&<fieldset className="dispute-answer" data-testid="command-dispute-answer"><legend>Do you still have the card?</legend>
-                {POSSESSION.map(([key,label])=><label key={key}><input type="radio" name={`possession-${command.command_id}`} value={key} checked={answer===key} disabled={busy||!!error} onChange={()=>setAnswer(key)}/> {label}</label>)}</fieldset>}
-              <label className="act-ack"><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have checked the details above.</label>
-              <div className="act-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged||command.type==='card.dispute'&&!answer}
-                onClick={()=>submit(command.type==='card.dispute'?(id,key,signal)=>confirmAction(id,key,signal,{card_in_possession:answer}):confirmAction,command.command_id)}><Icon name="check"/>{review(command.type)[2]}</button>
-              <button className="bank-chat-logout" data-testid="reject-command" disabled={busy||!!error} onClick={()=>submit(rejectAction,command.command_id)}>Don't do this</button></div>
-            </div>}
-          </>}
-          <details className="act-more"><summary>Details</summary>
-            <div className="act-detail">
-              {receipt&&<p>{meaning(item)}</p>}
-              {command.type==='card.dispute'&&<div data-testid="command-dispute"><ul>{command.target.items.map(entry=><li key={entry.transaction_id}>{charge(entry)}</li>)}</ul>{command.answers&&<p>Do you still have the card? {possessionLabel(command.answers.card_in_possession)}.</p>}</div>}
-              {command.type==='ticket.create'&&<div data-testid="command-ticket">{Object.keys(command.target.details).length>0&&<ul>{Object.entries(command.target.details).map(([name,value])=><li key={name}>{name.replaceAll('_',' ')}: {value}</li>)}</ul>}<p>Decided by: {command.target.decided_by}</p></div>}
-              {command.type==='document.register'&&<p data-testid="command-document">{command.target.file_name} · {(command.target.size_bytes/1024).toFixed(0)} KB · {command.target.case_title}</p>}
-              {['card.unblock','card.cancel_permanently'].includes(command.type)&&!command.staff&&<p data-testid="command-card-change">{plainSummary(command)}</p>}
-              {(command.type.startsWith('consent.')||command.type.startsWith('appointment.')||['agenda.save','rm.share_summary','requests.create','meeting.request'].includes(command.type))&&<p>{plainSummary(command)}</p>}
-              <p className="act-meta">{formatDateTime(receipt?.created_at||command.proposed_at)} · status <span data-testid="command-state">{command.state}</span></p>
-              {receipt&&<p data-testid="command-receipt" className="act-meta">Reference <code title={receipt.receipt_id}>{receipt.receipt_id}</code></p>}
-            </div>
-          </details>
-        </div>
-      </li>;
-    })}</ul></section>)}</div>
+    {groups.length>0&&<section className="act-waiting" aria-label="Waiting for you to confirm"><h2>Waiting for you to confirm</h2>
+      {groups.map(group=>{const item=group.items[0],command=item.command,[,plain,detail]=activity(command),chosen=selected===command.command_id;
+        const title=command.type==='handoff.create'?'Send your question to your relationship manager':plain;
+        const times=group.items.map(x=>formatTime(x.command.proposed_at)).reverse().join(' and ');
+        return <div key={group.key} className="act-waiting-row" data-command-id={command.command_id}>
+          <div className="act-waiting-line"><div className="act-waiting-text"><strong>{title}</strong>
+            <small>{group.items.length>1?`You asked ${group.items.length===2?'twice':`${group.items.length} times`} (${times}) · one confirmation sends it`:detail} · open until {formatTime(command.expires_at)}</small></div>
+            {!chosen&&<><button className="primary-button" data-testid="review-command" disabled={busy||!!error||item.workflow&&!item.workflow.ready} onClick={()=>{setSelected(command.command_id);setAcknowledged(false);setAnswer('');}}>Review and confirm</button>
+              <button className="link-button" data-testid="reject-command" disabled={busy||!!error} onClick={async()=>{for(const x of group.items)await submit(rejectAction,x.command.command_id);}}>Don’t do this</button></>}</div>
+          {chosen&&<div className="command-review act-review" data-testid="command-review">
+            {detail&&group.items.length>1&&<p>{detail}</p>}
+            <p>{review(command.type)[0]}</p>
+            {command.type==='card.dispute'&&<fieldset className="dispute-answer" data-testid="command-dispute-answer"><legend>Do you still have the card?</legend>
+              {POSSESSION.map(([key,label])=><label key={key}><input type="radio" name={`possession-${command.command_id}`} value={key} checked={answer===key} disabled={busy||!!error} onChange={()=>setAnswer(key)}/> {label}</label>)}</fieldset>}
+            <label className="act-ack"><input type="checkbox" data-testid="acknowledge-command" checked={acknowledged} disabled={busy||!!error} onChange={event=>setAcknowledged(event.target.checked)}/> I have checked the details above.</label>
+            <div className="act-actions"><button className="primary-button" data-testid="confirm-command" disabled={busy||!!error||!acknowledged||command.type==='card.dispute'&&!answer} onClick={()=>confirmGroup(group)}><Icon name="check"/>{review(command.type)[2]}</button>
+              <button className="bank-chat-logout" onClick={()=>setSelected(null)}>Back</button></div>
+          </div>}
+        </div>;})}
+    </section>}
+    {all.length>0&&<div className="act-filters"><div className="act-chips" role="group" aria-label="Show">{FILTERS.map(([key,label])=>{const count=all.filter(item=>item.command.state!=='proposed'&&inFilter(item,key)).length;
+      return (key==='all'||count>0)&&<button key={key} type="button" className={`mtg-chip ${filter===key?'on':''}`} aria-pressed={filter===key} onClick={()=>setFilter(key)}>{label}</button>;})}</div>
+      <label className="act-search activity-search"><Icon name="search"/><input aria-label="Filter actions" placeholder="Search activity" value={query} onChange={event=>setQuery(event.target.value)}/></label></div>}
+    {items?.length===0&&<p className="act-empty" data-testid="actions-empty">Nothing yet. Uploads, requests and anything you confirm will show up here.</p>}
+    {items?.length>0&&history.length===0&&!groups.length&&<p className="act-empty">Nothing matches this view.</p>}
+    {days.length>0&&<div data-testid="commands-list" className="act-history tab-fade" key={filter}>{days.map(([label,group])=><section key={label} className="act-day"><h2>{label}</h2>
+     <ul>{group.map(item=>{const command=item.command,receipt=item.receipt,[,title,detail]=activity(command),status=chip(command,receipt);
+      return <li key={command.command_id} data-command-id={command.command_id}><details className="act-row">
+        <summary><span className="act-row-text"><strong>{title}</strong>{(detail||status)&&<small>{[detail,status&&!['In progress'].includes(status[0])?status[0]:null].filter(Boolean).join(' · ')}</small>}</span>
+          <time dateTime={receipt?.created_at||command.proposed_at}>{formatTime(receipt?.created_at||command.proposed_at)}</time></summary>
+        <div className="act-detail">
+          {item.workflow?.state==='failed'&&<p data-testid="command-workflow">Your decision is saved, but the chat reply didn't finish.</p>}
+          {receipt&&<p>{meaning(item)}</p>}
+          {command.type==='card.dispute'&&<div data-testid="command-dispute"><ul>{command.target.items.map(entry=><li key={entry.transaction_id}>{charge(entry)}</li>)}</ul>{command.answers&&<p>Do you still have the card? {possessionLabel(command.answers.card_in_possession)}.</p>}</div>}
+          {command.type==='ticket.create'&&<div data-testid="command-ticket">{Object.keys(command.target.details).length>0&&<ul>{Object.entries(command.target.details).map(([name,value])=><li key={name}>{name.replaceAll('_',' ')}: {value}</li>)}</ul>}<p>Decided by: {command.target.decided_by}</p></div>}
+          {command.type==='document.register'&&<p data-testid="command-document">{command.target.file_name} · {(command.target.size_bytes/1024).toFixed(0)} KB · {command.target.case_title}</p>}
+          {['card.unblock','card.cancel_permanently'].includes(command.type)&&!command.staff&&<p data-testid="command-card-change">{plainSummary(command)}</p>}
+          {(command.type.startsWith('consent.')||command.type.startsWith('appointment.')||['agenda.save','rm.share_summary','requests.create','meeting.request'].includes(command.type))&&<p>{plainSummary(command)}</p>}
+          <p className="act-meta">{formatDateTime(receipt?.created_at||command.proposed_at)} · <span data-testid="command-state">{command.state}</span>{receipt&&<> · reference <code data-testid="command-receipt" title={receipt.receipt_id}>{receipt.receipt_id.slice(0,8)}</code></>}</p>
+        </div></details></li>;})}</ul></section>)}</div>}
   </section>;
 }

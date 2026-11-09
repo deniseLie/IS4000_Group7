@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import RmAnswer from './RmAnswer';
-import {STARTER_GROUPS,meetingSuggestions,meetingTitle,openMeetingPage,askAssistant,contextAfter,conversationPayload,display,historyFor,nextSteps,openSchedule,partialReply,requestContext,rmGet,rmPut,slashActions,todayAction,todayList,todayView} from '../../lib/rm';
+import {pageStep,STARTER_GROUPS,meetingSuggestions,meetingTitle,openMeetingPage,askAssistant,contextAfter,conversationPayload,display,historyFor,nextSteps,openSchedule,requestContext,rmGet,rmPut,slashActions,todayAction,todayList,todayView} from '../../lib/rm';
 import {sharedTopicRows} from '../../lib/talkingPoints';
 import {formatDateTime} from '../../lib/format';
 import {redact} from '../../lib/chatTools';
@@ -116,7 +116,7 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
     <div className="chat-toolbar rm-toolbar">
       <label className="pill-select rm-client-select" title="The client the assistant is working on"><Icon name="user"/>
         <select aria-label="Active client" data-testid="rm-active-client" value={context.client_id||''} disabled={busy} onChange={e=>chooseClient(Number(e.target.value)||null)}>
-          <option value="">Whole book</option>{book.map(c=><option key={c.customer_id} value={c.customer_id}>{c.name}</option>)}</select><Icon name="chevron"/></label>
+          <option value="">All clients</option>{book.map(c=><option key={c.customer_id} value={c.customer_id}>{c.name}</option>)}</select><Icon name="chevron"/></label>
       {context.ticket_ref&&<span className="rm-context-chip">Ticket {context.ticket_ref}<button type="button" aria-label="Clear ticket" onClick={()=>setContext({...context,ticket_ref:null})}><Icon name="close"/></button></span>}
       {context.appointment_id&&!meeting&&<span className="rm-context-chip">Meeting selected<button type="button" aria-label="Clear meeting" onClick={()=>setContext({...context,appointment_id:null})}><Icon name="close"/></button></span>}
       {context.documentation&&!context.documentation.note_id&&<span className="rm-context-chip warn">Documentation in progress</span>}
@@ -140,7 +140,7 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
           {now?.length>0&&<section className="rm-now" data-testid="rm-needs-now" aria-label="Needs you now"><div className="rm-now-head"><strong>Needs you now</strong><span className="rm-small">from Today, most important first</span>
             <button type="button" className="rm-plain rm-now-open" onClick={()=>onNavigate('today')}>Open Today ↗</button></div>
             {now.map((x,i)=><div key={x.key} className="rm-now-row"><span className={`rm-dot ${x.tone}`} aria-label={x.label}/><span className="rm-now-text"><strong>{x.client}</strong> · {x.title}{x.why&&<span className="rm-now-why"> · {x.why}</span>}</span>
-              <button type="button" className={i===0?'primary-button':'bank-chat-logout'} onClick={()=>act(x)}>{todayAction(x).label}</button></div>)}</section>}
+              <button type="button" className="bank-chat-logout" onClick={()=>act(x)}>{todayAction(x).label}</button></div>)}</section>}
           {resume&&<section className="rm-now rm-continue" data-testid="rm-continue" aria-label="Continue where you left off"><div><span className="eyebrow">Continue where you left off</span>
             <strong>{resume.client} · {resume.title||(resume.kind==='preparation'?'Prepare for the meeting':'Document the meeting')}</strong>
             <span className="rm-continue-steps"><span className="rm-steps" aria-hidden="true">{[0,1,2,3].map(k=><i key={k} className={k<resume.step?'done':k===resume.step?'now':''}/>)}</span><small>Step {resume.step+1} of 4: {MEETING_STEPS[resume.step][1]}</small></span></div>
@@ -152,12 +152,12 @@ export default function RmAssistant({token,chatCount,messages,setMessages,contex
         {messages.map((m,i)=><div key={i} data-testid={`rm-message-${m.role}`} className={`bank-chat-message ${m.role}`}>
           {m.role==='assistant'&&<div className="bank-chat-avatar"><Icon name="spark"/></div>}
           <div className={`bank-chat-bubble ${m.error?'error':''}`}>
-            {m.role==='assistant'&&!(m.reply?.sections?.length&&m.reply.status!=='denied')&&<div className="answer-heading">RM assistant{m.reply?.origin==='access_check'&&<small className="answer-origin">Access check</small>}</div>}
+            {m.role==='assistant'&&<div className="answer-heading">RM assistant{m.reply?.origin==='access_check'?<small className="answer-origin">Access check</small>:m.reply?.origin==='ai'&&<small className="answer-origin">AI-generated</small>}</div>}
             {m.role==='user'&&<span className="answer-text">{m.content}</span>}
             {m.pending&&<span className="answer-text typing" role="status"><span className="typing-dots" aria-hidden="true"><i/><i/><i/></span>{status}</span>}
-            {m.pending&&parts.length>0&&<div data-testid="rm-partial"><RmAnswer reply={partialReply(parts)} compact latest={false} token={token}/></div>}
+            {/* Like the client side: the three dots stay until the whole answer is ready (no part-by-part preview). */}
             {m.error&&<span className="answer-text">{m.content}</span>}
-            {m.reply&&<RmAnswer reply={m.reply} onEdit={next=>{const list=messages.map((x,k)=>k===i?{...x,reply:next}:x);setMessages(list);save(list,context);}} client={m.client_id?clientName(m.client_id):null} onOption={option=>choose(option,m)} token={token} latest={i===lastIndex&&!busy&&!m.restored}
+            {m.reply&&<RmAnswer reply={m.reply} link={pageStep(m.reply)&&{label:pageStep(m.reply).link||pageStep(m.reply).label,go:()=>start(pageStep(m.reply))}} onEdit={next=>{const list=messages.map((x,k)=>k===i?{...x,reply:next}:x);setMessages(list);save(list,context);}} client={m.client_id?clientName(m.client_id):null} onOption={option=>choose(option,m)} token={token} latest={i===lastIndex&&!busy&&!m.restored}
               onAsk={text=>send(text,{intent:'draft_message'})}
               onDraftChange={value=>setContext(c=>({...c,draft:value}))}
               onDocumentationChange={value=>setContext(c=>({...c,documentation:value?{...(c.documentation||{}),...value}:null,note_id:value?.note_id||c.note_id}))}/>}

@@ -12,7 +12,7 @@ from app.services.agents import fraud_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
 from app.services.guardrail import FRAUD
 
-PROMPT='v7'
+PROMPT='v7'  # retired with the Security agent (build plan 2b): respond() runs only in tests, so fraud is not in prompts.VERSIONS
 # Fixed safety line kept first when a flagged fraud answer is withheld; it never replaces AI text.
 URGENT='If you do not recognise a charge, contact your bank now through the official fraud line on the back of your card or its official app. Never share your PIN, password, one-time code or full card number.'
 
@@ -21,10 +21,10 @@ def evidence_for(records: SecurityRecords) -> Evidence:
     data=records.model_dump(mode='json')
     data={**data,'transactions':[{**row.model_dump(mode='json'),
         'charge_amount':abs(row.amount) if row.card_id is not None and row.amount<0 else None} for row in records.transactions]}
-    return Evidence(id='customer-records',text=json.dumps(data),publisher='DemoBank synthetic records',
+    return Evidence(id='customer-records',text=json.dumps(data),publisher='UBS Connect records',
         scope='Authenticated customer records; captured for this request only.',source=Source(id='customer-records',
         title='Authenticated synthetic card and transaction records',url=None,version=records.captured_at.isoformat(),
-        publisher='DemoBank synthetic records'))
+        publisher='UBS Connect records'))
 
 
 COUNTRIES={'SG':'Singapore','US':'the United States'}
@@ -52,15 +52,15 @@ def travel_evidence(records: SecurityRecords,txn_id: str) -> Evidence | None:
     fields={'description','amount','currency','card_last4','merchant_country'}
     rows=[{'role':role,'time':when(item),**item.model_dump(mode='json',include=fields)}
         for role,item in [('earlier charge in another country',anchor),*(('flagged charge',flag.charge) for flag in flags)]]
-    text=(f'DemoBank rule check, not a fraud decision: the card ending {anchor.card_last4} was used in {place(anchor)} and then in another '
+    text=(f'UBS Connect rule check, not a fraud decision: the card ending {anchor.card_last4} was used in {place(anchor)} and then in another '
         f'country less than {fraud_records.TRAVEL_HOURS} hours later, too soon to travel between them, so the charges in both places '
         'cannot all have been made in person by one cardholder. The rule cannot tell which place the cardholder was in. '
         f'Earlier charge: {charge(anchor)}. Flagged: '+'; '.join(f'{charge(flag.charge)}, {gap(flag)}' for flag in flags)+'. '
         +('Flagged with the reported charge as well: '+', '.join(flag.charge.description for flag in other)+'. ' if other else '')
         +json.dumps({'records':rows}))
-    return Evidence(id='travel-check',text=text,publisher='DemoBank rule check',
+    return Evidence(id='travel-check',text=text,publisher='UBS Connect rule check',
         scope='Deterministic rule over authenticated customer records; an impossible-travel flag, not a fraud decision.',source=Source(id='travel-check',
-        title='Rule check: card used in two countries too close in time',url=None,version=records.captured_at.isoformat(),publisher='DemoBank rule check'))
+        title='Rule check: card used in two countries too close in time',url=None,version=records.captured_at.isoformat(),publisher='UBS Connect rule check'))
 
 
 def schema_for(evidence: list[Evidence]) -> dict[str,JsonValue]:

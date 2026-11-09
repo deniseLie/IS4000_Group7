@@ -181,46 +181,42 @@ def test_the_trip_window_is_read_never_guessed():
         assert trip_checks.window(bad, 'next week', today) is None, bad
 
 
-def test_due_dates_shift_past_weekends_and_public_holidays():
-    holidays = {date(2026, 12, 25)}
-    assert trip_checks.pays_on(date(2026, 11, 28), holidays) == (date(2026, 11, 30), 'weekend')
-    assert trip_checks.pays_on(date(2026, 12, 25), holidays) == (date(2026, 12, 28), 'public holiday')
-    assert trip_checks.pays_on(date(2026, 11, 25), holidays) == (date(2026, 11, 25), None)
-    found = trip_checks.dues([('Card ending 4821 payment', date(2026, 11, 25))], date(2026, 11, 10), date(2026, 12, 31), holidays)
-    assert [(d['due'], d['pays_on'], d['in_trip']) for d in found] == [('2026-11-25', '2026-11-25', True), ('2026-12-25', '2026-12-28', True)]
+def test_due_dates_shift_past_weekends_only():
+    assert trip_checks.pays_on(date(2026, 11, 28)) == (date(2026, 11, 30), 'weekend')  # Saturday
+    assert trip_checks.pays_on(date(2026, 11, 29)) == (date(2026, 11, 30), 'weekend')  # Sunday
+    assert trip_checks.pays_on(date(2026, 12, 25)) == (date(2026, 12, 25), None)  # a Friday; public holidays are not checked
+    assert trip_checks.pays_on(date(2026, 11, 25)) == (date(2026, 11, 25), None)
+    found = trip_checks.dues([('Card ending 4821 payment', date(2026, 11, 28))], date(2026, 11, 10), date(2026, 12, 31))
+    assert [(d['due'], d['pays_on'], d['in_trip']) for d in found] == [('2026-11-28', '2026-11-30', True), ('2026-12-28', '2026-12-28', True)]
     # a due date the day before the trip that shifts into it counts
-    found = trip_checks.dues([('Loan instalment', date(2026, 11, 7))], date(2026, 11, 9), date(2026, 11, 12), set())
+    found = trip_checks.dues([('Loan instalment', date(2026, 11, 7))], date(2026, 11, 9), date(2026, 11, 12))
     assert [(d['pays_on'], d['in_trip']) for d in found] == [('2026-11-09', True)]
 
 
 def evidence(tool: str, rows: list) -> Evidence:
-    return Evidence(id=tool, text=json.dumps({'records': rows}), publisher='DemoBank', scope='test',
-        source=Source(id=tool, title=tool, url=None, version='v1', publisher='DemoBank'))
+    return Evidence(id=tool, text=json.dumps({'records': rows}), publisher='UBS Connect', scope='test',
+        source=Source(id=tool, title=tool, url=None, version='v1', publisher='UBS Connect'))
 
 
-def holidays_reader(rows: list | None):
-    async def read(name, args):
-        assert (name, args['country']) == ('public_holidays', 'SG')
-        if rows is None:return [runner.note('public_holidays-unavailable', 'This public reference could not be checked right now.')]
-        return [evidence('public_holidays' if args['year'] == 2026 else f'public_holidays-{args["year"]}', rows)]
-    return read
+async def no_reads(name, args):
+    raise AssertionError(f'trip due dates read {name}')  # code computes them from the default reads alone
 
 
 def test_trip_due_dates_export_only_what_code_computed():
     spec, item = SPECS['accounts'], t('t1', 'accounts', 'trip_due_dates', entities={'from_date': '2026-12-20', 'to_date': '2026-12-31'})
     item = item.model_copy(update={'question': 'Payments due while I am away?'})
-    reads = [evidence('my_cards', [{**CARD, 'due_date': '2026-11-25'}]), evidence('my_loans', [{'type': 'Home loan', 'next_payment': '2026-12-01'}])]
-    found = asyncio.run(derived.compute(spec, item, ctx(), reads, holidays_reader([{'date': '2026-12-25', 'national': True}])))
-    assert found.exports['due_in_window'].value is True and found.exports['due_dates'].value == ['2026-12-28']
-    assert found.exports['due_dates'].source_ids == ['my_cards', 'my_loans', 'public_holidays', 'trip-checks']
-    body = json.loads(next(e for e in reads if e.id == 'trip-checks').text)
-    assert body['holidays_checked'] and [d['shifted_for'] for d in body['due_dates'] if d['in_trip']] == ['public holiday']
-    # holidays not checked: no exports (a dependant is skipped), and the evidence says so
-    reads = [evidence('my_cards', [CARD])]
-    found = asyncio.run(derived.compute(spec, item, ctx(), reads, holidays_reader(None)))
-    assert found.exports == {} and json.loads(reads[-1].text)['holidays_checked'] is False
+    reads = [evidence('my_cards', [{**CARD, 'due_date': '2026-11-26'}]), evidence('my_loans', [{'type': 'Home loan', 'next_payment': '2026-12-01'}])]
+    found = asyncio.run(derived.compute(spec, item, ctx(), reads, no_reads))
+    assert found.exports['due_in_window'].value is True and found.exports['due_dates'].value == ['2026-12-28']  # Sat 26 Dec -> Mon 28 Dec
+    assert found.exports['due_dates'].source_ids == ['my_cards', 'my_loans', 'trip-checks']
+    trip = next(e for e in reads if e.id == 'trip-checks')
+    body = json.loads(trip.text)
+    assert [d['shifted_for'] for d in body['due_dates'] if d['in_trip']] == ['weekend'] and 'public holidays are not checked' in trip.scope
+    # no card or loan records read: no exports (a dependant is skipped)
+    found = asyncio.run(derived.compute(spec, item, ctx(), [runner.note('my_cards-unavailable', 'x')], no_reads))
+    assert found.exports == {}
     with pytest.raises(derived.Clarify, match='Which dates'):
-        asyncio.run(derived.compute(spec, item.model_copy(update={'entities': {}}), ctx(), [], holidays_reader([])))
+        asyncio.run(derived.compute(spec, item.model_copy(update={'entities': {}}), ctx(), [], no_reads))
 
 
 def test_account_refs_carry_no_balances():

@@ -8,13 +8,13 @@ from app.schemas.knowledge import KnowledgeSection
 
 SECTIONS={
     'sg-accounts':dict(title='Singapore bank account basics',publisher='MoneySense',
-        scope='General Singapore banking education, summarised by this project. Not a DemoBank product policy. Confirm your own bank’s terms.',
+        scope='General Singapore banking education, summarised by this project. Not a UBS Connect product policy. Confirm your own bank’s terms.',
         reference_url='https://www.moneysense.gov.sg/understanding-bank-accounts/',checked_on='2026-10-12',review_due='2027-01-12',
         body='Savings and current accounts can be used for everyday payments. Fixed deposits hold money until a maturity date. Withdrawing '
             'a fixed deposit early may reduce or remove interest and may incur a fee. Before opening an account, check its minimum deposit, '
             'minimum balance, fees, withdrawal limits and interest terms. Ask the bank which identification and supporting documents it '
             'needs. Product terms differ between banks.'),
-    'transactions':dict(title='Failed pending and unfamiliar payments',publisher='DemoBank coursework project',
+    'transactions':dict(title='Failed pending and unfamiliar payments',publisher='UBS Connect',
         scope='Fictional demo guidance; not a live bank policy.',reference_url=None,checked_on=None,review_due=None,
         body='Failed means the payment did not complete; check the message in your official banking app before retrying. Pending means '
             'processing is not complete; check the status and avoid duplicate payments. Exact release or completion times are unavailable '

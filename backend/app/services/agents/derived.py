@@ -18,7 +18,6 @@ from app.services import tools
 from app.services.agents import trip_checks
 
 Reader = Callable[[str, dict[str, Any]], Awaitable[list[Evidence]]]  # one logged read in the runner, as evidence
-COUNTRY = 'SG'
 TRIP_SOURCE = 'trip-checks'
 
 
@@ -116,10 +115,10 @@ async def savings_after_cards(spec: AgentSpec, task: PlanTask, ctx: RequestConte
             card_balances=[{'last4': digits(c, 'last4'), 'currency': 'SGD', 'outstanding': figure(money(c['outstanding']))} for c in owed],
             savings_total=sgd(kept), card_balances_total=sgd(paid), savings_after_paying=sgd(left), below_threshold=left < limit)
     else:body['not_checked'] = why
-    evidence.append(Evidence(id=SAVINGS_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='DemoBank',
+    evidence.append(Evidence(id=SAVINGS_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='UBS Connect',
         scope='Computed by code from the customer\'s own active savings accounts and card balances: savings minus every card\'s '
             'outstanding balance, against the amount she named. A plan, not a payment; balances change.',
-        source=Source(id=SAVINGS_SOURCE, title='Your savings after paying your cards', url=None, version=tools.today(ctx).isoformat(), publisher='DemoBank')))
+        source=Source(id=SAVINGS_SOURCE, title='Your savings after paying your cards', url=None, version=tools.today(ctx).isoformat(), publisher='UBS Connect')))
     if why is not None:return Derived()
     return Derived(exports={'below_threshold': Export(value=body['below_threshold'], source_ids=[account_source, card_source, SAVINGS_SOURCE])})
 
@@ -149,33 +148,25 @@ def check_failed(evidence: list[Evidence], question: str) -> dict[str, Export]:
 
 
 def trip_evidence(body: dict, ctx: RequestContext) -> Evidence:
-    return Evidence(id=TRIP_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='DemoBank',
-        scope='Dates computed by code from the customer\'s own card and loan records and the public holiday calendar; '
-            f'today in Singapore is {tools.today(ctx).isoformat()}.',
-        source=Source(id=TRIP_SOURCE, title='Your due dates during your trip', url=None, version=tools.today(ctx).isoformat(), publisher='DemoBank'))
+    return Evidence(id=TRIP_SOURCE, text=json.dumps(body, ensure_ascii=False), publisher='UBS Connect',
+        scope='Dates computed by code from the customer\'s own card and loan records; a due date on a Saturday or Sunday '
+            f'is paid the next Monday, and public holidays are not checked. Today in Singapore is {tools.today(ctx).isoformat()}.',
+        source=Source(id=TRIP_SOURCE, title='Your due dates during your trip', url=None, version=tools.today(ctx).isoformat(), publisher='UBS Connect'))
 
 
 async def trip_due_dates(spec: AgentSpec, task: PlanTask, ctx: RequestContext, evidence: list[Evidence], read: Reader) -> Derived:
-    """Which card and loan payments fall due while she is away, after weekend and public-holiday shifts."""
+    """Which card and loan payments fall due while she is away, after weekend shifts (public holidays are not checked)."""
     today = tools.today(ctx)
     if (trip := trip_checks.window(task.entities, task.question, today)) is None:raise Clarify(trip_checks.ASK_WINDOW)
     start, end = trip
     cards, card_source = records(evidence, 'my_cards')
     loans, loan_source = records(evidence, 'my_loans')
-    holidays, sources, checked = set(), [s for s in (card_source, loan_source) if s], True
-    for year in sorted({start.year, end.year}):
-        found = await read('public_holidays', {'country': COUNTRY, 'year': year})
-        rows, source = records(found, 'public_holidays')
-        evidence.extend(found)
-        if source is None:checked = False;continue
-        sources.append(source)
-        holidays |= {trip_checks.as_date(r.get('date'), today) for r in rows if isinstance(r, dict) and r.get('national', True)} - {None}
+    sources = [s for s in (card_source, loan_source) if s]
     items = [(f'Card ending {c["last4"]} payment', trip_checks.as_date(c.get('due_date'), today)) for c in cards if isinstance(c, dict) and c.get('last4')]
     items += [(f'{l.get("type") or "Loan"} instalment', trip_checks.as_date(l.get('next_payment'), today)) for l in loans if isinstance(l, dict)]
-    due = trip_checks.dues([(label, day) for label, day in items if day is not None], start, end, holidays)
-    evidence.append(trip_evidence({'trip_from': start.isoformat(), 'trip_to': end.isoformat(), 'holidays_checked': checked,
-        'due_dates': due}, ctx))
-    if not checked or not sources:return Derived()  # unknown means no: a dependant is skipped, the answer says what was not checked
+    due = trip_checks.dues([(label, day) for label, day in items if day is not None], start, end)
+    evidence.append(trip_evidence({'trip_from': start.isoformat(), 'trip_to': end.isoformat(), 'due_dates': due}, ctx))
+    if not sources:return Derived()  # unknown means no: a dependant is skipped, the answer says what was not read
     inside = sorted({d['pays_on'] for d in due if d['in_trip']})
     provenance = [*sources, TRIP_SOURCE]
     return Derived(exports={'due_in_window': Export(value=bool(inside), source_ids=provenance),

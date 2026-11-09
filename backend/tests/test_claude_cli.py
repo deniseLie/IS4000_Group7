@@ -41,8 +41,11 @@ def test_parser_only_returns_structured_output_and_numeric_usage():
     data,usage=parse_result(result(result='do not return this',structured_output={'answer':'parser sample'},
         usage={'input_tokens':3,'cache_creation_input_tokens':10,'cache_read_input_tokens':5,'output_tokens':4,'service_tier':'standard'}))
     assert data=={'answer':'parser sample'} and usage=={'input_tokens':18,'output_tokens':4,'answer_chars':27}
-    _,usage=parse_result(result(structured_output={'answer':'x'},num_turns=1,duration_api_ms=1800,duration_ms='7000'))
-    assert usage=={'num_turns':1,'api_ms':1800,'answer_chars':15}  # numbers only; the span shows how much of the output was thinking
+    _,usage=parse_result(result(structured_output={'answer':'x'},num_turns=1,duration_api_ms=1800,duration_ms='7000',
+        usage={'output_tokens':1292,'output_tokens_details':{'thinking_tokens':930}}))
+    assert usage=={'output_tokens':1292,'thinking_tokens':930,'num_turns':1,'api_ms':1800,'answer_chars':15}  # numbers only
+    _,usage=parse_result(result(structured_output={'answer':'x'},usage={'output_tokens_details':{'thinking_tokens':'930'}}))
+    assert 'thinking_tokens' not in usage  # a count that is not a number is left out
 
 def test_the_turn_timeout_is_a_setting_and_a_slow_cli_is_stopped(monkeypatch):
     from app.services import claude_cli

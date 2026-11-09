@@ -42,7 +42,7 @@ def test_record_currency_does_not_authorize_dates_or_other_record_numbers():
 @pytest.mark.parametrize('answer',[
     'Our policy says early withdrawal may incur a fee.',
     'Under our card terms, interest applies.',
-    "DemoBank’s policy is that a fee may apply.",
+    "UBS Connect’s policy is that a fee may apply.",
 ])
 def test_external_education_cannot_be_claimed_as_bank_policy(answer):
     assert check(answer,'Interest and fees may apply.',publisher='MoneySense')=='unsupported_attribution'
@@ -62,5 +62,5 @@ def test_negative_amount_cannot_be_relabelled_as_positive():
 
 
 def test_bank_policy_disclaimer_is_not_an_attribution_claim():
-    assert check("This is not DemoBank’s policy. Confirm your own bank's terms.",
+    assert check("This is not UBS Connect’s policy. Confirm your own bank's terms.",
                  'Terms depend on your bank.',publisher='MoneySense') is None

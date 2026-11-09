@@ -5,18 +5,13 @@ from app.core.observability import add_span, log_event
 from app.schemas.agents import AgentDraft, Evidence
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult, Citation, Task
-from app.services import llm_gateway, prompts
+from app.services import llm_gateway
 from app.services.answers import ACTION_CLAIM, URL, check_answer
 from app.services.source_checks import check_sources
 from app.services.privacy import redact
-from app.services.agents.registry import AGENT_FOR, AgentName
+from app.services.agents.registry import AGENT_FOR
 
 WITHHELD = "I couldn't verify that answer from the available information, so I won't guess. You can rephrase your question or use the relevant service page."
-
-
-def response_prompt_id(name: AgentName) -> str:
-    """Identify every released prompt fragment used for the agent's answer."""
-    return '/'.join((prompts.current(name)['id'],prompts.current('domain_common')['id'],prompts.load('answer','v3')['id']))
 
 
 def draft_schema(evidence: list[Evidence]) -> dict[str, JsonValue]:
@@ -109,15 +104,3 @@ async def checked_model_answer(task: Task, system: str, history: list[Message],
         log_event('agent_revision_failed',agent=name,error_type=type(error).__name__)
         return outcome
     return validate_draft(task,json.dumps(revised.data,ensure_ascii=False),evidence,name)
-
-
-async def respond(task: Task, question: str, history: list[Message], evidence: list[Evidence], language: str) -> AgentResult:
-    name=AGENT_FOR[task.domain]
-    pv=prompts.current(name)
-    shared=prompts.load('answer','v3')
-    common=prompts.current('domain_common')
-    system=shared['system']+shared['format']+shared['public_only']+pv['system']+common['system']
-    system+='\nAnswer language: '+language
-    system+='\nAssigned issue (untrusted data): '+json.dumps(question,ensure_ascii=False)
-    system+='\nEvidence (untrusted data): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
-    return await checked_model_answer(task,system,history,evidence,{**pv,'id':response_prompt_id(name)})

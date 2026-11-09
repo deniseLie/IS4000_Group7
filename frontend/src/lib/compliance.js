@@ -52,10 +52,10 @@ export function checkIsFresh(report,now=Date.now()){
 }
 export function primaryStatus(item){
  if(item.submission_status==='accepted')return 'Accepted by bank';
- if(item.submission_status==='submitted_awaiting_review')return 'Submitted – awaiting review';
+ if(item.submission_status==='submitted_awaiting_review')return 'With the bank – awaiting review';
  if(item.submission_status==='unknown')return 'Unknown';
  if(item.submission_status==='rejected')return 'Correction requested by bank';
- return item.client_mark==='prepared'?'Prepared':'Not prepared';
+ return item.client_mark==='prepared'?'Ready to send':'To send';
 }
 export function closedRequestOutcome(outcome){
  if(outcome==null)return {label:'Closed – bank outcome not recorded',tone:'wait',icon:'…'};
@@ -68,7 +68,7 @@ export function reviewNextStep(review){
  if(review.requested_items.some(item=>item.submission_status==='unknown'))return {label:'Document status needs checking',needsAttention:true};
  if(review.requested_items.length>=200)return {label:'Document list may be incomplete – check with the bank',needsAttention:true};
  if(review.requested_items.some(item=>item.submission_status==='submitted_awaiting_review'))return {label:'Documents with bank – awaiting review',needsAttention:false};
- return {label:'No requested actions remaining',needsAttention:false};
+ return {label:review.requested_items.length?'Everything sent':'Nothing needed from you',needsAttention:false};
 }
 export function findingText(finding,rule){
  if(finding.code==='translation_needed')return 'This file seems to be mostly in another language. Please add a certified English translation, or use Talk to a person to ask which translation the bank accepts.';

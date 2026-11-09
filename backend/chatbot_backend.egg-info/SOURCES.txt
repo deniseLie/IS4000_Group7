@@ -219,6 +219,29 @@ app/prompts/rm_assistant/v6/step.md
 app/prompts/rm_assistant/v6/system.md
 app/prompts/rm_assistant/v6/ticket.md
 app/prompts/rm_assistant/v6/today.md
+app/prompts/rm_assistant/v7/actions.md
+app/prompts/rm_assistant/v7/availability.md
+app/prompts/rm_assistant/v7/book.md
+app/prompts/rm_assistant/v7/brief.md
+app/prompts/rm_assistant/v7/documentation.md
+app/prompts/rm_assistant/v7/draft.md
+app/prompts/rm_assistant/v7/follow_up.md
+app/prompts/rm_assistant/v7/handover.md
+app/prompts/rm_assistant/v7/help.md
+app/prompts/rm_assistant/v7/history.md
+app/prompts/rm_assistant/v7/inbox.md
+app/prompts/rm_assistant/v7/meeting_requests.md
+app/prompts/rm_assistant/v7/meetings.md
+app/prompts/rm_assistant/v7/open.md
+app/prompts/rm_assistant/v7/overview.md
+app/prompts/rm_assistant/v7/priorities.md
+app/prompts/rm_assistant/v7/question.md
+app/prompts/rm_assistant/v7/reviews.md
+app/prompts/rm_assistant/v7/schedule.md
+app/prompts/rm_assistant/v7/step.md
+app/prompts/rm_assistant/v7/system.md
+app/prompts/rm_assistant/v7/ticket.md
+app/prompts/rm_assistant/v7/today.md
 app/prompts/rm_planner/v1/system.md
 app/prompts/rm_planner/v2/system.md
 app/prompts/rm_planner/v3/system.md
@@ -230,6 +253,7 @@ app/prompts/runner_common/v2/step.md
 app/prompts/runner_common/v2/system.md
 app/prompts/security/v1/system.md
 app/prompts/talking_points/v1/system.md
+app/prompts/talking_points/v2/system.md
 app/schemas/__init__.py
 app/schemas/actions.py
 app/schemas/agendas.py
@@ -250,6 +274,7 @@ app/schemas/documents.py
 app/schemas/events.py
 app/schemas/fraud.py
 app/schemas/knowledge.py
+app/schemas/meeting_agents.py
 app/schemas/meeting_chunks.py
 app/schemas/meeting_lifecycle.py
 app/schemas/meeting_packs.py
@@ -273,6 +298,7 @@ app/schemas/sharing.py
 app/schemas/staff.py
 app/schemas/staff_settings.py
 app/schemas/talking_points.py
+app/schemas/talking_points_state.py
 app/schemas/tickets.py
 app/schemas/workflows.py
 app/schemas/zoom_capture.py
@@ -299,7 +325,6 @@ app/services/document_parsers.py
 app/services/document_templates.py
 app/services/document_uploads.py
 app/services/embeddings.py
-app/services/external.py
 app/services/guardrail.py
 app/services/handover.py
 app/services/insights.py
@@ -321,6 +346,7 @@ app/services/rm_handover.py
 app/services/safety.py
 app/services/source_checks.py
 app/services/talking_points.py
+app/services/talking_points_state.py
 app/services/tools.py
 app/services/typos.py
 app/services/workflow_store.py
@@ -399,6 +425,8 @@ evaluation/focused_cases.json
 evaluation/graph_cases.json
 evaluation/langsmith_run.py
 evaluation/langsmith_sync.py
+evaluation/meeting_boundaries.py
+evaluation/meeting_boundary_cases.json
 evaluation/meeting_cases.json
 evaluation/meeting_preparation.py
 evaluation/meetings.py
@@ -474,6 +502,7 @@ tests/test_consent_api.py
 tests/test_consent_chat.py
 tests/test_consent_database.py
 tests/test_consent_v2.py
+tests/test_consent_withdrawal.py
 tests/test_contracts.py
 tests/test_conversation_browser.py
 tests/test_conversations_api.py
@@ -493,7 +522,6 @@ tests/test_document_uploads.py
 tests/test_documents.py
 tests/test_documents_browser.py
 tests/test_evaluation.py
-tests/test_external.py
 tests/test_flow_followups.py
 tests/test_fraud.py
 tests/test_fraud_agent_browser.py
@@ -513,6 +541,7 @@ tests/test_langsmith_eval.py
 tests/test_langsmith_sync.py
 tests/test_llm_contract.py
 tests/test_llm_gateway.py
+tests/test_meeting_agent_boundaries.py
 tests/test_meeting_answers.py
 tests/test_meeting_brief.py
 tests/test_meeting_completion.py
@@ -562,6 +591,7 @@ tests/test_rls_live.py
 tests/test_rm_assistant.py
 tests/test_rm_brief_facts.py
 tests/test_rm_change.py
+tests/test_rm_follow_up.py
 tests/test_rm_followup_browser.py
 tests/test_rm_gated_evidence.py
 tests/test_rm_graph.py
@@ -581,6 +611,8 @@ tests/test_storyline_db.py
 tests/test_stubs.py
 tests/test_talking_points.py
 tests/test_talking_points_db.py
+tests/test_talking_points_state.py
+tests/test_talking_points_state_db.py
 tests/test_ticket_schema.py
 tests/test_tickets.py
 tests/test_tools_mcp.py

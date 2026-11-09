@@ -10,7 +10,7 @@ test('sixteenth and later questions work; new chat clears context',async({page})
  await expect(page.getByRole('status')).toContainText('Older messages');
  await page.getByRole('button',{name:'New chat',exact:true}).click();
  await expect(page.locator('.bank-chat-message')).toHaveCount(0);
- await expect(page.getByRole('heading',{name:'Banking questions. Clearly answered.'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Hi, how can I help?'})).toBeVisible();
  expect(sent.at(-1).messages.length).toBeLessThanOrEqual(29);
  expect(sent.at(-1).messages.at(-1).content).toBe('What is my balance? 17');
  await ask(page,'I lost my card');
@@ -24,7 +24,7 @@ test('refresh clears conversation and sends no previous context',async({page})=>
  expect((await sent).postDataJSON().messages).toEqual([{role:'user',content:'I lost my card'}]);
 });
 test('chat opens by saying it is an AI assistant giving general information',async({page})=>{
- await expect(page.getByTestId('chat-greeting')).toHaveText("I'm DemoBank's AI assistant. I give general information, not advice.");
+ await expect(page.getByTestId('chat-greeting')).toHaveText("I'm the UBS Connect AI assistant. I give general information, not advice.");
 });
 test('language scope is explained and safety guidance stays labelled',async({page})=>{
  await page.getByLabel('Answer language',{exact:true}).selectOption('Chinese');
@@ -34,7 +34,7 @@ test('language scope is explained and safety guidance stays labelled',async({pag
  expect((await sent).postDataJSON().language).toBe('Chinese');
  await expect(page.locator('.bank-chat-message.assistant')).toContainText('Safety guidance');
  await expect(page.locator('.bank-chat-message.assistant')).toContainText('immediately');
- await expect(page.getByText('Demo AI assistant.',{exact:false})).toContainText('AI answers can contain errors');
+ await expect(page.getByText('AI answers can contain errors',{exact:false})).toContainText('AI answers can contain errors');
 });
 test('new chat discards an in-flight request and remains usable',async({page})=>{
  let release;const gate=new Promise(resolve=>{release=resolve;});
@@ -80,13 +80,9 @@ test('lost card and unauthenticated personal enquiry',async({page})=>{
  }
  await ask(page,'What is my balance?');await expect(page.locator('.bank-chat-message.assistant').last()).toContainText('Sign in');
 });
-test('summary requires review and makes no handoff claim',async({page,context})=>{
- await context.grantPermissions(['clipboard-read','clipboard-write']);
- await ask(page,'I lost my card');await page.getByRole('button',{name:'Talk to a person'}).click();
- await expect(page.getByRole('button',{name:'Copy summary'})).toBeDisabled();
- await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Copy summary'}).click();
- await expect(page.getByText('Copied. No ticket was sent.')).toBeVisible();
- expect(await page.evaluate(()=>navigator.clipboard.readText())).toContain('I lost my card');
+test('guests are not offered Talk to a person (it needs a signed-in client and her relationship manager)',async({page})=>{
+ await ask(page,'I lost my card');
+ await expect(page.getByRole('button',{name:'Talk to a person'})).toHaveCount(0);
 });
 test('network failure is shown and next request still works',async({page})=>{
  await page.route('**/api/chat',route=>route.abort('failed'),{times:1});
@@ -103,10 +99,11 @@ test('responsive home, topic drafts and sign-in navigation work at desktop and m
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  for(const width of [1440,768,390,320]) {
   await page.setViewportSize({width,height:900});await page.goto('/');
-  await expect(page.getByRole('heading',{name:'Banking questions. Clearly answered.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Hi, how can I help?'})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   const welcome=page.locator('.bank-chat-welcome');
-  await welcome.getByRole('button',{name:/Cards & payments/}).click();
+  await welcome.getByRole('tab',{name:'Cards and payments'}).click();
+  await welcome.getByRole('button',{name:/minimum on my credit card/}).click();
   await expect(page.getByRole('textbox',{name:'Your message'})).toBeFocused();
   await expect(page.getByRole('textbox',{name:'Your message'})).toHaveValue('Does paying only the minimum on my credit card avoid interest?');
   await expect(page.locator('.bank-chat-message')).toHaveCount(0);
@@ -125,26 +122,16 @@ test('responsive home, topic drafts and sign-in navigation work at desktop and m
  }
  expect(errors).toEqual([]);
 });
-test('source and support dialogs keep keyboard focus and close on Escape',async({page})=>{
+test('a bank guide source opens in place under its row and closes again',async({page})=>{
  await page.setViewportSize({width:390,height:844});
  await ask(page,'I lost my card');await page.getByText('Sources',{exact:true}).click();
  const trigger=page.getByRole('button',{name:'Lost or stolen card guidance'});
  await trigger.click();
- const source=page.getByRole('dialog',{name:'Source details'});
- await expect(source).toBeVisible();
- await expect(source.getByRole('button',{name:'Close source'})).toBeFocused();
- await page.keyboard.press('Shift+Tab');
- expect(await source.evaluate(node=>node.contains(document.activeElement))).toBe(true);
+ const source=page.getByRole('region',{name:'Source details'});
+ await expect(source).toBeVisible();await expect(trigger).toHaveAttribute('aria-expanded','true');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
  await page.screenshot({path:'test-results/design-source-mobile.png',fullPage:true});
- await page.keyboard.press('Escape');await expect(source).toHaveCount(0);await expect(trigger).toBeFocused();
- const support=page.getByRole('button',{name:'Talk to a person'});await support.click();
- const dialog=page.getByRole('dialog',{name:'Human support'});await expect(dialog).toBeVisible();
- await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'Copy summary'})).toBeEnabled();
- await page.getByRole('textbox',{name:'Support summary'}).fill('Edited synthetic support note');
- await expect(page.getByRole('button',{name:'Copy summary'})).toBeDisabled();
- await page.screenshot({path:'test-results/design-support-mobile.png',fullPage:true});
- await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(support).toBeFocused();
+ await source.getByRole('button',{name:'Close source'}).click();await expect(source).toHaveCount(0);
 });
 test('Up and Down in an empty message box recall sent questions',async({page})=>{
  await ask(page,'What is my balance?');await ask(page,'I lost my card');

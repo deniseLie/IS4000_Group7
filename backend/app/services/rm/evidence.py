@@ -171,6 +171,26 @@ def appointments_evidence(result: dict,customer_id: int|None=None) -> Evidence:
     return Evidence('appointments','Confirmed and held appointments (held times are not confirmed)','calendar',rows,str(result.get('as_of')),customer_id)
 
 
+ZOOM_MEANING='No Zoom link for a phone or in-person meeting.'
+ZOOM_UNCHECKED='Zoom could not be checked for this meeting right now, so say it was not checked.'
+
+
+def zoom_evidence(result: dict,appointment: dict|None=None) -> Evidence:
+    """zoom_meeting_check's codes for one meeting (no link, ids or names); one item per appointment when it is known."""
+    d=result['data']
+    if appointment is None:return Evidence('zoom-check',f"Zoom check for the meeting on {d['meeting']}, checked {d['checked_at']}",'calendar',d,str(result.get('as_of')))
+    return Evidence('zoom-check-'+str(appointment['appointment_id'])[-6:],f"Zoom check for {appointment['client']}, {appointment['when']}, checked {d['checked_at']}",
+        'calendar',d,str(result.get('as_of')),appointment.get('customer_id'))
+
+
+def zoom_not_checked(appointment: dict,reason: str) -> Evidence:
+    """No Zoom read for this meeting: `not_video` (phone or in person) or `unavailable` (the check failed)."""
+    data={'meeting':appointment['when'],'format':appointment.get('format'),'checked':False,
+        'meaning':ZOOM_MEANING if reason=='not_video' else ZOOM_UNCHECKED}
+    return Evidence(f"zoom-check-{reason.replace('_','-')}-{str(appointment['appointment_id'])[-6:]}",
+        f"Zoom not checked for {appointment['client']}, {appointment['when']}",'record',data,None,appointment.get('customer_id'))
+
+
 def reviews_bundle(result: dict) -> Bundle:
     bundle=Bundle()
     for row in result['data']:
@@ -194,7 +214,7 @@ def handover_bundle(result: dict,shared: bool=True) -> Bundle:
     return bundle
 
 
-CATEGORY_LABEL={'transaction_insights':'transaction insights','chat_topics':'topics from their chats','meeting_recording':'meeting recordings'}
+CATEGORY_LABEL={'transaction_insights':'transaction insights','chat_topics':'chat insights','meeting_recording':'meeting recordings'}
 
 
 def not_shared(result: dict,source_id: str,title: str,customer_id: int) -> Evidence|None:
@@ -233,11 +253,11 @@ def _words(d: date) -> str:return f'{d.day} {d:%b %Y}'  # 12 Nov 2026, as rm.day
 
 
 def talking_points_evidence(result: dict,customer_id: int) -> Evidence:
-    """Topics from the client's chats (0107 contract, filled by 0108), each rendered by code (TalkingPoint.line) with its
+    """Client chat insights (talking points in the code; 0107 contract, filled by 0108), each rendered by code (TalkingPoint.line) with its
     brief label; a row that fails the contract is dropped and counted, never shown. Without her chat_topics grant the
     inferred topics are a gap, and the topics she shared herself still come with it; with it, a topic still on its
     24-hour hold or paused is a gap too (`pending`: never which topic, never why)."""
-    title='Topics from the client\'s chats'
+    title='Client chat insights'
     rows,dropped=[],0
     for row in result.get('data') or []:
         try:p=TalkingPoint.model_validate(row)
@@ -247,14 +267,14 @@ def talking_points_evidence(result: dict,customer_id: int) -> Evidence:
     withheld={'withheld':dropped} if dropped else {}
     gap=not_shared(result,'talking-points',title,customer_id)
     if gap:
-        gap.data.update(shared_by_client=rows,**withheld,meaning='The client has not shared topics from their chats with you: say so as a gap '
+        gap.data.update(shared_by_client=rows,**withheld,meaning='The client has not shared chat insights with you: say so as a gap '
             'and do not guess them. Only the topics under shared_by_client, which she shared with you herself, may be used.')
         return gap
-    pending={'pending':True,'gap':'Some topics from the client\'s chats are not available yet: say so as a gap, and do not '
+    pending={'pending':True,'gap':'Some client chat insights are not available yet: say so as a gap, and do not '
         'guess which topics or why.'} if result.get('pending') else {}
     return Evidence('talking-points',title,'record',{'points':rows,**withheld,**pending} if rows else
-        {'points':0,**withheld,**pending,'meaning':'No topics from the client\'s chats are available yet.' if pending else
-            'No topics from the client\'s chats are recorded.'},str(result.get('as_of')),customer_id)
+        {'points':0,**withheld,**pending,'meaning':'No client chat insights are available yet.' if pending else
+            'No client chat insights are recorded.'},str(result.get('as_of')),customer_id)
 
 
 PERIOD=re.compile(r'\b(?:next|coming|within(?: the next)?|in the next)\s+(\d{1,3})\s+(day|week|month)s?\b',re.I)

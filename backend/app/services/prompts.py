@@ -1,14 +1,31 @@
-"""Versioned prompt files: app/prompts/<agent>/<version>/*.md (system.md required). Never edit a released version; add a new directory and docs/prompt-log/<agent>/<version>.md."""
+"""Versioned prompt files: app/prompts/<agent>/<version>/*.md (system.md required). Never edit a released version; add a new directory and docs/prompt-log/<agent>/<version>.md.
+Each agent uses one version, chosen only in VERSIONS below and loaded with current(agent); no setting overrides it."""
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 import re
-from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1] / 'prompts'
 LOG = Path(__file__).resolve().parents[3] / 'docs' / 'prompt-log'
 NOTE_FIELDS = {'goal': ('Goal', 'Scope'), 'change': ('Change from previous', 'Behaviour'), 'results': ('Results', 'Validation'), 'decision': ('Decision',)}
 ORDER = ('system', 'format', 'public_only')  # digest order; keeps the ids of released answer prompts unchanged
+
+# The one place a prompt version is chosen: prompt family -> released version. To change one, add app/prompts/<family>/vN
+# with its prompt-log entry and edit the version here. The meeting agents keep theirs in registry.MEETING_SPECS (in_use adds them).
+VERSIONS = {
+    'answer': 'v4',  # the v1 pipeline's one model call (llm.answer_request)
+    'planner': 'v12',  # v8: meeting_request (2a); v9: no Security agent (2b); v10: one question, two agents' data; threshold (batch 3); v12: no currency entities (8 Nov)
+    'guide': 'v4', 'accounts': 'v3',  # the v5 runner agents (runner.PROMPTED); v4/v3 (8 Nov): no FX or holiday tools
+    'runner_common': 'v3',  # the runner's shared answer contract and step format (v2: never restate her own figures, C12)
+    'retail': 'v12',
+    'compliance': 'v8',  # v7 (batch 3, P05): her account list from Accounts (input-account_refs) is citable
+    'relationship': 'v8',
+    'document': 'v6',
+    'notice_requirements': 'v2', 'document_evidence': 'v2',  # notice_checks
+    'talking_points': 'v2',  # lane 1 v2 (0143): knows her current points, carry-over, kind, on hold; 'v1' switches back
+    'rm_planner': 'v6',
+    'rm_assistant': 'v9',  # v7: help is a plain reply; follow_up explains the previous answer; v8: UBS Connect name; v9: Zoom check in schedule
+}
 
 @lru_cache
 def load(agent, version):
@@ -20,27 +37,16 @@ def load(agent, version):
     digest = sha256(''.join(parts[p] for p in names).encode()).hexdigest()[:8]
     return {**parts, 'agent': agent, 'version': version, 'id': f'{version}+{digest}'}
 
-def version_for(agent):
-    """PROMPT_VERSION selects the answer prompt; other agents are set in PROMPT_VERSIONS (JSON object)."""
-    version = settings.prompt_version if agent == 'answer' else settings.prompt_versions.get(agent)
-    if not version:raise ValueError(f'No prompt version configured for {agent!r}')
-    return version
-
-def current(agent='answer'):
-    return load(agent, version_for(agent))
+def current(agent):
+    """The released prompt this agent uses, by its family name in VERSIONS."""
+    if agent not in VERSIONS:raise ValueError(f'No prompt version for {agent!r}')
+    return load(agent, VERSIONS[agent])
 
 def in_use():
-    """{family: version} for every prompt the running code is configured to load: settings for the v1 answer and the
-    shared domain prompt, module constants for the rest. The admin dashboard compares it with what actually ran (llm runs)."""
-    from app.services import notice_checks, orchestrator, talking_points
-    from app.services.agents import compliance, document, registry, relationship, retail, runner
-    from app.services.rm import graph, handlers
-    found = {'answer': settings.prompt_version, 'domain_common': settings.prompt_versions.get('domain_common'), 'planner': orchestrator.PLANNER,
-        'retail': retail.PROMPT, 'compliance': compliance.PROMPT, 'relationship': relationship.PROMPT, 'document': document.PROMPT,
-        'runner_common': runner.COMMON, 'rm_planner': graph.PLANNER_VERSION, 'rm_assistant': handlers.ASSISTANT_VERSION,
-        'notice_requirements': notice_checks.PLAN_PROMPT, 'document_evidence': notice_checks.EVIDENCE_PROMPT, 'talking_points': talking_points.PROMPT,
-        **{registry.CHAT_SPECS[agent].prompt: version for agent, version in runner.PROMPTS.items()},
-        **{spec.prompt: spec.version for spec in registry.MEETING_SPECS.values()}}
+    """{family: version} for every prompt the running code loads: VERSIONS plus the meeting agents' versions, which the
+    meeting side keeps in registry.MEETING_SPECS. The admin dashboard compares it with what actually ran (llm runs)."""
+    from app.services.agents import registry
+    found = {**VERSIONS, **{spec.prompt: spec.version for spec in registry.MEETING_SPECS.values()}}
     return {family: version for family, version in sorted(found.items()) if version}
 
 def released():

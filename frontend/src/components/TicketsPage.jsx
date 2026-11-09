@@ -3,8 +3,8 @@ import Icon from './Icon';
 import {supabase} from '../lib/supabase';
 import {prepareTicketAction} from '../lib/ticketWorkflow';
 import {latestUpdate,loadCategories,loadTickets,nextStep,requestFailed,STATUSES,ticketSummary,ticketTopic} from '../lib/ticketData';
-import {formatDateTime} from '../lib/format';
-import Meetings from './Meetings';
+import {formatDate,formatDateTime} from '../lib/format';
+import {possibleFraud,ticketIssues,ticketParts,ticketRows,ticketTitle} from '../lib/requestText';
 import RequestField,{CARD_RULES} from './RequestField';
 import {loadCardCharges} from '../lib/customerData';
 
@@ -14,16 +14,18 @@ async function token() {
   return data.session.access_token;
 }
 const TABS=[['open','Open',t=>['submitted','in_review','waiting_on_client'].includes(t.status)],['done','Resolved',t=>['resolved','closed'].includes(t.status)],['all','All',()=>true]];
+const tone=t=>t.status==='waiting_on_client'?'urgent':t.overdue?'late':['resolved','closed'].includes(t.status)?'clear':'open';
+const SHOWN=10;
 
 // My requests (TK1/TK2): every ticket with its reference and plain-language status, plus a guided form (CL1)
 // that proposes a ticket.create action. Nothing is recorded until the customer confirms it in Actions.
 export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,initialTab='open'}) {
   const [tickets,setTickets]=useState(null);
   const [categories,setCategories]=useState(null);
-  const [tab,setTab]=useState(initialTab);
+  const [tab,setTab]=useState(initialTab==='meetings'?'open':initialTab);  // Meetings has its own page now
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
-  const [raising,setRaising]=useState(!!prefill&&!prefill.tab);
+  const [raising,setRaising]=useState(!!prefill&&!prefill.tab),[pick,setPick]=useState(null),[all,setAll]=useState(false);
   const active=useRef(null);
   async function refresh() {
     active.current?.abort();const controller=new AbortController();active.current=controller;setBusy(true);setError('');
@@ -35,35 +37,56 @@ export default function TicketsPage({prefill,onReviewActions,onSupport,rmName,in
     finally {if(!controller.signal.aborted)setBusy(false);}
   }
   useEffect(()=>{refresh();return ()=>active.current?.abort();},[]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const shown=tab==='meetings'?[]:(tickets||[]).filter(TABS.find(entry=>entry[0]===tab)[2]);
-  return <div className="app-page-body" data-testid="tickets-page">
-    <header className="page-header"><div><span className="eyebrow">Support</span><h1>My requests</h1>
-      <p>Requests you have raised with the bank, their current status and your meetings.</p></div>
-      <div className="page-header-actions"><button className="bank-chat-logout" onClick={refresh} disabled={busy}><Icon name="refresh"/>Refresh</button>
+  const shown=(tickets||[]).filter(TABS.find(entry=>entry[0]===tab)[2]);
+  // One row per request: the same request sent more than once (same type and words) is one row; the oldest leads.
+  const rows=ticketRows(shown).sort((a,b)=>(tone(a.lead)==='urgent'?0:1)-(tone(b.lead)==='urgent'?0:1)||(b.overdue-a.overdue)||Date.parse(b.lead.created_at)-Date.parse(a.lead.created_at));
+  const visible=all?rows:rows.slice(0,SHOWN),selected=rows.find(r=>r.key===pick)||rows[0]||null;
+  const open=(tickets||[]).filter(TABS[0][2]),late=ticketRows(open).filter(r=>r.overdue).length,waiting=ticketRows(open).filter(r=>r.lead.status==='waiting_on_client').length;
+  return <div className="app-page-body cl-requests" data-testid="tickets-page">
+    <header className="page-header"><div><span className="eyebrow">Support</span><h1>Requests</h1>
+      <p>{!tickets?'Reading your requests…':open.length?`${ticketRows(open).length} open${waiting?` · ${waiting} need${waiting===1?'s':''} your answer`:''}${late?` · ${late} past the promised time`:''}. Meetings are on the Meetings page.`:'Nothing open right now. Meetings are on the Meetings page.'}</p></div>
+      <div className="page-header-actions"><button className="icon-button" aria-label="Refresh" title="Refresh" onClick={refresh} disabled={busy}><Icon name="refresh"/></button>
         <button className="primary-button" data-testid="raise-request" onClick={()=>setRaising(true)}><Icon name="plus"/>Raise a request</button></div></header>
     {raising&&categories&&<RaiseRequest categories={categories.filter(c=>c.customer_raisable)} prefill={prefill} onClose={()=>setRaising(false)} onReviewActions={onReviewActions} onSupport={onSupport}/>}
-    <nav className="page-tabs" role="tablist">{TABS.map(([key,label,keep])=><button key={key} role="tab" data-testid={`ticket-tab-${key}`} aria-selected={tab===key} onClick={()=>setTab(key)}>{label}<span className="count">{(tickets||[]).filter(keep).length}</span></button>)}
-      <button role="tab" data-testid="tab-meetings" aria-selected={tab==='meetings'} onClick={()=>setTab('meetings')}>Meetings</button></nav>
-    {/* The Meetings tab has its own loading state; the requests list is not shown there. */}
-    {busy&&!tickets&&tab!=='meetings'&&<p className="loading" role="status">Loading your requests…</p>}
+    <div className="act-chips cl-tabs" role="tablist" aria-label="Show">{TABS.map(([key,label,keep])=><button key={key} type="button" role="tab" data-testid={`ticket-tab-${key}`} aria-selected={tab===key} className={`mtg-chip ${tab===key?'on':''}`} onClick={()=>{setTab(key);setPick(null);}}>{label} · {ticketRows((tickets||[]).filter(keep)).length}</button>)}</div>
+    {busy&&!tickets&&<p className="loading" role="status">Loading your requests…</p>}
     {error&&<p role="alert">{error}</p>}
-    {tab==='meetings'&&<div className="tab-fade" key="meetings"><Meetings rmName={rmName}/></div>}
-    {tab!=='meetings'&&tickets&&!shown.length&&<p className="page-empty">No requests here.</p>}
-    {/* The list must not share the key "meetings" with the Meetings panel: duplicate sibling keys made React repeat the panel. */}
-    {tab!=='meetings'&&<ul className="ticket-list tab-fade" key={`list-${tab}`}>{shown.map(ticket=><li key={ticket.reference} className="relationship-details" data-testid="ticket" data-reference={ticket.reference} data-status={ticket.status}>
-      <div className="ticket-head"><strong>{ticket.category_label}</strong><span className={`ticket-status ${ticket.status}${ticket.overdue?' overdue':''}`}>{STATUSES[ticket.status]}{ticket.overdue?' · past target time':''}</span></div>
-      {ticketTopic(ticket)&&<span className="ticket-topic" data-testid="ticket-topic">{ticketTopic(ticket)}</span>}
-      <p>{ticketSummary(ticket)}</p>
-      {ticket.details?.charge&&<p className="ticket-detail" data-testid="ticket-charge"><Icon name="card"/>Charge: {ticket.details.charge}</p>}
-      {ticket.details?.card_frozen&&<p className="ticket-detail"><Icon name="lock"/>Card ending {ticket.details.card}: {ticket.details.card_frozen.toLowerCase()}</p>}
-      {ticket.attachments.length>0&&<p className="ticket-attachments" data-testid="ticket-attachments"><Icon name="clip"/>Attached: {ticket.attachments.map(item=>item.file_name).join(', ')}</p>}
-      {latestUpdate(ticket)&&<p className="ticket-update" data-testid="ticket-update"><Icon name="chat"/><span><strong>Latest update</strong> · {formatDateTime(ticket.last_update.at)}<br/>{latestUpdate(ticket)}</span></p>}
-      <p className="ticket-next"><Icon name="info"/>{nextStep(ticket)}</p>
-      <small>Reference <code>{ticket.reference}</code> · {ticket.owner_team} · raised {formatDateTime(ticket.created_at)}{ticket.last_update?` · updated ${formatDateTime(ticket.last_update.at)}`:''}</small>
-      {ticket.status==='waiting_on_client'&&onSupport&&<p><button className="bank-chat-logout" onClick={onSupport}>Talk to a person</button></p>}
-    </li>)}</ul>}
-    <p className="page-note"><Icon name="shield"/>Demo service: references and statuses are synthetic. No real bank team works these requests.</p>
+    {tickets&&!rows.length&&<p className="page-empty">No requests here.</p>}
+    {rows.length>0&&<div className="rm-inbox-grid">
+      <section className="rmw-card rm-inbox-list" aria-label="Your requests">
+        <ul className="ticket-list tab-fade cl-rows" key={`list-${tab}`}>{visible.map(r=>{const t=r.lead,on=selected?.key===r.key;return <li key={r.key} className={`rm-inbox-row ${on?'on':''}`} data-testid="ticket" data-reference={t.reference} data-status={t.status}>
+          <button type="button" className="rm-inbox-pick" aria-pressed={on} onClick={()=>setPick(r.key)}>
+            <span className={`rm-dot ${tone(t)}`} aria-hidden="true"/>
+            <span className="rm-now-text"><strong>{ticketTitle(t,'you').replace(/^./,c=>c.toUpperCase())}</strong>
+              <small className="rmw-why">{[r.count>1&&`${r.count} requests like this`,STATUSES[t.status],t.overdue&&'past the promised time',`raised ${formatDate(t.created_at)}`,t.reference].filter(Boolean).join(' · ')}</small></span></button>
+        </li>;})}</ul>
+        {rows.length>SHOWN&&<p className="rm-inbox-more">Showing {visible.length} of {rows.length} · <button type="button" className="link-button" onClick={()=>setAll(o=>!o)}>{all?'Show fewer':'Show all'}</button></p>}
+      </section>
+      {selected&&<RequestPanel key={selected.key} row={selected} onSupport={onSupport}/>}
+    </div>}
   </div>;
+}
+
+// The selected request: what she asked, what the bank has told her, who handles it and what happens next.
+function RequestPanel({row,onSupport}) {
+  const t=row.lead,{words,cards,lead}=ticketParts(t.summary),issues=ticketIssues(t);
+  return <aside className="rmw-card rm-inbox-panel" aria-label="Selected request" data-testid="ticket-detail">
+    <div className="rm-panel-head"><span className="eyebrow">{t.category_label}</span><span className={`ticket-status ${t.status}${t.overdue?' overdue':''}`}>{STATUSES[t.status]}{t.overdue?' · past the promised time':''}</span></div>
+    <h3>{ticketTitle(t,'you').replace(/^./,c=>c.toUpperCase())}</h3>
+    <p className="rm-small">Reference <code>{t.reference}</code> · raised {formatDateTime(t.created_at)}{t.last_update?` · updated ${formatDateTime(t.last_update.at)}`:''}</p>
+    {possibleFraud(t)&&<p className="rm-fraud" role="note"><strong>Keep your card safe.</strong> If your card isn’t frozen yet, freeze it in Home › Cards, and never share codes with anyone.</p>}
+    <div className="rm-panel-part"><span className="eyebrow">You wrote</span><p>{words?`“${words}”`:ticketSummary(t)||lead}</p></div>
+    {issues.length>1&&<span className="rm-issues">{issues.map(x=><span key={x}>{x}</span>)}</span>}
+    {cards&&<div className="rm-panel-part"><span className="eyebrow">Cards on record</span><p>{cards}</p></div>}
+    {t.details?.charge&&<div className="rm-panel-part" data-testid="ticket-charge"><span className="eyebrow">Charge</span><p>{t.details.charge}</p></div>}
+    {t.details?.card_frozen&&<div className="rm-panel-part"><span className="eyebrow">Card</span><p>Ending {t.details.card}: {t.details.card_frozen.toLowerCase()}</p></div>}
+    {t.attachments.length>0&&<div className="rm-panel-part" data-testid="ticket-attachments"><span className="eyebrow">Attached</span><p>{t.attachments.map(item=>item.file_name).join(', ')}</p></div>}
+    <div className="rm-panel-part" data-testid="ticket-update"><span className="eyebrow">What the bank told you</span><p>{latestUpdate(t)||t.last_update?.note||'Nothing yet.'}</p></div>
+    <div className="rm-panel-part"><span className="eyebrow">Who handles it</span><p>{t.owner_team}</p></div>
+    {nextStep(t)!==(latestUpdate(t)||t.last_update?.note)&&<div className="rm-panel-part"><span className="eyebrow">What happens next</span><p className="ticket-next">{nextStep(t)}</p></div>}
+    {row.same.length>0&&<p className="rm-small">You sent this {row.count} times ({[t,...row.same].map(x=>x.reference).join(', ')}). One answer covers all of them.</p>}
+    {(t.status==='waiting_on_client'||t.overdue)&&onSupport&&<div className="rm-panel-actions"><button className="bank-chat-logout" onClick={onSupport}>Talk to a person</button></div>}
+  </aside>;
 }
 
 export function RaiseRequest({categories,prefill,onClose,onReviewActions,onSupport,inChat=false}) {

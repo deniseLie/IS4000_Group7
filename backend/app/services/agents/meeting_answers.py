@@ -10,7 +10,7 @@
 3. A reply to the draft ("Thursday afternoon", "by phone", "it's about my fixed deposit", "other times") redrafts it;
    an availability question ("when is my RM free?") lists free times first and asks what the meeting is about.
 Times come only from the records, never from the model, so the answer is never withheld. Confirmed meetings show in
-My requests > Meetings.
+the Meetings page.
 """
 import re
 from datetime import date,datetime,timedelta
@@ -18,8 +18,8 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo
 from app.schemas.chat import Message
 from app.schemas.contracts import AgentResult,Citation,OfferProposal,RequestContext
-from app.schemas.meeting_requests import FORMAT_LABEL,TOPIC_LABEL
-from app.services import customer_data
+from app.schemas.meeting_requests import FORMAT_LABEL,TOPIC_LABEL,MeetingRequestRecord
+from app.services import tools
 from app.services.privacy import redact
 from app.services.typos import normalise
 
@@ -66,7 +66,7 @@ NO_RM=('You don’t have a relationship manager recorded right now, so I can’t
 NO_TIMES=('Your relationship manager has no free times in the next two weeks, so I can’t suggest times for a meeting request. '
     'Please ask again in a few days, or use Talk to a person.')
 TOO_MANY=('You already have {count} open meeting requests with your relationship manager, which is the most at one time. '
-    'You can follow or withdraw them in My requests → Meetings.')
+    'You can follow or withdraw them in the Meetings page.')
 
 
 class Reply(NamedTuple):
@@ -211,7 +211,7 @@ def display(name: str) -> str:return re.sub(r'\s*\(DEMO\)\s*$','',name)
 
 
 async def open_requests(ctx: RequestContext) -> int:
-    envelope=await customer_data.get_meeting_request_records(ctx)
+    envelope=await tools.snapshot('my_meeting_requests',{},ctx,list[MeetingRequestRecord])
     return sum(row.status in ('requested','countered') for row in envelope.data)
 
 

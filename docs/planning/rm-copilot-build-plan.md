@@ -457,7 +457,7 @@ Design in [architecture §15.2](../architecture.md). Replaces the seeded grants 
 ### 6d. Access log and RM requests (`0112`, `0113`)
 - `public.my_consent_access_log()`: who, when, category, purpose, meeting; ids, codes and dates only.
 - Request category `rm_consent_request` on the 0071 pattern: Sophie asks with a reason and optional meeting; it lapses after 14 days; Inbox notice. The copilot offers *Ask the client to share* on a consent gap.
-- *Delete all my data* becomes a ticket with a 10-business-day target.
+- *Delete all my data* becomes a ticket with a 10-business-day target (built in 0113, removed in 0147: consent changes are instant only).
 
 ### 6e. Client UI and chat
 - `SharingPage.jsx` / `ConsentControls.jsx`: a card per category (switch, scope, expiry, the consequence before revoking, receipt), the topics list with Delete and Undo, the access log, the always-shared list.

@@ -129,7 +129,7 @@ export function reportText(reply,client) {
   }
   for(const d of allDrafts(reply))lines.push(`Draft${d.client?` to ${d.client}`:''} (not sent):`,d.text,'');
   if(sources.length)lines.push('Sources',...sources.map((s,i)=>`[${i+1}] ${s.title}`));
-  lines.push('','AI-generated from DemoBank demo records. Check the sources before acting.');
+  lines.push('','AI-generated from your UBS Connect records. Check the sources before acting.');
   return lines.join('\n');
 }
 
@@ -198,8 +198,8 @@ export const WEEKDAY_NAMES=['Monday','Tuesday','Wednesday','Thursday','Friday','
 
 // Meeting requests (build plan 2a, SQL 0106). Topics are the fixed codes of rm.meeting_topics(); the purpose is the
 // client's own words and is only ever rendered as text. Every decision and move is a separate request she presses.
-export const TOPIC_LABELS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',term_sheet:'Term sheet',
-  compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Other'};
+export const TOPIC_LABELS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',term_sheet:'Loan terms (term sheet)',
+  compliance_review:'Periodic review',account_review:'Accounts and everyday banking',card_review:'Cards',other:'Something else'};
 export function topicLabel(code) {return TOPIC_LABELS[code]||String(code||'').replace(/_/g,' ');}
 export const DECLINE_REASONS=[['answered_by_message','I will answer in a message'],['redirected','Passed to the team that handles it'],['not_needed','No meeting needed']];
 export const MOVE_REASONS=[['client_asked','The client asked'],['rm_unavailable','I am unavailable then'],['other','Other reason']];
@@ -386,7 +386,7 @@ export function nextStep(item) {
 
 // Brief Writer (0118) ------------------------------------------------------------------------------------------------
 // A changed snapshot needs a new review. Attribute withdrawal or deletion only when the current response records it.
-const CATEGORY_WORDS={chat_topics:'topics from her chats',transaction_insights:'transaction insights'};
+const CATEGORY_WORDS={chat_topics:'her chat insights',transaction_insights:'transaction insights'};
 export function briefNotice(brief) {
   if(!brief)return [];
   const lines=[];
@@ -441,16 +441,21 @@ const NEXT={
   today:[{label:'Brief me for my next meeting',message:'What meetings do I have in the next two weeks?',intent:'schedule'}],
   ticket_inbox:[{label:'Who should I follow up with?',message:'Which clients should I follow up with this week, and why?',intent:'priorities'}],
   priorities:[{label:'Plan my day',message:'What’s on today?',intent:'today'}],
-  meeting_requests:[{label:'Answer in Schedule → Requests',navigate:'schedule'}],
+  meeting_requests:[{label:'Answer in Schedule → Requests',link:'Answer meeting requests',navigate:'schedule'}],
   schedule:[{label:'Meeting requests waiting',message:'Which meeting requests are waiting for me?',intent:'meeting_requests'}],
-  meeting_brief:[{label:'After the call: open the meeting page',navigate:'schedule'}],
+  meeting_brief:[{label:'After the call: open the meeting page',link:'Open the meeting page',navigate:'schedule'}],
   client_overview:[{label:'Brief me for her next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'},{label:'Draft a message',draft:'Draft a message to this client about '}],
   meeting_history:[{label:'Brief me for the next meeting',message:'Brief me for the next meeting with this client',intent:'meeting_brief'}],
   handover_brief:[{label:'Summarise this client',message:'Give me an overview of this client',intent:'client_overview'}],
   book_question:[{label:'Plan my day',message:'What’s on today?',intent:'today'}]};
 export function nextSteps(reply) {
   if(!reply||reply.status!=='ok'||reply.clarification)return [];
-  return NEXT[reply.intent]||[];
+  return (NEXT[reply.intent]||[]).filter(n=>!n.navigate&&!n.meetingPage);  // going to a page is a link inside the answer (pageStep)
+}
+// The page an answer points to ("Open Schedule · Requests"), shown inside the answer under its sources, like the client side.
+export function pageStep(reply) {
+  if(!reply||reply.status!=='ok'||reply.clarification)return null;
+  return (NEXT[reply.intent]||[]).find(n=>n.navigate||n.meetingPage)||null;
 }
 
 // Clarity pass (first-time users) -------------------------------------------------------------------------------------
@@ -545,57 +550,8 @@ export function meetingSuggestions(step,client) {
     {label:`What’s still open for ${first}?`,message:`What’s still open for ${client}?`,intent:'client_overview'}];
 }
 
-// Ticket inbox (redesign) -------------------------------------------------------------------------------------------
-// A ticket summary from the urgent hand-over reads "[Topic] What happened. Cards on record: … Client’s words: “…”".
-// Split it so the row shows a short title and the panel shows her words; any other summary is kept as it is.
-export function ticketParts(summary) {
-  const text=String(summary||'').trim();
-  const words=text.match(/Client[’']s words:\s*[“"]([\s\S]*?)[”"]?\s*$/)?.[1]?.trim()||'';
-  const body=text.replace(/Client[’']s words:[\s\S]*$/,'').trim();
-  const cards=body.match(/Cards on record:\s*([^]*?)\.\s*$/)?.[1]?.trim()||'';
-  const topic=body.match(/^\[([^\]]+)\]/)?.[1]||'';
-  const lead=body.replace(/^\[[^\]]+\]\s*/,'').replace(/Cards on record:[^]*$/,'').trim().replace(/\.$/,'');
-  return {topic,lead,cards,words};
-}
-// The row title: what it is about, in plain words, plus the first amount she mentions.
-export function ticketTitle(t) {
-  const {lead,words}=ticketParts(t.summary);
-  const base=(lead||t.category_label||'Request').replace(/\bthe client\b/gi,'she').replace(/\bdoes not\b/g,'doesn’t').replace(/^./,c=>c.toLowerCase());
-  const amount=(words||t.summary||'').match(/\b(?:SGD|USD|S\$)\s?[\d,]+(?:\.\d+)?/i)?.[0];
-  const money=amount&&!base.includes(amount)?amount.toUpperCase().replace(/^S\$/,'SGD '):'';
-  // She led with something else (e.g. her annual fee): say that first, so it doesn't read like the other request.
-  const issues=ticketIssues(t);
-  if(issues.length>1&&issues[0]!=='Card charge'&&issues.includes('Card charge'))return `${issues[0].toLowerCase()} · also a ${base}${money?` (${money})`:''}`;
-  return `${base}${money?` · ${money}`:''}`;
-}
-// Small tags for each problem she mentions (rule-based: no model).
-const ISSUES=[['Card charge',/charge|transaction|don.?t recogni|not recogni/i],['Transfer pending',/transfer[\s\S]{0,40}pending|pending[\s\S]{0,40}transfer/i],
-  ['App locked',/locked|lock(ed)? out|can.?t log ?in/i],['Unexpected OTP',/\botp\b|one.?time (pass|code)/i],['Annual fee',/annual fee/i],['Address change',/address/i]];
-// In the order she raised them (her words first; the hand-over line only fills in what she did not say).
-export function ticketIssues(t) {
-  const {words,lead}=ticketParts(t.summary);
-  const at=(re,text)=>{const m=re.exec(text);return m?m.index:-1;};
-  return ISSUES.map(([label,re])=>[label,at(re,words),at(re,lead)]).filter(([,w,l])=>w>=0||l>=0)
-    .sort((a,b)=>(a[1]<0?1e6+a[2]:a[1])-(b[1]<0?1e6+b[2]:b[1])).map(([label])=>label);
-}
-// Possible fraud: an unknown charge together with a code she didn't ask for or a locked account.
-export function possibleFraud(t) {const i=ticketIssues(t);return i.includes('Card charge')&&(i.includes('Unexpected OTP')||i.includes('App locked'));}
-// Two requests are the SAME only with the same client, the same request type and the same words (case, spaces and
-// punctuation ignored). Same type alone is not enough: a different question stays its own row.
-export function sameRequestKey(t) {
-  const {words}=ticketParts(t.summary);
-  const said=String(words||t.summary||'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
-  return `${t.customer_id}|${t.category_label||t.category||''}|${said}`;
-}
-// Waiting-for-you tickets merged into rows (oldest ticket leads: you reply there), most urgent first.
-const URGENCY_RANK={urgent:0,high:1,normal:2,low:3};
-export function ticketRows(tickets) {
-  const rows=new Map();
-  for(const t of tickets||[]){const k=sameRequestKey(t);const row=rows.get(k);
-    if(!row)rows.set(k,{key:k,lead:t,same:[]});
-    else if((t.age_hours??0)>(row.lead.age_hours??0)){row.same.push(row.lead);row.lead=t;}else row.same.push(t);}
-  return [...rows.values()].map(r=>({...r,count:r.same.length+1,overdue:[r.lead,...r.same].some(x=>x.overdue)}))
-    .sort((a,b)=>(URGENCY_RANK[a.lead.urgency]??9)-(URGENCY_RANK[b.lead.urgency]??9)||(b.overdue-a.overdue)||((b.lead.age_hours??0)-(a.lead.age_hours??0)));
-}
+// Ticket inbox (redesign): the request-text helpers live in requestText.js (shared with the client's Requests page).
+export {ticketParts,ticketTitle,ticketIssues,possibleFraud,sameRequestKey,ticketRows} from './requestText.js';
+import {sameRequestKey,ticketTitle} from './requestText.js';
 // The note that closes a duplicate (sent only when she approves it in the panel).
 export function duplicateNote(lead) {return `We have answered this under ${lead.reference}. Please see that request for our reply.`;}

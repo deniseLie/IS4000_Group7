@@ -7,6 +7,7 @@ import MeetingPreparation from './MeetingPreparation';
 import MeetingPack from './MeetingPack';
 import MeetingMinutesReview from './MeetingMinutesReview';
 import MeetingRecap from './MeetingRecap';
+import {DocSection,OneLine} from '../DocParts';
 import {MEETING_STEPS,approvalFor,checkedWorkspace,downloadMeetingPdf,guessRoles,meetingRequest,meetingStep,minutesAsNotes,notesCues,speakerList,stepState,transcriptSpeakers,transcriptSummary,clientWords,meetingTitle,stageWords,topicName} from '../../lib/meetingLifecycle';
 
 // RM only, loaded on demand so the client app never loads the RM assistant code.
@@ -14,7 +15,7 @@ const HandoffDrafts=lazy(()=>import('../rm/HandoffDrafts'));
 
 // One meeting as one page with four steps (Prepare → Meet → Document → Follow up). Every step keeps its own RM
 // approval: the exact brief, the exact minutes, the selected follow-ups and the recap. Nothing here approves itself.
-export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk}){
+export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk,rmName}){
   const [data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(true);
   const [outcome,setOutcome]=useState(''),[notes,setNotes]=useState(''),[file,setFile]=useState(null),[rmLabel,setRmLabel]=useState(''),[clientLabel,setClientLabel]=useState(''),[coverage,setCoverage]=useState('unknown');
   const [selected,setSelected]=useState([]),[completion,setCompletion]=useState({}),[edits,setEdits]=useState({}),[recapText,setRecapText]=useState(null);
@@ -38,8 +39,10 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk})
       request(`/${meetingId}/lifecycle`,'GET',null,signal),
       who.advisor_id&&workspace?request(`/${meetingId}/minutes/review`,'GET',null,signal):null,
       workspace?request(`/${meetingId}/recap`,'GET',null,signal):null]);
+    // 0149: the client's standing yes for every meeting (Data sharing); the RM has none to give.
+    const standing=who.advisor_id?null:await request('/transcript-standing','GET',null,signal).catch(()=>null);
     if(!signal.aborted&&!workspace)setOutcome(o=>o||appointment.purpose||'');
-    if(!signal.aborted){setData({enabled:true,who,appointment,workspace,link,linkError,capability,zoomEvidence,recovery,preparation,pack,lifecycle,review,recap});setSelected(workspace?.draft?.approved&&!workspace.followups.length?workspace.draft.content.actions.filter(a=>a.commitment==='agreed'&&a.owner!=='unassigned').map(a=>a.action_id):[]);}
+    if(!signal.aborted){setData({enabled:true,who,appointment,workspace,link,linkError,capability,zoomEvidence,recovery,preparation,pack,lifecycle,review,recap,standing});setSelected(workspace?.draft?.approved&&!workspace.followups.length?workspace.draft.content.actions.filter(a=>a.commitment==='agreed'&&a.owner!=='unassigned').map(a=>a.action_id):[]);}
   }
   async function run(work,message){
     const control=new AbortController();active.current?.abort();active.current=control;setBusy(true);setError('');setNotice('');
@@ -129,6 +132,55 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk})
           {method==='notes'&&<form className="meeting-evidence-form" onSubmit={generateNotes}><label className="form-field">Your notes, one statement per line<textarea rows={6} data-testid="meeting-notes" value={notes} onChange={e=>setNotes(e.target.value)} disabled={busy} placeholder={'rm: You mentioned a condo next year…\nclient: I’d rather not sell my investments…'} required/></label>
             <p className="rm-small">Start each line with rm: (you), client: or unmapped:. Up to 100 lines.</p>
             <div className="meeting-submit"><button className="primary-button" data-testid="meeting-generate-notes" disabled={busy||!notes.trim()}>Draft minutes</button><span className="muted">Nothing is saved or sent to {first} until you approve.</span></div></form>}</>;
+  // The client's side of the same meeting (design: one meeting, after the call): three plain steps, her own to-dos
+  // first, the recap, and who does what next. Same actions as before (agree to a transcript, join, mark her action done).
+  if(data?.enabled&&!isRm){
+    const rm=rmName?rmName.replace(/\s*\(DEMO\)\s*$/,''):'your relationship manager',rmFirst=rmName?rm.split(' ')[0]:'your relationship manager',RmFirst=rmFirst.charAt(0).toUpperCase()+rmFirst.slice(1);
+    const ended=w&&!['scheduled','in_progress'].includes(w.state),recapped=Boolean(w?.shared_recap);
+    const step=recapped?2:1;
+    const mine=(w?.followups||[]).filter(item=>item.owner==='client'),theirs=(w?.followups||[]).filter(item=>item.owner==='rm');
+    const open=mine.filter(item=>item.status==='open');
+    const due=value=>value?new Date(`${value}T00:00:00+08:00`).toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short',timeZone:'Asia/Singapore'}):null;
+    const STEPS=[['Booked',a?`${new Date(a.starts_at).toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short',timeZone:'Asia/Singapore'})}`:'Confirmed'],
+      ['Meeting',!w||w.state==='scheduled'?'Coming up':w.state==='in_progress'?'In progress':'Done'],['Recap and next steps',recapped?(open.length?`${open.length} thing${open.length===1?'':'s'} for you to do`:'Nothing for you to do'):ended?`Waiting for ${rmFirst}’s recap`:'After the call']];
+    return <section className="meeting-lifecycle meeting-page meeting-client" data-testid="meeting-workspace" aria-label="Meeting">
+      <header className="meeting-head"><div><span className="eyebrow">Meeting with {rm}</span><h1>{a?meetingTitle(a.purpose,a.topics):'Meeting'}</h1>{meta&&<p className="meeting-meta">{meta}</p>}</div>
+        <div className="meeting-head-actions"><button className="icon-button meeting-refresh" data-testid="meeting-refresh" aria-label="Refresh" title="Refresh" disabled={busy} onClick={()=>run(async()=>{},'Meeting refreshed.')}><Icon name="refresh"/></button></div></header>
+      {busy&&<p className="loading" role="status">Updating meeting…</p>}{error&&<p className="rm-error" role="alert">{error}</p>}{notice&&<p className="chat-toast" role="status">{notice}</p>}
+      <ol className="meeting-steps three" aria-label="Where this meeting is">{STEPS.map(([label,sub],i)=><li key={label} className={`meeting-step ${i<step?'done':i===step?'current':'todo'}`} aria-current={i===step?'step':undefined}>
+        <div className="meeting-step-static"><span className="meeting-step-mark">{i<step?'✓':i+1}</span><span className="meeting-step-text"><strong>{label}</strong><small>{sub}</small></span></div></li>)}</ol>
+      <div className="meeting-body"><div className="meeting-main">
+        {open.length>0&&<section className="meeting-card meeting-todo" aria-label="For you to do"><span className="eyebrow">For you to do</span>
+          {open.map(item=><form key={item.followup_id} className="meeting-todo-row" onSubmit={e=>{e.preventDefault();post(`/followups/${item.followup_id}/complete`,{evidence:completion[item.followup_id],command_id:command(`complete:${item.followup_id}:${completion[item.followup_id]}`)},'Marked as done. Thank you.');}}>
+            <span className="meeting-todo-text"><strong>{item.text}</strong>{item.due_on&&<small>By {due(item.due_on)}</small>}</span>
+            <label className="vh" htmlFor={`done-${item.followup_id}`}>What you did</label>
+            <input id={`done-${item.followup_id}`} className="in" data-testid={`meeting-evidence-${item.followup_id}`} value={completion[item.followup_id]||''} maxLength={500} required disabled={busy} placeholder="e.g. uploaded in Periodic review" onChange={e=>setCompletion(values=>({...values,[item.followup_id]:e.target.value}))}/>
+            <button className="primary-button" data-testid={`meeting-complete-${item.followup_id}`} disabled={busy}>Mark as done</button></form>)}</section>}
+
+        {!ended&&<section className="meeting-card" aria-label="Before the meeting"><h3>Before the meeting</h3>
+          {!w&&<><p className="muted">{RmFirst} opens the meeting page before the call. You can also open it now.</p>
+            <button className="bank-chat-logout" data-testid="meeting-start" disabled={busy||!a?.purpose} onClick={()=>post('/start',{notice_id:data.who.notice.notice_id,purpose:a.purpose,outcome:a.purpose,command_id:command(`start:${a.purpose}`)},'Meeting opened.')}>Open the meeting page</button></>}
+          {w&&<div className="meeting-notice"><h4>Can {rmFirst} use a transcript of this call to write the minutes?</h4><p className="rm-small">{w.notice}</p>
+            {data.standing?.on&&!w.notice_seen?<p className="rm-small" data-testid="meeting-standing-consent"><Icon name="check"/> You agreed for every meeting in Data sharing, so you don’t need to do anything here.{w.recording_allowed&&<> <button type="button" className="link-button" data-testid="meeting-revoke-transcript" disabled={busy} onClick={()=>post('/transcript-revoke',{command_id:command('revoke')},'Not for this meeting. Typed notes are used instead.')}>Not for this meeting</button></>}</p>
+            :!w.notice_seen?<><button className="primary-button" data-testid="meeting-notice-seen" disabled={busy} onClick={()=>post('/notice-seen',{notice_id:w.notice_id,revision:w.revision},'Thank you. You agreed for this meeting.')}>I agree</button>
+              <p className="rm-small">To stop being asked each time, agree once for every meeting in Data sharing › Meeting recording.</p></>
+              :<p className="rm-small"><Icon name="check"/> You agreed. Nothing is recorded by this; {rmFirst} reviews the minutes before anything is shared. <button type="button" className="link-button" data-testid="meeting-revoke-transcript" disabled={busy} onClick={()=>post('/transcript-revoke',{command_id:command('revoke')},'Transcript access withdrawn. Existing minutes remain retained.')}>Withdraw</button></p>}</div>}
+          {data.link&&<a className="primary-button" data-testid="meeting-zoom-join" href={data.link.join_url} target="_blank" rel="noopener noreferrer">Join video call</a>}
+          {w&&data.pack&&<MeetingPack pack={data.pack} isRm={false} busy={busy} onDownload={()=>download(`/pack/pdf?document_id=${data.pack.document_id}&version=${data.pack.version}&content_hash=${data.pack.content_hash}`,`meeting-pack-v${data.pack.version}.pdf`)}/>}</section>}
+
+        <section className="meeting-card" aria-label="Recap"><div className="meeting-recap-head"><h3>Recap from {rmFirst}</h3></div>
+          <p data-testid="meeting-shared-recap">{w?.shared_recap||(ended?`${RmFirst} is writing the recap. You’ll see it here and in your Inbox.`:'After the call, the recap and your next steps appear here.')}</p>
+          {data.recap&&<button className="bank-chat-logout" data-testid="meeting-download-recap" disabled={busy} onClick={()=>download(`/recap/pdf?document_id=${data.recap.document_id}&version=${data.recap.version}&content_hash=${data.recap.content_hash}`,`meeting-recap-v${data.recap.version}.pdf`)}>Download recap (PDF)</button>}</section>
+        {mine.some(item=>item.status!=='open')&&<details className="act-more"><summary>Done</summary><ul className="mtg-rows">{mine.filter(item=>item.status!=='open').map(item=><li key={item.followup_id}><span className="rm-dot clear" aria-hidden="true"/><span className="mtg-row-text"><strong>{item.text}</strong><small>Done</small></span></li>)}</ul></details>}
+      </div>
+      <aside className="meeting-rail">
+        <section className="meeting-card" aria-label="What happens next"><h3>What happens next</h3>
+          {!theirs.length&&<p className="muted">{recapped?`Nothing more is planned. Message ${rmFirst} if you need anything.`:`After the call, ${rmFirst}’s next steps appear here.`}</p>}
+          <ul className="mtg-rows">{theirs.map(item=><li key={item.followup_id}><span className={`rm-dot ${item.status==='open'?'meeting':'clear'}`} aria-hidden="true"/><span className="mtg-row-text"><strong>{RmFirst}: {item.text}</strong><small>{item.status==='open'?(item.due_on?`By ${due(item.due_on)}`:'To do'):'Done'}</small></span></li>)}</ul>
+          {recapped&&<p className="rm-small">If a specialist team is involved, they start from what you already told {rmFirst}. You won’t need to repeat it. Their updates appear in Requests.</p>}</section>
+      </aside></div>
+    </section>;
+  }
   return <section className="meeting-lifecycle meeting-page" data-testid="meeting-workspace" aria-label="Meeting">
     <header className="meeting-head"><div><span className="eyebrow">Meeting{client?` · ${client}`:''}</span><h1>{a?meetingTitle(a.purpose,a.topics):'Meeting'}</h1>{meta&&<p className="meeting-meta">{meta}</p>}{clientWords(a?.purpose)&&<p className="meeting-meta">{first} asked: “{clientWords(a.purpose)}”</p>}</div>
       <div className="meeting-head-actions">
@@ -160,10 +212,10 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk})
       </div>}
 
       {shown===1&&w&&<div className="meeting-step-panel meeting-card" data-testid="meeting-panel-meet"><h2>The meeting</h2><p className="muted">In person or by video. You advise; the assistant does not.</p>
-        <div className="meeting-notice"><h4>Can this meeting be documented from a transcript?</h4><p>{w.notice}</p>
-          {!w.notice_seen&&<button className="bank-chat-logout" data-testid="meeting-notice-seen" disabled={busy} onClick={()=>post('/notice-seen',{notice_id:w.notice_id,revision:w.revision},'Notice read for this meeting.')}>I agree</button>}
+        <div className="meeting-notice"><h4>Transcript for the minutes</h4>
+          {/* 0149: the bank records the call, so the RM gives no agreement; only the client's yes counts (this meeting or every meeting). */}
           {!isRm&&<button className="bank-chat-logout" data-testid="meeting-revoke-transcript" disabled={busy} onClick={()=>post('/transcript-revoke',{command_id:command('revoke')},'Transcript access withdrawn. Existing minutes remain retained.')}>Withdraw transcript access</button>}
-          <p className="rm-small">{w.recording_allowed?'You both agreed: a transcript can be added after the call.':`A transcript can be added once you and ${client?.split(' ')[0]||'the client'} both agree (she agrees in her app). Typed notes work either way.`} Agreeing does not start any recording.</p></div>
+          <p className="rm-small">{w.recording_allowed?`${client?.split(' ')[0]||'The client'} agreed: a transcript can be added after the call.`:`${client?.split(' ')[0]||'The client'} hasn’t agreed to a transcript for this meeting yet (she agrees in her app). Typed notes work either way.`}</p></div>
         {data.linkError&&<p className="rm-error" role="alert">{data.linkError}</p>}
         {data.link&&<a className="primary-button" data-testid="meeting-zoom-join" href={data.link.join_url} target="_blank" rel="noopener noreferrer">Join Zoom meeting</a>}
         {isRm&&!data.link&&data.appointment.format==='video'&&Date.parse(data.appointment.starts_at)>Date.now()&&<button className="bank-chat-logout" data-testid="meeting-create-zoom" disabled={busy||!data.capability.zoom_configured}
@@ -196,11 +248,26 @@ export default function MeetingWorkspace({meetingId,token,onClose,client,onAsk})
           source_id:data.zoomEvidence.source_id,source_hash:data.zoomEvidence.source_hash,revision:data.zoomEvidence.revision,
           consent_epoch:data.zoomEvidence.consent_epoch,mapping,command_id:command(`zoom-speakers:${data.zoomEvidence.source_id}:${JSON.stringify(mapping)}`)},'Speaker roles saved as a new source version. Fresh minutes are queued for review.')}/>}
         {w.source_provenance&&<p className="rm-small">Source: {w.source_provenance.origin.replaceAll('_',' ')} · Coverage: {w.source_provenance.coverage||'your notes'}{w.source_provenance.coverage==='partial'?' — missing conversation is not covered.':''}</p>}
-        {d&&<div className="meeting-minutes" data-testid="meeting-minutes"><h4>{d.approved?'Approved minutes':'Draft minutes — review required'} · {d.content.title}</h4>{d.source_revoked&&<p className="rmw-warn">The transcript was withdrawn. This existing draft may be reviewed but cannot be regenerated from that transcript.</p>}
-          {[...d.content.summary,...d.content.decisions].map((item,i)=><div key={i}><p>{item.text}</p><details><summary>Evidence {item.cue_id}</summary><blockquote>{item.quote}</blockquote></details></div>)}
-          <h5>Actions agreed</h5>{d.content.actions.map(item=><div key={item.action_id} className="meeting-action-item"><p><strong>{item.owner==='rm'?'You':item.owner==='client'?(client||'Client'):'Unassigned'}:</strong> {item.text} <span className="act-pill">{item.commitment}</span>{item.due_on&&<span className="rm-small" data-testid="meeting-action-due"> · due {item.due_on}</span>}</p>{item.condition&&<p>{item.condition}</p>}
-            <details><summary>Evidence {item.cue_id}</summary><blockquote>{item.quote}</blockquote>{item.due_quote&&<p>Due date evidence: {item.due_quote}</p>}</details></div>)}
-          <h5>Recap draft for {client||'the client'}</h5><p className="rm-small">{d.content.client_recap}</p>
+        {d&&<div className="meeting-minutes doc" data-testid="meeting-minutes">
+          {/* Design: standard minutes. Header facts, one line, then purpose, key points with what was said, decisions, actions, open points, and the client recap kept apart. */}
+          <div className="doc-head"><div><span className="eyebrow">{d.approved?'Approved minutes':'Draft minutes · review required'}</span><h4>{d.content.title}</h4>
+            <p className="doc-meta">{a&&<span>{new Date(a.starts_at).toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Singapore'})}</span>}
+              <span>You and {client||'the client'}</span>{w.source_provenance&&<span>From: {w.source_provenance.origin==='zoom_my_notes_api'?'Zoom transcript':w.source_provenance.origin.replaceAll('_',' ')}{w.source_provenance.coverage?`, ${w.source_provenance.coverage==='full_rm_attested'?'whole call':w.source_provenance.coverage==='partial'?'part of the call':'coverage not confirmed'}`:''}</span>}</p></div></div>
+          {d.source_revoked&&<p className="rmw-warn">The transcript was withdrawn. This existing draft may be reviewed but cannot be regenerated from that transcript.</p>}
+          {d.content.summary[0]&&<OneLine>{d.content.summary[0].text}</OneLine>}
+          {a?.purpose&&<DocSection n={1} title="Purpose"><p className="doc-point"><span className="doc-text">{clientWords(a.purpose)||a.purpose}</span></p></DocSection>}
+          <DocSection n={a?.purpose?2:1} title="Key points">{d.content.summary.map((item,i)=><div key={i} className="doc-quoted"><p className="doc-point"><span className="doc-text">{item.text}</span></p>
+            <details><summary>What was said</summary><blockquote>“{item.quote}” <span className="rm-small">· {item.cue_id}</span></blockquote></details></div>)}</DocSection>
+          {d.content.decisions.length>0&&<DocSection n={(a?.purpose?2:1)+1} title="Decisions">{d.content.decisions.map((item,i)=><div key={i} className="doc-quoted"><p className="doc-point"><span className="doc-text">{item.text}</span></p>
+            <details><summary>What was said</summary><blockquote>“{item.quote}” <span className="rm-small">· {item.cue_id}</span></blockquote></details></div>)}</DocSection>}
+          <DocSection n={(a?.purpose?2:1)+(d.content.decisions.length?2:1)} title="Actions"><table className="doc-actions"><thead><tr><th>What</th><th>Who</th><th>Due</th><th>Status</th></tr></thead><tbody>
+            {d.content.actions.map(item=><tr key={item.action_id} className="meeting-action-item"><td>{item.text}{item.condition&&<small className="rm-small"> · if {item.condition}</small>}
+              <details><summary>What was said</summary><blockquote>“{item.quote}”</blockquote>{item.due_quote&&<p className="rm-small">Due date: “{item.due_quote}”</p>}</details></td>
+              <td>{item.owner==='rm'?'You':item.owner==='client'?(client||'Client'):'Unassigned'}</td><td>{item.due_on?<span data-testid="meeting-action-due">{item.due_on}</span>:'—'}</td>
+              <td><span className={`tag ${item.commitment==='agreed'?'warn':'grey'}`}>{item.commitment==='agreed'?'Agreed':item.commitment.replace(/^./,c=>c.toUpperCase())}</span></td></tr>)}</tbody></table></DocSection>
+          {d.content.actions.some(item=>item.commitment!=='agreed')&&<DocSection n={(a?.purpose?2:1)+(d.content.decisions.length?3:2)} title="Still open"><p className="doc-point"><span className="doc-text">{d.content.actions.filter(item=>item.commitment!=='agreed').map(item=>item.text).join(' · ')}</span></p></DocSection>}
+          <p className="rm-small">Advice in this meeting was given by you. The assistant drafted these minutes from what was said; open “What was said” to check each point.</p>
+          <div className="doc-recap"><span className="eyebrow">Recap for {client||'the client'} · shared separately, in plain words</span><p>{d.content.client_recap}</p></div>
           {!d.approved&&<><MeetingMinutesReview review={data.review} busy={busy}
             onReview={(outcome,note)=>approve('/minutes/review',{outcome,note},'Minutes review recorded. This version cannot be approved.')}
             onRegenerate={()=>approve('/minutes/regenerate',{},'Regeneration requested. Refresh to check the new minutes version.')}/>

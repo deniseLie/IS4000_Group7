@@ -17,15 +17,16 @@ export default function MeetingReminders({token,onOpen}){
     catch(failure){setError(failure.message);}finally{setBusy(false);}
   }
   if(!rows.length&&!error)return null;
-  return <section className="rmw-card" data-testid="meeting-reminders" aria-label="Meeting reminders"><h3>Meeting reminders</h3>
+  // Same row look as Today: a dot, what it is, the client and one line, then one button; Dismiss is a quiet link.
+  return <section className="rmw-card mrem" data-testid="meeting-reminders" aria-label="Meeting reminders">
+    <div className="mrem-head"><h3>Meeting reminders</h3><span className="rm-small">{rows.length} to look at</span></div>
     {error&&<p role="alert" className="rm-error">{error}</p>}
-    <ul className="rmw-list">{rows.map(item=><li key={item.reminder_id} data-testid="meeting-reminder" data-reminder-id={item.reminder_id}>
-      <div><strong>{item.client} · {item.kind==='preparation'?'Prepare for your meeting':'Transcript still needed'}</strong>
-        <small>Meeting {formatDateTime(item.starts_at)}</small><p className="rm-small">{item.kind==='preparation'
-          ?'Review the saved brief, current records and discussion pack before the meeting.'
-          :'The transcript deadline has passed. Check My Notes capture, import the saved export, or document your recollection.'}</p>
-        {item.error_code&&<p className="rmw-warn">{item.error_code.replaceAll('_',' ')}. Review recovery controls in the meeting workspace.</p>}</div>
-      <div className="meeting-actions"><button type="button" className="primary-button small" data-testid="meeting-reminder-open" disabled={busy} onClick={()=>onOpen(item.meeting_id,item.client)}>Open meeting</button>
-        <button type="button" className="bank-chat-logout" data-testid="meeting-reminder-acknowledge" disabled={busy} onClick={()=>acknowledge(item.reminder_id)}>Dismiss reminder</button></div>
-    </li>)}</ul></section>;
+    <ul className="mrem-list">{rows.map(item=>{const prep=item.kind==='preparation';return <li key={item.reminder_id} className="mrem-row" data-testid="meeting-reminder" data-reminder-id={item.reminder_id}>
+      <span className={`rm-dot ${prep?'meeting':'late'}`} aria-hidden="true"/>
+      <div className="mrem-text"><span className="rm-type">{prep?'Prepare':'Document'}</span><strong>{item.client}</strong> · {prep?'Prepare for your meeting':'Transcript still needed'}
+        <small className="rmw-why">Meeting {formatDateTime(item.starts_at)} · {prep?'review the brief and discussion pack before you meet.':'add the transcript or your notes so the minutes can be drafted.'}</small>
+        {item.error_code&&<small className="rmw-warn">{item.error_code.replaceAll('_',' ')}. Check the meeting’s recovery steps.</small>}</div>
+      <div className="mrem-actions"><button type="button" className="bank-chat-logout" data-testid="meeting-reminder-open" disabled={busy} onClick={()=>onOpen(item.meeting_id,item.client)}>{prep?'Open brief':'Document it'}</button>
+        <button type="button" className="link-button" data-testid="meeting-reminder-acknowledge" disabled={busy} onClick={()=>acknowledge(item.reminder_id)}>Dismiss</button></div>
+    </li>;})}</ul></section>;
 }

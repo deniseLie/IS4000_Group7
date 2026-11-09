@@ -5,7 +5,7 @@
 import {redact} from './chatTools.js';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const TOPICS={home_loan:'Property financing',investments:'Investments',fixed_deposit:'Time deposit',insurance:'Insurance',
-  term_sheet:'Loan terms (term sheet)',compliance_review:'Compliance review',account_review:'Account review',card_review:'Card review',other:'Something else'};
+  term_sheet:'Loan terms (term sheet)',compliance_review:'Periodic review',account_review:'Accounts and everyday banking',card_review:'Cards',other:'Something else'};
 export const MEETING_FORMATS=['video','phone','in_person'];
 export const MEETING_ACTIONS=['meeting.request','meeting.withdraw','meeting.counter_reply'];
 export const STATUS={requested:'Waiting for your RM',countered:'New time suggested',scheduled:'Meeting booked',declined:'Answered without a meeting',withdrawn:'Withdrawn'};
@@ -109,4 +109,35 @@ export function meetingRequestTarget({advisorId,purpose:text,topics:chosen,forma
   if(picked.length>LIMITS.times)throw new Error(`Pick up to ${LIMITS.times} times.`);
   return {advisor_id:advisorId,purpose:cleaned,topics:[...new Set(chosen)].sort(),format:kind,
     preferred_times:[...new Set(picked)].sort((a,b)=>Date.parse(a)-Date.parse(b))};
+}
+
+// The chat's meeting request draft (services/agents/meeting_answers.py writes it in a fixed form) read back into fields
+// for the inline card: who, what it's about, topics, format and the times as labels ("Mon 16 Nov, 9:00 am").
+// Returns null when the text is not that form, so the reply is shown as plain text with its Confirm and Cancel.
+export function parseMeetingDraft(text) {
+  const value=String(text||'');
+  const rm=value.match(/send your relationship manager, (.+?), this meeting request:/);
+  const about=value.match(/What it[’']s about: “([^”]*)”/),topics=value.match(/• Topics: ([^\n]+)/),format=value.match(/• Format: ([^\n]+)/);
+  const times=value.match(/• Times that suit you \(Singapore time\): ([^\n]+)/);
+  if(!rm||!about||!topics||!format||!times)return null;
+  const byLabel=Object.fromEntries(Object.entries(TOPICS).map(([code,label])=>[label.toLowerCase(),code]));
+  const formatCode=Object.entries({video:'video call',phone:'phone call',in_person:'in person'}).find(([,label])=>label===format[1].trim().toLowerCase())?.[0]||'video';
+  return {rm:rm[1].trim(),note:value.slice(0,rm.index).replace(/I can\s*$/,'').trim(),purpose:aboutOnly(about[1]),
+    topics:topics[1].split(',').map(label=>byLabel[label.trim().toLowerCase()]).filter(Boolean),format:formatCode,
+    times:times[1].split(';').map(label=>label.trim()).filter(Boolean)};
+}
+
+// "What it's about" without the ask itself: "I'm thinking of buying a home. Can I meet my RM?" -> "I'm thinking of buying a home."
+// When the ask is all she wrote, it is kept.
+export function aboutOnly(text) {
+  const value=String(text||'').trim();
+  const kept=value.replace(/\s*(?:can|could|may)\s+i\s+(?:please\s+)?(?:meet|see|speak (?:to|with)|talk (?:to|with)|book (?:a )?(?:meeting|call|time) with)\s+(?:my|the|your)\s+(?:relationship manager|rm|banker|adviser|advisor)[^.?!]*[?.!]?\s*$/i,'').trim();
+  return kept||value;
+}
+
+// The same label the chat uses for a free time (Singapore time), so a drafted time can be matched to a free slot.
+export function slotLabel(value) {
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Singapore',weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit',hour12:true})
+    .formatToParts(new Date(value)).map(p=>[p.type,p.value]));
+  return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute} ${String(parts.dayPeriod).toLowerCase()}`;
 }

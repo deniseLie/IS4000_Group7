@@ -77,13 +77,15 @@ test('offer meeting request confirm sends it to the RM',async({page})=>{
   await seedSession(page);
   await page.goto('/');
   await ask(page,'Can I book a meeting with my RM next week?');
-  const offer=page.getByTestId('offer-block');
-  await expect(offer.getByTestId('offer-item')).toHaveCount(1);
-  await expect(latest(page)).toContainText('this meeting request');
-  await expect(latest(page)).not.toContainText(/booked/i);
-  await offer.getByTestId('offer-confirm').click();
+  // The draft is an editable card in the chat (Send / Edit / Cancel); Send as drafted is her Confirm on the offer.
+  const card=page.getByTestId('meeting-request-card');
+  await expect(card).toHaveAttribute('data-state','open');
+  await expect(card).toContainText('Meeting request');
+  await expect(card.getByTestId('mrc-edit')).toBeEnabled();
+  await expect(latest(page)).not.toContainText(/\bbooked\b/i);
+  await card.getByTestId('offer-confirm').click();
   await expect(latest(page)).toContainText('Sent: your meeting request is with your relationship manager');
-  await expect(latest(page)).toContainText('My requests → Meetings');
+  await expect(latest(page)).toContainText('the Meetings page');
   await expect(page.getByTestId('offer-block')).toHaveCount(0);
   await page.getByTestId('meeting-handoff').first().click();
   await expect(page.getByTestId('meeting-request').first()).toHaveAttribute('data-status','requested');

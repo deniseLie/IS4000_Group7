@@ -34,7 +34,7 @@ export default function RmHistory({token,current,refresh,closing,onClose,onOpen}
         <button className={`saved-chat-button ${item.conversation_id===current?'current':''}`} disabled={busy} data-testid="rm-saved-conversation" onClick={()=>onOpen(item.conversation_id)}>
           <span className="saved-chat-when"><strong>{when(item.updated_at)}</strong>{item.conversation_id===current?<em>Current</em>:<Icon name="chevron"/>}</span>
           <span className="saved-chat-title">{item.title}</span>
-          <span className="saved-chat-sub">{item.clients.length?item.clients.join(', '):'Whole book'} · {item.turns} messages</span></button>
+          <span className="saved-chat-sub">{item.clients.length?item.clients.join(', '):'All clients'} · {item.turns} messages</span></button>
         <button className="link-button rm-history-delete" disabled={busy} aria-label={`Delete ${item.title}`} onClick={()=>remove(item.conversation_id)}>Delete</button>
       </li>)}</ul>}
     </div>

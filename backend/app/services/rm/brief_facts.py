@@ -30,7 +30,7 @@ BRIEF_GAPS=('no_recorded_preferences','no_interaction_in_180_days')  # the brief
 BRIEF_ORDER=['The meeting','Who the client is','History and commitments','Open matters','What the client has told us',
     'Conversation starters','Suggested discussion points','Questions to ask','Gaps to check']
 OVERVIEW_ORDER=['Snapshot','Accounts and products','Open requests','Upcoming','Recent large movements','Transaction insights',
-    "Topics from the client's chats",'Preferences and recent interactions','Worth raising','Missing or unavailable']
+    'Client chat insights','Preferences and recent interactions','Worth raising','Missing or unavailable']
 # (key in the model's JSON, heading, at most, kind): what the model writes for each report
 BRIEF_POINTS=(('conversation_starters','Conversation starters',3),('discussion_points','Suggested discussion points',4),('questions','Questions to ask',3))
 OVERVIEW_POINTS=(('worth_raising','Worth raising',3),)
@@ -146,7 +146,7 @@ def open_items(data: dict) -> list[dict]:
 
 
 def topic_items(bundle: ev.Bundle,limit: int=TOP) -> list[dict]:
-    """Topics from her chats: inferred ones are suggestions ("Not confirmed by the client"), the ones she shared are hers;
+    """Client chat insights: inferred ones are suggestions ("Not confirmed by the client"), the ones she shared are hers;
     a gap when she has not shared them or some are not available yet."""
     topics=bundle.get('talking-points')
     if topics is None:return []
@@ -155,10 +155,10 @@ def topic_items(bundle: ev.Bundle,limit: int=TOP) -> list[dict]:
     items=[]
     for row in (rows if isinstance(rows,list) else [])[:limit]:
         inferred=row.get('label')=='ai_suggestion'
-        items.append(item(f"Topic from the client's chats: {row['line']} (last mentioned {row.get('last_seen')})."+(' Not confirmed by the client.' if inferred else ''),
+        items.append(item(f"Client chat insight: {row['line']} (last mentioned {row.get('last_seen')})."+(' Not confirmed by the client.' if inferred else ''),
             'suggestion' if inferred else 'client_stated','rm' if inferred else 'client',['talking-points']))
-    if topics.kind=='consent':items.append(gap('The client has not shared topics from their chats with you.',['talking-points']))
-    elif record.get('pending'):items.append(gap('Some topics from the client\'s chats are not available yet.',['talking-points']))
+    if topics.kind=='consent':items.append(gap('The client has not shared chat insights with you.',['talking-points']))
+    elif record.get('pending'):items.append(gap('Some client chat insights are not available yet.',['talking-points']))
     return items
 
 
@@ -202,6 +202,14 @@ def note_items(note: dict,source_id: str,summary: bool=True) -> list[dict]:
     return items
 
 
+# Profile values in plain words ("self_employed" -> "Self-employed", "SGD 20,000 and above / month" -> "SGD 20,000 and above a month").
+EMPLOYMENT={'self_employed':'Self-employed','employed':'Employed','unemployed':'Not employed','retired':'Retired','student':'Student'}
+LANGUAGES={'en':'English','zh':'Chinese','ms':'Malay','ta':'Tamil','th':'Thai'}
+def income(value: Any) -> str:
+    text=str(value).strip().replace(' / month',' a month').replace('/month',' a month')
+    return text[0].lower()+text[1:] if text[:2].lower()=='up' else text
+
+
 def withheld_gap(withheld: int) -> list[dict]:
     return [gap(f"{plural(withheld,'private note')} by other relationship managers {'is' if withheld==1 else 'are'} not available.",['notes-withheld'])] if withheld else []
 
@@ -212,9 +220,10 @@ def who_items(data: dict,products: bool=True) -> list[dict]:
     if rel.get('inherited') and rel.get('previous_advisor'):
         line+=f" Inherited from {rel['previous_advisor']}"+(f" on {rel['previous_to_text']}" if rel.get('previous_to_text') else '')+'.'
     items=[item(line,'record','rm',['profile'])]
-    details=[x for x in (p.get('employment_status') and f"employment: {words(p['employment_status'])}",
-        p.get('income_range') and f"income range: {p['income_range']}",p.get('preferred_language') and f"preferred language: {p['preferred_language']}") if x]
-    if details:items.append(item('; '.join(details).capitalize()+'.','record','rm',['profile']))
+    details=[x for x in (p.get('employment_status') and EMPLOYMENT.get(p['employment_status'],words(p['employment_status']).capitalize()),
+        p.get('income_range') and f"Income {income(p['income_range'])}",
+        p.get('preferred_language') and f"Prefers {LANGUAGES.get(str(p['preferred_language']).lower(),p['preferred_language'])}") if x]
+    if details:items.append(item('. '.join(details)+'.','record','rm',['profile']))
     if products:
         parts,ids=[],[]
         for key,label in (('accounts','account'),('cards','credit card'),('loans','loan')):
@@ -264,7 +273,7 @@ def open_section(data: dict) -> dict:
 
 
 def told_section(data: dict,bundle: ev.Bundle) -> dict:
-    """Preferences, topics from her chats (inferred ones as suggestions), the shared handover note, and one gap per
+    """Preferences, client chat insights (inferred ones as suggestions), the shared handover note, and one gap per
     consent category she has not shared."""
     items=[*preference_items(data),*topic_items(bundle),*shared_items(bundle),*insights_gap(bundle)]
     if not items:items=[item('Nothing the client stated is recorded.','record','rm',['preferences'])]
@@ -367,7 +376,7 @@ def overview_sections(data: dict,bundle: ev.Bundle) -> list[dict]:
         {'heading':'Upcoming','items':counted([*meeting_items(data),*review_items(data),*milestone_items(data),*task_items(data)],'item','the client page shows them')},
         {'heading':'Recent large movements','items':movement_items(bundle)},
         {'heading':'Transaction insights','items':insight_items(bundle)},
-        {'heading':"Topics from the client's chats",'items':topic_items(bundle)},
+        {'heading':'Client chat insights','items':topic_items(bundle)},
         {'heading':'Preferences and recent interactions','items':[*preference_items(data),*recent]},
         {'heading':'Missing or unavailable','items':gap_items(data)}]
 

@@ -7,6 +7,8 @@
 2. "Delete the home loan topic" offers insight.delete for that topic as her RM sees it (Undo for 7 days on Data sharing).
 3. A meeting request (meeting_answers) gets optional "share until this request is answered" grants for what she does not
    share yet: switches in the offer, off unless she switches them on (0114). A typed yes sends the request only.
+4. "Stop recording my meetings" gets a fixed reply with no offer: a meeting's transcript is her choice on that meeting
+   (I agree / Withdraw, 0122), which takes effect at once. There is no request to a team (0147 removed it).
 Each offer waits for her yes (services/offers.py). A question about sharing ("do you share …?", "how do I …?") is left to
 relationship/v7, which explains and never claims a change; a share with someone other than her RM is not ours to offer.
 """
@@ -17,19 +19,25 @@ from typing import NamedTuple
 from app.schemas.agents import Evidence
 from app.schemas.contracts import AgentResult,Citation,OfferProposal,RequestContext
 from app.schemas.consent_sharing import ConsentSharing
+from app.schemas.talking_points import MyTalkingPoints
 from app.schemas.events import Source
-from app.services import customer_data,talking_points
+from app.services import talking_points,tools
 
 CATEGORY_WORDS=(
     ('chat_topics',re.compile(r"\b(?:chat\s+topics?|topics?\s+(?:from|in|of)\s+(?:my\s+)?chats?|my\s+chats?|what\s+i\s+(?:talk|chat)\s+about)\b")),
     ('transaction_insights',re.compile(r'\b(?:transactions?|transaction\s+insights?|spending|money\s+in\s+and\s+out)\b')),
 )
-LABEL={'transaction_insights':'transaction insights','chat_topics':'topics from your chats'}
+LABEL={'transaction_insights':'transaction insights','chat_topics':'chat insights'}  # Chat insights on her pages (talking points in the code)
 STOP=re.compile(r"\b(?:stop|withdraw|revoke|end|turn\s+off|switch\s+off|no\s+longer)\s+(?:\w+\s+){0,3}?(?:shar(?:e|ing)|access)\b"
     r"|\bunshare\b|\b(?:stop|don'?t)\s+let(?:ting)?\s+(?:\w+\s+){0,3}?see\b|\bwithdraw\s+(?:my\s+)?consent\b")
 SHARE=re.compile(r"\b(?:share|sharing)\b|\blet\s+(?:\w+\s+){0,3}?see\b|\b(?:turn|switch)\s+on\s+(?:\w+\s+){0,3}?sharing\b")
 QUESTION=re.compile(r"^\s*(?:do|does|did|is|are|was|were|what|who|why|how|when|which|has|have)\b")
 MEETING=re.compile(r'\b(?:meeting|meet|catch[\s-]?up|appointment)\b')  # meeting_answers drafts it, with the switches below
+# Meeting recording: a stop word before "record", and either the verb form or what is recorded ("a record of" is not).
+STOP_RECORDING=re.compile(r"\b(?:stop|end|turn\s+off|switch\s+off|opt\s+out\s+of|withdraw\s+(?:my\s+)?consent\s+(?:to|for))\s+(?:\w+\s+){0,3}?record"
+    r"|\b(?:don'?t|do\s+not|never|no\s+longer)\s+(?!forget|miss|fail)(?:\w+\s+){0,3}?record|\bnot\s+(?:to\s+)?be\s+recorded\b"
+    r"|\b(?:don'?t|do\s+not)\s+want\s+(?:\w+\s+){0,5}?recorded\b")
+RECORDED=re.compile(r'\brecord(?:ing|ed)\b|\b(?:meetings?|calls?|appointments?|zoom|video)\b')
 RECIPIENT=re.compile(r"\b(?:with|let)\s+(?:my\s+|the\s+|our\s+)?(\w+)")
 RM_WORDS={'rm','relationship','banker','her','him','them','you'}
 DELETE=re.compile(r'\b(?:delete|remove|forget|erase)\b')
@@ -47,9 +55,12 @@ NOTICE={'transaction_insights':'ti-2026-11','chat_topics':'ct-2026-11'}  # conse
 NO_RM='You don’t have a relationship manager recorded right now, so there is no one to share with.'
 NOT_SHARED='You are not sharing {label} with {rm}, so there is nothing to stop.'
 ALREADY='You already share {label} with {rm}. You can change what and until when on Data sharing.'
-NO_TOPIC='{rm} doesn’t see a {topic} topic from your chats, so there is nothing to delete.'
+NO_TOPIC='{rm} doesn’t see a {topic} insight from your chats, so there is nothing to delete.'
+RECORDING=('Before each meeting you are asked whether {rm} may use a transcript of the call to write the minutes. If you do not agree, '
+    'no transcript is used. If you agreed, you can choose Withdraw on that meeting at any time (My requests, Meetings, Notes and follow-up), '
+    'and it stops at once. Minutes already approved stay.')
 CONSEQUENCE={'transaction_insights':'If you stop, {rm} stops seeing your transaction insights at once, and briefs for your meetings say you have not shared them.',
-    'chat_topics':'If you stop, {rm} stops seeing topics picked up from your chats, and they are deleted at once with your words. Topics you shared yourself stay.'}
+    'chat_topics':'If you stop, {rm} stops seeing insights picked up from your chats, and they are removed at once. Insights you shared yourself stay.'}
 
 
 class Reply(NamedTuple):
@@ -60,9 +71,9 @@ class Reply(NamedTuple):
 
 def evidence_for(as_of,body: dict) -> list[Evidence]:
     """What the reply was built from: codes, ids and dates of her own settings (no free text)."""
-    return [Evidence(id='consent-sharing',text=json.dumps(body,ensure_ascii=False,default=str),publisher='DemoBank consent records',
+    return [Evidence(id='consent-sharing',text=json.dumps(body,ensure_ascii=False,default=str),publisher='UBS Connect consent records',
         scope='Her own data sharing settings; read for this request only.',source=Source(id='consent-sharing',
-        title='Your data sharing settings',url=None,version=as_of.isoformat(),publisher='DemoBank consent records'))]
+        title='Your data sharing settings',url=None,version=as_of.isoformat(),publisher='UBS Connect consent records'))]
 
 
 def reply(task_id: str,text: str,as_of,body: dict,proposals: list[OfferProposal]|None=None) -> Reply:
@@ -124,6 +135,7 @@ def wanted(question: str) -> Wanted|None:
     decide the offer."""
     text=(question or '').lower().replace('’',"'")
     deleting=bool(DELETE.search(text) and re.search(r'\btopics?\b',text) and any(rx.search(text) for rx in TOPIC_WORDS.values()))
+    if not deleting and STOP_RECORDING.search(text) and RECORDED.search(text):return Wanted(text,False,'meeting_recording',True)
     category=category_in(text)
     stopping=bool(category and STOP.search(text))
     sharing=bool(category and not stopping and SHARE.search(text) and not QUESTION.search(text) and not MEETING.search(UNTIL_MEETING.sub('',text)))
@@ -135,7 +147,7 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
     if (found:=wanted(question)) is None:return None
     text,deleting,category,stopping=found
     if deleting:
-        mine=await talking_points.mine(ctx)
+        mine=await tools.snapshot('my_talking_points',{},ctx,MyTalkingPoints)
         topic=next(t for t,rx in TOPIC_WORDS.items() if rx.search(text))
         rm=mine.data.rm_first_name or 'Your relationship manager'
         point=next((p for p in mine.data.points if p.topic==topic),None)
@@ -145,8 +157,13 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
             'you can undo it on Data sharing for 7 days.',mine.as_of,body,
             [OfferProposal(task_id=task_id,agent='relationship',type='insight.delete',target={'point_id':str(point.point_id)},
                 summary=f'Delete the {talking_points.TOPIC_NAME[topic].lower()} topic from what {rm} sees')])
-    envelope=await customer_data.get_consent_sharing_record(ctx)
+    envelope=await tools.snapshot('my_consent_sharing',{},ctx,ConsentSharing)
     sharing=envelope.data
+    if category=='meeting_recording':  # her choice on each meeting (0122), whoever her RM is; nothing to offer
+        active=sharing.active(category)
+        body={'category':category,'advisor_id':str(sharing.rm.advisor_id) if sharing.rm else None,'grant_id':str(active.grant_id) if active else None,
+            'basis':active.basis if active else None}
+        return reply(task_id,RECORDING.format(rm=display(sharing.rm.name) if sharing.rm else 'your relationship manager'),envelope.as_of,body)
     if sharing.rm is None:return reply(task_id,NO_RM,envelope.as_of,{'category':category,'rm':None})
     rm,active=display(sharing.rm.name),sharing.active(category)
     if not for_her_rm(text,rm):return None
@@ -167,7 +184,7 @@ async def respond(task_id: str,question: str,ctx: RequestContext) -> Reply|None:
 async def meeting_shares(task_id: str,ctx: RequestContext) -> list[OfferProposal]:
     """The optional grants a meeting request carries: each category she does not share yet, until the request is answered
     (chained after the meeting.request, 0109; a switch that is off by default, 0114). None when there is no RM."""
-    try:sharing=(await customer_data.get_consent_sharing_record(ctx)).data
+    try:sharing=(await tools.snapshot('my_consent_sharing',{},ctx,ConsentSharing)).data
     except Exception:return []  # the meeting request stands without the switches
     if sharing.rm is None:return []
     rm=display(sharing.rm.name)

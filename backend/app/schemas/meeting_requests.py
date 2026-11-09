@@ -11,8 +11,8 @@ from pydantic import AwareDatetime,BaseModel,ConfigDict,Field,StringConstraints,
 MeetingTopic=Literal['home_loan','investments','fixed_deposit','insurance','term_sheet','compliance_review','account_review',
     'card_review','other']  # = rm.meeting_topics() (0106)
 TOPIC_LABEL: dict[str,str]={'home_loan':'Property financing','investments':'Investments','fixed_deposit':'Time deposit','insurance':'Insurance',
-    'term_sheet':'Loan terms (term sheet)','compliance_review':'Compliance review','account_review':'Account review',
-    'card_review':'Card review','other':'Something else'}
+    'term_sheet':'Loan terms (term sheet)','compliance_review':'Periodic review','account_review':'Accounts and everyday banking',
+    'card_review':'Cards','other':'Something else'}
 MeetingFormat=Literal['video','phone','in_person']
 FORMAT_LABEL: dict[str,str]={'video':'video call','phone':'phone call','in_person':'in person'}
 MeetingRequestStatus=Literal['requested','countered','scheduled','declined','withdrawn']

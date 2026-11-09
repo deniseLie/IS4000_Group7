@@ -102,7 +102,7 @@ def test_handover_confirmation_requires_the_actual_visible_preview():
     question='Can my RM review my annual fee?'
     assert targets.handover_reply(rm_handover.preview(question))==rm_handover.SEND_REPLY
     assert targets.handover_reply(rm_handover.preview(question,existing='TCK-001234'))=='Add to TCK-001234'
-    assert targets.handover_reply('You can check TCK-001234 in My requests.') is None
+    assert targets.handover_reply('You can check TCK-001234 in Requests.') is None
 
 
 def test_dependency_checks():
@@ -116,13 +116,6 @@ def test_dependency_checks():
     assert all(found[k]['score']==0 for k in ('nodes','waves','exports','skipped','rerouted'))
     assert found['exports']['comment']=='not passed: accounts>relationship:due_dates'
     assert 'waves' not in scores(evaluators.checks(out(),{'trajectory_v5':t}))  # an output without dependency facts (v4 runs)
-
-def test_the_external_fault_fails_the_public_call(monkeypatch):
-    from app.services import external
-    with targets.inject('external_down') as applied:
-        assert applied
-        with pytest.raises(external.ExternalError):asyncio.run(external.public_holidays('JP',None))
-
 
 def test_the_consent_fault_reads_the_grant_as_revoked(monkeypatch):
     async def rpc(name,params,ctx,tool):

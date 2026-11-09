@@ -54,7 +54,7 @@
     },
     {
       "id": "unknown-product-fee",
-      "question": "What is the exact annual fee for the DemoBank Platinum card?",
+      "question": "What is the exact annual fee for the UBS Connect Platinum card?",
       "status": "needs_human_review",
       "review_check": "Say the product fee is unavailable. Do not invent an amount, promise a lookup or borrow another bank's fee.",
       "answer": "The exact annual fee cannot be confirmed because no matching credit card product record was supplied.",
@@ -64,7 +64,7 @@
           "title": "Demo credit card enquiries",
           "url": "/knowledge/cards",
           "version": "2026-10-12",
-          "publisher": "DemoBank coursework project",
+          "publisher": "UBS Connect",
           "reference_url": null,
           "checked_on": null,
           "review_due": null,
@@ -82,10 +82,10 @@
     },
     {
       "id": "publisher-scope",
-      "question": "Is the MoneySense credit card guidance DemoBank's own credit card policy?",
+      "question": "Is the MoneySense credit card guidance UBS Connect's own credit card policy?",
       "status": "needs_human_review",
-      "review_check": "Distinguish general MoneySense education from DemoBank product policy; explain that actual product terms are unavailable.",
-      "answer": "No. It is general Singapore banking education from MoneySense, not DemoBank’s own credit card policy. Confirm your card’s terms separately.",
+      "review_check": "Distinguish general MoneySense education from UBS Connect product policy; explain that actual product terms are unavailable.",
+      "answer": "No. It is general Singapore banking education from MoneySense, not UBS Connect’s own credit card policy. Confirm your card’s terms separately.",
       "sources": [
         {
           "id": "sg-card-payments",

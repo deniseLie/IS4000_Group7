@@ -65,6 +65,8 @@ The target design is [architecture.md §14](../architecture.md#14-target-archite
 
 ## Phase 2: External tool gateway (not visible to clients)
 
+> Removed on 8 Nov 2026: `services/external.py`, both tools, their settings and the `external_down` fault are gone; trip due dates shift for weekends only. This section is kept as history.
+
 **Goal:** two read-only public data tools that never receive customer data.
 
 **Files**

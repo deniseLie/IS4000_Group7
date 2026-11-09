@@ -1,4 +1,5 @@
-"""Explicit opt-in API worker lifecycle. A failed worker is visible in health and propagates on shutdown."""
+"""API lifecycle: the in-process MCP tool client, and the explicit opt-in workers. A failed worker is visible in health
+and propagates on shutdown."""
 import asyncio
 import logging
 from collections.abc import AsyncIterator
@@ -63,5 +64,15 @@ async def meeting_lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 @asynccontextmanager
+async def tool_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Open the event loop's MCP tool client at startup (SDK import, server build: about 2 s cold, measured 8 Nov 2026) so
+    the first chat does not wait for it; close it at shutdown."""
+    from app import mcp_server
+    await mcp_server.client()
+    try:yield
+    finally:await mcp_server.close()
+
+
+@asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with meeting_lifespan(app),notification_lifespan(app):yield
+    async with tool_lifespan(app),meeting_lifespan(app),notification_lifespan(app):yield

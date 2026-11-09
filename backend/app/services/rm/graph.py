@@ -3,7 +3,7 @@
 api/rm.py runs it only for a verified `rm` login (rm_caller); a client never reaches it.
 
 - planner: a fixed book check first (anyone outside the RM's book is refused and audited before any record is read or
-  the model is called, R06); then a workspace button's intent, or one rm_planner/v5 call. Each intent belongs to one of
+  the model is called, R06); then a workspace button's intent, or one rm_planner/v6 call. Each intent belongs to one of
   the three agents (Client, Requests, Calendar; registry.INTENT_AGENT), so the model picks an agent only for an `open`
   question; orchestrator.linked drops a link the specs do not declare.
 - agent: resolves the client, ticket or meeting against the book with the RM's own context, then runs the intent's
@@ -46,7 +46,6 @@ from app.services.rm import evidence as ev
 from app.services.rm import handlers,priority
 from app.services.rm.handlers import Say,Show,capability_refusal,clarify,refusal,today
 
-PLANNER_VERSION='v5'
 MAX_TASKS=5
 SEVERAL='Here are the parts of your request in order. Review each draft or proposal on its own: nothing goes to a client and nothing is saved or created until you approve it.'
 FEEDS={'today':('schedule','meeting_requests','reviews'),'priorities':('meeting_requests',)}  # intent -> the intents it ranks
@@ -88,7 +87,7 @@ def plan_schema() -> dict:
 
 
 async def model_plan(rt: RmRuntime,message: str) -> list[dict]:
-    pv=prompts.load('rm_planner',PLANNER_VERSION)
+    pv=prompts.current('rm_planner')
     rt.prompt_ids.append(pv['id'])
     c=rt.req.context
     name=lambda cid:next((x['name'] for x in rt.book if x['customer_id']==cid),None)
@@ -121,6 +120,21 @@ BRIEF_THEN_FOLLOW_UPS=re.compile(BRIEF+r",?\s+(?:and(?: then)?|then)\s+(?:draft|
     r"\s+(?:from|out of|based on)\s+(?:the|my|our|her|his|their)\s+(?:last|latest|most recent|previous)\s+(?:meeting|note|call|catch[- ]?up)[.!]?$",re.I)
 
 
+# A question about the previous answer ("1 not known is what", "what does that gap mean", "why is that first?"): short,
+# points back at the answer, asks what/why/how, names no client and asks for no new work. It is explained from that
+# answer (intent follow_up) instead of being read as a new request (which used to fall through to "help").
+POINTS_BACK=re.compile(r"\b(?:that|this|those|these|it|above|you (?:said|mean|meant|wrote)|your (?:answer|reply|last)|not known|the gap|gaps?|"
+    r"(?:point|item|line|number|no\.?)\s*\d+|\d+\s+(?:not known|points?|items?|gaps?|things?)|first|second|third|last one)\b",re.I)
+ASKS=re.compile(r"\?|\b(?:what|why|how|which|explain|mean(?:s|t)?|meaning|huh|is what|means what|clarify|elaborate)\b",re.I)
+NEW_WORK=re.compile(r"\b(?:draft|brief|prepare|summari[sz]e|overview|book|send|schedule|reply to|document|block|accept|decline|propose|show me|list|find)\b",re.I)
+
+
+def is_follow_up(rt: RmRuntime,message: str) -> bool:
+    text=' '.join(message.split())
+    return (any(t.role=='assistant' for t in rt.req.history) and not rt.named and not rt.outside and len(text)<=140
+        and bool(POINTS_BACK.search(text)) and bool(ASKS.search(text)) and not NEW_WORK.search(text))
+
+
 def only_name(who: str,name: str) -> bool:
     """Every word the rule took as the client is part of her book name (or a near spelling), so wording such as "my next
     confirmed meeting with Michelle" goes to the model planner, which reads its meeting hint."""
@@ -132,6 +146,7 @@ def only_name(who: str,name: str) -> bool:
 def rule_plan(rt: RmRuntime,message: str) -> list[dict]|None:
     text=' '.join(message.split())
     if rt.outside:return None
+    if is_follow_up(rt,text):return [{'intent':'follow_up'}]
     if (m:=BRIEF_THEN_FOLLOW_UPS.match(text)) and len(rt.named)==1 and only_name(m.group('who'),rt.named[0]['name']):
         return [{'intent':'meeting_brief','client_name':m.group('who')},{'intent':'actions_from_note','client_name':m.group('who'),'depends_on':1}]
     if MORE.search(text):return None

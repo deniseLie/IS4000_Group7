@@ -70,6 +70,18 @@ def capabilities(ctx: Annotated[RequestContext,Depends(get_ctx)]) -> dict[str,bo
     if ctx.principal.jwt is None:raise ApiError(401,'auth_required','Sign in to view meeting capabilities.')
     return {'enabled':settings.meetings_enabled,'zoom_configured':settings.zoom_oauth_directory is not None,'zoom_automation_enabled':settings.zoom_capture_enabled}
 
+class TranscriptStanding(Model):
+    on: bool
+
+# 0149: the client's one yes for every meeting's transcript (Data sharing › Meeting recording). Before the {meeting} routes.
+@router.get('/meetings/transcript-standing')
+def transcript_standing(claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
+    return call('meeting_transcript_standing',{},claims)
+
+@router.post('/meetings/transcript-standing')
+def set_transcript_standing(body: TranscriptStanding,claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
+    return call('meeting_set_transcript_standing',{'p_on':body.on},claims)
+
 @router.get('/meetings/session')
 def session(claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
     return call('meeting_identity',{},claims)
@@ -124,7 +136,7 @@ async def generate_notes(meeting: UUID, body: Command, ctx: Annotated[RequestCon
     from app.services.meetings.graph import notes_graph
     database = ApplicationDatabase(ctx)
     try:
-        raw = await run_in_threadpool(database.agent_call, MINUTES_WRITER.name, 'meeting_notes_context', meeting, {'p_meeting_id': meeting}, claims)
+        raw = await database.agent_read(MINUTES_WRITER.name, 'meeting_notes_context', meeting, {'p_meeting_id': meeting}, claims)
     except MeetingStoreError as error:
         raise await run_in_threadpool(store_error, 'meeting_notes_context', error, claims) from error
     context = NotesContext.model_validate(raw)

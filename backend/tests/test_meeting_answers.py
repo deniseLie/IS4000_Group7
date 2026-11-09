@@ -11,7 +11,7 @@ from app.schemas.actions import ActionOutcome,CreateAction
 from app.schemas.chat import Message
 from app.schemas.contracts import OfferProposal,Principal,RequestContext
 from app.schemas.meeting_requests import CounterReplyResult,MeetingRequestResult,MeetingRequestTarget
-from app.services import authorization,orchestrator
+from app.services import authorization,orchestrator,prompts
 from app.services.actions.registry import EXECUTORS
 from app.services.agents import meeting_answers,registry
 
@@ -148,7 +148,7 @@ def test_rule_planning_and_the_relationship_spec() -> None:
     spec=registry.SPECS['relationship']
     assert 'meeting.request' in spec.offers and not {'appointment.hold','appointment.confirm'}&spec.offers
     assert [read.tool for read in spec.intents['meeting_request']]==['my_rm','free_slots']
-    assert orchestrator.PLANNER=='v10'  # v8's meeting line is kept in v9 (2b) and v10 (batch 3)
+    assert prompts.VERSIONS['planner']=='v12'  # v8's meeting line is kept in v9 (2b), v10 (batch 3), v11 and v12
 
 
 def outcome(kind: str,target: dict,result: dict) -> dict:
@@ -191,7 +191,7 @@ def test_a_sent_request_says_when_her_rm_answers_and_where_to_follow_it() -> Non
         'respond_by':'2026-11-06T09:42:00Z','respond_by_text':'Fri 6 Nov 2026, 5:42 pm'}))
     text=asyncio.run(orchestrator.outcome_text(sent,context()))
     assert text==orchestrator.MEETING_SENT.format(respond_by='Fri 6 Nov 2026, 5:42 pm')
-    assert 'Fri 6 Nov 2026, 5:42 pm' in text and 'My requests → Meetings' in text and 'TCK-' not in text
+    assert 'Fri 6 Nov 2026, 5:42 pm' in text and 'the Meetings page' in text and 'TCK-' not in text
 
 
 def test_a_redraft_cancels_only_the_open_meeting_draft(monkeypatch) -> None:

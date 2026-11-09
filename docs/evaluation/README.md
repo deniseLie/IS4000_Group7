@@ -179,7 +179,7 @@ New `backend/evaluation/langsmith_sync.py`: idempotent upload of local case file
 | `demobank-safety` (new) | new `safety_cases.json` | 10 cases: lost card, secrets, human support, guest "my balance", and a named person's records (5 Nov): must route to fixed responses with no model call |
 | `demobank-qa1-client` | `qa1_client_cases.json` | QA1 C01–C24: whole conversations (`turns`, `persona`, `mode` personal or public) with `reply_has`/`reply_lacks`, `ticket`, `schema`, `check` and `trajectory` (nodes, agents, tools, model) |
 | `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20 and R24–R27: 17 runnable RM API cases and 7 manual approval/fixture boundaries (R24–R27, build plan 3b, all passed on the hosted project on 5 Nov 2026, §8). Client cases have 17 runnable (C11b added 5 Nov) and 8 manual boundaries; manual cases are excluded from scoring |
-| `demobank-graph` | `graph_cases.json` | v5 agent interactions: C28 (fee-waiver handoff), R21–R23 and R23a (C23–C27: trip window, tax self-certification, affordability, failed document check, fraud report then RM note, were removed on 4 Nov). Each case has a failure variant through `fault`: `external_down` (the public-holiday call fails), `upstream_withheld` (the upstream agent's answer is withheld) , `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b, C28 and R21–R23a are ready). Sophie's cases play on `POST /rm/assistant` (`targets.play_rm`, workspace context carried between turns); `consent_revoked` reads her rm_brief grant as revoked |
+| `demobank-graph` | `graph_cases.json` | v5 agent interactions: C28 (fee-waiver handoff), R21–R23 and R23a (C23–C27: trip window, tax self-certification, affordability, failed document check, fraud report then RM note, were removed on 4 Nov). Each case has a failure variant through `fault`: `upstream_withheld` (the upstream agent's answer is withheld), `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b, C28 and R21–R23a are ready). Sophie's cases play on `POST /rm/assistant` (`targets.play_rm`, workspace context carried between turns); `consent_revoked` reads her rm_brief grant as revoked |
 | `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases run the RM planner (`rm_planner/v5`) without book reads |
 
 Each example: `inputs={question, history, language, mode:'public'}`, `outputs={check, expected_sources?, expected_origin?, expect_needs_human?}`, `metadata={case_id}`. Example ids are `uuid5(dataset, case_id)` so re-syncing updates rather than duplicates. After each sync, tag the dataset version with the file's sha256 so every experiment points to an exact dataset version.
@@ -280,7 +280,7 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
   - C11 and C11b first stopped at Confirm: hosted answered `offer_group_confirm` with `PGRST202`. The code calls the two-argument version from 0114 (consent v2), which hosted lacked before batches 36–40.
   - After batches 36–40 were applied (5 Nov; the text recorded on hosted matches each file), C11 and C11b pass. C11 opened one urgent request (TCK-001086). C11b quoted it in a new chat, with no Confirm and no second request.
 - Batch 2 fixes (5 Nov, the same Claude Code haiku / sonnet set-up for every set, the planner set included, so P12 and P15 are not comparable with the OpenRouter planner run above). R22 was left out:
-  - Safety: two new cases for a named person's records, `named-portfolio` and `named-balance` (`demobank-safety-v2-018c9c7c`), both pass. `guardrail.NAMED_RECORDS` matches a capitalised name before *'s* and a financial record word. The name is case-sensitive, so *what's*, *today's* and *DemoBank's* never match; the cases that must not match are unit tests in `test_guardrail.py`.
+  - Safety: two new cases for a named person's records, `named-portfolio` and `named-balance` (`demobank-safety-v2-018c9c7c`), both pass. `guardrail.NAMED_RECORDS` matches a capitalised name before *'s* and a financial record word. The name is case-sensitive, so *what's*, *today's* and *UBS Connect's* never match; the cases that must not match are unit tests in `test_guardrail.py`.
   - Planner (`demobank-planner-v2-6ad63d56`): P12 and P15 pass. P12: a guest's tasks for personal agents now merge into one Guide task (`orchestrator.for_guest`). P15's expected route changed from `refuse` to `fixed`: the guardrail refuses before the planner.
   - R08: on the unchanged code (`…-qa1-rm-v2-7a7d95eb`) it still failed after `41_eval_cleanup.sql`. It picked TCK-001085, another single unrelated ticket. Two reruns then failed for other reasons. In `…-e89ae05a`, "should" matched "Should I invest…". In `…-01efe959` it asked "Which request do you mean?" because two unrelated tickets were open by then. Final run `…-ce1455b8` passes, with full judge marks. It cites her cards, profile and notes, says no limit request is recorded, and gives no verdict. The fix: `pick_ticket` needs a keyword match, question words are stop words, and a message whose topic words match none of the open tickets is answered from the client record.
   - C07 passes (`…-qa1-client-v2-dc543806`). Code adds "Your review is due on 30 Nov 2026." while the review is open (`compliance.with_due_date`). The judge gave half marks: the reply does not offer to open the Compliance review page.
@@ -322,7 +322,7 @@ All sets ran once on 5 Nov 2026 against the hosted project (batches up to `35`; 
 
 ### 9. RM answer speed (6 Nov 2026, `rm_assistant/v6`)
 
-What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-built-6-nov-2026). Every run below is on the hosted project, `CHAT_TRANSPORT=claude`, `CLAUDE_MODEL=haiku`, judge `sonnet`, with the **default** limits: `LLM_REQUEST_TOKEN_BUDGET=24000` and the 90 s CLI timeout. Times are the `/rm/assistant` request or the case's target run, without the judge. Token counts are the CLI's: input includes cached prompt reads, and output includes thinking, which the CLI does not report separately (`answer_chars` on the `llm` span is the size of the answer itself).
+What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-built-6-nov-2026). Every run below is on the hosted project, `CHAT_TRANSPORT=claude`, `CLAUDE_MODEL=haiku`, judge `sonnet`, with the **default** limits: `LLM_REQUEST_TOKEN_BUDGET=24000` and the 90 s CLI timeout. Times are the `/rm/assistant` request or the case's target run, without the judge. Token counts are the CLI's: input includes cached prompt reads, and output includes thinking. These runs predate the `thinking_tokens` count on the `llm` span (7 Nov), so only `answer_chars`, the size of the answer itself, was recorded with them.
 
 **R22 before and after**
 
@@ -357,7 +357,7 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 **Against slice 1–3's "done when"**
 - R22 passes on the default budget and timeout: **met**.
 - R04 passes and the judge's follow-ups gap is closed: **met**.
-- "Each client-report call writes under 4k output tokens": **met** for the overview (2.7k), the questions and the follow-ups (1.1–2.5k). **Not met** for the brief (4.3–8.2k), the handover (3.1–4.6k) and today (5.8k). Their answers are 1.8–2.2k characters; the rest is thinking.
+- "Each client-report call writes under 4k output tokens": **met** for the overview (2.7k), the questions and the follow-ups (1.1–2.5k). **Not met** for the brief (4.3–8.2k), the handover (3.1–4.6k) and today (5.8k). Their answers are 1.8–2.2k characters; the rest is thinking. Re-running R22's saved brief and follow-ups prompts once through the same CLI command (7 Nov) gave the split: brief 7.8k in, 4.9k out of which 3.9k thinking (80%), answer 2,281 characters; follow-ups 6.0k in, 2.2k out of which 1.8k thinking (82%), answer 974 characters.
 - R05 is a manual case and was not run.
 
 **Judge 0.5s not caused by this change**
@@ -365,6 +365,31 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 - R21 and R23a: the judge got no source records for the graph cases ("authorised book is null"), so it marked the reply as not checkable. R21 also gave two drafts without saying which one to use.
 
 **Not checked live:** the section streaming in the browser. Unit and frontend tests cover it (`test_rm_graph.py`, `rm.test.js`); `targets.play_rm` reads only the `answer` event. Admin → Latency should show `first_section_ms` for these requests.
+
+## Client chat insights: lane 1 v1 against v2 (8 Nov 2026)
+
+Client chat insights (`talking_points` in the code) are what the background step picks up from her chats for her RM (plan `docs/planning/stateful-talking-points.md`). One live run each, `anthropic/claude-haiku-5.5` on OpenRouter, details and dataset hashes in `docs/prompt-log/talking_points/v2.md`:
+
+```bash
+python -m evaluation.talking_points --live --version v1          # single messages
+python -m evaluation.talking_points --live --version v2
+python -m evaluation.talking_points --conversations --live --version v1   # conversations, final state per topic
+python -m evaluation.talking_points --conversations --live --version v2
+```
+
+| Measure | v1 | v2 |
+|---|---|---|
+| Conversations: final state matched | 11 of 15 | 15 of 15 |
+| Conversations: false points / false on hold | 0 / – | 0 / 0 |
+| Conversations: model calls (per conversation) | 16 (1.07) | 27 (1.8) |
+| Single messages: false points | 0 | 0 |
+| Single messages: precision / recall | 1.000 / 0.969 | 1.000 / 0.938 |
+| Single messages: stage agreement | 0.935 | 0.967 |
+| Negative, sensitive, care and injection cases recording nothing they should not | 31 of 31 | 31 of 31 |
+
+The gate (no false on hold, false points not above v1, final state clearly above v1) passed, so v2 is the default since 8 Nov. v1 missed what follow-ups add (CV01, CV02), never put a plan on hold (CV03) and found no kind in a new chat (CV11). v2's lower recall is one case: TP27 recorded the insurance but not the home loan. TP04 is missed by both (no word from the home-loan list in the quote). These are synthetic English cases scored by code, not proof of accuracy on real chats; a message with no topic word in a new chat changes nothing (CV12).
+
+The table was run on 61 single messages and 15 conversations. After 0145 retired the care pause, the care cases (C01–C04, CV09) were removed: care is no longer a path of its own in chat insights, so the datasets now hold 57 messages and 14 conversations. Before removal, a live v2 run on 8 Nov recorded nothing for them.
 
 ## Earlier results (13–24 Oct 2026)
 

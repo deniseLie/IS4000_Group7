@@ -84,7 +84,7 @@ test('hosted knowledge reaches the real model and opens an immutable source',asy
  await reply.getByTestId('answer-sources').locator('summary').click();
  await expect(reply.locator('[data-source-id="kb:sg-accounts@v1#main"]')).toBeVisible();
  await reply.locator('[data-source-id="kb:sg-accounts@v1#main"]').click();
- const panel=page.locator('dialog[aria-label="Source details"]');
+ const panel=page.locator('[aria-label="Source details"]').first();
  await expect(panel).toBeVisible();
  await expect(panel).toContainText('MoneySense');
 });

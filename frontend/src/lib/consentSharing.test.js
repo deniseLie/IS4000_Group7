@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DELETE_ALL,accessLine,alwaysShared,askLine,cardState,choiceSummary,defaultChoice,grantSentence,grantTarget,latestEnd,openAsks,
-  parseAccessLog,parseAskResult,parseAskTarget,parseAsks,parseGrantV2Result,parseGrantV2Target,parseSharing,revokeConsequence,scopeText,untilText} from './consentSharing.js';
+import {accessGroups,accessLine,alwaysShared,askLine,cardState,choiceSummary,defaultChoice,grantSentence,grantTarget,latestEnd,openAsks,
+  parseAccessLog,parseAskResult,parseAskTarget,parseAsks,parseGrantV2Result,parseGrantV2Target,parseSharing,revokeConsequence,rowLine,rowState,scopeText,untilText} from './consentSharing.js';
 import {parseAction} from './actions.js';
 import {included,offerReply,parseOffer,required,switches} from './offers.js';
 
@@ -25,7 +25,9 @@ test('Data sharing is read strictly: one card per category, her accounts and nex
   assert.deepEqual(view.categories.map(c=>[c.code,cardState(c).label]),[['profile_basics','Always shared'],['transaction_insights','Off'],['chat_topics','On'],
     ['meeting_recording','On for every meeting']]);
   assert.deepEqual(alwaysShared(view).map(c=>c.code),['profile_basics']);
-  assert.equal(scopeText('chat_topics',view.categories[2].grant.scope),'Home and property, Investments');
+  assert.equal(scopeText('chat_topics',view.categories[2].grant.scope),'Property financing, investments');
+  assert.equal(scopeText('chat_topics',{topic_areas:['home_property','investments','deposits','insurance','cards','everyday_banking']}),'All topic areas');
+  assert.equal(scopeText('transaction_insights',{accounts:[10021],lookback_months:6},[{account_id:10021,type:'multi_currency',number:'****7734',currency:'SGD'}]),'Multi-currency ****7734 (no card spending) · last 6 months');
   assert.equal(scopeText('transaction_insights',{accounts:[10021],lookback_months:3},view.accounts),'Multi-currency ••••0021 (no card spending) · last 3 months');
   assert.equal(untilText(view.categories[2].grant,day),'Until 2027-05-03');
   assert.equal(untilText(view.categories[3].grant,day),'Under the meeting notice');
@@ -67,7 +69,6 @@ test('the access log and her RM’s asks are ids, codes and dates; the words com
   assert.deepEqual(openAsks(asks,'transaction_insights'),[]);
   assert.equal(askLine(asks[0],day),'Sophie Lim asked to see your chat topics to prepare for your meeting on 2026-11-12.');
   assert.throws(()=>parseAsks({data:[{...asks[0],category:'meeting_recording'}]}));
-  assert.deepEqual(DELETE_ALL,{category:'data_deletion',summary:'Please delete all my data.',urgency:'normal',details:{}});
 });
 
 test('a v2 grant and her Not now parse on the ledger with matching receipts only',()=>{
@@ -102,4 +103,32 @@ test('offer switches are off unless she turns them on; a typed yes and Cancel se
   assert.deepEqual(offerReply(offer,'cancel',{[id(3)]:true}),{offer_group:id(1),decision:'cancel'});
   assert.throws(()=>parseOffer({...offer,offers:[{...offer.offers[1]}]}));  // a switch never leads
   assert.throws(()=>parseOffer({...offer,offers:[offer.offers[0],{...offer.offers[1],optional:'yes'}]}));
+});
+
+test('the top level reads one row per category: a status and one line of what is shared',()=>{
+  const view=parseSharing(sharing()),[,insights,topics,recording]=view.categories;
+  assert.deepEqual([insights,topics,recording].map(c=>[rowState(c).pill,rowState(c).tone]),[['Not shared','off'],['Shared','on'],['For meetings','neutral']]);
+  const mine=n=>({points:Array.from({length:n},(_,i)=>({point_id:id(60+i),origin:i?'inferred':'confirmed'}))});
+  assert.equal(rowLine(topics,view,'Sophie',day,mine(3)),'3 topics · until 2027-05-03');
+  assert.equal(rowLine(topics,view,'Sophie',day,mine(1)),'1 topic · until 2027-05-03');
+  assert.equal(rowLine(topics,view,'Sophie',day,null),'until 2027-05-03');  // topics could not be read: no count, never a guess
+  assert.equal(rowLine(insights,view,'Sophie',day),"Sophie can't see your spending");
+  assert.equal(rowLine({...insights,grant:grant({scope:{accounts:'all',lookback_months:6}})},view,'Sophie',day),'All your accounts and cards · last 6 months · until 2027-05-03');
+  assert.equal(rowLine({...topics,grant:null},view,'Sophie',day,mine(2)),'Only insights you shared yourself (1)');  // her own shares stay without the consent
+  assert.equal(rowLine({...topics,grant:null},view,'Sophie',day,mine(0)),"Sophie doesn't see your chat insights");
+  assert.equal(rowLine({...topics,grant:grant({until:'meeting'})},view,'Sophie',day,mine(0)),'0 topics · until your meeting ends');
+  assert.equal(rowLine(recording,view,'Sophie',day),'Part of every confirmed meeting');
+});
+
+test('Who looked: the same look within one minute is one line with a count',()=>{
+  const row=(at,category,basis='always_shared')=>({at,category,relation:'current_rm',outcome:'shown',purpose:null,basis});
+  const groups=accessGroups([row('2026-11-07T10:06:40Z','profile_basics'),row('2026-11-07T10:06:30Z','requests_and_meetings'),row('2026-11-07T10:06:10Z','profile_basics'),
+    row('2026-11-07T10:05:50Z','profile_basics')],'Sophie');
+  assert.deepEqual(groups.map(g=>[g.line,g.count]),[['Sophie saw your profile (always shared).',2],['Sophie saw your requests and meetings (always shared).',1],
+    ['Sophie saw your profile (always shared).',1]]);
+});
+
+test('Who looked: a brief re-checking its topics is not shown as an always-shared read',()=>{
+  const row={at:'2026-11-07T10:06:28Z',category:'chat_topics',relation:'current_rm',outcome:'read',purpose:null,basis:'always_shared',tool:'rm.point_status'};
+  assert.equal(accessLine(row,'Sophie'),"Sophie's meeting brief checked that the topics it uses are still shared.");
 });

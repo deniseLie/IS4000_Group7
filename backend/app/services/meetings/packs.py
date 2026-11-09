@@ -29,7 +29,7 @@ async def read(meeting: UUID,ctx: RequestContext) -> PackView|None:
 async def draft(meeting: UUID,body: PackRequest,ctx: RequestContext) -> PackView:
     database=ApplicationDatabase(ctx);claims=caller(ctx)
     amounts=[{**amount.model_dump(mode='json'),'label':redact(amount.label)[0]} for amount in body.amounts]
-    frame=PackInputs.model_validate(await asyncio.to_thread(database.agent_call,PROPOSAL_DRAFTER.name,'meeting_pack_inputs',meeting,{'p_meeting_id':meeting,'p_amounts':Jsonb(amounts)},claims))
+    frame=PackInputs.model_validate(await database.agent_read(PROPOSAL_DRAFTER.name,'meeting_pack_inputs',meeting,{'p_meeting_id':meeting,'p_amounts':Jsonb(amounts)},claims))
     existing=await read(meeting,ctx)
     if existing is not None and existing.document_id==body.command_id:
         if existing.amounts!=frame.amounts:raise ValueError('This pack command was already used with different stated amounts; use a new command ID')

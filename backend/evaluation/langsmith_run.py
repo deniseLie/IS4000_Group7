@@ -63,6 +63,7 @@ async def run(args) -> dict:
     from app.core.config import settings
     from app.main import app
     from app.services import prompts
+    from app.services.llm import answer_prompt
     from evaluation import evaluators,targets,rm_target
     from app.services.llm_gateway import model_name,transport
     from evaluation.langsmith_sync import DATASETS,load as load_cases
@@ -81,8 +82,8 @@ async def run(args) -> dict:
         if not args.personas:raise SystemExit('Signed-in cases need --personas or TEST_PERSONA_FIXTURE_FILE')
         fixture=json.loads(Path(args.personas).read_text(encoding='utf-8'))
         tokens={p:targets.sign_in(p,fixture,os.environ['SUPABASE_URL'],os.environ['SUPABASE_ANON_KEY']) for p in sorted(personas)}
-    prompt=prompts.current()['id']
-    meta={'dataset':args.dataset,'pipeline':args.pipeline,'answer_prompt':prompt,'prompt_versions':settings.prompt_versions,
+    prompt=answer_prompt()['id']
+    meta={'dataset':args.dataset,'pipeline':args.pipeline,'answer_prompt':prompt,
         'model':model_name(),'transport':transport(),'judge_model':os.getenv('JUDGE_MODEL') if args.judge else None,
         'judge_prompt':evaluators.JUDGE_PROMPT.stem+'+'+sha256(evaluators.JUDGE_PROMPT.read_bytes()).hexdigest()[:8] if args.judge else None,
         'dataset_file':DATASETS[args.dataset],

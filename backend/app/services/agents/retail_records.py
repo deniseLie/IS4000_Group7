@@ -1,17 +1,16 @@
-"""Own retail snapshots from permission-first JWT/RLS readers; no sample or cached customer data."""
-from datetime import datetime,timedelta,timezone
-from zoneinfo import ZoneInfo
+"""Own retail snapshots from the audited tools (tools.call: policy, caller JWT and RLS, MCP); no sample or cached customer data."""
+from datetime import datetime,timezone
 from app.schemas.contracts import RequestContext
 from app.schemas.retail import RetailRecords
-from app.services import customer_data
+from app.services import tools
 
 
 async def load(ctx: RequestContext) -> RetailRecords:
-    today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
-    profile=await customer_data.get_profile(ctx)
-    accounts=await customer_data.get_accounts(ctx)
-    cards=await customer_data.get_credit_cards(ctx)
-    loans=await customer_data.get_loans(ctx)
-    transactions=await customer_data.get_transactions(ctx,today-timedelta(days=90),today,None)
-    return RetailRecords.model_validate({'profile':profile.data,'accounts':accounts.data,'cards':cards.data,
-        'loans':loans.data,'transactions':transactions.data,'captured_at':datetime.now(timezone.utc)})
+    """Her profile, accounts, cards, loans and the last 90 days of transactions, each one audited tool read."""
+    profile=await tools.call('my_profile',{},ctx)
+    accounts=await tools.call('my_accounts',{},ctx)
+    cards=await tools.call('my_cards',{},ctx)
+    loans=await tools.call('my_loans',{},ctx)
+    transactions=await tools.call('my_transactions',{'days':90},ctx)
+    return RetailRecords.model_validate({'profile':profile['data'],'accounts':accounts['items'],'cards':cards['items'],
+        'loans':loans['items'],'transactions':transactions['items'],'captured_at':datetime.now(timezone.utc)})

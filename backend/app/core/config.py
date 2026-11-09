@@ -24,8 +24,7 @@ class Settings(BaseSettings):
     embedding_timeout_s: float = Field(default=5,gt=0,le=30)
     conversation_store: Literal['off','database'] = 'off'
     client_intent_routing: Literal['adaptive','rules'] = 'adaptive'  # LLM-first for ordinary client intents; critical deterministic safeguards remain
-    tool_transport: Literal['direct','mcp'] = 'direct'  # mcp: agent tool calls go through app/mcp_server.py
-    external_hosts: str = 'date.nager.at,api.frankfurter.dev'  # services/external.py calls only these hosts
+    external_hosts: str = 'api.zoom.us'  # services/external.py calls only these hosts
     external_timeout_s: float = Field(default=5,gt=0,le=30)
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False
@@ -48,9 +47,7 @@ class Settings(BaseSettings):
     document_ocr_mean_confidence: float=Field(default=90,ge=0,le=100)
     worker_database_url: SecretStr | None = Field(default=None,repr=False)
     cors_origins: list[str] = ["http://localhost:5173"]
-
-    prompt_version: str = "v3"
-    prompt_versions: dict[str, str] = {'planner':'v5','domain_common':'v1','retail':'v1','fraud':'v1','compliance':'v1','document':'v1','relationship':'v1'}
+    # Prompt versions are not settings: services/prompts.VERSIONS is the one table.
 
     # LLM Gateway limits (services/llm_gateway.py)
     llm_timeout_s: float = 30

@@ -1,0 +1,126 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assistant fixes mock</title>
+<style>
+:root{--ink:#1F2430;--muted:#6B7280;--line:#E5E7EB;--red:#D7262B;--bg:#F7F8FA}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px/1.55 Inter,system-ui,sans-serif;color:var(--ink)}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 70px}
+h1{font-size:21px;margin:0 0 4px}.intro{color:var(--muted);margin:0 0 30px;font-size:14px}
+.case{margin-bottom:54px}.case>h2{font-size:16px;margin:0 0 4px}.case>p.why{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:860px){.steps,.cols{grid-template-columns:1fr}}
+.tag{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px}
+.q{display:flex;justify-content:flex-end;margin:0 0 10px}.q span{background:var(--ink);color:#fff;padding:8px 14px;border-radius:12px;font-size:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.eyebrow{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.title{font-size:16px;font-weight:700;margin:4px 0 10px}
+.one{background:#F1F2F4;border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+.row{display:grid;grid-template-columns:96px 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.row b{color:var(--muted);font-weight:600;font-size:12.5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:12.5px}.chip.on{border-color:var(--ink);background:var(--ink);color:#fff}
+input,textarea{width:100%;font:inherit;font-size:14px;border:1px solid #D1D5DB;border-radius:8px;padding:7px 9px}textarea{min-height:58px;resize:vertical}
+.acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink)}.btn.main{background:var(--red);border-color:var(--red);color:#fff}
+.small{font-size:12.5px;color:var(--muted)}
+.ok{display:flex;gap:10px;align-items:flex-start;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:10px;padding:10px 12px;font-size:14px;color:#065F46}
+.next{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}.next b{color:var(--muted);font-size:13px}
+.pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font:inherit;font-size:13px}.pill.main{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
+.src{display:inline-block;margin-left:6px;padding:0 7px;border-radius:5px;background:#F3F4F6;color:var(--muted);font-size:11.5px}
+.old{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:13.5px;color:#374151}
+.oldask{margin-top:10px;border-left:3px solid var(--red);background:#F3F4F6;padding:8px 10px;font-size:13px}
+.shot{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px}
+.hello{padding:26px 22px}.hello h3{font-size:24px;margin:0 0 6px}
+.list{padding:6px 14px 14px}.li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}.li small{color:var(--muted)}
+.badge{font-size:11px;border-radius:5px;padding:1px 6px;background:#EEF2FF;color:#3730A3;margin-left:6px}
+.x{color:#B91C1C;text-decoration:line-through;text-decoration-color:#B91C1C}
+.empty{text-align:center;padding:30px 20px}.empty .ic{width:42px;height:42px;border-radius:50%;background:#ECFDF5;color:#059669;display:grid;place-items:center;margin:0 auto 10px;font-size:20px}
+.side{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px}
+.prog{height:6px;border-radius:9px;background:#E5E7EB;margin:8px 0}.prog i{display:block;height:100%;width:0;background:var(--red);border-radius:9px}
+.doc{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;background:#fff}
+.doc h4{margin:0;font-size:15px}.st{font-size:11.5px;font-weight:700;border-radius:999px;padding:1px 8px}.st.to{background:#FEF3C7;color:#92400E}.st.with{background:#EEF2FF;color:#3730A3}
+.th{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tips{margin:8px 0 0;padding-left:18px;font-size:13px;color:#374151}
+.note{font-size:12.5px;color:var(--muted);margin-top:8px}
+</style></head><body><div class="wrap">
+<h1>Michelle's assistant + RM simple answers: proposed changes</h1>
+<p class="intro">Five fixes, shown in the real layout. Nothing is built yet; tell me which to go ahead with.</p>
+
+<!-- A. Meeting request -->
+<div class="case"><h2>A · "Can I meet my RM?" — a request she can edit, then send</h2>
+<p class="why">Today it's a long paragraph and she must type "yes". New: the request is a small form inside the chat. She changes anything there, presses Send, and sees that it went. "Next" offers the obvious follow-up questions.</p>
+<div class="steps">
+<div><span class="tag">1 · Drafted for her</span><div class="q"><span>I'm thinking of buying a home. Can I meet my RM?</span></div>
+<div class="card"><span class="eyebrow">Meeting request · to Sophie Lim</span><div class="title">Property financing</div>
+<div class="one">I've filled this in from what you said. Check it, change anything, then send.</div>
+<div class="row"><b>About</b><span>I'm thinking of buying a home.</span></div>
+<div class="row"><b>Topics</b><span class="chips"><span class="chip on">Property financing</span></span></div>
+<div class="row"><b>How</b><span>Video call</span></div>
+<div class="row"><b>Times</b><span>Mon 16 Nov 9:00 am<br>Mon 16 Nov 9:30 am<br>Tue 17 Nov 9:00 am</span></div>
+<div class="acts"><button class="btn main">Send to Sophie</button><button class="btn">Edit</button><button class="btn">Cancel</button></div>
+<p class="small">Nothing is sent until you press Send · expires in 30 min</p></div></div>
+
+<div><span class="tag">2 · She presses Edit</span><div class="q" style="visibility:hidden"><span>.</span></div>
+<div class="card"><span class="eyebrow">Meeting request · editing</span><div class="title">Property financing</div>
+<div class="row"><b>About</b><textarea>I'm thinking of buying a condo in Bangkok next year.</textarea></div>
+<div class="row"><b>Topics</b><span class="chips"><span class="chip on">Property financing</span><span class="chip on">Investments</span><span class="chip">Cards</span><span class="chip">Other</span></span></div>
+<div class="row"><b>How</b><span class="chips"><span class="chip on">Video call</span><span class="chip">Phone</span><span class="chip">In person</span></span></div>
+<div class="row"><b>Times</b><span class="chips"><span class="chip on">Mon 16 · 9:00</span><span class="chip">Mon 16 · 9:30</span><span class="chip on">Tue 17 · 9:00</span><span class="chip">Thu 19 · 2:00</span><span class="chip">Other times…</span></span></div>
+<div class="acts"><button class="btn main">Send to Sophie</button><button class="btn">Done editing</button></div>
+<p class="small">She can still just type a change too, e.g. "Thursday afternoon".</p></div></div>
+
+<div><span class="tag">3 · Sent</span><div class="q" style="visibility:hidden"><span>.</span></div>
+<div class="card"><div class="ok"><span>✓</span><span><b>Sent to Sophie</b> · 2:24 pm<br>She usually replies within one business day. You'll get a note in your Inbox.</span></div>
+<div class="row" style="border-top:0;margin-top:8px"><b>About</b><span>Buying a condo in Bangkok next year</span></div>
+<div class="row"><b>Times</b><span>Mon 16 Nov 9:00 am · Tue 17 Nov 9:00 am</span></div>
+<div class="row"><b>Reference</b><span>MTG-0214 <span class="src">Meetings</span></span></div>
+<div class="next"><b>Next:</b><button class="pill main">Open Meetings</button><button class="pill">What should I prepare?</button><button class="pill">Change the request</button></div></div></div>
+</div>
+<div class="cols" style="margin-top:16px"><div><span class="tag">Today (for comparison)</span><div class="old">I can send your relationship manager, Sophie Lim, this meeting request: • What it's about … • Times that suit you … They accept one of these times… To change anything, just tell me…<div class="oldask">Would you like me to: Send this meeting request? Reply "yes" to confirm or "no" to cancel…</div></div></div>
+<div><span class="tag">Same pattern for every request she sends from the chat</span><div class="old">Card freeze, report a charge, ask the bank a question, send a document: <b>drafted card → Edit in place → Send → "Sent" with a reference → Next</b>. The "reply yes/no" box goes away; typing "yes" still works.</div></div></div>
+</div>
+
+<!-- B. New page on login -->
+<div class="case"><h2>B · She always lands on a fresh page; saved chats stay in the list</h2>
+<p class="why">Today she's dropped back into her last saved chat. New: every sign-in opens the welcome page. Recent chats opens a plain list like the RM's: title and date only, no tags.</p>
+<div class="cols">
+<div><span class="tag">After sign-in</span><div class="shot"><div class="bar"><span>English ▾</span><span><button class="btn">Recent chats · 4</button> <button class="btn">+ New chat</button></span></div>
+<div class="hello"><h3>Hi Michelle, how can I help?</h3><p class="small">Asks from your own records and shows where each answer comes from.</p>
+<div class="card" style="margin-top:12px;font-size:13.5px"><b>For you right now</b><div class="li">Your periodic review needs 1 document by 30 Nov <button class="btn">Continue</button></div></div></div></div></div>
+<div><span class="tag">Recent chats</span><div class="shot"><div class="bar"><b>Recent chats</b><span class="small">Your chats are kept for 30 days</span></div>
+<div class="list">
+<div class="li"><span>Meeting with my RM about a home loan</span><small>Today, 2:24 pm</small></div>
+<div class="li"><span>London card charge</span><small>Yesterday</small></div>
+<div class="li"><span>Time deposit maturing</span><small>5 Nov</small></div>
+<div class="li"><span>What did I spend last month?</span><small>2 Nov</small></div></div></div>
+<p class="note">Removed: the <span class="x">Everyday banking</span> <span class="x">Fraud &amp; security</span> tags on each row.</p></div>
+</div></div>
+
+<!-- C. RM simple answers -->
+<div class="case"><h2>C · RM side: simple questions get a simple reply</h2>
+<p class="why">Why it happens now: every reply with sections is drawn as a report, so even "what can you do?" gets a title, Edit / Copy / PDF and "In one line". New rule: the report look is only for real documents (client overview, request summary, meeting brief, today's plan, drafts). Everything else is a normal chat bubble.</p>
+<div class="cols">
+<div><span class="tag">"1 not known is what" — new</span><div class="q"><span>1 not known is what</span></div>
+<div class="card" style="font-size:14px">It's the line in “Not known yet”: 10 lower-ranked items aren't in this list — 6 client requests, 2 meetings, 1 task and 1 date. They're on your Today page and in Ticket inbox.<span class="src">Today page</span>
+<div class="next"><b>Next:</b><button class="pill main">Open Today</button><button class="pill">Show all 10</button></div></div></div>
+<div><span class="tag">"Summarise Michelle" — stays a report</span><div class="card"><div class="th"><span class="eyebrow">Client overview · from your records</span><span><button class="btn">Copy</button> <button class="btn">PDF</button></span></div>
+<div class="title">Michelle Ng</div><div class="one">Self-employed client since Feb 2022; planning a Bangkok property purchase; review due 30 Nov.</div>
+<p style="font-size:14px;margin:6px 0"><span class="st with">Record</span> Self-employed · income above S$20,000 a month · prefers English <span class="src">Client profile</span></p>
+<p class="note">Also fixed: the title says the client's name, not "RM assistant"; raw values ("sgd 20,000 and above / month; preferred language: en") are written in plain words.</p></div></div>
+</div></div>
+
+<!-- D. Periodic review -->
+<div class="case"><h2>D · Periodic review: the Bangkok sale agreement, and a proper "nothing needed" page</h2>
+<p class="why">Her page showed "0 of 0" because my reset script removed her documents on your Supabase (it picked a newer, empty review). Fixed: script 48 now always puts back the two documents. Below is how the sale agreement looks, and what the page shows when nothing is needed.</p>
+<div class="cols">
+<div><span class="tag">With the sale agreement (after re-running script 48)</span>
+<div class="doc"><div class="th"><h4>Sale agreement for your Bangkok property</h4><span class="st to">To send</span></div>
+<p class="small" style="margin:6px 0 0">We ask because the sale money was paid into your account: it shows where the money came from.</p>
+<ul class="tips"><li>Every page, signed by both sides</li><li>Shows both names, the price in THB and the sale date</li><li>A Thai-language agreement is fine — no translation needed</li></ul>
+<div class="acts"><button class="btn main">Upload the agreement</button><button class="btn">See an example</button><button class="btn">Ask what this means</button></div></div>
+<div class="doc"><div class="th"><h4>Proof of address</h4><span class="st with">With the bank · awaiting review</span></div><p class="small" style="margin:6px 0 0">Sent 5 Nov. Nothing more to do.</p></div></div>
+<div><span class="tag">When no document is needed</span><div class="side"><div class="empty"><div class="ic">✓</div><b>Nothing needed from you</b><p class="small">Your periodic review has no documents waiting. We'll tell you in your Inbox if that changes.</p><button class="btn">Ask the assistant</button></div></div>
+<div class="side" style="margin-top:12px"><span class="eyebrow">Your progress</span><div class="prog"><i style="width:100%;background:#059669"></i></div>Nothing to send <span class="src">up to date</span></div>
+<p class="note">Replaces "0 of 0 documents sent" and the red "No requested actions remaining" tag. The 3 steps at the top are hidden when nothing is requested.</p></div>
+</div></div>
+
+</div></body></html>

@@ -40,7 +40,7 @@ function StatementSheet({statement,source,name,asOf,onClose}) {
         <button className="primary-button" data-testid="statement-print" onClick={()=>window.print()}><Icon name="document"/>Print or save as PDF</button>
         <button className="bank-chat-logout" ref={close} onClick={onClose}>Close</button>
       </div>
-      <header className="st-head"><div><strong className="st-bank">DemoBank</strong><span>Private Client Banking</span></div>
+      <header className="st-head"><div><strong className="st-bank">UBS Connect</strong><span>Private Client Banking</span></div>
         <div><h2>{card?'Card statement':'Account statement'}</h2><span>{formatDate(statement.first)} – {formatDate(statement.last)}</span></div></header>
       <dl className="st-meta"><div><dt>Client</dt><dd>{name}</dd></div><div><dt>{card?'Card':'Account'}</dt><dd>{sourceName(source)}</dd></div>
         <div><dt>Currency</dt><dd>{cur}</dd></div>{card&&<div><dt>Credit limit</dt><dd>{money(source.source.limit)}</dd></div>}</dl>
@@ -55,6 +55,6 @@ function StatementSheet({statement,source,name,asOf,onClose}) {
             <td className="num">{line.amount<0?money(-line.amount,cur):''}</td><td className="num">{line.amount>0?money(line.amount,cur):''}</td><td className="num">{money(line.balance,cur)}</td></tr>)}
           {!statement.lines.length&&<tr><td colSpan="5" className="st-none">No transactions this month.</td></tr>}</tbody></table>
       {statement.pending.length>0&&<p className="st-note">Not included: {statement.pending.length} pending {statement.pending.length===1?'payment':'payments'} ({statement.pending.map(row=>`${row.description}, ${money(Math.abs(row.amount),row.currency)}`).join('; ')}). Pending payments appear on the statement for the month they complete.</p>}
-      <footer className="st-foot">Prepared {formatDateTime(asOf)} from your DemoBank records. This is a synthetic coursework statement, not a real bank document. For a certified copy, raise a Statement or document copy request under My requests.</footer>
+      <footer className="st-foot">Prepared {formatDateTime(asOf)} from your UBS Connect records. This is a synthetic coursework statement, not a real bank document. For a certified copy, raise a Statement or document copy request under My requests.</footer>
     </div></div>,document.body);
 }

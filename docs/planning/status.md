@@ -1,4 +1,4 @@
-# Status (7 Nov 2026)
+# Status (8 Nov 2026)
 
 Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history). Both personas are built; the dated sections below are history, newest first.
 
@@ -28,11 +28,19 @@ Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog
 | F22 | Hardening and report evidence | **Partly** | Automated: RLS and owner-only checks (`test_rls_live.py`, `test_bank_decisions.py`), audit chain (`test_audit*.py`), the 49 QA1 cases written. Still to do for the report: re-run QA1 against the hosted project with LangSmith on and keep the run record current (latest run 5 Nov), one Playwright smoke run, latency per request type from the LangSmith runs, Sophie's RLS checks (Persona 2). |
 | F23 | Ticket service | Done | – |
 | F24 | Request categories | Done | – |
-| F25 | MCP tool layer | Done | Every agent record read goes through `tools.call`; `TOOL_TRANSPORT=direct` is the default since 31 Oct, and `mcp` sends the same calls through the MCP server. The RM tools (`rm_*`) are in the same table. |
+| F25 | MCP tool layer | Done | Every read that feeds a model or an agent's rules goes through `tools.call`, and every call is an MCP `tools/call` to the in-process server (8 Nov 2026; `TOOL_TRANSPORT` removed). The RM tools (`rm_*`) are in the same table. The meeting agents' reads followed (8 Nov 2026; their drafts and the worker's private login stay direct). Left: the v1 `kb.search`. |
 | F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches the admin dashboard. Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
 | QA1 | Test case set (49 cases) | **Runnable / manual boundaries explicit** | [C01–C24, C11b, R01–R20 and R24–R27](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 17 runnable, 8 manual; RM: 17 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
+
+## Done on 8 Nov (client chat insights v2, naming, care pause retired; migrations 0143-0145, on hosted with 0142)
+
+What changed and how to check it: [chat-insights-changes-8-nov.md](chat-insights-changes-8-nov.md).
+- **Insights follow the conversation (0143, `talking_points/v2`):** a follow-up without the topic's name updates the insight while the topic is active in the chat; each topic can name a kind (HDB resale, ETFs, ...); her own words that a plan is off put it on hold, hidden from her RM until she mentions it again. Live: conversations 15 of 15 against v1's 11 of 15, no false insights or false on hold.
+- **Naming (0144):** *Chat insights* on her pages, *Client chat insights* on the RM side; code keeps `talking_points`.
+- **Care pause retired (0145):** a care message no longer pauses chat insights; open pauses ended (audited), `customer_pause_suggestions` dropped; the care flag and its *Talk to a person* chip are unchanged. Care cases C01-C04 and CV09 removed from the evaluation (57 messages, 14 conversations).
+- **Hosted:** batches 48 (0142) and 49 (0143-0145) applied in the SQL editor; recorded SQL matches the files. The backend and frontend must run `main`.
 
 ## Done on 7 Nov (storyline alignment and Brief Writer; migrations 0115-0117, 0118)
 
@@ -79,7 +87,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **No Security agent (2b):** urgent card cases get fixed steps, plus one urgent request to the RM when she confirms.
 - **RM copilot (3a, 3b):** three RM agents split by data (Client, Requests, Calendar) with one bounded loop and full tracing. A priority score in code (`services/rm/priority.py`) ranks Today, *Plan my day* and `priorities`.
 - **Talking points (4, 0108):** topics are inferred from her chats only under her `chat_topics` grant, or come from her through *Let her know*. Data sharing is back in the client view.
-- **Consent v2 (6a, 6b, 6d–6f):** each category can have a scope and an end, and topics can be deleted with Undo. Also built: an access log, RM asks to share, *Delete all my data*, and share switches on the meeting request card (0109, 0110, 0112–0114, `relationship/v7`). Checked natively only. Hosted batches `36`–`40` were applied on 5 Nov 2026. On hosted, only the two-argument `offer_group_confirm` has been exercised so far, by C11 and C11b.
+- **Consent v2 (6a, 6b, 6d–6f):** each category can have a scope and an end, and topics can be deleted with Undo. Also built: an access log, RM asks to share, and share switches on the meeting request card (0109, 0110, 0112–0114, `relationship/v7`). Since 0147 (8 Nov) every consent change is instant in the app (the switches and *Withdraw* on each meeting); *Delete all my data* and *Stop using my data* were removed. Checked natively only. Hosted batches `36`–`40` were applied on 5 Nov 2026. On hosted, only the two-argument `offer_group_confirm` has been exercised so far, by C11 and C11b.
 - **Evaluation (5b):** on the hosted project, safety 8/8, planner 11/16, RM QA1 16/17 (R24–R27 all pass), graph 3/5 and client QA1 10/16. The consent step was rehearsed twice. Results, transport and failures: [evaluation README §8](../evaluation/README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
 - **Still open:**
   - 5a: waits for the meeting side's `prepare`/`status`;
@@ -115,7 +123,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 
 ## Done on 31 Oct (F4, F25, CR16; migrations 0086–0088)
 
-- **Loan enquiries (CR16, 0086–0087):** DemoBank home loan and personal loan guidance (0086, already applied on hosted; products, general eligibility, how to apply; no rates, fees or amounts), next to car loans. The general loan article v2 (0087) names the three loan types, so an unclear loan question gets "which loan?"; it also says the chat cannot see loan applications and where to ask instead. New loan suggestion chips and a `home-loan` evaluation case.
+- **Loan enquiries (CR16, 0086–0087):** UBS Connect home loan and personal loan guidance (0086, already applied on hosted; products, general eligibility, how to apply; no rates, fees or amounts), next to car loans. The general loan article v2 (0087) names the three loan types, so an unclear loan question gets "which loan?"; it also says the chat cannot see loan applications and where to ask instead. New loan suggestion chips and a `home-loan` evaluation case.
 - **MCP tool layer (F25):** new tools for profile, accounts, loans, compliance case, documents, document checks, RM, introduction, requests, appointments and free calendar slots. Retail, fraud, compliance, document and relationship agents (and the pending-transfer reads) load their records through `tools.read`. `TOOL_TRANSPORT=mcp` is the default (`direct` skips MCP), and `mcp` is a core dependency (later on 31 Oct the default became `direct`). The in-process MCP call re-raises the tool's own error, so a failed read withholds only its section, as before. Each tool call is a span with `request_id` and agent.
 - **Persona 2 seed (F4, 0088):** Michelle's adviser record becomes **Sophie Lim (DEMO)**, so Michelle sees no RM change. David's current assignment moves from Marcus to Sophie, with Rachel as his previous RM: 3 internal meeting notes by Rachel, his open request and a consent-shared handover note. Grace (1004) and Hafiz (1005) join Sophie's book. Wei Ming (1006, like Alex) belongs to Priya. Sophie's book has 10 open tickets across 9 categories (7 on hosted, where David is absent), including one urgent suspected fraud and one past its target. `rm.staff_logins` links `demo.sophie@example.com`, and `rm.meeting_notes` is readable by no client. Tests: `test_rm_seed.py`.
 - **Still open:** apply `backend/supabase/hosted/15_apply_0087_0088_hosted.sql`, then create Sophie's login. Live (real-provider) loan answers have not been checked yet. (Since done: batch 15 applied and Sophie's login created; C12 checked a live loan answer on 5 Nov.)
@@ -134,7 +142,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Card and loan currency (CR14, 0083, retail prompt v7):** cards and loans now record their currency (SGD), so the assistant answers "SGD 316.20" instead of saying the currency is unrecorded, and Overview, Records and statements use the recorded currency.
 - **Card answers from records (CR14, CR15, 0084):** card balance, credit limit, minimum payment, due date and annual fee are answered from her records without a model call, so they are never withheld or turned into an RM request. With two cards and no card named she is asked which card, with one-tap replies (each card, "Both cards"). Typo-tolerant matching (`services/typos.py`) for urgent help, routing and card answers ("wats my crad bal", "i lsot my crad"). Michelle's fees are named "Annual card fee" and "Telegraphic transfer fee". Test sheet: `docs/evaluation/assistant-prompt-tests.xlsx`.
 - **Transactions, fees and meetings in chat (0085):** recent transactions, fees and "what was this charge?" (by amount and/or date) are answered from records (`agents/transaction_answers.py`); meetings: free times listed in chat, tap to hold, "Confirm booking" books it (`agents/meeting_answers.py`, same hold and appointment.confirm as the Meetings tab; superseded by 2a, where the chat drafts a meeting request). A different RM question in the same chat opens its own ticket (`customer_open_rm_ticket`); same topic still adds to the open ticket. Approved article `overseas-transfers`.
-- **Still open:** CR16 has DemoBank product details for car loans only; home and personal loans need approved product information before CR16 can be marked done. Hosted: apply `backend/supabase/hosted/11_apply_0082_hosted.sql`. (Since done: home and personal loan articles in 0086 on 31 Oct; batch 11 applied.)
+- **Still open:** CR16 has UBS Connect product details for car loans only; home and personal loans need approved product information before CR16 can be marked done. Hosted: apply `backend/supabase/hosted/11_apply_0082_hosted.sql`. (Since done: home and personal loan articles in 0086 on 31 Oct; batch 11 applied.)
 
 ## Done on 29 Oct
 

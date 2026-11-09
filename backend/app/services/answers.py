@@ -12,8 +12,8 @@ from app.core import data_api
 from app.services.privacy import redact
 from app.services.guardrail import assess_request,DELEGATE_CLAIM
 from app.services.source_checks import check_sources, numbers
-from app.services.llm import llm
-from app.services import kb,prompts
+from app.services.llm import llm,answer_prompt
+from app.services import kb
 
 EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
 
@@ -24,7 +24,7 @@ URL=re.compile(r'https?://',re.I)
 # citable after a revision; tests/test_knowledge_checks.py checks that each pin is the current section and the text matches.
 def pinned(article_id: str,version: int,anchor: str,title: str) -> dict:
     return Source(id=f'kb:{article_id}@v{version}#{anchor}',title=title,url=f'/knowledge/sections/{article_id}/{version}/{anchor}',
-        version=f'v{version}',publisher='DemoBank coursework project').model_dump()
+        version=f'v{version}',publisher='UBS Connect').model_dump()
 PINNED={'security':pinned('security',2,'never-share','Protecting private information'),
     'lost-card':pinned('lost-card',4,'main','Lost or stolen card guidance'),
     'support':pinned('support',5,'main','Getting human support'),
@@ -36,7 +36,7 @@ LOST_CARD=('If your card is lost or stolen, freeze it straight away: on Overview
     'recognise, report them in the chat: they go to the fraud team as urgent. You can unfreeze a card yourself only if you froze it and '
     'nothing is open with the fraud team or card operations. Never share your PIN, password, OTP, CVV or full card number.')
 HUMAN_SUPPORT=('When you are signed in, Talk to a person shows a short summary; approving it passes your question to your relationship '
-    'manager with a reference to follow in My requests. Charges you do not recognise and lost or stolen cards go to the fraud team as urgent '
+    'manager with a reference to follow in Requests. Charges you do not recognise and lost or stolen cards go to the fraud team as urgent '
     'instead. As a guest you can review, edit and copy a summary for your own use; copying does not send anything. For a real issue, contact '
     'your bank using its official app or website. The assistant cannot make payments, block or cancel cards, close accounts, dispute, refund '
     'or reverse charges, or change banking records.')
@@ -148,7 +148,7 @@ async def _answer(req,context,info,allow_model,evidence_loader: EvidenceLoader):
         sources['customer-records']={'id':'customer-records','title':'Your authenticated synthetic records','url':None,'version':'Current request'}
     decide(info,'llm')
     result['source_check']='rejected'
-    result['prompt_version']=prompts.current()['id']
+    result['prompt_version']=answer_prompt()['id']
     raw=await llm.answer(history,evidence,req.language)
     answer,ids,reason=validate(raw,evidence)
     if reason=='source_check':

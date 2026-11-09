@@ -150,7 +150,7 @@ def test_real_upload_is_checked_by_template_and_only_a_clean_check_can_be_submit
 
 def test_templates_endpoint_is_public_and_synthetic() -> None:
     described=templates.describe()
-    assert [t['key'] for t in described]==['proof_address','bank_statements','wealth_declaration','tax_residency','identity']
+    assert [t['key'] for t in described]==['sale_agreement','proof_address','bank_statements','wealth_declaration','tax_residency','identity']
     assert all(t['must_show'] and t['example'] for t in described)
 
 
@@ -158,7 +158,7 @@ def test_templates_route_needs_no_sign_in() -> None:
     from fastapi.testclient import TestClient
     from app.main import app
     response=TestClient(app).get('/documents/templates')
-    assert response.status_code==200 and response.json()[0]['key']=='proof_address'
+    assert response.status_code==200 and [t['key'] for t in response.json()][:2]==['sale_agreement','proof_address']
 
 
 def test_identity_copies_and_translations_need_a_certification() -> None:
@@ -175,3 +175,14 @@ def test_identity_copies_and_translations_need_a_certification() -> None:
     _,form=run('tax_residency',['Tax residency self-certification','Name: MICHELLE NG','Country of tax residence: Singapore',
         'Date: 20 Oct 2026','Signature: M Ng'])
     assert not any(field in (templates.CERTIFICATION,templates.TRANSLATOR) for _,field in codes(form))
+
+
+def test_sale_agreement_template_matches_the_bangkok_request_and_checks_price_date_and_signatures():
+    item='Sale agreement for your Bangkok property\nThe signed sale agreement for your Bangkok flat. Include every page, with both names, the sale price, the date and the signatures.'
+    template=templates.template_for(item)
+    assert template.key=='sale_agreement'
+    good='SALE AND PURCHASE AGREEMENT\nSeller: Michelle Ng\nSale price: THB 18,500,000\nDate of sale: 14 Aug 2026\nSignature: Michelle Ng (Seller)'
+    _,findings=templates.check(template,good,1,'Michelle Ng',date(2026,11,8))
+    assert findings==[]
+    _,findings=templates.check(template,'Agreement between Michelle Ng and a buyer.',1,'Michelle Ng',date(2026,11,8))
+    assert {f.field for f in findings}>={'The sale price and currency','The date of the sale','The signatures of both sides'}

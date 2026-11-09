@@ -25,14 +25,15 @@ test('michelle corrects and submits documents',async({page})=>{
  await item.getByTestId('document-upload-file').setInputFiles({name:'Synthetic DEMO.txt',mimeType:'text/plain',buffer:Buffer.from('Synthetic demo')});
  await item.getByTestId('document-upload-submit').click();
  await expect(item.getByTestId('document-upload-error')).toContainText('PDF, DOCX, JPEG or PNG');
+ await item.getByTestId('checklist-toggle').click();
  await item.getByTestId('checklist-mark').selectOption('prepared');
  await item.getByTestId('save-checklist-mark').click();
- await expect(item.getByTestId('compliance-item-status')).toHaveText('Prepared');
+ await expect(item.getByTestId('compliance-item-status')).toHaveText('Ready to send');
  await item.getByTestId('document-upload-file').setInputFiles(fixture.missing_file);
  await item.getByTestId('document-upload-submit').click();
  await expect(item.getByTestId('precheck-result')).toHaveAttribute('data-precheck-status','issues_found',{timeout:170000});
  await expect(item.getByTestId('precheck-result')).toContainText(/address/i);
- await expect(item.getByTestId('compliance-item-status')).toHaveText('Prepared');
+ await expect(item.getByTestId('compliance-item-status')).toHaveText('Ready to send');
  await expect(item.getByTestId('document-upload-file')).toBeEnabled({timeout:170000});
  if(fixture.live){
   const selected=page.waitForRequest(request=>request.url().endsWith('/chat')&&request.method()==='POST');
@@ -47,7 +48,7 @@ test('michelle corrects and submits documents',async({page})=>{
  await item.getByTestId('document-upload-file').setInputFiles(fixture.valid_file);
  await item.getByTestId('document-upload-submit').click();
  await expect(item.getByTestId('item-sent')).toBeVisible({timeout:170000});
- await expect(item.getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
+ await expect(item.getByTestId('compliance-item-status')).toHaveText('With the bank – awaiting review');
  await expect(workspace.getByTestId('submission-receipt')).toBeVisible();
  await expect(workspace).not.toContainText('Accepted by bank');
  await page.getByTestId('open-notifications').click();
@@ -78,7 +79,7 @@ test('michelle corrects and submits documents',async({page})=>{
  await expect(page.locator('#chat-composer')).toBeEnabled({timeout:170000});
  await page.reload();
  await page.getByTestId('open-compliance').click();
- await expect(workspace.locator('[data-item-id="00000000-0000-4000-8000-100200000011"]').getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
+ await expect(workspace.locator('[data-item-id="00000000-0000-4000-8000-100200000011"]').getByTestId('compliance-item-status')).toHaveText('With the bank – awaiting review');
  for(const width of [1280,390]){
   await page.setViewportSize({width,height:900});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -99,7 +100,7 @@ test('rechecks expired Michelle upload before a new submission',async({page})=>{
  await workspace.getByTestId('check-current-upload').click();
  await expect(workspace.getByTestId('item-sent')).toBeVisible({timeout:170000});
  await expect(workspace.getByTestId('submission-receipt')).toBeVisible();
- await expect(workspace.getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
+ await expect(workspace.getByTestId('compliance-item-status')).toHaveText('With the bank – awaiting review');
  await page.reload();await page.getByTestId('open-compliance').click();
- await expect(workspace.getByTestId('compliance-item-status')).toHaveText('Submitted – awaiting review');
+ await expect(workspace.getByTestId('compliance-item-status')).toHaveText('With the bank – awaiting review');
 });

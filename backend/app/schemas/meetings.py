@@ -37,9 +37,20 @@ class MeetingRef(Contract):
 TalkingTopic = Literal['home_loan', 'investments', 'fixed_deposit', 'insurance']  # the product codes of rm.meeting_topics() (0106)
 TalkingStage = Literal['curious', 'exploring', 'planning', 'ready', 'concern']
 Timeframe = Literal['now', 'within_3m', 'within_12m', 'later', 'unknown']
-ConcernTag = Literal['rates', 'fees', 'eligibility', 'timing']
+# 0143 (lane 1 v2) adds lock_in, down_payment, tenure and risk; the first four are 0108's.
+ConcernTag = Literal['rates', 'fees', 'eligibility', 'timing', 'lock_in', 'down_payment', 'tenure', 'risk']
+# 0143: what kind of each topic she means (= insights.kinds); null when she has not said. No health cover: a sensitive area.
+TalkingKind = Literal['hdb_bto', 'hdb_resale', 'private_property', 'landed', 'refinance', 'etf', 'unit_trust', 'stocks', 'bonds', 'robo',
+    'new_deposit', 'renewal', 'life', 'home', 'travel']
 TalkingOrigin = Literal['inferred', 'confirmed']  # inferred from chat, or shared by the client herself
 TOPIC_NAME = {'home_loan': 'Property financing', 'investments': 'Investments', 'fixed_deposit': 'Time deposit', 'insurance': 'Insurance'}  # labels since 0117 (codes unchanged)
+KINDS = {'home_loan': ('hdb_bto', 'hdb_resale', 'private_property', 'landed', 'refinance'),
+    'investments': ('etf', 'unit_trust', 'stocks', 'bonds', 'robo'), 'fixed_deposit': ('new_deposit', 'renewal'), 'insurance': ('life', 'home', 'travel')}
+KIND_TEXT = {'hdb_bto': 'new launch property', 'hdb_resale': 'resale property', 'private_property': 'private property', 'landed': 'landed property', 'refinance': 'refinancing',
+    'etf': 'ETFs', 'unit_trust': 'unit trusts', 'stocks': 'stocks', 'bonds': 'bonds', 'robo': 'managed portfolio', 'new_deposit': 'new deposit',
+    'renewal': 'renewal', 'life': 'life', 'home': 'home', 'travel': 'travel'}
+CONCERN_TEXT = {'rates': 'rates', 'fees': 'fees', 'eligibility': 'eligibility', 'timing': 'timing', 'lock_in': 'lock-in',
+    'down_payment': 'down payment', 'tenure': 'tenure', 'risk': 'risk'}
 TIMEFRAME_TEXT = {'now': 'now', 'within_3m': 'within 3 months', 'within_12m': 'within 12 months', 'later': 'later'}
 ORIGIN_TEXT = {'inferred': 'inferred from chat', 'confirmed': 'shared by the client'}
 
@@ -49,6 +60,7 @@ class TalkingPoint(Contract):
     topic: TalkingTopic
     stage: TalkingStage
     timeframe: Timeframe = 'unknown'
+    kind: TalkingKind | None = None  # 0143, additive: a point without one renders exactly as before
     concerns: list[ConcernTag] = Field(default_factory=list, max_length=4)
     origin: TalkingOrigin
     first_seen: date
@@ -58,18 +70,23 @@ class TalkingPoint(Contract):
     def consistent(self):
         if len(set(self.concerns)) != len(self.concerns):
             raise ValueError('each concern once')
+        if self.kind is not None and self.kind not in KINDS[self.topic]:
+            raise ValueError('the kind is not one of this topic')
         if self.last_seen < self.first_seen:
             raise ValueError('last_seen is before first_seen')
         return self
 
     def line(self) -> str:
         """The one rendering every reader uses (RM copilot, meeting brief, the client's Data sharing page):
-        'Property financing · planning · within 12 months · inferred from chat'."""
+        'Property financing · planning · within 12 months · inferred from chat', with the kind after the stage when she
+        named one ('Property financing · planning · resale property · within 12 months · asks about lock-in, rates · inferred from chat')."""
         parts = [TOPIC_NAME[self.topic], self.stage]
+        if self.kind is not None:
+            parts.append(KIND_TEXT[self.kind])
         if self.timeframe != 'unknown':
             parts.append(TIMEFRAME_TEXT[self.timeframe])
         if self.concerns:
-            parts.append('asks about ' + ', '.join(self.concerns))
+            parts.append('asks about ' + ', '.join(CONCERN_TEXT[c] for c in self.concerns))
         return ' · '.join([*parts, ORIGIN_TEXT[self.origin]])
 
     def brief_label(self) -> BriefLabel:

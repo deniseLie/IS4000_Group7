@@ -7,8 +7,9 @@ const CODE=/^[a-z][a-z0-9_.]{0,60}$/;
 const API_URL=import.meta.env?.VITE_API_URL || '/api';
 export const GATED=['transaction_insights','chat_topics','meeting_recording'];
 export const SWITCHABLE=['transaction_insights','chat_topics'];
-export const TOPIC_AREAS={home_property:'Home and property',investments:'Investments',deposits:'Deposits',insurance:'Insurance',cards:'Cards',
-  everyday_banking:'Everyday banking'};
+// Same names as the meeting topics, so a topic reads the same in Data sharing, meetings and the RM's brief.
+export const TOPIC_AREAS={home_property:'Property financing',investments:'Investments',deposits:'Time deposit',insurance:'Insurance',cards:'Cards',
+  everyday_banking:'Accounts and everyday banking'};
 export const LOOKBACK=[3,6,12];
 export const UNTIL={date:'Until a date',meeting:'Until my next meeting ends',request:'Until my meeting request is answered'};
 export const ASK_REASONS={meeting_prep:'to prepare for your meeting',review:'for your relationship review',advice:'to suggest options that fit your plans'};
@@ -82,20 +83,24 @@ export function untilText(grant,format) {
   if(grant.until==='request')return 'Until your meeting request is answered, and then until that meeting ends';
   return grant.expires_at?`Until ${format(grant.expires_at)}`:'No end date';
 }
+const ACCOUNT={savings:'Savings',current:'Current',multi_currency:'Multi-currency'};
+export const accountName=a=>`${ACCOUNT[a.type]||a.type} ${a.number}`;
+// One list in a sentence: the first word keeps its capital, the rest are lower case.
+const listed=labels=>labels.map((l,i)=>i?l[0].toLowerCase()+l.slice(1):l).join(', ');
 export function scopeText(category,scope,accounts=[]) {
   if(!scope)return 'Everything in this category (an earlier consent)';
   if(category==='transaction_insights') {
-    const which=scope.accounts==='all'?'All your accounts and cards':scope.accounts.map(n=>{const a=accounts.find(x=>x.account_id===n);return a?`${a.type} ${a.number}`:'an account';}).join(', ')+' (no card spending)';
+    const which=scope.accounts==='all'?'All your accounts and cards':scope.accounts.map(n=>{const a=accounts.find(x=>x.account_id===n);return a?accountName(a):'an account';}).join(', ')+' (no card spending)';
     return `${which} · last ${scope.lookback_months} months`;
   }
-  if(category==='chat_topics')return scope.topic_areas.map(a=>TOPIC_AREAS[a]).join(', ');
+  if(category==='chat_topics')return scope.topic_areas.length===Object.keys(TOPIC_AREAS).length?'All topic areas':listed(scope.topic_areas.map(a=>TOPIC_AREAS[a]));
   return '';
 }
 // Said before she switches a category off, so she knows what changes at once.
 export function revokeConsequence(category,rm) {
   const who=rm||'Your relationship manager';
   if(category==='transaction_insights')return `${who} stops seeing your transaction insights at once. Briefs for your meetings will say you have not shared them. Nothing already in your accounts changes.`;
-  if(category==='chat_topics')return `${who} stops seeing topics picked up from your chats, and they are removed at once with your words. Topics you shared yourself stay until you delete them.`;
+  if(category==='chat_topics')return `${who} stops seeing topics picked up from your chats, and they are removed at once. Topics you shared yourself stay until you delete them.`;
   return '';
 }
 
@@ -142,14 +147,38 @@ export function choiceSummary(card,choice,sharing,format) {
   return `${who} will see your ${card.label.toLowerCase()} (${scopeText(card.code,scope,sharing.accounts)}) ${until}.`;
 }
 export const alwaysShared=sharing=>sharing.categories.filter(c=>!c.gated);
+export const alwaysLine=sharing=>listed(alwaysShared(sharing).map(c=>c.label));
+// The top-level list (8 Nov redesign): one row per category with a status and one line of what is shared.
+export function rowState(card) {
+  const state=cardState(card);
+  if(!card.withdrawable)return {...state,pill:'For meetings',tone:'neutral'};
+  return {...state,pill:state.on?'Shared':'Not shared',tone:state.on?'on':'off'};
+}
+function untilShort(grant,format) {
+  if(!grant||grant.basis==='notice')return '';
+  if(grant.until==='meeting')return 'until your meeting ends';
+  if(grant.until==='request')return 'until your meeting request is answered';
+  return grant.expires_at?`until ${format(grant.expires_at)}`:'';
+}
+// topics: her talking points ({points}) for the chat topics row; rm: her relationship manager's first name.
+export function rowLine(card,sharing,rm,format,topics=null) {
+  const who=rm||'Your relationship manager',grant=card.grant,until=untilShort(grant,format);
+  const join=(...parts)=>parts.filter(Boolean).join(' · ');
+  if(card.code==='meeting_recording')return grant?'Part of every confirmed meeting':'Starts when a meeting is confirmed';
+  if(card.code==='chat_topics') {
+    const shown=topics?.points?.length??null,count=n=>`${n} topic${n===1?'':'s'}`;
+    if(grant)return join(shown===null?null:count(shown),until);
+    const own=topics?.points?.filter(p=>p.origin==='confirmed').length||0;
+    return own?`Only insights you shared yourself (${own})`:`${who} doesn't see your chat insights`;
+  }
+  if(card.code==='transaction_insights')return grant?join(scopeText(card.code,grant.scope,sharing.accounts),until):`${who} can't see your spending`;
+  return grant?join(until):card.description;
+}
 export const openAsks=(asks,category)=>asks.filter(a=>a.status==='open'&&(!category||a.category===category));
-// Delete all my data (0113): a request to the data protection team, answered within 10 business days.
-export const DELETE_ALL={category:'data_deletion',summary:'Please delete all my data.',urgency:'normal',details:{}};
-export const DELETE_ALL_NOTE='This sends a request to our data protection team. They decide what the law requires the bank to keep and reply within 10 business days. Nothing is deleted yet.';
 
 // Who looked (0112): rows of ids, codes and dates only; the words come from here.
 const ALWAYS={profile_basics:'your profile',products:'your products',requests_and_meetings:'your requests and meetings',compliance_status:'your document review status'};
-const GATED_WORDS={transaction_insights:'your transaction insights',chat_topics:'topics from your chats',meeting_recording:'your meeting recording'};
+const GATED_WORDS={transaction_insights:'your transaction insights',chat_topics:'your chat insights',meeting_recording:'your meeting recording'};
 export function parseAccessLog(value) {
   if(!Array.isArray(value?.data)||value.data.length>200)throw invalid();
   return {call_id:id(value.call_id),as_of:timestamp(value.as_of),rows:value.data.map(r=>{
@@ -165,8 +194,19 @@ export function accessLine(row,rm) {
   const what=GATED_WORDS[row.category]||ALWAYS[row.category]||'your records';
   const why=row.purpose==='meeting_prep'?' to prepare for a meeting':row.purpose==='client_view'?' while looking at your overview':'';
   if(row.outcome==='refused')return `${who} tried to open your records. It was refused and recorded.`;
+  // 0110: a brief re-checks whether the topics it used are still shown (ids and dates only, never the topics themselves).
+  if(row.tool==='rm.point_status')return `${who}'s meeting brief checked that the topics it uses are still shared.`;
   if(row.outcome==='not_shared')return `${who} looked for ${what}${why}, and saw only that you have not shared it.`;
-  return `${who} saw ${what}${why}${row.basis==='client_shared'?' (topics you shared yourself)':row.basis==='always_shared'?' (always shared)':''}.`;
+  return `${who} saw ${what}${why}${row.basis==='client_shared'?' (insights you shared yourself)':row.basis==='always_shared'?' (always shared)':''}.`;
+}
+// The same look within the same minute is one line with a count (a brief reads each record once per section).
+export function accessGroups(rows,rm) {
+  const groups=new Map();
+  for(const row of rows) {
+    const line=accessLine(row,rm),key=`${row.at.slice(0,16)}|${line}`,seen=groups.get(key);
+    if(seen)seen.count+=1;else groups.set(key,{key,line,at:row.at,count:1});
+  }
+  return [...groups.values()];
 }
 
 // Her RM's asks (0113): she answers by switching the category on, or with Not now (consent.decline_ask).

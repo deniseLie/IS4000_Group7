@@ -65,7 +65,7 @@ export function nextStep(ticket) {
   if(ticket.status==='waiting_on_client')return ticket.last_update?.note||'The bank needs something from you. Use Talk to a person if it is unclear.';
   if(ticket.status==='resolved')return 'The bank marked this resolved. If something is still wrong, raise a new request or use Talk to a person.';
   if(ticket.status==='closed')return 'Closed. Nothing more is needed from you.';
-  if(ticket.overdue)return `This is past the ${ticket.owner_team.toLowerCase()}'s target time. Contact the bank through its official support channel to follow up with the responsible team.`;
+  if(ticket.overdue)return /^your /i.test(ticket.owner_team)?`This is past ${ticket.owner_team.toLowerCase()}'s promised time. Use Talk to a person to follow up.`:`This is past the ${ticket.owner_team.toLowerCase()}'s promised time. Use Talk to a person to follow up with them.`;
   const team=/^your /i.test(ticket.owner_team)?ticket.owner_team:`The ${ticket.owner_team.toLowerCase()}`;
   return `No action needed from you. ${team} will review it and update this request.`;
 }

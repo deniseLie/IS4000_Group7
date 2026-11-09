@@ -30,7 +30,7 @@ class PreviousAdvisor(BaseModel):
 
 
 class NoticeSection(BaseModel):
-    """Approved DemoBank wording; never generated or paraphrased by this service."""
+    """Approved UBS Connect wording; never generated or paraphrased by this service."""
     model_config=ConfigDict(extra='ignore')
     cite: Annotated[str,StringConstraints(strict=True,pattern=r'^kb:rm-change@v[1-9][0-9]*#[a-z0-9-]+$')]
     article_id: Literal['rm-change']
