@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from app.core.config import settings
 from app.schemas.contracts import Export, PlanTask, Principal, RequestContext, Task
-from app.services import external, llm_gateway, tools
+from app.services import llm_gateway, tools
 from app.services.agents import runner
 from app.services.agents.answer import WITHHELD, validate_draft
 from app.services.agents.registry import SPECS
@@ -101,12 +101,11 @@ def test_reads_beyond_the_limit_or_unavailable_become_notes_never_records(served
     got = Gathered()
     asyncio.run(default_reads(ACCOUNTS, task('transactions', 'This year', days=365), ctx(), got))
     assert not any(name == 'my_transactions' and args.get('days') == 365 for name, args in served) and got.evidence[0].id == 'my_transactions-limit'
-    async def down(**args):raise external.ExternalError('fx_rate', 'timeout')
     async def broken(**args):raise RuntimeError('database down')
-    monkeypatch.setitem(tools.TOOLS, 'fx_rate', down)
     monkeypatch.setitem(tools.TOOLS, 'my_cards', broken)
-    notes = asyncio.run(read('fx_rate', {'base': 'SGD', 'quote': 'JPY'}, ctx(), set())) + asyncio.run(read('my_cards', {}, ctx(), set()))
-    assert [n.id for n in notes] == ['fx_rate-unavailable', 'my_cards-unavailable']
+    monkeypatch.setitem(tools.TOOLS, 'my_loans', broken)
+    notes = asyncio.run(read('my_cards', {}, ctx(), set())) + asyncio.run(read('my_loans', {}, ctx(), set()))
+    assert [n.id for n in notes] == ['my_cards-unavailable', 'my_loans-unavailable']
     assert all(not any(ch.isdigit() for ch in n.text) for n in notes)
 
 
@@ -173,7 +172,7 @@ def test_answer_or_no_calls_ends_the_loop_and_refused_steps_cannot_loop_forever(
 def test_the_step_schema_offers_only_loop_tools():
     schema = runner.step_schema(ACCOUNTS.loop_tools)
     assert schema['properties']['calls']['items']['properties']['tool']['enum'] == sorted(ACCOUNTS.loop_tools)
-    assert 'request_categories' not in ACCOUNTS.loop_tools and {'fx_rate', 'public_holidays'} <= ACCOUNTS.loop_tools
+    assert 'request_categories' not in ACCOUNTS.loop_tools and ACCOUNTS.loop_tools <= set(ACCOUNTS.tools)
 
 
 # ---- Answer validation against all gathered evidence ----

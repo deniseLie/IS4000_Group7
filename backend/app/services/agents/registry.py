@@ -45,9 +45,8 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
         'rm_transaction_insights','rm_talking_points','rm_meeting_requests')},  # the gated ones also check rm.consent_active (0106)
 })
 
-PUBLIC_EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
 ZOOM_EXTERNAL=frozenset({'zoom_meeting_check'})  # tools.zoom_meeting_check: her book first (0150), then Zoom with the bank's login
-EXTERNAL=PUBLIC_EXTERNAL|ZOOM_EXTERNAL
+EXTERNAL=ZOOM_EXTERNAL
 KB=ToolView()
 ASK=Read(tool='knowledge_search',entities={'query':QUESTION})
 CARD_FIELDS=frozenset({'last4','name','network','status','currency','limit','outstanding','minimum_payment','due_date','unfreeze_blocked_reason'})
@@ -58,7 +57,7 @@ GUIDE=AgentSpec(name='guide',role='public',scope='public',prompt='guide',
         'login trouble, unexpected one-time codes and phishing. Personal questions get "sign in to check".',
     tools={'knowledge_search':KB,'request_categories':ToolView()},
     intents={'general':(ASK,),'how_to_request':(ASK,Read(tool='request_categories')),'login_help':(ASK,),'phishing':(ASK,)},
-    loop_tools=frozenset({'knowledge_search','request_categories'}),external=frozenset({'public_holidays','fx_rate'}))
+    loop_tools=frozenset({'knowledge_search','request_categories'}))
 
 ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='accounts',
     answers='The client\'s own accounts, cards, loans, investment portfolio (holdings, her time deposit and its maturity) and transactions: '
@@ -82,11 +81,10 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
         'loans':(Read(tool='my_loans'),ASK),
         'statements':(Read(tool='my_accounts'),ASK),
         'product_info':(ASK,),
-        'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK),
-        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans')),  # + public holidays per trip year (agents/derived.py)
+        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans')),  # due dates in the trip, weekend shifts (agents/derived.py)
         'savings_after_cards':(Read(tool='my_accounts'),Read(tool='my_cards'))},  # savings minus card balances vs her amount (derived.py)
-    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_portfolio','my_transactions','knowledge_search','fx_rate','public_holidays'}),
-    external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
+    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_portfolio','my_transactions','knowledge_search'}),
+    offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
     exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]','below_threshold':'bool'},sort_by={'account_refs':'last4'})
 
 # No Security agent since build plan 2b: a lost card or a charge she doesn't recognise gets fixed steps and one urgent
@@ -143,7 +141,7 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
         'consent':(Read(tool='my_consents'),ASK),
         'service_options':(Read(tool='request_categories'),ASK)},
     loop_tools=frozenset({'my_rm','my_appointments','free_slots','my_consents','request_categories','knowledge_search'}),
-    external=frozenset({'public_holidays'}),imports=frozenset({'due_dates'}),
+    imports=frozenset({'due_dates'}),
     offers=frozenset({'meeting.request','appointment.cancel','handoff.create','tickets.follow_up',
         'consent.grant','consent.revoke','rm.share_summary','insight.share',  # insight.share: a compose rule, never the model (0108)
         'insight.delete'}))  # consent v2 (6e): rules in agents/consent_answers offer consent.grant/revoke and insight.delete

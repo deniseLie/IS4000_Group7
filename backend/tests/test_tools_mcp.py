@@ -100,6 +100,22 @@ def test_the_tool_s_own_exception_reaches_the_caller_and_a_call_without_a_key_is
 def test_tools_refuse_to_run_without_a_backend_context() -> None:
     with pytest.raises(tools.ToolContextMissing):asyncio.run(tools.my_tickets())
     with pytest.raises(KeyError):asyncio.run(tools.call('transfer_money',{},guest(None)))
+    with pytest.raises(KeyError):asyncio.run(tools.meeting_read('meeting_save_brief',{},guest(None),None))  # drafts are not MCP tools
+
+
+def test_a_key_runs_only_its_own_tool_and_a_meeting_read_needs_its_meeting_access() -> None:
+    """A key is issued for one tool: a meeting read's key cannot run a client tool. A meeting read with a RequestContext but
+    no meeting access (as the stdio server or a client tool would have) is refused before any policy or database call."""
+    ctx=RequestContext(session_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),customer_id=1001))
+    failures: list[Exception]=[]
+    async def run():
+        client=await mcp_server.client()
+        mcp_server.CALLS['k']=mcp_server.Call('meeting_notes_context',ctx,None,failures)
+        try:return (await client.call_tool('my_tickets',{},meta={mcp_server.CALL_KEY:'k'}),
+            await client.call_tool('meeting_notes_context',{'p_meeting_id':str(uuid4())},meta={mcp_server.CALL_KEY:'k'}))
+        finally:mcp_server.CALLS.pop('k')
+    other,bare=asyncio.run(run())
+    assert other.is_error and bare.is_error and [type(f) for f in failures]==[tools.ToolContextMissing]
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Requires native JWT/RLS Data API')

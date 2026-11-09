@@ -54,8 +54,8 @@ PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm
 # v5 (architecture §14, §5.6.1): graph cases may also name V5_TOOLS, all built except my_statements; the RM agents are built (phase 9).
 V5_NODES=NODES
 V5_AGENTS=get_args(TargetAgent)  # the built v5 agents (phase 9 added the RM agents; 3a split them into three)
-V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')
-FAULTS=('external_down','upstream_withheld','receipt_failed','consent_revoked')
+V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates')
+FAULTS=('upstream_withheld','receipt_failed','consent_revoked')
 
 def load(dataset):
     path=HERE/DATASETS[dataset]

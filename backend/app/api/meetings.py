@@ -136,7 +136,7 @@ async def generate_notes(meeting: UUID, body: Command, ctx: Annotated[RequestCon
     from app.services.meetings.graph import notes_graph
     database = ApplicationDatabase(ctx)
     try:
-        raw = await run_in_threadpool(database.agent_call, MINUTES_WRITER.name, 'meeting_notes_context', meeting, {'p_meeting_id': meeting}, claims)
+        raw = await database.agent_read(MINUTES_WRITER.name, 'meeting_notes_context', meeting, {'p_meeting_id': meeting}, claims)
     except MeetingStoreError as error:
         raise await run_in_threadpool(store_error, 'meeting_notes_context', error, claims) from error
     context = NotesContext.model_validate(raw)

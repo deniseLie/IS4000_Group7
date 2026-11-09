@@ -1,5 +1,5 @@
 """Deterministic trip checks (build plan phase 7), in the retail_checks style: the trip window, the card and loan due
-dates inside it, and the shift of a due date that falls on a weekend or a Singapore public holiday.
+dates inside it, and the shift of a due date that falls on a weekend (public holidays are not checked).
 
 Code computes every date here so the model never calculates one. A window that cannot be read is a clarifying
 question, never a guess. Dates come from the planner's from_date/to_date entities or the customer's own words.
@@ -46,21 +46,18 @@ def add_month(day: date) -> date:
     raise ValueError(day)
 
 
-def pays_on(day: date, holidays: set[date]) -> tuple[date, str | None]:
-    """A due date on a weekend or public holiday is paid on the next business day."""
-    shifted, why = day, None
-    while shifted.weekday() >= 5 or shifted in holidays:
-        why = why or ('public holiday' if shifted in holidays else 'weekend')
-        shifted += timedelta(days=1)
-    return shifted, why
+def pays_on(day: date) -> tuple[date, str | None]:
+    """A due date on a Saturday or Sunday is paid the next Monday."""
+    if day.weekday() < 5:return day, None
+    return day + timedelta(days=7-day.weekday()), 'weekend'
 
 
-def dues(items: list[tuple[str, date]], start: date, end: date, holidays: set[date]) -> list[dict]:
+def dues(items: list[tuple[str, date]], start: date, end: date) -> list[dict]:
     """Each monthly due date from its next recorded one to the end of the trip, with the day it is actually paid."""
     found = []
     for label, due in items:
         while due <= end + timedelta(days=7):  # a due just before the end may be paid inside the trip after a shift
-            paid, why = pays_on(due, holidays)
+            paid, why = pays_on(due)
             if paid >= start and due >= start - timedelta(days=7):
                 found.append({'what': label, 'due': due.isoformat(), 'pays_on': paid.isoformat(), 'shifted_for': why, 'in_trip': start <= paid <= end})
             due = add_month(due)

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     embedding_timeout_s: float = Field(default=5,gt=0,le=30)
     conversation_store: Literal['off','database'] = 'off'
     client_intent_routing: Literal['adaptive','rules'] = 'adaptive'  # LLM-first for ordinary client intents; critical deterministic safeguards remain
-    external_hosts: str = 'date.nager.at,api.frankfurter.dev,api.zoom.us'  # services/external.py calls only these hosts
+    external_hosts: str = 'api.zoom.us'  # services/external.py calls only these hosts
     external_timeout_s: float = Field(default=5,gt=0,le=30)
     worker_poll_seconds: float = Field(default=2,gt=0,le=60)
     run_worker_in_api: bool = False

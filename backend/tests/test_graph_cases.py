@@ -8,7 +8,7 @@ from evaluation import langsmith_sync as sync
 BACKEND=Path(__file__).parents[1]
 GRAPH=sync.load('demobank-graph')[0]
 PLANNER=sync.load('demobank-planner')[0]
-PATTERNS={'conditional','input','external','fan_out','handoff','confirmation_chain'}
+PATTERNS={'conditional','input','fan_out','handoff','confirmation_chain'}
 
 def test_ids_and_variants():
     base=[c for c in GRAPH if 'variant_of' not in c]

@@ -1,6 +1,6 @@
 """Run the UBS Connect tools as an MCP server over stdio (F21), for an external MCP client such as the MCP Inspector.
 
-  python -m scripts.mcp_server                       # guest: the public tools (knowledge, request types, document templates, holidays, FX)
+  python -m scripts.mcp_server                       # guest: the public tools (knowledge, request types, document templates)
   DEMOBANK_ACCESS_TOKEN=<customer JWT> python -m scripts.mcp_server   # customer: also every my_* tool
   DEMOBANK_ACCESS_TOKEN=<RM JWT> python -m scripts.mcp_server         # relationship manager: the rm_* tools and zoom_meeting_check
 

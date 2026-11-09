@@ -17,7 +17,7 @@ from pydantic import SecretStr
 from app.core.config import settings
 from app.schemas.contracts import Principal,RequestContext
 from app.services import audit,external,tools
-from app.services.agents.registry import CHAT_SPECS,EXTERNAL,PUBLIC_EXTERNAL,RM_CALENDAR,ZOOM_EXTERNAL
+from app.services.agents.registry import CHAT_SPECS,EXTERNAL,RM_CALENDAR,ZOOM_EXTERNAL
 from app.services.authorization import PolicyDenied
 from app.services.rm import records as rm_records
 from app.services.rm.records import RmDenied
@@ -165,7 +165,7 @@ def test_the_check_needs_the_rm_s_own_sign_in_and_her_book(zoom):
 def test_only_the_calendar_agent_may_call_it_through_mcp(zoom):
     routes,_,_=zoom
     routes[f'/v2/meetings/{NUMBER}']=(200,MEETING)
-    assert EXTERNAL==PUBLIC_EXTERNAL|ZOOM_EXTERNAL and ZOOM_EXTERNAL=={'zoom_meeting_check'} and 'zoom_meeting_check' not in external.TOOLS
+    assert EXTERNAL==ZOOM_EXTERNAL=={'zoom_meeting_check'}
     assert [n for n,s in CHAT_SPECS.items() if 'zoom_meeting_check' in s.external|s.loop_tools]==['rm_calendar'] and 'zoom_meeting_check' in RM_CALENDAR.loop_tools
     result,_=run(tools.call('zoom_meeting_check',{'appointment_id':str(APPOINTMENT)},rm_ctx('rm_calendar')))
     assert result['data']['link']=='set_up'
@@ -179,10 +179,10 @@ def test_the_mcp_server_lists_it_as_read_only_and_open_world():
     async def listed():
         async with mcp.Client(mcp_server.build_server()) as client:return {t.name:t for t in (await client.list_tools()).tools}
     served=asyncio.run(listed())
-    zoom,fx,own=served['zoom_meeting_check'],served['fx_rate'],served['rm_appointments']
+    zoom,own=served['zoom_meeting_check'],served['rm_appointments']
     assert zoom.annotations.read_only_hint is True and zoom.annotations.open_world_hint is True and zoom.annotations.destructive_hint is False
     assert list(zoom.input_schema['properties'])==['appointment_id']  # never a Zoom number or link
-    assert fx.annotations.open_world_hint is True and own.annotations.read_only_hint is True and own.annotations.open_world_hint is False
+    assert own.annotations.read_only_hint is True and own.annotations.open_world_hint is False
     assert not any(n.startswith('zoom_') and n!='zoom_meeting_check' for n in served)  # no Zoom write tool
 
 
