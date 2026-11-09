@@ -57,6 +57,10 @@ export default function SharingPage({onReviewActions,initial=null}) {
   function open(next) {setView(next);setDone('');setError('');}
   const rm=sharing?.rm?firstName(sharing.rm.name):topics?.rm_first_name||'your relationship manager',Rm=cap(rm),off=busy||saving;
   const cards=sharing?sharing.categories.filter(c=>c.gated):[],rows=log?.rows||[],seen=accessGroups(rows,Rm),card=cards.find(c=>c.code===view);
+  // One row per gated category: the ones she can switch go under "You choose", per-meeting ones (recording) under "Good to know".
+  const cardRow=c=>{const state=rowState(c);return <li key={c.code}><button type="button" className="sharing-row" data-testid={`sharing-row-${c.code}`} data-on={state.on} onClick={()=>open(c.code)}>
+        <Icon name={ICONS[c.code]||'shield'}/><span className="sharing-row-text"><strong>{c.label}</strong><small>{rowLine(c,sharing,Rm,formatDate,topics)}</small></span>
+        <span className={`sharing-pill ${state.tone}`}>{state.pill}</span><span className="sharing-go" aria-hidden="true"><Icon name="chevron"/></span></button></li>;};
   const status=<>
     {busy&&<p className="loading" role="status">{sharing?'Updating…':'Loading your data sharing…'}</p>}
     {error&&<p role="alert" className="sharing-alert" data-testid="sharing-error">{error}</p>}
@@ -93,10 +97,18 @@ export default function SharingPage({onReviewActions,initial=null}) {
         <button type="button" className="bank-chat-logout" data-testid="consent-ask-decline" disabled={off}
           onClick={()=>act('consent.decline_ask',{ask_id:ask.ask_id},`${Rm} has been told you're not sharing this now.`)}>Not now</button>
       </div></div>)}
-    {sharing&&<ul className="sharing-rows" data-testid="sharing-rows">
-      {cards.map(c=>{const state=rowState(c);return <li key={c.code}><button type="button" className="sharing-row" data-testid={`sharing-row-${c.code}`} data-on={state.on} onClick={()=>open(c.code)}>
-        <Icon name={ICONS[c.code]||'shield'}/><span className="sharing-row-text"><strong>{c.label}</strong><small>{rowLine(c,sharing,Rm,formatDate,topics)}</small></span>
-        <span className={`sharing-pill ${state.tone}`}>{state.pill}</span><span className="sharing-go" aria-hidden="true"><Icon name="chevron"/></span></button></li>;})}
+    {sharing&&<><div className="sharing-summary" data-testid="sharing-summary">
+      {(()=>{const choice=cards.filter(c=>c.withdrawable),on=choice.filter(c=>rowState(c).on).length;
+        return <span><strong>{on} of {choice.length}</strong> optional {choice.length===1?'category':'categories'} shared with {rm}</span>;})()}
+      <span>{rows.length?<>Last looked at <time dateTime={rows[0].at}>{formatDateTime(rows[0].at)}</time></>:'No one has looked yet'}</span></div>
+    <h2 className="sharing-section">You choose</h2>
+    <p className="sharing-section-lead">Open one to switch it on or off. Changes apply straight away.</p>
+    <ul className="sharing-rows" data-testid="sharing-rows">
+      {cards.filter(c=>c.withdrawable).map(cardRow)}
+    </ul>
+    <h2 className="sharing-section">Good to know</h2>
+    <ul className="sharing-rows" data-testid="sharing-rows-info">
+      {cards.filter(c=>!c.withdrawable).map(cardRow)}
       <li><button type="button" className="sharing-row" data-testid="sharing-row-always" onClick={()=>open('always')}>
         <Icon name="lock"/><span className="sharing-row-text"><strong>Always shared</strong><small>{alwaysLine(sharing)}</small></span>
         <span className="sharing-go" aria-hidden="true"><Icon name="chevron"/></span></button></li>
@@ -104,6 +116,6 @@ export default function SharingPage({onReviewActions,initial=null}) {
         <Icon name="clock"/><span className="sharing-row-text"><strong>Who looked and when</strong>
           <small>{rows.length?`Last: ${formatDateTime(rows[0].at)}`:'No one has looked yet'}</small></span>
         <span className="sharing-go" aria-hidden="true"><Icon name="chevron"/></span></button></li>
-    </ul>}
+    </ul></>}
   </section>;
 }
