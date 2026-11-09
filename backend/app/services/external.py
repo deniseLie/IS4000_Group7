@@ -72,6 +72,14 @@ def allowed_hosts() -> frozenset[str]:
     return frozenset(h.strip().lower() for h in settings.external_hosts.split(',') if h.strip())
 
 
+def scope_missing(host: str, response: httpx.Response) -> bool:
+    """Zoom answers a token without the needed scope with 400 and code 4711 (seen live 9 Nov 2026), not 401/403."""
+    if host != ZOOM_HOST or response.status_code != 400:return False
+    try:body = response.json()
+    except ValueError:return False
+    return isinstance(body, dict) and body.get('code') == 4711
+
+
 async def fetch(tool: str, host: str, path: str, params: dict[str, str], ttl: float, parse: Callable[[Any], Any],
         token: SecretStr | None = None) -> Any:
     """One cached GET to an allow-listed host; the parsed result, or ExternalError. Redirects are not followed.
@@ -86,7 +94,7 @@ async def fetch(tool: str, host: str, path: str, params: dict[str, str], ttl: fl
                 headers={'Authorization': 'Bearer '+token.get_secret_value()} if token is not None else None)
         status = response.status_code
         if response.status_code == 404:raise ExternalError(tool, 'not_found')
-        if response.status_code in (401, 403):raise ExternalError(tool, 'not_authorised')
+        if response.status_code in (401, 403) or scope_missing(host, response):raise ExternalError(tool, 'not_authorised')
         if response.status_code != 200:raise ExternalError(tool, 'unavailable')
         value = parse(response.json())
     except httpx.TimeoutException as error:

@@ -121,7 +121,9 @@ def test_a_link_zoom_does_not_have_or_that_is_not_ours_is_missing_in_zoom(zoom):
 
 
 @pytest.mark.parametrize('answer,live,audited',[((401,{'code':124,'message':'Invalid access token'}),'not_authorised','failed'),
-    ((503,{}),'unavailable','failed'),((200,httpx.ReadTimeout('slow')),'unavailable','failed'),
+    ((400,{'code':4711,'message':'Invalid access token, does not contain scopes:[meeting:read:meeting, meeting:read:meeting:admin].'}),
+     'not_authorised','failed'),  # the bank's grant without the read scope, as Zoom answered live on 9 Nov 2026
+    ((400,{'code':300,'message':'Invalid meeting id.'}),'unavailable','failed'),((503,{}),'unavailable','failed'),((200,httpx.ReadTimeout('slow')),'unavailable','failed'),
     ((200,{'id':NUMBER}),'unavailable','success')])  # answered, but not the shape we read: never guessed from
 def test_zoom_failures_are_short_codes_and_the_record_part_stays(zoom,answer,live,audited):
     routes,_,_=zoom

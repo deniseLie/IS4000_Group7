@@ -98,6 +98,7 @@ RELEASED[('relationship','v8')]='v8+3ac41170'
 RELEASED[('document','v6')]='v6+d4f5ed2b'
 RELEASED[('rm_planner','v6')]='v6+08f9a7ff'
 RELEASED[('rm_assistant','v8')]='v8+ea931216'
+RELEASED[('rm_assistant','v9')]='v9+fb6bbed5'  # Zoom check in the schedule intent
 
 def test_released_prompt_ids_never_change():
     for (agent,version),pid in RELEASED.items():assert prompts.load(agent,version)['id']==pid

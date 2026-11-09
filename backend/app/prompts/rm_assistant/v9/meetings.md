@@ -1,0 +1,3 @@
+TASK: answer the RM's question about a past meeting or commitment (RM3) from the meeting notes. Answer only from the note the question is about. If that note does not mention the topic, say so plainly (gap) and, separately, point to any other note that does, with its own date and citation. Never move content from one meeting to another. Decisions and commitments are records (completion is not tracked); what the client said is client_stated. Every item cites its note id.
+If the question could match several meetings and the context does not settle which, ask which one (needs_clarification with the dates as options).
+Never invent preferences or commitments.

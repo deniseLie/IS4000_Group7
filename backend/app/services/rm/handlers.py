@@ -11,7 +11,7 @@ approves through the existing write routes), and what needs judgement is written
    ambiguity becomes a question with options. Only turns about the same client go to the model.
 2. The handler reads its intent's records through the RM tools with the agent's own context, so the tool layer allows
    only that spec's tools (SQL book checks, consent checks, audit). Turn.reads keeps them for the exports (rm/graph.py).
-3. One model call (prompt rm_assistant/v8 + the intent's task file) with strict JSON output and cited record ids. A model
+3. One model call (prompt rm_assistant/v9 + the intent's task file) with strict JSON output and cited record ids. A model
    call's time follows the tokens it writes (docs/planning/rm-answer-speed.md), so the client reports (meeting_brief,
    client_overview, handover_brief, meeting_history) give the model a bounded set of facts (brief_facts.facts) and ask it
    only for the judgement parts; code writes the record sections. For
@@ -34,7 +34,7 @@ from difflib import SequenceMatcher
 from typing import Any
 from app.schemas.contracts import RequestContext
 from app.schemas.rm import BOOK_WIDE,NEEDS_CLIENT,RmAssistantRequest
-from app.services import external,llm_gateway,prompts,tools
+from app.services import external,llm_gateway,prompts,tools,typos
 from app.services.agents import registry,runner
 from app.services.authorization import PolicyDenied
 from app.services.privacy import redact
@@ -469,6 +469,24 @@ async def h_reviews(t: Turn,plan,client_id):
     return brief_reply('reviews',await t.model('reviews',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
 
 
+ZOOM=re.compile(r"\bzoom\b|\b(?:meeting|join|joining|video|call)[ -]?link\b|\bjoined\b|\b(?:call|meeting)\s+(?:has\s+|have\s+)?(?:started|begun|running|live)\b"
+    r"|\bstart(?:ed)?\s+the\s+(?:call|meeting)\b",re.I)
+ZOOM_SHOWN=3  # a schedule answer checks at most this many meetings in Zoom; a count line says how many more
+
+
+def wants_zoom(message: str) -> bool:
+    """Whether the RM asks about a meeting's Zoom link or call (the schedule intent then adds the read-only Zoom check)."""
+    return bool(ZOOM.search(typos.normalise(message)))
+
+
+async def zoom_items(t: 'Turn',row: dict) -> ev.Evidence:
+    """The Zoom check for one of her appointments, by the id in her own calendar rows (never a model-supplied id)."""
+    if row.get('format')!='video':return ev.zoom_not_checked(row,'not_video')
+    try:result=await t.read('zoom_meeting_check',{'appointment_id':str(row['appointment_id'])})
+    except (external.ExternalError,RmDenied,PolicyDenied):return ev.zoom_not_checked(row,'unavailable')
+    return ev.zoom_evidence(result,row)
+
+
 async def h_schedule(t: Turn,plan,client_id):
     await t.say('Reading your appointments…')
     rows=await t.read('rm_appointments',{'start':today().isoformat(),'end':(today()+timedelta(days=30)).isoformat()})
@@ -485,6 +503,13 @@ async def h_schedule(t: Turn,plan,client_id):
     bundle.add(ev.appointments_evidence(rows,client_id))
     if selected:bundle.add(ev.Evidence('selected-appointment',f"Selected appointment: {selected['client']}, {selected['when']}",'calendar',
         {k:v for k,v in selected.items() if k not in ('starts_at','ends_at','customer_id')},str(rows.get('as_of')),selected['customer_id']))
+    if wants_zoom(t.message):  # the selected meeting, else her next confirmed meetings (for the client, if one is named)
+        picks=[selected] if selected else sorted([r for r in rows['data'] if r.get('status')=='confirmed' and not r.get('past')
+            and (client_id is None or r['customer_id']==client_id)],key=lambda r:str(r['starts_at']))
+        await t.say('Checking Zoom…')
+        for row in picks[:ZOOM_SHOWN]:bundle.add(await zoom_items(t,row))
+        if len(picks)>ZOOM_SHOWN:bundle.add(ev.Evidence('zoom-not-checked',f'{len(picks)-ZOOM_SHOWN} more upcoming meetings not checked in Zoom here',
+            'record',{'not_checked':len(picks)-ZOOM_SHOWN,'meaning':'Name the client or the time to check one of these.'},None))
     ctx=t.context(selected['customer_id'] if selected else client_id,appointment_id=str(selected['appointment_id']) if selected else None)
     return brief_reply('schedule',await t.model('schedule',bundle,brief_schema(bundle.ids()),client_id),bundle,ctx)
 
@@ -1280,9 +1305,7 @@ def loop_items(name: str,args: dict,result: dict,message: str) -> list[ev.Eviden
     if name=='rm_appointments':return [ev.appointments_evidence(result)]
     if name=='rm_availability':return [ev.availability_evidence(result)]
     if name=='rm_meeting_requests':return ev.meeting_requests_bundle(result).items
-    if name=='zoom_meeting_check':
-        return [ev.Evidence('zoom-check',f"Zoom check for the meeting on {result['data']['meeting']}, checked {result['data']['checked_at']}",
-            'calendar',result['data'],as_of)]
+    if name=='zoom_meeting_check':return [ev.zoom_evidence(result)]
     if name=='request_categories':return [ev.Evidence('request-types','Request types the RM can raise for a client','guidance',result.get('items') or [],None)]
     if name=='knowledge_article':
         rows=result.get('items') or []

@@ -361,7 +361,7 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
         ('rm_calendar', 'decide_request'), ('rm_calendar', 'availability_change'), ('rm_requests', 'open'), ('rm_client', 'help')]  # never a client agent
     task = graph.plan_schema()['properties']['tasks']['items']['properties']
     assert task['agent']['enum'] == ['', 'rm_calendar', 'rm_client', 'rm_requests'] and 'open' in task['intent']['enum']
-    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v6', 'v8')
+    assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v6', 'v9')
 
 
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):
@@ -423,7 +423,7 @@ def test_an_open_question_loops_at_most_agent_tool_calls_times_and_says_when_it_
     reply, spans = traced('Which card limit requests are waiting on me, and what did the clients ask?')
     steps = [c for c in seen if c['title'] == 'agent_step']
     assert len(steps) == 3 and [n for n, a in calls if a == 'rm_requests'] == ['rm_tickets', 'rm_ticket', 'rm_followups']
-    assert all(c['prompt'].startswith('v8+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v8's step.md
+    assert all(c['prompt'].startswith('v9+') and c['prompt'].endswith('/step') for c in steps)  # rm_assistant/v9's step.md
     assert '"reason": "not_in_book"' in steps[2]['system']  # outside the book: refused by the SQL check and shown to the next step
     assert 'ticket-TCK-001001' in steps[1]['system'] and not any('zebra lantern' in c['system'] for c in steps)  # free text hidden from steps
     assert 'zebra lantern' in evidence_in(next(c for c in seen if c['title'] == 'rm_brief'))  # the answer step reads it as data
@@ -486,6 +486,78 @@ def test_the_calendar_loop_checks_zoom_for_the_meeting_code_picks_never_a_model_
     state['steps'], state['cite'] = [step(('zoom_meeting_check', {'client': 'Michelle', 'when': 'tomorrow'}))], ['zoom_meeting_check-unavailable']
     reply, _ = traced("Is tomorrow's Zoom with Michelle set up?")
     assert '"checked": false' in evidence_in(seen[-1]) and reply['status'] == 'ok'  # said not checked, nothing filled in
+
+
+def zoom_rows(day, *specs):
+    """Appointment rows for the schedule tests: (client, customer, hour, format)."""
+    return [{'appointment_id': str(uuid4()), 'customer_id': cid, 'client': name, 'starts_at': f'{day}T{hour:02d}:00:00+08:00',
+        'when': f'{day} {hour}:00', 'format': fmt, 'status': 'confirmed', 'past': False} for name, cid, hour, fmt in specs]
+
+
+def zoom_stub(monkeypatch, checked, fail=False):
+    @functools.wraps(tools.TOOLS['zoom_meeting_check'])
+    async def zoom(appointment_id):
+        checked.append((str(appointment_id), tools.TOOL_CTX.get().agent))
+        if fail:raise RmDenied('This client is not in your book.')
+        return {'data': {'meeting': 'x', 'format': 'video', 'status': 'confirmed', 'link': 'set_up', 'zoom_time_matches': True,
+            'call': 'not_started', 'live': 'ok', 'checked_at': 'Mon 9 Nov 2026, 12:00 pm'}, 'as_of': 'now'}
+    monkeypatch.setitem(tools.TOOLS, 'zoom_meeting_check', zoom)
+
+
+@pytest.mark.parametrize('message', ["Is the Zoom for my 10am with Michelle tomorrow set up?", "Has Michelle joined the call tomorrow at 10am?",
+    "Is the meeting link for Michelle's 10am tomorrow ready?"])
+def test_a_schedule_question_about_zoom_checks_the_selected_meeting_through_the_calendar_agent(records, model, monkeypatch, message):
+    calls, data = records
+    seen, state = model
+    rows = zoom_rows(handlers.today() + timedelta(days=1), ('Michelle Tan (DEMO)', 1002, 10, 'video'), ('Michelle Tan (DEMO)', 1002, 15, 'video'))
+    data['rows']['rm_appointments'] = {'data': rows, 'as_of': 'now'}
+    checked = []
+    zoom_stub(monkeypatch, checked)
+    item = 'zoom-check-' + rows[0]['appointment_id'][-6:]
+    state['cite'] = [item]
+    plan(monkeypatch, [{'intent': 'schedule', 'client_name': 'Michelle', 'appointment_hint': 'tomorrow 10am'}])
+    reply, spans = traced(message)
+    assert checked == [(rows[0]['appointment_id'], 'rm_calendar')]  # one read, the meeting code picked, as the Calendar agent
+    assert '"link": "set_up"' in evidence_in(seen[-1]) and item in [s['id'] for s in reply['sources']]
+    assert any(n == 'tool_call' and a.get('tool') == 'zoom_meeting_check' and a.get('transport') == 'mcp' for n, a in spans)
+
+
+def test_a_plain_schedule_question_never_calls_zoom(records, model, monkeypatch):
+    calls, data = records
+    data['rows']['rm_appointments'] = {'data': zoom_rows(handlers.today() + timedelta(days=1), ('Michelle Tan (DEMO)', 1002, 10, 'video')), 'as_of': 'now'}
+    checked = []
+    zoom_stub(monkeypatch, checked)
+    plan(monkeypatch, [{'intent': 'schedule'}])
+    reply, _ = traced('What is on my calendar tomorrow?')
+    assert checked == [] and reply['status'] == 'ok'
+
+
+def test_without_a_selected_meeting_zoom_is_checked_for_the_next_three_video_meetings_only(records, model, monkeypatch):
+    calls, data = records
+    seen, _ = model
+    rows = zoom_rows(handlers.today() + timedelta(days=1), ('Michelle Tan (DEMO)', 1002, 9, 'phone'),
+        *[('Mei Ling Goh (DEMO)', 1009, h, 'video') for h in (10, 11, 12, 13)])
+    data['rows']['rm_appointments'] = {'data': rows, 'as_of': 'now'}
+    checked = []
+    zoom_stub(monkeypatch, checked)
+    plan(monkeypatch, [{'intent': 'schedule'}])
+    traced('Are my Zoom links set up for this week?')
+    assert [c[0] for c in checked] == [r['appointment_id'] for r in rows[1:3]]  # the phone meeting is not sent to Zoom
+    shown = evidence_in(seen[-1])
+    assert 'zoom-check-not-video-' + rows[0]['appointment_id'][-6:] in shown and '"not_checked": 2' in shown
+
+
+def test_a_zoom_check_that_fails_is_said_not_checked_and_the_answer_still_comes(records, model, monkeypatch):
+    calls, data = records
+    seen, _ = model
+    rows = zoom_rows(handlers.today() + timedelta(days=1), ('Michelle Tan (DEMO)', 1002, 10, 'video'))
+    data['rows']['rm_appointments'] = {'data': rows, 'as_of': 'now'}
+    checked = []
+    zoom_stub(monkeypatch, checked, fail=True)
+    plan(monkeypatch, [{'intent': 'schedule', 'client_name': 'Michelle', 'appointment_hint': 'tomorrow 10am'}])
+    reply, _ = traced('Is the Zoom for my 10am with Michelle tomorrow set up?')
+    assert len(checked) == 1 and reply['status'] == 'ok'
+    assert 'zoom-check-unavailable-' + rows[0]['appointment_id'][-6:] in evidence_in(seen[-1]) and '"checked": false' in evidence_in(seen[-1])
 
 
 def test_accepting_a_client_time_is_a_card_built_from_the_records_without_a_model_call(records, model, monkeypatch):
@@ -689,7 +761,7 @@ def test_today_links_the_calendar_and_client_exports_and_code_keeps_the_rank_ord
     # Each agent reads its own records; the feeds call no model, so the only model call is the day's answer.
     assert {(n, a) for n, a in calls if n not in ('rm_book', 'rm_match_clients')} == {('rm_appointments', 'rm_calendar'),
         ('rm_meeting_requests', 'rm_calendar'), ('rm_review_status', 'rm_client'), ('rm_tickets', 'rm_requests'), ('rm_followups', 'rm_requests')}
-    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v8+')
+    assert [c['title'] for c in seen] == ['rm_brief'] and 'TASK: her day in one answer' in seen[0]['system'] and seen[0]['prompt'].startswith('v9+')
     assert seen[0]['reasoning'] is False  # handlers.REASONING: the day's answer only rephrases records code ranked
     gather = next(a for n, a in spans if n == 'gather')
     assert {(p['from'], p['to'], p['name']) for p in gather['passed']} >= {('rm_calendar', 'rm_requests', 'meetings_next_7d'),

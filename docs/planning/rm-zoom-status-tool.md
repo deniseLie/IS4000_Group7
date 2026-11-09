@@ -2,7 +2,7 @@
 
 Plan written 8 Nov 2026 on `claude/rm-calendar-zoom-status-e6d1c2` (base `b01a0d0`).
 
-**Built first (8 Nov 2026, after merging main's MCP-only tool layer):** the smaller read-only `zoom_meeting_check(appointment_id)`. It covers the link and the live meeting only, without past-meeting reads, participant counts or notes status. Pieces: migration 0150 `rm_zoom_check` (codes-only record read in her book), `external.zoom_meeting` (bearer token, 60 s cache after the book check), `tools.zoom_meeting_check`, `registry.ZOOM_EXTERNAL` on the Calendar's `external` and `loop_tools`, `h_open` meeting resolution, and MCP read-only/open-world annotations. Tests: `test_zoom_check.py`, `test_zoom_check_db.py`, and a loop test in `test_rm_graph.py`. The `meeting_capture` intent, past-meeting and participant reads and notes status below are still to do.
+**Built first (8 Nov 2026, after merging main's MCP-only tool layer):** the smaller read-only `zoom_meeting_check(appointment_id)`. It covers the link and the live meeting only, without past-meeting reads, participant counts or notes status. Pieces: migration 0150 `rm_zoom_check` (codes-only record read in her book), `external.zoom_meeting` (bearer token, 60 s cache after the book check), `tools.zoom_meeting_check`, `registry.ZOOM_EXTERNAL` on the Calendar's `external` and `loop_tools`, `h_open` meeting resolution, and MCP read-only/open-world annotations. Tests: `test_zoom_check.py`, `test_zoom_check_db.py`, and a loop test in `test_rm_graph.py`. The `meeting_capture` intent, past-meeting and participant reads and notes status below are still to do. **9 Nov:** the `schedule` intent also runs the check on Zoom wording ([rm-zoom-in-schedule.md](rm-zoom-in-schedule.md), `rm_assistant/v9`).
 
 ## What the RM can ask
 

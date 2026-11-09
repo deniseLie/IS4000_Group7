@@ -24,7 +24,7 @@ VERSIONS = {
     'notice_requirements': 'v2', 'document_evidence': 'v2',  # notice_checks
     'talking_points': 'v2',  # lane 1 v2 (0143): knows her current points, carry-over, kind, on hold; 'v1' switches back
     'rm_planner': 'v6',
-    'rm_assistant': 'v8',  # v7: help is a plain reply; follow_up explains the previous answer; v8: UBS Connect name
+    'rm_assistant': 'v9',  # v7: help is a plain reply; follow_up explains the previous answer; v8: UBS Connect name; v9: Zoom check in schedule
 }
 
 @lru_cache
