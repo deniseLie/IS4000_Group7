@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import Icon from './Icon';
 import {supabase} from '../lib/supabase';
-import {loadInbox,markNotificationRead} from '../lib/notifications';
+import {loadInbox,markNotificationRead,zoomNoticeLink} from '../lib/notifications';
 import {formatDateTime} from '../lib/format';
 import {cacheOwner,cached,remember} from '../lib/cache';
 
@@ -86,12 +86,13 @@ export default function InboxPage({links={},onActions}) {
     {inbox?.items.length===0&&<p className="page-empty" data-testid="inbox-empty">No notifications are recorded for your account.</p>}
     {inbox&&items.length>0&&visible.length===0&&<p className="page-empty">No notifications in this view.</p>}
     <ul className="notification-list ib-list tab-fade" key={tab} data-testid="inbox-list">{visible.map(item=>{
-      const label=category(item),link=links[label];
+      const label=category(item),link=links[label],zoom=zoomNoticeLink(item);
       return <li key={item.notification_id} className={item.read_at?'':'unread'} data-notification-id={item.notification_id} data-template-key={item.template_key}>
         <div className="ib-head"><span className="category-badge">{label}</span><span className="ib-state">{!item.read_at&&<span className="dot"/>}{item.is_service?'Service update':'Optional update'} · <span data-testid="notification-read-state">{item.read_at?'Read':'Unread'}</span></span>
           <time dateTime={item.created_at}>{formatDateTime(item.created_at)}</time></div>
         <h3>{item.title}</h3>
-        <p>{item.body}</p>
+        <p>{zoom?.body??item.body}</p>
+        {zoom&&<a className="ib-zoom-link" data-testid="notification-zoom-join" href={zoom.href} target="_blank" rel="noopener noreferrer">Join Zoom meeting <span aria-hidden="true">↗</span></a>}
         <div className="ib-foot"><code>Ref #{item.notification_id.slice(0,8).toUpperCase()}</code>
           <div className="panel-actions">{!item.read_at&&<button className="bank-chat-logout" data-testid="mark-notification-read" disabled={busy||marking||!!error} onClick={()=>markRead(item)}>Mark as read</button>}{link&&<button className={`ib-link ${item.read_at?'':'strong'}`} onClick={link.onSelect}>{link.label} →</button>}</div></div>
       </li>;})}</ul>
