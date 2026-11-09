@@ -192,6 +192,7 @@ class AgentSpec(Contract):
     tools: dict[ToolName, ToolView]
     intents: dict[str, tuple[Read, ...]]  # intent -> default reads (docs/architecture.md §14.5)
     loop_tools: frozenset[ToolName] = frozenset()  # tools an `open` task may choose
+    external: frozenset[str] = frozenset()  # tools that call an outside service (registry.EXTERNAL: the RM Zoom check); usable in reads and loop_tools
     exports: dict[str, str] = {}  # name -> EXPORT_TYPES name, computed by code (agents/derived.py), never by the model
     sort_by: dict[str, str] = {}  # list export of objects -> the field a fan-out sorts on (a list of dates sorts by value)
     imports: frozenset[str] = frozenset()
@@ -202,7 +203,7 @@ class AgentSpec(Contract):
     @model_validator(mode='after')
     def _consistent(self):
         reads = {read.tool for reads in self.intents.values() for read in reads}
-        if missing := (reads | self.loop_tools) - set(self.tools):raise ValueError(f'{self.name}: tools not in its spec: {sorted(missing)}')
+        if missing := (reads | self.loop_tools) - set(self.tools) - self.external:raise ValueError(f'{self.name}: tools not in its spec: {sorted(missing)}')
         if self.role != 'rm' and (text := sorted(t for t in self.loop_tools if t in self.tools and self.tools[t].free_text)):
             raise ValueError(f'{self.name}: free-text loop tools {text}')
         if OPEN_INTENT in self.intents:raise ValueError(f'{self.name}: {OPEN_INTENT!r} is not a listed intent')

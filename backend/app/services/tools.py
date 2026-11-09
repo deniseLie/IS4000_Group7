@@ -27,7 +27,7 @@ from app.schemas.customer_data import CustomerEnvelope
 from app.schemas.knowledge import KnowledgeQuery
 from app.schemas.meeting_agents import MeetingAccess
 from app.schemas.relationship import SlotsQuery
-from app.services import customer_data,document_templates,kb,prechecks
+from app.services import customer_data,document_templates,external,kb,prechecks
 from app.services.agents import fraud_records,registry
 from app.services.authorization import PolicyDenied,require_permission,require_tool
 from app.services.rm import records as rm_records

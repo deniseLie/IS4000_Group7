@@ -117,7 +117,7 @@ def require_permission(subject: Principal, action: str, resource: Mapping[str, J
 def require_tool(name: str, context: RequestContext) -> None:
     """A v5 agent may call only the model-facing tools in its spec; the service read then checks its own permission.
     Only refusals are audited here, so an allowed call records one policy decision, as before."""
-    if (spec:=registry.spec_for(context.agent)) is None or name in spec.tools:return
-    audit.add('policy','policy.decided','denied',details={'tool':name if name in registry.TOOL_PERMISSION else 'unregistered_tool',
+    if (spec:=registry.spec_for(context.agent)) is None or name in spec.tools or name in spec.external:return
+    audit.add('policy','policy.decided','denied',details={'tool':name if name in registry.TOOL_PERMISSION or name in registry.EXTERNAL else 'unregistered_tool',
         'reasons':['agent_tool_forbidden'],'version':'v1'},actor_type='agent',actor_id=context.agent)
     raise PolicyDenied('Tool access denied: agent_tool_forbidden')
