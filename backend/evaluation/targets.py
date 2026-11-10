@@ -48,6 +48,11 @@ def answer_calls(spans) -> int:
     return sum(n=='llm' and a.get('agent') not in AFTER_REPLY for n,a in spans)
 
 
+def turn_tools(spans) -> list[str]:
+    """Tools the turn called (the case's `tools` check); the after-reply talking-points reads (her topic state) are left out."""
+    return sorted({a['tool'] for n,a in spans if n=='tool_call' and a.get('agent') not in AFTER_REPLY})
+
+
 class NodeLog(AsyncCallbackHandler):
     """A graph node acted when its update changes the state (a new or different non-empty value)."""
     def __init__(self) -> None:
@@ -341,7 +346,7 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     waves=[attrs for name,attrs in spans if name=='gather']  # one per turn that ran agents (phase 7)
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':routes,'skipped':skipped,'not_offered':missing,'played':bool(replies),
         'setup_turns':setup,'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
-        'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
+        'tools':turn_tools(spans),
         'service_reads':sorted({attrs['tool'] for _,attrs in spans if 'call_id' in attrs and 'tool' in attrs}),
         'model_calls':answer_calls(spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),

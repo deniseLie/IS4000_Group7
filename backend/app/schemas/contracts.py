@@ -11,8 +11,9 @@ Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 's
 # talking_points: the chat insights lane after a reply (services/talking_points.lane), allowed only her topic status.
 AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship', 'talking_points']
 # v5 agents (architecture §5.6.1): four client agents (Security removed in build plan 2b) and three RM agents (build
-# plan 3a). `compliance` and `relationship` keep their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still
-# calls the v4 responders under these names.
+# plan 3a). `compliance` and `relationship` keep their v4 names. Every one runs from its AgentSpec (registry.ENFORCED), its
+# rules too (agents/rules.py); `retail` and `document` remain only as domains of the released prompts Accounts and
+# Compliance answer with.
 TargetAgent = Literal['guide', 'accounts', 'compliance', 'relationship', 'rm_client', 'rm_requests', 'rm_calendar']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']

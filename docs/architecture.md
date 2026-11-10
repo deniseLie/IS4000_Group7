@@ -172,7 +172,7 @@ Pydantic models in `backend/app/schemas/contracts.py` (shared) and `schemas/even
   "agent": "guide|accounts|compliance|relationship|rm_client|rm_requests|rm_calendar|<v4 name>|null",
   "locale": "en-SG", "received_at": "iso8601" }
 ```
-`agent` is set only by backend dispatch and never read from model output; Authorisation uses it for the spec or allow-list. The v4 names (`retail`, `fraud`, `compliance`, `document`, `relationship`) remain valid because the rules still call the v4 responders under them (§5.6.2). `talking_points` (8 Nov 2026, additive) is the chat insights lane's context (`talking_points.lane`): its allow-list (`registry.TOOLS`) is her topic status only, read through `my_topic_status` and `my_topic_state`.
+`agent` is set only by backend dispatch and never read from model output; Authorisation uses it for the spec or allow-list. Since 10 Nov 2026 the rules read as the v5 agent (§5.6.2), so every chat agent is checked against its spec; of the v4 names only `fraud` (the legacy card-replacement test vehicle) keeps an allow-list, and `retail` and `document` are refused everything. `talking_points` (8 Nov 2026, additive) is the chat insights lane's context (`talking_points.lane`): its allow-list (`registry.TOOLS`) is her topic status only, read through `my_topic_status` and `my_topic_state`.
 
 **RiskAssessment** (Input Guardrail → Orchestrator)
 ```json
@@ -303,7 +303,7 @@ because the validator withheld correct AI answers; moving them back to AI wordin
 
 ### 5.6 Domain Agents
 - Four client agents and three RM agents, one `AgentSpec` each in `agents/registry.py`; their data boundaries are in §5.6.1 and the runner in §14.5.
-- The v4 responders survive as rules: `agents/rules.py` answers first for each v5 agent (§5.6.2). Compliance and Relationship still answer through the released v4 prompts (`compliance/v7`, `document/v5`, `relationship/v7`) under the v4 allow-lists (`registry.TOOLS`).
+- The v4 responders survive as rules: `agents/rules.py` answers first for each v5 agent (§5.6.2). Compliance and Relationship, and Accounts' computed checks, still answer through the released v4 prompts (`compliance`, `document`, `relationship`, `retail`; versions in `prompts.VERSIONS`), but under the v5 agent's spec since 10 Nov 2026: its tools and per-call limits, and only its field views in the evidence those prompts see.
 - Document checking itself is not an LLM step: `prechecks.py`, `notice_checks.py` and `document_templates.py` apply fixed and source-quoted rules, technical inspection (`document_inspection.py`) parses files in a credential-free child process and returns counts only, and the agent only explains the recorded findings. Neither produces an approval or changes case status.
 
 <a id="561-target-agents-and-boundaries-agreed-3-nov-2026-not-built-yet"></a>
@@ -353,8 +353,8 @@ No RM agent decides approvals or gives investment advice, and none changes speci
 The request summary (`observability.request_facts`) adds side, role, tool calls, loop stops, refusals, refused tools and consent gaps. The admin dashboard filters Agents and Failures by side (`client` or `rm`), lists loops that reached their read limit as failures, and counts tool refusals and consent gaps as checks working.
 
 **Rules for every agent**
-1. **One declared spec per agent** (`AgentSpec` in `agents/registry.py`): row scope (`public`, `own_customer`, `rm_book`), tool names with the field view each returns, per-call limits (date window, row count), intents with their default reads, loop tools and offer types. Policy (`authorization.decide`) and the tool layer both read it, so permission and tool names cannot drift apart. Compliance and Relationship rules still read under the v4 allow-lists (`registry.TOOLS`).
-2. **Fields are projected in the tool layer**, not in the agent: `tools.call` returns only the fields in that agent's `ToolView`, within its `max_days` and `max_rows`. The model never receives more than the spec allows, including inside the tool loop.
+1. **One declared spec per agent** (`AgentSpec` in `agents/registry.py`): row scope (`public`, `own_customer`, `rm_book`), tool names with the field view each returns, per-call limits (date window, row count), intents with their default reads, loop tools and offer types. Policy (`authorization.decide`) and the tool layer both read it, so permission and tool names cannot drift apart. The rules read under the same spec (10 Nov 2026).
+2. **Fields are projected in the tool layer**, not in the agent: `tools.call` returns only the fields in that agent's `ToolView`, within its `max_days` and `max_rows`. The model never receives more than the spec allows, including inside the tool loop. An agent's rule code reads whole records within the same tools and limits (`whole=True`), because offers and later reads need the ids, and builds the evidence it gives a model through the same view (`tools.visible`).
 3. **No data is shared between agents.** Each agent's evidence stays its own; cross-agent context is a typed export that both specs declare (§14.6).
 4. **Agents never write.** They return offers; `act` carries them out on the next turn after Confirm or "yes", with a fixed idempotency key per case, task and type.
 5. **No identifiers reach the model.** Cards appear as last 4 digits and tickets as `TCK-` references; NRIC, emails and internal UUIDs are dropped.
@@ -452,7 +452,7 @@ The request summary (`observability.request_facts`) adds side, role, tool calls,
 
 | Part | Built as |
 |---|---|
-| Policy rules | Python, versioned in git: guests get public tools only; each v5 agent's spec (`registry.SPECS`, `TOOL_PERMISSION`) or, for Compliance and Relationship rules, the v4 allow-list (`registry.TOOLS`); `AUTO_TYPES`, `CONFIRM_TYPES`, `STAFF_TYPES`, `BANK_ONLY_CARD_ACTIONS`; every agent offer gets `require:confirmation` |
+| Policy rules | Python, versioned in git: guests get public tools only; each v5 agent's spec (`registry.SPECS`, `TOOL_PERMISSION`), its rules included; `AUTO_TYPES`, `CONFIRM_TYPES`, `STAFF_TYPES`, `BANK_ONLY_CARD_ACTIONS`; every agent offer gets `require:confirmation` |
 | Decision | `Decision {allow, reasons[], obligations[]}` |
 | Consent | `consent.grants`, `consent.requests` (migration `0010`, `0037`–`0040`); consent v2 (`0109`–`0114`, §15.2). `POST /consent/check`, `GET /consent/rm`, `GET /consent/records`, `GET /consent/sharing`, `GET /consent/access-log`, `GET /consent/asks` |
 
@@ -914,7 +914,7 @@ The web client receives a `plan` event after the planner, a `section` event as e
 
 The agents are the set in §5.6.1 (Guide, Accounts & Cards, Compliance & Documents, Relationship & Service; RM Client, RM Requests and RM Calendar since build plan 3a; Security was removed in build plan 2b). Inside one agent (`runner.run_agent`):
 
-1. **Rules first** (§5.6.2). Records answers that must not be withheld (card figures, which card, meeting times, request status) return without a model call.
+1. **Rules first** (§5.6.2). Records answers that must not be withheld (card figures, which card, meeting times, request status) return without a model call. The rules read as this agent under its spec: whole records within its tools and limits, and only its field views in any evidence they hand a model.
 2. **Reads.** A known intent runs its spec's default reads in code, with no step call. Only an `open` task runs the tool loop: a strict-JSON step through `llm_gateway` (`calls` or `answer`; not native function calling, so any model and the CLI transports work) picks the next tools from the spec's `loop_tools`, at most `AGENT_TOOL_CALLS` (default 4); the calls in one step run in parallel. Each call goes through `tools.call` (policy, caller JWT + RLS, audit) and returns only the agent's field view. The model sees results as untrusted evidence. The whole run is bounded by `AGENT_TIMEOUT_S` (default 65 s); `TURN_BUDGET_S` is defined but not used.
 3. **Answer.** One strict-JSON answer (`runner_common/v2` plus the agent's prompt: `guide/v2`, `accounts/v1`) validated against all evidence gathered; one repair attempt; otherwise the section is withheld.
 
@@ -976,7 +976,7 @@ On the next turn the planner's rules recognise the confirmation and go straight 
 | `OfferProposal` | `task_id`, `agent`, `type`, `target`, `summary`, `chained`; saved by `compose` as offers |
 | `Offer` | `offer_id`, `type`, `target`, `summary`, `expires_at`, `after_offer` |
 
-`TaskPlan` remains only for decoding v4 checkpoints (`checkpoint_codec.py`); `AgentResult` is the section inside `AgentOutput`; the SSE events are in §4. Contract changes no longer need a separate all-developer review (decided 3 Nov 2026).
+`ToolView.fields` bind what a model sees; an agent's rule code may read whole records within the same tools and limits (`tools.call(..., whole=True)`), so the view also covers the evidence it builds (`tools.visible`). `TaskPlan` remains only for decoding v4 checkpoints (`checkpoint_codec.py`); `AgentResult` is the section inside `AgentOutput`; the SSE events are in §4. Contract changes no longer need a separate all-developer review (decided 3 Nov 2026).
 
 Build plans 2b and 3a: `TargetAgent` is `guide`, `accounts`, `compliance`, `relationship`, `rm_client`, `rm_requests`, `rm_calendar` (`security` removed; the two RM agents split into three). `Priority` keeps P0–P3, but P1 is no longer assigned: P0 urgent card, P2 compliance deadline or RM handover, P3 the rest.
 

@@ -23,12 +23,13 @@ def customer(agent):
         principal=Principal(kind='customer',user_id=uuid4(),customer_id=1002,jwt='synthetic-test-token'))
 
 
-def test_retail_can_read_only_customer_ticket_records():
-    ctx=customer('retail')
+def test_relationship_can_read_only_customer_ticket_records():
+    ctx=customer('relationship')
     assert decide(ctx.principal,'tickets.list',{'customer_id':1002},ctx).allow
     assert not decide(ctx.principal,'tickets.list',{'customer_id':1001},ctx).allow
-    for tool in ('ticket.create','tickets.open_rm','tickets.follow_up','customer.get_loans.all'):
+    for tool in ('ticket.create','tickets.open_rm','customer.get_loans.all'):
         assert not decide(ctx.principal,tool,None,ctx).allow
+    assert decide(ctx.principal,'tickets.follow_up',None,ctx).obligations==['require:confirmation']  # a Relationship offer: only her yes adds it
     guest=Principal(kind='guest')
     guest_ctx=RequestContext(session_id=uuid4(),principal=guest)
     assert not decide(guest,'tickets.list',None,guest_ctx).allow
@@ -54,7 +55,7 @@ def test_status_uses_typed_ticket_snapshot_not_json(monkeypatch):
     now=datetime(2026,10,31,tzinfo=timezone.utc)
     monkeypatch.setattr(customer_data,'get_ticket_records',owned_tickets(now))
     result,evidence=asyncio.run(request_status_answers.respond('t1',
-        'Has the bank approved my credit limit increase?',customer('retail')))
+        'Has the bank approved my credit limit increase?',customer('relationship')))
     assert result.status=='ok' and result.text.count('TCK-001040')==1
     assert 'does not confirm' in result.text and 'Cards and credit team' in result.text
     assert [item.id for item in evidence]==['retail-tickets']

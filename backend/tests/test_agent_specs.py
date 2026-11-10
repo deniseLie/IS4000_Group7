@@ -115,17 +115,31 @@ def test_policy_reads_the_spec_for_new_agents():
     assert decide(guest.principal,'customer.get_accounts',None,guest).reasons==['guest_no_personal_data']
 
 
-def test_v4_agents_keep_their_allow_lists_until_the_switch_over():
-    assert registry.ENFORCED=={'guide','accounts','rm_client','rm_requests','rm_calendar'}
-    for agent in ('compliance','relationship','retail'):assert registry.spec_for(agent) is None
+def test_every_chat_agent_is_enforced_from_its_spec():
+    """Since the rules moved onto the specs, every client and RM chat agent's reads and offers are checked against its
+    AgentSpec; the v4 lists keep only the chat insights lane and the legacy fraud card-replacement test vehicle."""
+    assert registry.ENFORCED==set(CHAT_SPECS) and set(registry.TOOLS)=={'fraud','talking_points'}
+    for agent in ('retail','document'):  # retired v4 names: no spec and no list, so refused everything
+        c=ctx(agent)
+        assert registry.spec_for(agent) is None and decide(c.principal,'kb.search',None,c).reasons==['agent_tool_forbidden']
     c=ctx('compliance')
-    assert decide(c.principal,'compliance.update_checklist_item',{'customer_id':1001},c).allow
-    d=ctx('document')
-    assert decide(d.principal,'documents.precheck',{'customer_id':1001},d).allow  # was docs.precheck, which no service checks
+    assert decide(c.principal,'compliance.update_checklist_item',{'customer_id':1001},c).obligations==['require:confirmation']  # an offer
+    assert decide(c.principal,'compliance.workspace',{'customer_id':1001},c).allow  # my_document_checks
+    assert decide(c.principal,'documents.precheck',{'customer_id':1001},c).reasons==['agent_tool_forbidden']  # only the upload API runs checks
+    r=ctx('relationship')
+    for offer in ('meeting.request','consent.grant','consent.revoke','insight.share','insight.delete','handoff.create'):
+        assert 'require:confirmation' in decide(r.principal,offer,{'customer_id':1001},r).obligations
+    for retired in ('appointment.hold','appointment.confirm','requests.create','consent.check','agenda.save','consent.request','actions.propose'):
+        assert decide(r.principal,retired,{'customer_id':1001},r).reasons==['agent_tool_forbidden']
+    assert all(p in KNOWN_TOOLS for perms in TOOL_PERMISSION.values() for p in perms)  # not only the v4 lists' permissions
+    api=ctx()
+    assert decide(api.principal,'consent.check',{'customer_id':1001},api).allow  # POST /consent/check runs with no agent
 
 
 @pytest.mark.parametrize('agent,name,args,error',[('accounts','my_compliance_case',{},'agent_tool_forbidden'),
-    ('guide','my_cards',{},'agent_tool_forbidden'),('accounts','my_transactions',{'days':120},'at most 90 days')])
+    ('guide','my_cards',{},'agent_tool_forbidden'),('accounts','my_transactions',{'days':120},'at most 90 days'),
+    ('relationship','my_accounts',{},'agent_tool_forbidden'),('compliance','my_rm',{},'agent_tool_forbidden'),
+    ('relationship','free_slots',{'from_date':'2020-01-01'},'within the next 14 days')])
 def test_tool_calls_outside_the_spec_are_refused_before_any_read(agent,name,args,error):
     c=ctx(agent)
     batch=audit.start_batch(session_id=c.session_id)

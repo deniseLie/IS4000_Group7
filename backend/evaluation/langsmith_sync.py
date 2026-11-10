@@ -16,7 +16,7 @@ import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
 from app.schemas.contracts import TargetAgent
 from app.services.tools import MEETING_READS,TOOLS
-from app.services.agents.registry import TOOLS as SERVICE_TOOLS
+from app.services.agents.registry import TOOL_PERMISSION, TOOLS as SERVICE_TOOLS
 
 HERE=Path(__file__).parent
 def article_ids() -> frozenset[str]:
@@ -71,7 +71,7 @@ def check_trajectory(name,case,nodes=NODES,agents=AGENTS):
     problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in nodes]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
     problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
     problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
-    services={tool for names in SERVICE_TOOLS.values() for tool in names}
+    services={tool for names in (*SERVICE_TOOLS.values(),*TOOL_PERMISSION.values()) for tool in names}  # the permissions the tools check
     problems+=[f'service read {x}' for x in t.get('service_reads',[]) if x not in services]
     if problems:raise ValueError(f'{name}: unknown or inconsistent {problems[0]}')
 

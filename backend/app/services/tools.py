@@ -410,15 +410,23 @@ def bounded(name: str,args: dict[str,Any],view: ToolView,ctx: RequestContext) ->
     return args
 
 
-def shaped(result: dict[str,Any],view: ToolView) -> dict[str,Any]:
-    """What the agent receives: its field view of the records (`items` or `data`) and at most max_rows of them."""
-    out={key:value for key,value in result.items() if key!='customer_id'}  # identifiers never reach the model
+def shaped(result: dict[str,Any],view: ToolView,whole: bool=False) -> dict[str,Any]:
+    """What the agent receives: at most max_rows records (`items` or `data`), as its field view unless `whole` (its own
+    rule code, which needs the ids an offer or a later read takes; model evidence it builds goes through visible())."""
+    out=dict(result) if whole else {key:value for key,value in result.items() if key!='customer_id'}  # identifiers never reach the model
     for key in ('items','data'):
         if key not in out:continue
         records=out[key]
         if view.max_rows and isinstance(records,list):records=records[:view.max_rows]
-        out[key]=project(records,view.fields) if view.fields is not None else records
+        out[key]=project(records,view.fields) if view.fields is not None and not whole else records
     return out
+
+
+def visible(agent: str,name: str,records: Any) -> Any:
+    """Records as this agent's model may see them: its field view of tool `name`. A rule that reads whole records
+    (call(whole=True)) builds the evidence it hands to a model with this, so the view holds on the rules path too."""
+    view=registry.CHAT_SPECS[agent].tools[name]
+    return project(records,view.fields) if view.fields is not None else records
 
 
 @contextmanager
@@ -454,9 +462,10 @@ async def meeting_read(name: str,args: dict[str,JsonValue],ctx: RequestContext,a
     return result['data']
 
 
-async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
+async def call(name: str,args: dict[str,Any],ctx: RequestContext,*,whole: bool=False) -> dict[str,Any]:
     """The one way agents and rules call a tool: as an MCP tools/call (app/mcp_server.py) with the caller's context.
-    A v5 agent (registry.spec_for) may call only its spec's tools, within its limits, and receives only its field view."""
+    A v5 agent (registry.spec_for) may call only its spec's tools, within its limits (bounded, max_rows), and receives
+    only its field view; `whole` is for the agent's own rule code, which gets whole records (see shaped)."""
     if name not in TOOLS:raise KeyError(f'Unknown tool {name}')
     with span('tool_call','tool',tool=name,agent=ctx.agent,transport='mcp') as facts:
         try:
@@ -474,7 +483,7 @@ async def call(name: str,args: dict[str,Any],ctx: RequestContext) -> dict[str,An
         except PolicyDenied as error:
             facts.update(allowed=False,reason=str(error).rsplit(': ',1)[-1][:40]);raise
         facts.update(result_facts(name,args,result))
-    return shaped(result,view) if view is not None else result
+    return shaped(result,view,whole) if view is not None else result
 
 
 def envelope(result: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
@@ -485,8 +494,8 @@ def envelope(result: dict[str,Any],ctx: RequestContext) -> dict[str,Any]:
 
 
 async def snapshot(name: str,args: dict[str,Any],ctx: RequestContext,model: Any) -> CustomerEnvelope:
-    """One record tool through call(), validated as CustomerEnvelope[model] for the rule that answers from it."""
-    return CustomerEnvelope[model].model_validate(envelope(await call(name,args,ctx),ctx))
+    """One record tool through call(whole=True), validated as CustomerEnvelope[model] for the rule that answers from it."""
+    return CustomerEnvelope[model].model_validate(envelope(await call(name,args,ctx,whole=True),ctx))
 
 
 def result_facts(name: str,args: dict[str,Any],result: Any) -> dict[str,JsonValue]:

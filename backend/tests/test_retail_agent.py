@@ -32,31 +32,32 @@ def retail_audit_context() -> Iterator[None]:
 @pytest.mark.parametrize('cid,expected',[ (1001,5230.45),(1002,250000.0),(1003,84120.0)])
 def test_retail_records_are_real_masked_and_customer_scoped(local_data_api: NativeAPI,native_api_client: TestClient,cid: int,expected: float) -> None:
     import psycopg
-    ctx=context(local_data_api,cid).model_copy(update={'agent':'retail'})
+    ctx=context(local_data_api,cid).model_copy(update={'agent':'accounts'})
     records=asyncio.run(retail_records.load(ctx))
     assert len(records.accounts)==1 and records.accounts[0].balance==expected and records.accounts[0].number.startswith('****')
     today=ctx.received_at.astimezone(ZoneInfo('Asia/Singapore')).date()
     with psycopg.connect(local_data_api.database_uri) as db:
-        expected_ids={f'txn_{row[0]}' for row in db.execute('select transaction_id from banking.transactions where customer_id=%s and txn_date between %s and %s order by txn_date desc,transaction_id desc limit 200',(cid,today-timedelta(days=90),today)).fetchall()}
+        expected_ids={f'txn_{row[0]}' for row in db.execute('select transaction_id from banking.transactions where customer_id=%s and txn_date between %s and %s order by txn_date desc,transaction_id desc limit 100',(cid,today-timedelta(days=90),today)).fetchall()}
     assert {row.txn_id for row in records.transactions}==expected_ids
     evidence=retail.evidence_for(records)
     assert len(evidence)==5 and all(item.source.url is None for item in evidence)
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select count(*) from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchone()==(5,)
         assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
-    with pytest.raises(PolicyDenied):asyncio.run(retail_records.load(ctx.model_copy(update={'agent':'document'})))
+    with pytest.raises(PolicyDenied):asyncio.run(retail_records.load(ctx.model_copy(update={'agent':'guide'})))  # not in Guide's spec
+    with pytest.raises(PolicyDenied):asyncio.run(retail_records.load(ctx.model_copy(update={'agent':'retail'})))  # a retired v4 name
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
 def test_failed_retail_reader_never_substitutes_records(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     import psycopg
     with psycopg.connect(local_data_api.database_uri) as db:db.execute('drop function public.customer_read_loans(bigint)')
-    with pytest.raises(APIError):asyncio.run(retail_records.load(context(local_data_api,1001).model_copy(update={'agent':'retail'})))
+    with pytest.raises(APIError):asyncio.run(retail_records.load(context(local_data_api,1001).model_copy(update={'agent':'accounts'})))
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')
 def test_dataset_citations_reject_foreign_figures_and_currency(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
-    records=asyncio.run(retail_records.load(context(local_data_api,1001).model_copy(update={'agent':'retail'})))
+    records=asyncio.run(retail_records.load(context(local_data_api,1001).model_copy(update={'agent':'accounts'})))
     evidence=retail.evidence_for(records)
     task=Task(task_id='t1',domain='retail',intent='answer_question')
     draft={'answer':'Your synthetic account balance is SGD 5,230.45.','source_ids':['retail-accounts'],'answer_kind':'banking','status':'ok','clarification_question':''}
@@ -90,7 +91,7 @@ def test_real_retail_provider_uses_owned_account_currency(local_data_api: Native
     async def check() -> None:
         for cid,amount in [(1001,'5,230.45'),(1002,'250,000'),(1003,'84,120')]:
             task=Task(task_id='live1',domain='retail',intent='answer_question',entities={'question':'What is my account balance? State the recorded currency and exact amount only.'})
-            result,evidence,prompt_id=await retail.respond(task,[],'English',context(local_data_api,cid).model_copy(update={'agent':'retail'}),[])
+            result,evidence,prompt_id=await retail.respond(task,[],'English',context(local_data_api,cid).model_copy(update={'agent':'accounts'}),[])
             assert result.status=='ok' and result.answer_kind=='banking',result.model_dump_json()
             assert amount.replace(',','') in result.text.replace(',','') and 'SGD' in result.text,result.text
             assert {item.source_id for item in result.citations}=={'retail-accounts'}
@@ -102,7 +103,7 @@ def test_real_retail_provider_uses_owned_account_currency(local_data_api: Native
 def test_real_retail_provider_states_the_recorded_loan_currency(local_data_api: NativeAPI,native_api_client: TestClient) -> None:
     """0083 records loan currency (SGD for every synthetic loan); the answer gives it rather than calling it unrecorded."""
     task=Task(task_id='live2',domain='retail',intent='answer_question',entities={'question':'What is the recorded currency of my loan?'})
-    result,_,_=asyncio.run(retail.respond(task,[],'English',context(local_data_api,1001).model_copy(update={'agent':'retail'}),[]))
+    result,_,_=asyncio.run(retail.respond(task,[],'English',context(local_data_api,1001).model_copy(update={'agent':'accounts'}),[]))
     assert result.status in {'ok','needs_human'} and result.answer_kind=='banking',result.model_dump_json()
     assert 'SGD' in result.text and not re.search(r'unrecorded|not recorded',result.text,re.I),result.text
     assert {item.source_id for item in result.citations}=={'retail-loans'}

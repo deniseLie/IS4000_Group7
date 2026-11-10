@@ -52,10 +52,10 @@ def test_resource_scope_is_validated_and_cannot_override_identity(scope):
 
 
 @pytest.mark.parametrize('agent,allowed,forbidden',[
-    ('retail','customer.get_accounts','compliance.get_case'),
+    ('accounts','customer.get_accounts','compliance.get_case'),
     ('fraud','customer.get_credit_cards','customer.get_loans'),
     ('compliance','compliance.update_checklist_item','customer.get_credit_cards'),
-    ('document','documents.precheck','customer.get_profile'),
+    ('compliance','compliance.workspace','documents.precheck'),  # the document checks it reads; running a check is the upload API's
     ('relationship','rm.share_summary','customer.get_transactions'),
 ])
 def test_agent_boundaries(agent,allowed,forbidden):
