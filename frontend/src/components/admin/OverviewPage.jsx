@@ -56,7 +56,7 @@ export default function OverviewPage({onNavigate,views=[]}) {
       </section>}
 
       <section className="admin-card" data-testid="admin-attention">
-        <div className="admin-card-head"><h2>Needs attention</h2><span className="admin-muted">Regressions, new failures and limits crossed in this window</span></div>
+        <div className="admin-card-head"><h2>Needs attention</h2><span className="admin-muted">What is still happening: regressions in the latest runs, and failures and limits crossed in the last 3 days</span></div>
         {!urgent.length&&<p className="admin-empty">Nothing needs attention: no regressions, no new failure types and every rate is within its limit.</p>}
         <ul className="admin-attention">{(showNotes?data.attention:urgent).map((item,index)=><li key={index} data-testid={`admin-attention-${item.kind}`}>
           <Status value={item.level}/>

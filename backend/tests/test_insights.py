@@ -378,3 +378,10 @@ def test_attention_demotes_old_failures_and_warns_on_the_trace_budget():
     assert not [i for i in insights.attention([],[],[],[],NOW,budget={**budget,'used':100}) if i['kind']=='trace_budget']
     slow=[req(h,latency_s=70,surface='rm') for h in (1,2,3)]+[req(4,latency_s=20)]
     assert [i['title'] for i in insights.attention(slow,[],[],[],NOW) if i['kind']=='latency']==['RM p95 latency 70.0 s']
+
+
+def test_rates_and_limits_alert_only_on_the_last_three_days():
+    old=[req(24*5,error="LLMError('down')",status='error',latency_s=90) for _ in range(5)]
+    kinds={i['kind'] for i in insights.attention(old+[req(1),req(2),req(3)],[],[],[],NOW)}
+    assert not kinds&{'error_rate','latency'}
+    assert 'error_rate' in {i['kind'] for i in insights.attention([req(1,error='x',status='error'),req(2),req(3)],[],[],[],NOW)}
