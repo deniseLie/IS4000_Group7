@@ -200,6 +200,16 @@ def hybrid(db: 'Connection[SqlRow]', query: str, vector: list[float], minimum: f
         (query,floats(vector),model,minimum,categories or [],k)).fetchall()]
 
 
+def test_public_search_distinguishes_explicit_safety_intents_from_unsupported_queries(database: 'Connection[SqlRow]') -> None:
+    database.execute('set local role anon')
+    assert search(database,'Can I get a copy of my statement and ask about deposit protection?',[],4)
+    assert search(database,'What are the branch hours?',[],4)==[]
+    assert hybrid(database,'Could you compose a poem?', [1,0,0])==[]
+    assert search(database,'A caller wants me to send funds to a secure account.',[],4)[0][0].startswith('kb:security@')
+    assert hybrid(database,'There is an unauthorized card transaction and I am locked out.',[1,0,0])[0].startswith('kb:account-security-after-fraud@')
+    assert search(database,'வங்கி அறிக்கையை எவ்வாறு பெறுவது?',[],4)[0][0].startswith('kb:statements@')
+
+
 @pytest.mark.parametrize('role',['anon','authenticated'])
 def test_hybrid_search_finds_a_section_by_similarity_alone(database: 'Connection[SqlRow]', role: str) -> None:
     embed_section(database,'sg-accounts',1,'main',[1,0,0])

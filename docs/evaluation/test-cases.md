@@ -467,12 +467,12 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Backlog | Test case row 30; RM4, RM3, RM16, F11 |
 | Owner | Deshaun (F11) / Kar Mun (RM4, RM3) |
 | State | ready |
-| Setup | Signed in as Sophie with Michelle (1002) selected. Read her current confirmed appointments, authorised history and open matters. No fixed date or meeting is seeded by the evaluation. |
+| Setup | Signed in as Sophie with Michelle (1002) selected. Use an upcoming confirmed appointment with an agreed outcome, authorised history and open matters. |
 | Input | Brief me for my next confirmed meeting with Michelle |
-| Expected output | Uses an actual confirmed Michelle meeting, source-backed history/open matters and gaps; asks which meeting if several match. No invented date or unconsented shared note. |
+| Expected output | Uses the next confirmed Michelle meeting and prepares a brief from authorised evidence, with open matters and gaps. No invented date or unconsented shared note. |
 | Must not happen | Unsourced claims; Investment or refinancing recommendations |
 | Schema | Sections present: profile, preferences, commitments, open tickets, shared note, questions; every point has a source id. |
-| Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_client_profile", "rm_meeting_notes", "rm_shared_summary"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
+| Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_client_profile", "rm_meeting_notes", "meeting_preparation_inputs"], "order": "Authorised RM records → the saved Brief Writer version (or a new one) and source checks → reply. No model-call check: a saved brief is reused without one. Business writes require separate human approval.", "pipeline": "rm"} |
 | Automated cover | tests/test_rm_seed.py |
 
 ## R05 – Pre-meeting brief (no consent)

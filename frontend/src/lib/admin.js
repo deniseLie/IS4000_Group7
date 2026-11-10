@@ -21,6 +21,10 @@ export function summary(cases) {
   for(const item of cases)counts[item.status]+=1;
   return counts;
 }
+export function judgeSummary(cases) {
+  const scored=cases.filter(item=>Number.isFinite(item.judge));
+  return {scored:scored.length,full:scored.filter(item=>item.judge===1).length};
+}
 export function scoreLabel(score) {return score===null||score===undefined?'n/a':score===1?'pass':score===0?'fail':String(score);}
 export function seconds(value) {return value===null||value===undefined?'—':`${value.toFixed(1)} s`;}
 
@@ -38,6 +42,24 @@ export const loadFailure=(runId,token,signal)=>get(`/failures/${encodeURICompone
 
 const missing=value=>value===null||value===undefined||Number.isNaN(value);
 export function percent(value,digits=0) {return missing(value)?'—':`${(value*100).toFixed(digits)}%`;}
+// The Overview's success rate: cases passed over cases scored (skipped left out) across each dataset's latest full run.
+export function evalSuccess(evals=[]) {
+  const sum=key=>evals.reduce((total,row)=>total+(row.counts?.[key]||0),0);
+  const passed=sum('pass'),scored=passed+sum('fail')+sum('error');
+  return {rate:scored?passed/scored:null,passed,scored,datasets:evals.length,
+    failing:evals.filter(row=>(row.counts?.fail||0)+(row.counts?.error||0)>0).length};
+}
+// The Overview's p95 targets per side (insights.P95_TARGET_S).
+export const P95_TARGET={client:30,rm:60};
+export function overTarget(now) {return (now?.p95_client_s??0)>P95_TARGET.client||(now?.p95_rm_s??0)>P95_TARGET.rm;}
+// An estimated cost (insights.PRICE_PER_M): "≈ $0.012", or "≈ <$0.001" for tiny amounts.
+export function usd(value) {return missing(value)?'—':value>0&&value<0.001?'≈ <$0.001':`≈ $${value<1?value.toFixed(3):value.toFixed(2)}`;}
+// LangSmith traces left this month and whether to warn (under 15% left, insights.TRACE_BUDGET_WARN).
+export function traceBudget(budget) {
+  if(!budget?.limit)return null;
+  const left=Math.max(budget.limit-budget.used,0);
+  return {left,used:budget.used,limit:budget.limit,share:budget.used/budget.limit,warn:left<0.15*budget.limit,resets:budget.resets};
+}
 export function number(value,digits=1) {return missing(value)?'—':Number.isInteger(value)?String(value):value.toFixed(digits);}
 
 // The change since the previous window. `better` says which direction is good ('up', 'down' or '' when neither).
@@ -46,7 +68,8 @@ export function delta(now,before,{kind='rate',better='up'}={}) {
   const diff=now-before;
   if(Math.abs(diff)<1e-9)return {text:'no change',tone:''};
   const size=Math.abs(diff),sign=diff>0?'+':'−';
-  const text=kind==='rate'?`${sign}${(size*100).toFixed(1)} pts`:kind==='seconds'?`${sign}${size.toFixed(1)} s`:`${sign}${Number.isInteger(size)?size:size.toFixed(1)}`;
+  const text=kind==='rate'?`${sign}${(size*100).toFixed(1)} pts`:kind==='seconds'?`${sign}${size.toFixed(1)} s`:kind==='score'?`${sign}${size.toFixed(2)}`
+    :`${sign}${Number.isInteger(size)?size:size.toFixed(1)}`;
   const way=diff>0?'up':'down';
   return {text,tone:better?`${way}-${way===better?'good':'bad'}`:''};
 }
@@ -95,13 +118,18 @@ export function defaultPair(timeline) {
   return full.length>=2?[full.at(-2).experiment,full.at(-1).experiment]:timeline.length>=2?[timeline.at(-2).experiment,timeline.at(-1).experiment]:[null,null];
 }
 
-// One row of the All datasets table: the latest full run against the full run before it, and its problem cases.
+// One row of the All datasets table: the latest full run against the full run before it, and its problem cases. The judge
+// mean (0–1, never decides pass) is the latest judged full run's, so a run without --judge keeps it, against the judged run
+// before it with the same judge model (another judge grades differently, so it has no change).
 export const PROBLEMS=['regressed','flaky','always_failing','failing'];
 export function datasetRow(set) {
   const full=(set.timeline||[]).filter(point=>!point.subset),latest=full.at(-1),previous=full.at(-2);
+  const judged=full.filter(point=>Number.isFinite(point.judge)),graded=judged.at(-1);
+  const before=judged.slice(0,-1).reverse().find(point=>point.judge_model===graded.judge_model);
   const labels=set.heatmap?.labels||{};
   return {dataset:set.dataset,pass_rate:latest?.pass_rate??null,previous_pass_rate:previous?.pass_rate??null,counts:latest?.counts||null,
-    started_at:latest?.started_at||null,last_run:set.last_run||null,stale:!!set.stale,runs:set.runs||0,
+    judge:graded?.judge??null,previous_judge:before?.judge??null,judge_at:graded?.started_at||null,judge_model:graded?.judge_model||null,
+    judge_current:!!graded&&graded===latest,started_at:latest?.started_at||null,last_run:set.last_run||null,stale:!!set.stale,runs:set.runs||0,
     problems:PROBLEMS.filter(label=>labels[label]).map(label=>({label,count:labels[label]})),fixed:labels.fixed||0};
 }
 

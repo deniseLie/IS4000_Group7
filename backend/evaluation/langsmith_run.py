@@ -94,7 +94,7 @@ async def run(args) -> dict:
     label=f"{args.dataset}-{args.pipeline}-{datetime.now(timezone.utc):%Y%m%d-%H%M}"
     async def target(inputs: dict) -> dict:
         if 'say' in inputs:return await targets.plan_only(inputs)
-        # QA1 RM cases use the read-only RM target; the graph cases (R21-R23) play the v5 RM graph and report its dependencies.
+        # QA1 RM cases use the read-only RM target; the graph cases (R21, R23) play the v5 RM graph and report its dependencies.
         if inputs.get('persona')=='sophie' and args.dataset!='demobank-graph':return await rm_target.play(inputs,app,tokens['sophie'])
         return await targets.play(inputs,app,tokens.get(inputs.get('persona')))
     graders=[evaluators.deterministic,*([evaluators.judge] if args.judge else [])]
@@ -102,7 +102,7 @@ async def run(args) -> dict:
         found=await into_project(args.project,label,meta,examples,target,graders,client);name=args.project
     else:
         results=await aevaluate(target,data=examples,evaluators=graders,experiment_prefix=f'{args.dataset}-{args.pipeline}',
-            max_concurrency=1,client=client,metadata=meta)
+            max_concurrency=1,client=client,metadata=meta,disable_evaluator_tracing=True)  # evaluator runs would use one trace each
         found=[row async for row in results];name=results.experiment_name
     rows=[]
     for row in found:

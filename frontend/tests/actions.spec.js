@@ -24,6 +24,7 @@ test('recorded action review confirms, rejects, expires and preserves real recei
   const rejected=page.locator(`[data-command-id="${fixture.reject_command_id}"]`);
   await rejected.getByTestId('review-command').click();
   await expect(rejected.getByTestId('confirm-command')).toBeDisabled();
+  await rejected.getByRole('button',{name:'Back',exact:true}).click();
   await rejected.getByTestId('reject-command').click();
   await expect(rejected.getByTestId('command-state')).toHaveText('rejected');
   await expect(rejected.getByTestId('command-receipt')).toHaveCount(0);
@@ -44,10 +45,10 @@ test('recorded action review confirms, rejects, expires and preserves real recei
   const saved=await (await response).json();
   expect(saved.receipt.outcome).toBe('succeeded');
   await expect(approved.getByTestId('command-state')).toHaveText('succeeded');
-  await expect(approved.getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
+  await expect(approved.getByTestId('command-receipt')).toHaveAttribute('title',saved.receipt.receipt_id);
   await page.reload();
   await openMenuItem(page,'open-actions');
-  await expect(approved.getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
+  await expect(approved.getByTestId('command-receipt')).toHaveAttribute('title',saved.receipt.receipt_id);
   const changed=page.locator(`[data-command-id="${fixture.failed_command_id}"]`);
   await changed.getByTestId('review-command').click();
   await changed.getByTestId('acknowledge-command').check();

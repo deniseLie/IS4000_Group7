@@ -792,6 +792,8 @@ a,.source-link{color:#DA0000}a:hover,.source-link:hover{color:var(--red-dark)}
 .ib-list li.unread .ib-state{color:var(--red);font-weight:500}.ib-state .dot{width:5px;height:5px}
 .ib-list h3{margin:10px 0 0;font-size:16px;font-weight:600}
 .ib-list p{color:#3F413F}
+.ib-zoom-link{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px;padding:6px 0;min-height:32px;color:var(--red-dark);font-weight:650;text-decoration:underline;text-underline-offset:3px}
+.ib-zoom-link:hover{color:var(--ink)}
 .ib-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #EEEDE7}
 .ib-foot code{font-size:11px;color:var(--muted);background:none}
 .ib-link{border:0;background:none;padding:6px 4px;font-size:13px;color:var(--ink);font-weight:500}.ib-link.strong{color:var(--red);font-weight:600}.ib-link:hover{color:var(--red-dark);text-decoration:underline}
@@ -1465,6 +1467,11 @@ small{font-size:max(12px,.83em)}
 .admin-tile > span { font-size: 13px; font-weight: 600; }
 .admin-tile small { font-size: 12px; color: var(--muted); }
 .admin-tile svg.admin-spark { width: 100%; height: 28px; margin-top: 6px; }
+.admin-headline { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.admin-headline .admin-tile { padding: 18px 20px; }
+.admin-headline .admin-tile strong { font-size: 32px; }
+.admin-meter { height: 8px; margin-top: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.admin-meter span { display: block; height: 100%; background: currentColor; opacity: .55; }
 .admin-tile.alert { border-color: #f5c9c4; background: #fff8f7; }
 .admin-delta.up-good, .admin-delta.down-good { color: #1f6a35; }
 .admin-delta.up-bad, .admin-delta.down-bad { color: #a32b1d; }
@@ -2596,6 +2603,17 @@ button.cell.past:disabled{opacity:.35}
 .rm-same .bank-chat-logout{justify-self:start}
 .rm-panel-actions{display:flex;flex-wrap:wrap;gap:8px}
 .rm-inbox-pick .rmw-why{display:block;margin-top:2px}
+
+.meeting-recap{margin:18px 0;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#f7f9fa)}
+.meeting-recap-head{display:flex;align-items:flex-start;gap:12px}
+.meeting-recap-icon{display:grid;place-items:center;flex:0 0 36px;height:36px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--red-dark)}
+.meeting-recap-head h3,.meeting-recap-preview h4{margin:0}
+.meeting-recap-head .rm-small{margin:4px 0 0}
+.meeting-recap-copy{margin:12px 0 0;white-space:pre-wrap;line-height:1.6}
+.meeting-recap-preview{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.meeting-recap-preview .rm-small{margin:10px 0 0}
+.meeting-recap-actions{margin-top:14px}
+.meeting-recap-actions button{display:inline-flex;align-items:center;gap:8px}
 /* ---------- Client side redesign ---------- */
 /* Home */
 .ov-waiting{margin:20px 0 4px;padding:8px 20px;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:12px;background:#fff}
@@ -2962,3 +2980,37 @@ button.answer-source-row{cursor:pointer}button.answer-source-row:hover{border-co
 .bank-chat-bubble>.rm-answer .doc-section{margin:0}
 .bank-chat-bubble>.rm-answer .doc-section+.doc-section,.bank-chat-bubble>.rm-answer .rm-answer-section+.rm-answer-section{margin-top:6px}
 .doc-src.num{min-width:20px;max-width:none;padding:0 6px;border-radius:999px;text-align:center;font-size:11px;font-weight:600;line-height:18px;align-self:center}
+
+/* Propose-a-meeting popover: fields never wider than the popover. A select sizes to its longest option, so grid items need
+   min-width:0 and the controls width:100% to shrink to their column (Topic was overflowing the right edge). */
+.rm-popover{box-sizing:border-box;overflow-x:hidden}
+.rm-popover .rm-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rm-popover .rm-form-grid>*,.rm-popover .form-field{min-width:0}
+.rm-popover .form-field select,.rm-popover .form-field textarea{box-sizing:border-box;width:100%;max-width:100%;min-width:0;text-overflow:ellipsis}
+/* On phones and tablets the popover opens in place, as a full-width panel under the buttons, pushing the page down: no
+   floating layer, so it can't be cut off by the screen edge or by an animated page container. */
+@media (max-width:900px){
+  .rm-popover-anchor{flex-wrap:wrap}
+  .rm-popover{position:static;flex:1 0 100%;width:100%;max-height:none;overflow:visible;margin-top:4px;
+    padding:14px;border-radius:14px;box-shadow:0 8px 24px rgba(17,24,39,.10);animation:none;transform:none}
+  .rm-popover .rm-form-grid{grid-template-columns:minmax(0,1fr)}
+  .rm-popover .form-field select,.rm-popover .form-field textarea{font-size:16px}
+  .rm-popover .primary-button{width:100%;min-height:44px}
+}
+
+/* Data sharing: full page width like the other pages, grouped into "You choose" and "Good to know", with a summary line. */
+.sharing-page{max-width:none;width:100%}
+.sharing-head{margin:4px 0 16px}.sharing-head h1{font-size:28px}.sharing-head p{font-size:14px}
+.sharing-head .initials{width:52px;height:52px;flex:none;font-size:15px}
+.sharing-summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 24px;margin:0 0 24px;padding:14px 18px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:13px;color:var(--muted)}
+.sharing-summary strong{color:var(--ink)}
+.sharing-section{margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sharing-section-lead{margin:0 0 10px;font-size:13px;color:var(--muted)}
+.sharing-rows+.sharing-section{margin-top:28px}
+.sharing-rows .sharing-row{padding:18px 20px;gap:16px}
+.sharing-rows .sharing-row>svg{width:22px;height:22px;padding:9px;box-sizing:content-box;border-radius:10px;background:var(--canvas,#f3f4f6);color:var(--ink)}
+.sharing-rows .sharing-row[data-on="true"]>svg{background:#edf6ef;color:#1f6b3a}
+.sharing-row-text strong{font-size:15px}.sharing-row-text small{font-size:13px}
+.sharing-pill{padding:4px 12px;font-size:12px}
+@media(max-width:640px){.sharing-summary{padding:12px 14px;margin-bottom:18px}.sharing-rows .sharing-row{padding:14px;gap:12px}
+  .sharing-rows .sharing-row>svg{width:18px;height:18px;padding:7px}.sharing-head h1{font-size:22px}.sharing-head .initials{width:42px;height:42px}}

@@ -218,7 +218,7 @@ def test_conversations_are_saved_per_rm_and_hide_clients_who_left_the_book(datab
 
 
 def test_clients_have_no_weekly_meeting_limit(database: 'Connection[SqlRow]') -> None:
-    """0150 lifts 0092's limit of two: a week with two meetings still offers free times and accepts a third, and the RM's
+    """0159 lifts 0092's limit of two: a week with two meetings still offers free times and accepts a third, and the RM's
     availability carries no booking rule."""
     meeting=database.execute("select starts_at,advisor_id from rm.appointments where customer_id=1002 and status='confirmed' "
         "and starts_at>now() order by starts_at limit 1").fetchone()

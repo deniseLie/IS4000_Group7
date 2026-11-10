@@ -67,7 +67,7 @@ def with_due_date(result: AgentResult,case: ComplianceCase | None) -> AgentResul
 
 
 async def load(ctx: RequestContext) -> CustomerEnvelope[ComplianceCase | None]:
-    result=ToolResult.model_validate(await tools.call('my_compliance_case',{},ctx))
+    result=ToolResult.model_validate(await tools.call('my_compliance_case',{},ctx,whole=True))
     return CustomerEnvelope[ComplianceCase | None].model_validate({'customer_id':ctx.principal.customer_id,
         'call_id':result.call_id,'as_of':result.as_of,'data':result.data})
 
@@ -104,7 +104,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
         snapshot=snapshot.model_copy(update={'data':snapshot.data.model_copy(update={'requested_items':[],'status_history':[],'info_requests':requests})})
     evidence=[*public_evidence,*evidence_for(snapshot)]
     if snapshot.data is not None and chosen is None and DOCUMENT_CHECK.search(question):
-        checked=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx))
+        checked=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx,whole=True))
         workspace=prechecks.Workspace.model_validate(checked.data)
         if workspace.review is None or workspace.review.case_id!=snapshot.data.case_id:
             raise customer_data.CustomerDataIntegrityError('Compliance review changed while loading current document checks')

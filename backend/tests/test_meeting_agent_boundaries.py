@@ -44,7 +44,8 @@ def test_meeting_tool_policy(case):
         assert facts['reason'] == case.expected_rule
 
 
-def test_meeting_agents_are_in_catalogue_and_outside_both_chat_planners_and_mcp():
+def test_meeting_agents_are_in_catalogue_and_outside_both_chat_planners_and_the_chat_tools():
+    # Their reads are MCP tools of their own (tools.MEETING_READS, tests/test_tool_boundary.py), never chat tools.
     assert set(registry.MEETING_SPECS) == {'brief_writer', 'proposal_drafter', 'minutes_writer', 'minutes_overview'}
     assert set(registry.SPECS) == set(registry.CHAT_SPECS) | set(registry.MEETING_SPECS)
     assert set(registry.MEETING_SPECS).isdisjoint(registry.CLIENT_SPECS.keys() | registry.RM_SPECS.keys())

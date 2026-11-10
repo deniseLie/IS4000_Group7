@@ -11,11 +11,16 @@ from uuid import NAMESPACE_URL,uuid4,uuid5
 from pydantic import JsonValue,model_validator
 from app.schemas.meeting_preparation import HiddenInput,PreparationInputs,PreparedBrief
 from app.schemas.meeting_packs import PackInputs,PackView
-from app.services.meetings.preparation import QUESTIONS,live_sources
+from app.services.meetings.preparation import (
+    COLLATERAL_NEXT_STEP,DEPOSIT_NEXT_STEP,DOCUMENT_REVIEW_NEXT_STEP,INVESTMENTS_QUESTION,PROPERTY_FINANCING_QUESTION,QUESTIONS,live_sources,
+)
+from app.services.meetings.documents import discussion_pack
 from app.services.meetings.packs import safe_context
 from app.services.privacy import redact
 from app.services.prompts import load
 from evaluation.meetings import Check,Judgement
+
+JUDGE_RUBRIC_VERSION='meeting-preparation-v3'
 
 class BriefInput(HiddenInput):
     frame: PreparationInputs
@@ -36,6 +41,8 @@ class PreparationResult(HiddenInput):
     producer: str
     prompt_id: str
     judge_model: str
+    judge_rubric_version: str='meeting-preparation-v1'
+    transport: Literal['api','codex','claude']='codex'  # result files before 11 Nov 2026 were all Codex
 
     @model_validator(mode='after')
     def completed_judge(self) -> 'PreparationResult':
@@ -45,12 +52,25 @@ class PreparationResult(HiddenInput):
 
 def brief_checks(frame: PreparationInputs,prepared: PreparedBrief) -> tuple[Check,...]:
     sources=live_sources(frame)
-    readers={source.reference.split(':',1)[0] for source in sources}
+    references={source.reference for source in sources}
     items=[item for section in prepared.card.sections for item in section.items if item.label!='gap']
-    # Each separate SQL snapshot has fresh audited call IDs; compare its reader and exact record text.
-    cited=all(item.sources and all(reference.split(':',1)[0] in readers for reference in item.sources) for item in items)
-    grounded=all(item.label=='ai_suggestion' and item.text in QUESTIONS.values() or any(source.reference.split(':',1)[0]==reference.split(':',1)[0] and source.text in item.text
-        for reference in item.sources for source in sources) for item in items)
+    # The fixture captures the same scoped frame used for rendering, including its audit call IDs.
+    cited=bool(items) and all(item.sources and set(item.sources)<=references for item in items)
+    question_readers={COLLATERAL_NEXT_STEP:('rm_collateral_alert:',),DEPOSIT_NEXT_STEP:('rm_meeting_notes:',),
+        PROPERTY_FINANCING_QUESTION:('meeting_agenda:',),INVESTMENTS_QUESTION:('meeting_agenda:',),
+        DOCUMENT_REVIEW_NEXT_STEP:('rm_review_status:','rm_tickets:')}
+    grounded=True
+    for item in items:
+        excerpt=item.text
+        for prefix in ('Earlier client request: ','Time deposit maturity: ',
+            'Confirm whether this recorded commitment was completed and who will follow up: '):
+            excerpt=excerpt.removeprefix(prefix)
+        readers=question_readers.get(item.text,())
+        if item.label=='ai_suggestion' and item.text in QUESTIONS.values():continue
+        if not any(source.reference in item.sources and (source.text in item.text or
+            excerpt in source.text or source.reference.startswith(readers)) for source in sources):
+            grounded=False
+            break
     return (Check(key='brief_citations',score=int(cited),comment='Every non-gap item cites an authorised live reader'),
         Check(key='brief_grounding',score=int(grounded),comment='Each item is rendered from its cited current record'),
         Check(key='brief_current_sources',score=int(not prepared.sources_changed),comment='No stale source snapshot was approved'))
@@ -66,26 +86,28 @@ def pack_checks(frame: PackInputs,pack: PackView) -> tuple[Check,...]:
         Check(key='pack_not_automatically_shared',score=int(pack.status=='draft'),comment='The model leaves the document private for separate RM approval and sharing'))
 
 
-async def judged_brief(frame: PreparationInputs,prepared: PreparedBrief) -> Judgement:
-    payload={'audience':'assigned RM only','purpose':frame.purpose,'topics':frame.topics,
+async def judged_brief(frame: PreparationInputs,prepared: PreparedBrief,case_objective: str='') -> Judgement:
+    payload={'audience':'assigned RM only','case_objective':case_objective,'purpose':frame.purpose,'topics':frame.topics,
+        'artifact':{'status':prepared.card.status,'sections':[section.model_dump(mode='json') for section in prepared.card.sections]},
+        'consent':frame.consent,
         'authorised_sources':[item.model_dump(mode='json',exclude={'grant_id'}) for item in live_sources(frame)],'gaps':[item.model_dump() for item in frame.gaps],
-        'brief':prepared.card.model_dump(mode='json')}
+    }
     return await grade(payload)
 
 
-async def judged_pack(frame: PackInputs,pack: PackView) -> Judgement:
-    payload={'audience':'client-facing discussion document, still a private draft','purpose':frame.purpose,'topics':frame.topics,
+async def judged_pack(frame: PackInputs,pack: PackView,case_objective: str='') -> Judgement:
+    document=discussion_pack(pack)
+    payload={'audience':'client-facing discussion document','case_objective':case_objective,'purpose':frame.purpose,'topics':frame.topics,
+        'artifact':{'status':document.status,'sections':[section.model_dump(mode='json') for section in document.sections]},
         'approved_catalogue':[item.model_dump(mode='json') for item in frame.catalogue],
-        'explicit_amounts':[item.model_dump(mode='json') for item in frame.amounts],'pack':pack.content.model_dump(mode='json')}
+        'explicit_amounts':[item.model_dump(mode='json') for item in frame.amounts]}
     return await grade(payload)
 
 
 async def grade(payload: dict[str,JsonValue]) -> Judgement:
-    from app.services import codex_cli
-    from evaluation.evaluators import judge_name
-    prompt=Path(__file__).parent.joinpath('judge','meeting-preparation-v1.md').read_text()
-    answer,usage=await codex_cli.answer_with_model(prompt,Judgement.model_json_schema(),[('user',redact(json.dumps(payload,ensure_ascii=False))[0])],judge_name())
-    return Judgement.model_validate(answer)
+    from evaluation.evaluators import judge_answer
+    prompt=Path(__file__).parent.joinpath('judge',f'{JUDGE_RUBRIC_VERSION}.md').read_text()
+    return Judgement.model_validate(await judge_answer(prompt,Judgement.model_json_schema(),[('user',redact(json.dumps(payload,ensure_ascii=False))[0])]))
 
 
 def publish(path: Path,project: str) -> dict[str,str|int]:
@@ -97,8 +119,9 @@ def publish(path: Path,project: str) -> dict[str,str|int]:
     connection=client();connection.read_project(project_name=project);name='demobank-meeting-preparation'
     dataset=connection.read_dataset(dataset_name=name) if connection.has_dataset(dataset_name=name) else connection.create_dataset(name,description='Synthetic Brief Writer and Proposal Drafter: audience boundaries, current cited facts, exact catalogue figures and human approvals.')
     label='preparation-eval-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    experiment=connection.create_project(label,reference_dataset_id=dataset.id,metadata={'pipeline':'meeting','transport':'codex','synthetic':True,'timing_kind':'result_publication',
+    experiment=connection.create_project(label,reference_dataset_id=dataset.id,metadata={'pipeline':'meeting','transport':', '.join(sorted({row.transport for row in rows})),'synthetic':True,'timing_kind':'result_publication',
         'model':', '.join(sorted({row.producer for row in rows})),'judge_model':', '.join(sorted({row.judge_model for row in rows})),
+        'judge_rubric_version':', '.join(sorted({row.judge_rubric_version for row in rows})),
         'answer_prompt':', '.join(sorted({row.agent+'/'+row.prompt_id for row in rows}))},description='Published real native preparation-agent results. Publication timing is not model latency.')
     existing={item.id for item in connection.list_examples(dataset_id=dataset.id)}
     for row in rows:

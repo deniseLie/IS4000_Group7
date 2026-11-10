@@ -1,0 +1,32 @@
+{
+  "uuid": "Vm9TZXN0VXVpZDEyMw==",
+  "id": 85012345678,
+  "host_id": "synthetic-host-id-0001",
+  "host_email": "zoom.host@example.com",
+  "assistant_id": "",
+  "topic": "UBS Connect meeting 00000000-0000-4000-8000-100200000081",
+  "type": 2,
+  "status": "waiting",
+  "start_time": "2026-11-12T02:00:00Z",
+  "duration": 30,
+  "timezone": "Asia/Singapore",
+  "agenda": "Home loan for a condo next year",
+  "created_at": "2026-11-08T03:15:22Z",
+  "start_url": "https://us06web.zoom.us/s/85012345678?zak=synthetic-start-secret",
+  "join_url": "https://us06web.zoom.us/j/85012345678?pwd=synthetic-join-secret",
+  "password": "syn123",
+  "h323_password": "123456",
+  "pstn_password": "123456",
+  "encrypted_password": "synthetic-join-secret",
+  "settings": {
+    "host_video": false,
+    "participant_video": false,
+    "join_before_host": false,
+    "waiting_room": true,
+    "auto_recording": "none",
+    "alternative_hosts": "",
+    "contact_name": "Sophie Lim",
+    "contact_email": "sophie.lim@example.com"
+  },
+  "pre_schedule": false
+}

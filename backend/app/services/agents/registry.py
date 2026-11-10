@@ -1,10 +1,10 @@
 """Domain registry and the tool boundaries to enforce as each shared service is integrated.
 
-TOOLS is the v4 allow-list (permission names per agent). CHAT_SPECS is the v5 chat catalogue (architecture §5.6.1, §14.8):
-one AgentSpec per target agent is the single source for its tools, field views, limits, intents and default reads,
-loop tools and offers. authorization.decide and tools.call both read it. The client specs run on /chat since phase 5, but
-the rules in agents/rules.py still call the v4 responders under their v4 names (retail, compliance, document,
-relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from CHAT_SPECS (ENFORCED).
+CHAT_SPECS is the v5 chat catalogue (architecture §5.6.1, §14.8): one AgentSpec per target agent is the single source for
+its tools, field views, limits, intents and default reads, loop tools and offers. authorization.decide and tools.call
+both read it, for every chat agent (ENFORCED): its runner path and its rules (agents/rules.py), which read whole records
+within the same tools and limits and hand a model only the field views (tools.visible). TOOLS keeps the v4 allow-list
+(permission names) for the two callers that are not chat agents: the chat insights lane and the legacy fraud agent.
 The three RM specs (Client, Requests, Calendar; build plan 3a) run on the RM graph (services/rm/graph.py) for a verified
 `rm` login; the client planner never sees them (CLIENT_SPECS). SPECS also includes the separate meeting workflow.
 """
@@ -15,15 +15,8 @@ from app.schemas.meeting_agents import MeetingAgent, MeetingAgentSpec, MeetingTo
 AGENT_FOR: dict[Domain, AgentName] = {'retail':'retail','smalltalk':'retail','fraud':'fraud',
     'compliance':'compliance','document':'document','relationship':'relationship'}
 TOOLS: dict[AgentName, tuple[str, ...]] = {
-    'retail': ('kb.search','customer.get_profile','customer.get_accounts',
-        'customer.get_transactions','customer.get_credit_cards','customer.get_loans','tickets.list','handoff.create'),
     'fraud': ('customer.get_transactions','customer.get_credit_cards','actions.propose','handoff.create'),
-    'compliance': ('compliance.get_case','compliance.workspace','compliance.update_checklist_item','kb.search','handoff.create'),
-    'document': ('documents.precheck','compliance.workspace'),
-    'relationship': ('kb.search','customer.get_profile','rm.get_assignment','rm.get_introduction','requests.list',
-        'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create',
-        'meeting_requests.list',  # agents/meeting_answers counts her open meeting requests before offering another (0106 allows 3)
-        'consent.sharing','insights.read'),  # consent v2 (6e): agents/consent_answers reads her cards and topics to offer a change
+    'talking_points': ('insights.status',),  # the chat insights lane (lanes 1 and 2) reads her topic status and state only
 }
 
 # Model-facing tool -> the permissions its service read checks. document_templates is fixed public configuration.
@@ -34,14 +27,17 @@ TOOL_PERMISSION: MappingProxyType[str, tuple[str, ...]] = MappingProxyType({
     'travel_flags':('customer.get_credit_cards','customer.get_transactions'),'my_tickets':('tickets.list',),
     'my_compliance_case':('compliance.get_case',),'my_document_checks':('compliance.workspace',),
     'my_rm':('rm.get_assignment',),'my_appointments':('appointments.list',),'free_slots':('appointments.find_slots',),
-    'my_consents':('consent.records',),
+    'my_consents':('consent.records',),'my_requests':('requests.list',),'my_introduction':('rm.get_introduction',),
+    'my_consent_sharing':('consent.sharing',),'my_meeting_requests':('meeting_requests.list',),'my_talking_points':('insights.read',),
+    'my_topic_status':('insights.status',),'my_topic_state':('insights.status',),
     # RM reads: SQL checks the verified rm login and the book (rm.current_advisor, rm.in_book; 0089) and audits each read.
     **{name:() for name in ('rm_book','rm_match_clients','rm_client_profile','rm_meeting_notes','rm_shared_summary','rm_tickets',
         'rm_ticket','rm_review_status','rm_appointments','rm_availability','rm_followups','rm_handover_sources','rm_cash_events','rm_book_facts',
         'rm_transaction_insights','rm_talking_points','rm_meeting_requests')},  # the gated ones also check rm.consent_active (0106)
 })
 
-EXTERNAL=frozenset({'public_holidays','fx_rate'})  # services/external.TOOLS: public data, codes only
+ZOOM_EXTERNAL=frozenset({'zoom_meeting_check'})  # tools.zoom_meeting_check: her book first (0150), then Zoom with the bank's login
+EXTERNAL=ZOOM_EXTERNAL
 KB=ToolView()
 ASK=Read(tool='knowledge_search',entities={'query':QUESTION})
 CARD_FIELDS=frozenset({'last4','name','network','status','currency','limit','outstanding','minimum_payment','due_date','unfreeze_blocked_reason'})
@@ -52,13 +48,14 @@ GUIDE=AgentSpec(name='guide',role='public',scope='public',prompt='guide',
         'login trouble, unexpected one-time codes and phishing. Personal questions get "sign in to check".',
     tools={'knowledge_search':KB,'request_categories':ToolView()},
     intents={'general':(ASK,),'how_to_request':(ASK,Read(tool='request_categories')),'login_help':(ASK,),'phishing':(ASK,)},
-    loop_tools=frozenset({'knowledge_search','request_categories'}),external=frozenset({'public_holidays','fx_rate'}))
+    loop_tools=frozenset({'knowledge_search','request_categories'}))
 
 ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='accounts',
     answers='The client\'s own accounts, cards, loans, investment portfolio (holdings, her time deposit and its maturity) and transactions: '
         'balances, limits, due dates, fees, payments, transfers and statements, and whether her savings stay above an amount after paying her card balances. '
         'Card-limit and statement-copy requests.',
-    tools={'my_accounts':ToolView(fields=frozenset({'type','number','currency','balance','status'})),
+    tools={'my_profile':ToolView(fields=frozenset({'name'})),  # the rules' retail snapshot (agents/retail_records)
+        'my_accounts':ToolView(fields=frozenset({'type','number','currency','balance','status'})),
         'my_cards':ToolView(fields=CARD_FIELDS),
         'my_loans':ToolView(fields=frozenset({'type','currency','principal','outstanding','next_payment','next_amount','status'})),
         'my_portfolio':ToolView(fields=frozenset({'asset_class','description','currency','market_value','mandate','as_of','portfolio_total'})),  # 0116
@@ -75,11 +72,10 @@ ACCOUNTS=AgentSpec(name='accounts',role='client',scope='own_customer',prompt='ac
         'loans':(Read(tool='my_loans'),ASK),
         'statements':(Read(tool='my_accounts'),ASK),
         'product_info':(ASK,),
-        'fx_rate':(Read(tool='fx_rate',entities={'base':'base','quote':'quote'}),ASK),
-        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans')),  # + public holidays per trip year (agents/derived.py)
+        'trip_due_dates':(Read(tool='my_cards'),Read(tool='my_loans')),  # due dates in the trip, weekend shifts (agents/derived.py)
         'savings_after_cards':(Read(tool='my_accounts'),Read(tool='my_cards'))},  # savings minus card balances vs her amount (derived.py)
-    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_portfolio','my_transactions','knowledge_search','fx_rate','public_holidays'}),
-    external=frozenset({'fx_rate','public_holidays'}),offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
+    loop_tools=frozenset({'my_accounts','my_cards','my_loans','my_portfolio','my_transactions','knowledge_search'}),
+    offers=frozenset({'ticket.create'}),hands_to=frozenset({'relationship'}),
     exports={'due_in_window':'bool','due_dates':'list[date]','account_refs':'list[account_ref]','below_threshold':'bool'},sort_by={'account_refs':'last4'})
 
 # No Security agent since build plan 2b: a lost card or a charge she doesn't recognise gets fixed steps and one urgent
@@ -113,7 +109,20 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
             'grants.revoked_at','grants.expires_at'})),
         'my_tickets':ToolView(fields=frozenset({'reference','category_label','summary','urgency','status','owner_team','decided_by',
             'created_at','updated_at','target_at','overdue','last_update'}),max_rows=50,free_text=True),
-        'request_categories':ToolView(),'knowledge_search':KB},
+        'request_categories':ToolView(),'knowledge_search':KB,
+        # The rules' reads (agents/relationship_records, consent_answers, meeting_answers; rm_handover's urgent card summary).
+        'my_requests':ToolView(fields=frozenset({'who','what','urgency','deadline','country','currency','status','customer_action',
+            'created_at','updated_at'}),max_rows=50,free_text=True),
+        'my_introduction':ToolView(fields=frozenset({'current.name','current.role','current.team','current.started_on','previous.name',
+            'previous.ended_on','notice.cite','notice.heading','notice.body','notice.publisher'})),
+        'my_consent_sharing':ToolView(fields=frozenset({'rm.name','categories.code','categories.label','categories.gated',
+            'categories.grant.basis','categories.grant.until','categories.grant.expires_at','categories.grant.scope',
+            'accounts.type','accounts.number','accounts.currency','next_meeting.starts_at','topic_areas','today'})),
+        'my_meeting_requests':ToolView(fields=frozenset({'purpose','topics','format','status','respond_by','preferred_times',
+            'decline_reason','created_at'}),max_rows=50,free_text=True),  # the purpose is her own words
+        'my_talking_points':ToolView(fields=frozenset({'rm_first_name','chat_topics','points.topic','points.stage','points.timeframe','points.origin',
+            'points.pending','points.on_hold','muted'})),
+        'my_cards':ToolView(fields=frozenset({'last4','status'}))},
     intents={'my_rm':(Read(tool='my_rm'),),
         'meeting_times':(Read(tool='my_rm'),Read(tool='free_slots',entities={'from_date':'from_date','to_date':'to_date'})),
         # 2a: a meeting is a request (purpose, topics, up to 3 free times) she confirms; the chat never books directly.
@@ -123,7 +132,7 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
         'consent':(Read(tool='my_consents'),ASK),
         'service_options':(Read(tool='request_categories'),ASK)},
     loop_tools=frozenset({'my_rm','my_appointments','free_slots','my_consents','request_categories','knowledge_search'}),
-    external=frozenset({'public_holidays'}),imports=frozenset({'due_dates'}),
+    imports=frozenset({'due_dates'}),
     offers=frozenset({'meeting.request','appointment.cancel','handoff.create','tickets.follow_up',
         'consent.grant','consent.revoke','rm.share_summary','insight.share',  # insight.share: a compose rule, never the model (0108)
         'insight.delete'}))  # consent v2 (6e): rules in agents/consent_answers offer consent.grant/revoke and insight.delete
@@ -181,13 +190,14 @@ RM_REQUESTS=AgentSpec(name='rm_requests',role='rm',scope='rm_book',prompt='rm_as
     imports=frozenset({'clients_due','latest_note','client_ref','reviews_due','meetings_next_7d','requests_to_answer'}))
 
 RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_assistant',
-    answers="The RM's calendar: her appointments, free times and working hours, clients' meeting requests, and cards to "
-        'accept a requested time, propose another, decline, block time or change her hours (each applied only on Approve). '
-        'Never client financial data.',
+    answers="The RM's calendar: her appointments, free times and working hours, clients' meeting requests, whether a meeting's "
+        'Zoom link is set up and matches the booked time (read from Zoom), and cards to accept a requested time, propose '
+        'another, decline, block time or change her hours (each applied only on Approve). Never client financial data.',
     tools={'rm_appointments':WHOLE,'rm_availability':WHOLE,'rm_meeting_requests':TEXT},  # purposes are the client's own words
     intents={'schedule':(Read(tool='rm_appointments'),),'meeting_requests':(Read(tool='rm_meeting_requests'),),
         'decide_request':(Read(tool='rm_meeting_requests'),Read(tool='rm_availability')),'availability_change':(Read(tool='rm_availability'),)},
-    loop_tools=frozenset({'rm_appointments','rm_availability','rm_meeting_requests'}),
+    loop_tools=frozenset({'rm_appointments','rm_availability','rm_meeting_requests','zoom_meeting_check'}),
+    external=ZOOM_EXTERNAL,  # read only; the meeting is picked by code (rm/handlers.h_open), never a model-supplied id
     exports={'meetings_next_7d':'list[meeting_ref]','requests_to_answer':'list[meeting_ref]'},sort_by={'meetings_next_7d':'starts_at','requests_to_answer':'respond_by'},
     imports=frozenset({'needs_meeting','topics','client_ref'}))
 # No RM agent makes ledger offers: drafts, documentation, proposed tasks or requests and calendar decisions are review
@@ -197,12 +207,12 @@ RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_as
 CHAT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,COMPLIANCE,RELATIONSHIP,RM_CLIENT,RM_REQUESTS,RM_CALENDAR)})
 
 # Fixed connectors for the separate meeting workflow. The model never chooses or invokes them.
-BRIEF_WRITER = MeetingAgentSpec('brief_writer', 'brief_writer', 'v4',
+BRIEF_WRITER = MeetingAgentSpec('brief_writer', 'brief_writer', 'v6',
     'Select references from the assigned RM’s currently permitted preparation records.', (
         MeetingTool('meeting_preparation_inputs', 'assigned_rm', 'read'),
         MeetingTool('meeting_save_brief', 'assigned_rm', 'draft_write'),
     ))
-PROPOSAL_DRAFTER = MeetingAgentSpec('proposal_drafter', 'proposal_drafter', 'v1',
+PROPOSAL_DRAFTER = MeetingAgentSpec('proposal_drafter', 'proposal_drafter', 'v4',
     'Draft a discussion pack from the agreed agenda and approved catalogue.', (
         MeetingTool('meeting_pack_inputs', 'assigned_rm', 'read'),
         MeetingTool('meeting_save_pack', 'assigned_rm', 'draft_write'),
@@ -234,7 +244,7 @@ BORROWED: MappingProxyType[TargetAgent, frozenset[str]] = MappingProxyType({'rm_
 # Reads SQL answers only under the client's consent (rm.consent_active, 0106; rm_brief for the shared note and handover):
 # fixed reads of the Client agent only, never in loop_tools, their purpose set by the intent.
 CONSENT_GATED=frozenset({'rm_transaction_insights','rm_talking_points','rm_cash_events','rm_shared_summary','rm_handover_sources'})
-ENFORCED = frozenset(CHAT_SPECS) - frozenset(TOOLS)  # guide, accounts and the RM agents; the rest once the v4 responders move into specs
+ENFORCED = frozenset(CHAT_SPECS) - frozenset(TOOLS)  # every chat agent since the rules moved onto the specs (10 Nov 2026)
 # A condition or for_each export only this intent computes: a link that names it sets the upstream task's intent
 # (orchestrator.export_intents), so a declared link is not skipped as unknown because the planner chose another intent.
 EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'trip_due_dates','due_dates':'trip_due_dates',
@@ -242,7 +252,7 @@ EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'t
 
 
 def spec_for(agent: str | None) -> AgentSpec | None:
-    """The enforced v5 spec for this backend-assigned agent, or None (no agent, or a v4 agent)."""
+    """The enforced v5 spec for this backend-assigned agent, or None (no agent, or the chat insights lane or fraud)."""
     return CHAT_SPECS[agent] if agent in ENFORCED else None
 
 

@@ -1,7 +1,8 @@
-"""Synthetic meeting quality checks and independent Codex judging, with opt-in redacted LangSmith publication.
+"""Synthetic meeting quality checks and an independent judge, with opt-in redacted LangSmith publication.
 
 The native integration test drives the real API/SQL writer and writes results. Publish only that reviewed synthetic
 result file: python -m evaluation.meetings --publish /absolute/path/meeting-eval-results.json --project demobank-dev.
+Writer and judge follow the run's transport (TEST_MEETING_TRANSPORT in the test: codex, claude or api, i.e. OpenRouter).
 No hosted records are loaded. Existing datasets/examples are updated by stable case IDs; unrelated examples remain.
 """
 import argparse,json
@@ -54,6 +55,7 @@ class EvaluationRow(Model):
     judge_model: str|None
     overview_prompt_id: str|None=None
     source: Literal['native_meeting_api','hosted_synthetic_meeting_api']='native_meeting_api'
+    transport: Literal['api','codex','claude']='codex'  # result files before 11 Nov 2026 were all Codex
 
 
 def cases() -> tuple[Case,...]:
@@ -79,7 +81,7 @@ def publication_outputs(row: EvaluationRow) -> dict[str,JsonValue]:
 
 
 def publication_metadata(rows: tuple[EvaluationRow,...]) -> dict[str,JsonValue]:
-    return {'model':', '.join(sorted({row.producer for row in rows})),'transport':'codex','pipeline':'meeting',
+    return {'model':', '.join(sorted({row.producer for row in rows})),'transport':', '.join(sorted({row.transport for row in rows})),'pipeline':'meeting',
         'judge_model':', '.join(sorted({row.judge_model for row in rows if row.judge_model})),
         'answer_prompt':', '.join(sorted({prompt for row in rows for prompt in ['minutes_writer/'+row.prompt_id,*(['minutes_overview/'+row.overview_prompt_id] if row.overview_prompt_id else [])]})),
         'timing_kind':'result_publication','synthetic':True}
@@ -90,14 +92,16 @@ def checks(case: Case,content: MinutesContent) -> tuple[Check,...]:
     claims=(*content.summary,*content.decisions,*content.actions)
     quotes=all(item.cue_id in cues and item.quote in cues[item.cue_id].text for item in claims)
     owners=all(item.cue_id in cues and item.owner=={'rm':'rm','client':'client','unmapped':'unassigned'}[cues[item.cue_id].speaker] for item in content.actions)
-    dates=all(item.cue_id in cues and (item.due_on is None or item.due_on.isoformat() in cues[item.cue_id].text and item.due_quote is not None and item.due_quote in cues[item.cue_id].text) for item in content.actions)
+    from app.services.meetings.writer import quoted_dates
+    dates=all(item.cue_id in cues and (item.due_on is None or item.due_quote is not None
+        and item.due_on in quoted_dates(item.due_quote) and item.due_quote in cues[item.cue_id].text) for item in content.actions)
     conditions=all(item.cue_id in cues and (item.commitment!='conditional' or item.condition is not None and item.condition in cues[item.cue_id].text) for item in content.actions)
     matched=[any(item.owner==expected.owner and item.commitment==expected.commitment and all(term.lower() in item.text.lower() for term in expected.terms) for item in content.actions) for expected in case.actions if expected.required]
     text=' '.join([*(item.text for item in content.summary),*(item.text for item in content.decisions),*(item.text for item in content.actions),content.client_recap]).lower()
     forbidden=[phrase for phrase in case.forbidden if phrase.lower() in text]
     unexpected_agreed=any(item.commitment=='agreed' and not any(item.owner==expected.owner and expected.commitment=='agreed' and all(term.lower() in item.text.lower() for term in expected.terms) for expected in case.actions) for item in content.actions)
     results=[('source_quotes',quotes,'Every quote exists in its named cue'),('speaker_ownership',owners,'Every owner follows the verified speaker metadata'),
-        ('explicit_dates',dates,'Dates require an explicit ISO date and quote'),('conditional_evidence',conditions,'Conditions retain exact source evidence'),
+        ('explicit_dates',dates,'Dates require an explicit calendar date and exact quote'),('conditional_evidence',conditions,'Conditions retain exact source evidence'),
         ('expected_action_recall',all(matched),'All expected owner/commitment actions are present'),
         ('action_precision',not unexpected_agreed and len(content.actions)<=case.maximum_actions,'No unsupported agreed task or excess action'),
         ('forbidden_claims',not forbidden,'Forbidden claim checks: '+(', '.join(forbidden) or 'none'))]
@@ -105,13 +109,10 @@ def checks(case: Case,content: MinutesContent) -> tuple[Check,...]:
 
 
 async def judge(case: Case,content: MinutesContent) -> Judgement:
-    from app.services import codex_cli
-    from evaluation.evaluators import judge_name
-    name=judge_name()
-    system=Path(__file__).parent.joinpath('judge','meeting-v1.md').read_text()
+    from evaluation.evaluators import judge_answer
+    system=Path(__file__).parent.joinpath('judge','meeting-v2.md').read_text()
     payload=redact(json.dumps({'expected':case.rubric,'cues':[cue.model_dump(mode='json') for cue in cues_for(case)],'minutes':content.model_dump(mode='json')},ensure_ascii=False))[0]
-    value,usage=await codex_cli.answer_with_model(system,Judgement.model_json_schema(),[('user',payload)],name)
-    return Judgement.model_validate(value)
+    return Judgement.model_validate(await judge_answer(system,Judgement.model_json_schema(),[('user',payload)]))
 
 
 def publish(path: Path,project: str) -> dict[str,str|int]:
@@ -122,7 +123,7 @@ def publish(path: Path,project: str) -> dict[str,str|int]:
     dataset_name='demobank-meetings'
     dataset=connection.read_dataset(dataset_name=dataset_name) if connection.has_dataset(dataset_name=dataset_name) else connection.create_dataset(dataset_name,description='Synthetic meeting Minutes Writer cases: evidence, ownership, conditions, instructions and explicit RM approval boundaries.')
     label='meeting-eval-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    experiment=connection.create_project(label,reference_dataset_id=dataset.id,metadata=publication_metadata(rows),description='Published isolated native and approved synthetic hosted meeting API/SQL results with real Codex writer and independent judge. Run latency is publication time, not model latency.')
+    experiment=connection.create_project(label,reference_dataset_id=dataset.id,metadata=publication_metadata(rows),description='Published isolated native and approved synthetic hosted meeting API/SQL results with the real writer and an independent judge. Run latency is publication time, not model latency.')
     existing={example.id for example in connection.list_examples(dataset_id=dataset.id)}
     for row in rows:
         example_id=uuid5(NAMESPACE_URL,'demobank-meetings/'+row.case.id)

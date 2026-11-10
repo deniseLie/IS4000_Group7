@@ -53,7 +53,7 @@ def wait_for_api(process: subprocess.Popen[bytes], url: str, log_path: Path) -> 
     while time.monotonic()<deadline:
         if process.poll() is not None:raise RuntimeError(f'Native PostgREST exited during startup: exit code {process.returncode}; log: {log_path.read_text()}')
         try:
-            response=httpx.get(url,timeout=0.5)
+            response=httpx.get(url+'/rpc/native_test_jwks',timeout=0.5)
             if response.status_code==200:return
             logger.warning('native_data_api_starting',extra={'status':response.status_code})
         except (httpx.ConnectError,httpx.ReadTimeout) as error:

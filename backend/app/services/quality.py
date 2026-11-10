@@ -9,6 +9,7 @@ Requests and steps are read through LangSmith's v2 run query (`query`): up to 10
 import json
 import os
 import threading
+import logging
 import time
 from collections import Counter,defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -23,6 +24,8 @@ from app.services import insights
 from app.schemas.quality import Check,Span,Trace
 from typing import get_args
 from app.schemas.contracts import TargetAgent
+
+log=logging.getLogger(__name__)
 
 ADMIN_ROLE='admin'
 DATASET_PREFIX='demobank-'  # every evaluation dataset langsmith_sync uploads (evaluation/langsmith_sync.DATASETS)
@@ -74,6 +77,25 @@ def cached(key: tuple,load,ttl: int=CACHE_S):
         value=load()
         _cache[key]=(time.monotonic()+ttl,value)
         return value
+
+
+TRACE_UNIT=0.005  # LangSmith bills "Base Traces" in standard units: one trace is 0.005 units
+
+
+def trace_budget() -> dict[str,Any] | None:
+    """This month's LangSmith traces against the workspace's monthly limit (read-only billing reads), or None if unreadable."""
+    def load():
+        c,now_=client(),now()
+        start=now_.replace(day=1,hour=0,minute=0,second=0,microsecond=0);resets=(start+timedelta(days=32)).replace(day=1)
+        fmt='%Y-%m-%dT%H:%M:%SZ'
+        limits=c.request_with_retries('GET','/api/v1/usage-limits').json()
+        usage=c.request_with_retries('GET',f'/api/v1/orgs/current/billing/usage?starting_on={start.strftime(fmt)}&ending_before={now_.strftime(fmt)}').json()
+        limit=next((l['limit_value'] for l in limits if l.get('limit_type')=='monthly_traces'),None)
+        units=next((m.get('value') or 0 for m in usage if (m.get('billable_metric_name') or '').endswith('Base Traces')),None)
+        return None if units is None else {'used':round(units/TRACE_UNIT),'limit':limit,'resets':resets}
+    try:return cached(('trace_budget',),load)
+    except Exception as failure:  # a missing billing read leaves the tile empty; the rest of the Overview still loads
+        log.warning('admin trace budget unavailable',extra={'error_type':type(failure).__name__});return None
 
 
 def fresh(key: tuple):
@@ -306,7 +328,8 @@ def experiment_runs() -> list[dict[str,Any]]:
         for d,p in projects:
             m=(p.extra or {}).get('metadata') or {};git=m.get('git') or {}
             found.append({'id':str(p.id),'name':p.name,'dataset':d['name'],'started_at':p.start_time,'url':p.url,'model':m.get('model'),
-                'pipeline':m.get('pipeline'),'transport':m.get('transport'),'judge_model':m.get('judge_model'),'answer_prompt':m.get('answer_prompt'),
+                'pipeline':m.get('pipeline'),'transport':m.get('transport'),'judge_model':m.get('judge_model'),
+                'judge_rubric_version':m.get('judge_rubric_version'),'answer_prompt':m.get('answer_prompt'),
                 'prompts':m.get('prompts_in_use'),'commit':(git.get('commit') or m.get('app_version') or '')[:7] or None,'branch':git.get('branch'),
                 'partial':m.get('partial'),'cases':sorted(cases[str(p.id)],key=lambda c:c['case_id'] or '')})
         return sorted(found,key=lambda e:e['started_at'])

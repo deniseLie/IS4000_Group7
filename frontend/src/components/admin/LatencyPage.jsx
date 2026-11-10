@@ -2,7 +2,7 @@ import {Fragment,useState} from 'react';
 import Icon from '../Icon';
 import {formatDateTime} from '../../lib/format';
 import {SURFACES,counted,loadLatency,loadTrace,number,percent,seconds,waterfall} from '../../lib/admin';
-import {Bars,Stack,Waterfall} from './charts';
+import {Stack,Waterfall} from './charts';
 import {SourcePicker} from './AgentsPage';
 import {WindowPicker} from './OverviewPage';
 import {Failed,Loading,Page,useLoad} from './shared';
@@ -28,7 +28,7 @@ function Steps({runId}) {
   </>;
 }
 
-// What limits scale: end-to-end percentiles, where the time goes, per node/agent/tool/model/prompt, fan-out, tokens, slowest requests.
+// What limits scale: end-to-end percentiles, where the time goes, per agent, slowest requests.
 export default function LatencyPage({onNavigate}) {
   const [range,setRange]=useState('7d');
   const [source,setSource]=useState('all');
@@ -53,20 +53,14 @@ export default function LatencyPage({onNavigate}) {
       {!data.requests&&<p className="admin-empty">No requests in this window.</p>}
 
       {data.requests>0&&<>
-      <div className="admin-grid">
-        <section className="admin-card" data-testid="admin-surfaces">
-          <div className="admin-card-head"><h2>End to end</h2></div>
-          <div className="admin-table-wrap"><table className="admin-table">
-            <thead><tr><th>Surface</th><th className="num">Requests</th><th className="num">p50</th><th className="num">p90</th><th className="num">p95</th><th className="num">p99</th></tr></thead>
-            <tbody>{Object.entries(SURFACES).filter(([key])=>data.surfaces[key].n).map(([key,label])=>{const row=data.surfaces[key];return <tr key={key}>
-              <td>{label}</td><td className="num">{row.n}</td><td className="num">{seconds(row.p50_s)}</td><td className="num">{seconds(row.p90_s)}</td>
-              <td className="num">{seconds(row.p95_s)}</td><td className="num">{seconds(row.p99_s)}</td></tr>;})}</tbody></table></div>
-        </section>
-        <section className="admin-card" data-testid="admin-histogram">
-          <div className="admin-card-head"><h2>Distribution</h2></div>
-          <Bars rows={data.histogram.map(bucket=>({label:bucket.label,value:bucket.count}))} label="Requests by latency"/>
-        </section>
-      </div>
+      <section className="admin-card" data-testid="admin-surfaces">
+        <div className="admin-card-head"><h2>End to end</h2></div>
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Surface</th><th className="num">Requests</th><th className="num">p50</th><th className="num">p90</th><th className="num">p95</th><th className="num">p99</th></tr></thead>
+          <tbody>{Object.entries(SURFACES).filter(([key])=>data.surfaces[key].n).map(([key,label])=>{const row=data.surfaces[key];return <tr key={key}>
+            <td>{label}</td><td className="num">{row.n}</td><td className="num">{seconds(row.p50_s)}</td><td className="num">{seconds(row.p90_s)}</td>
+            <td className="num">{seconds(row.p95_s)}</td><td className="num">{seconds(row.p99_s)}</td></tr>;})}</tbody></table></div>
+      </section>
 
       <section className="admin-card" data-testid="admin-breakdown">
         <div className="admin-card-head"><h2>Where the time goes</h2><span className="admin-muted">Average per request; {data.breakdown.traced} of {data.breakdown.requests} requests had step timings</span></div>
@@ -74,24 +68,7 @@ export default function LatencyPage({onNavigate}) {
         <p className="admin-muted">Average request {seconds(data.breakdown.wall_s)}.{data.breakdown.overlap?' Agents run in parallel, so the parts add up to more than the request time; shares are of the parts.':''} Each hosted database call costs about 0.19 s (docs/database-speed.md).</p>
       </section>
 
-      <div className="admin-grid">
-        <Timings title="Per graph node" rows={data.nodes} note="LangGraph nodes of the v5 graph"/>
-        <Timings title="Per agent" rows={data.agents} extra={['Errors',row=>row.errors]}/>
-        <Timings title="Per tool" rows={data.tools} extra={['Errors',row=>row.errors]}/>
-        <Timings title="Per model" rows={data.models} extra={['Retries · not ok',row=>`${row.retries} · ${row.not_ok}`]}/>
-        <Timings title="Per prompt version" rows={data.prompts} note="Slowest first"/>
-        <Timings title="Fan-out" rows={data.fan_out.map(row=>({...row,name:`${row.agents} agent${row.agents==='1'?'':'s'}`}))}
-          note={`Request time by the agents it ran; ${data.second_wave} turns ran a second wave`}/>
-      </div>
-
-      <section className="admin-card" data-testid="admin-tokens">
-        <div className="admin-card-head"><h2>Tokens</h2><span className="admin-muted">Tokens only: no cost is estimated</span></div>
-        <p className="admin-muted">{data.tokens.retries} model retries · {data.tokens.budget_hits} requests hit the per-request token budget{data.throughput.peak_hour?` · busiest hour ${formatDateTime(data.throughput.peak_hour)} (${data.throughput.peak_requests} requests)`:''}</p>
-        {data.tokens.by_family.length>0&&<div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Prompt family</th><th className="num">Model calls</th><th className="num">Input / call</th><th className="num">Output / call</th></tr></thead>
-          <tbody>{data.tokens.by_family.map(row=><tr key={row.family}><td className="admin-mono">{row.family}</td><td className="num">{row.calls}</td>
-            <td className="num">{number(row.input,0)}</td><td className="num">{number(row.output,0)}</td></tr>)}</tbody></table></div>}
-      </section>
+      <Timings title="Per agent" rows={data.agents} extra={['Errors',row=>row.errors]}/>
 
       <section className="admin-card" data-testid="admin-slowest">
         <div className="admin-card-head"><h2>Slowest requests</h2><span className="admin-muted">Open one for its steps on a time axis</span></div>

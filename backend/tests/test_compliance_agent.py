@@ -56,7 +56,7 @@ def test_compliance_snapshot_is_owned_and_excludes_internal_assessments(local_da
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select resource_id from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()==[(str(snapshot.call_id),)]
         assert db.execute('select count(*) from actions.commands').fetchone()==(0,)
-    with pytest.raises(PolicyDenied):asyncio.run(compliance.load(ctx.model_copy(update={'agent':'retail'})))
+    with pytest.raises(PolicyDenied):asyncio.run(compliance.load(ctx.model_copy(update={'agent':'accounts'})))  # not in Accounts' spec
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to native data services')

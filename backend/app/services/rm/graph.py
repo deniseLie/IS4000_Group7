@@ -76,9 +76,13 @@ class RmTurn(TypedDict,total=False):
 
 # ---- Planner ----
 
+# Set by rule_plan only. Offered to the model it caught "draft follow-up tickets" (P14), and rm_planner never describes it.
+RULE_ONLY={'follow_up'}
+
+
 def plan_schema() -> dict:
     o=handlers._obj
-    task=o({'intent':{'type':'string','enum':[*sorted(registry.INTENT_AGENT),OPEN_INTENT]},
+    task=o({'intent':{'type':'string','enum':[*sorted(set(registry.INTENT_AGENT)-RULE_ONLY),OPEN_INTENT]},
         'agent':{'type':'string','enum':['',*sorted(n for n,s in registry.RM_SPECS.items() if s.loop_tools)]},  # for `open` only
         'client_name':handlers.S,'uses_active_client':{'type':'boolean'},
         'ticket_ref':handlers.S,'draft_scope':{'type':'string','enum':['client','ticket']},'appointment_hint':handlers.S,'is_new_notes':{'type':'boolean'},
@@ -109,6 +113,8 @@ WHO=r"(?P<who>[a-z][a-z .'’-]{1,60}?)"
 BRIEF=(r"^(?:please\s+)?(?:brief me (?:on|for|about)|prepare (?:me )?(?:a )?(?:brief(?:ing)? )?(?:for|on)"
         r"(?: (?:my|the) (?:meeting|call) with)?)\s+"+WHO)
 ONE_REQUEST={'meeting_brief':re.compile(BRIEF+r"[.!]?$",re.I),
+    'ticket_summary':re.compile(r"^(?:should|can|could|may) (?:we|i) (?:approve|reject|decline) "+WHO+
+        r"['’]s (?:credit card |card )?limit (?:increase|decrease|change)[.!?]?$",re.I),
     'client_overview':re.compile(r"^(?:please\s+)?(?:(?:give|show) me |can i (?:have|get|see) )?(?:an? )?(?:quick |full )?(?:overview|snapshot|360(?:°| view)?)"
         r" (?:of|on|for)\s+"+WHO+r"[.!?]?$",re.I),
     'today':re.compile(r"^(?:what(?:'s|’s| is) on (?:for )?today|plan my day|what does my day look like|what(?:'s|’s| is) my day looking like)[.!?]?$",re.I)}

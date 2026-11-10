@@ -6,8 +6,8 @@ set local statement_timeout='120s';
 
 select pg_advisory_xact_lock(hashtext('demobank.hosted_migrations'));
 
-do $apply_0150$
-declare previous supabase_migrations.schema_migrations; script text:=$source_0150$-- Released source SHA256: 5e290591d9680ead91a73713606918ee6a84e6b14d459d4077fe20e4289e61f2
+do $apply_0159$
+declare previous supabase_migrations.schema_migrations; script text:=$source_0159$-- Released source SHA256: 5e290591d9680ead91a73713606918ee6a84e6b14d459d4077fe20e4289e61f2
 -- No weekly meeting limit (11 Nov 2026): a client may have any number of meetings with her relationship manager in a
 -- week. 0092 capped it at two; every meeting now starts as a meeting request the RM accepts (0106, and at most 3 open
 -- requests at a time), so the RM already decides how full her calendar gets. Already run by hand on the hosted project.
@@ -55,20 +55,20 @@ end $$;
 revoke all on function rm.weekly_meeting_limit() from public,anon,authenticated;
 revoke all on function public.appointments_find_slots(bigint,date,date,int) from public,anon;
 grant execute on function public.appointments_find_slots(bigint,date,date,int) to authenticated;
-$source_0150$;
+$source_0159$;
 begin
-  select * into previous from supabase_migrations.schema_migrations where version='0150';
+  select * into previous from supabase_migrations.schema_migrations where version='0159';
   if found then
     if previous.name is distinct from 'no_weekly_meeting_limit' or previous.statements is distinct from array[script] then
-      raise exception 'migration 0150 is recorded with different SQL; inspect history before proceeding';
+      raise exception 'migration 0159 is recorded with different SQL; inspect history before proceeding';
     end if;
-    raise notice 'migration 0150 already applied with identical SQL';
+    raise notice 'migration 0159 already applied with identical SQL';
   else
     execute script;
     insert into supabase_migrations.schema_migrations(version,name,statements)
-      values('0150','no_weekly_meeting_limit',array[script]);
+      values('0159','no_weekly_meeting_limit',array[script]);
   end if;
-end $apply_0150$;
+end $apply_0159$;
 
 commit;
 select version,name from supabase_migrations.schema_migrations order by version;

@@ -48,6 +48,11 @@ def answer_calls(spans) -> int:
     return sum(n=='llm' and a.get('agent') not in AFTER_REPLY for n,a in spans)
 
 
+def turn_tools(spans) -> list[str]:
+    """Tools the turn called (the case's `tools` check); the after-reply talking-points reads (her topic state) are left out."""
+    return sorted({a['tool'] for n,a in spans if n=='tool_call' and a.get('agent') not in AFTER_REPLY})
+
+
 class NodeLog(AsyncCallbackHandler):
     """A graph node acted when its update changes the state (a new or different non-empty value)."""
     def __init__(self) -> None:
@@ -82,11 +87,6 @@ async def _receipt_failed(*args,**kw):
     raise RuntimeError('injected fault: offer executor failed')
 
 
-async def _external_down(tool,*args,**kw):
-    from app.services.external import ExternalError
-    raise ExternalError(tool,'unavailable')
-
-
 from app.services.rm import records as _rm_records
 _RM_RPC=_rm_records.rpc
 
@@ -101,7 +101,7 @@ async def _consent_revoked(name,params,ctx,tool):
 
 
 # fault -> (patch target, replacement); None would mean the piece is not built yet.
-FAULTS={'external_down':('app.services.external.fetch',_external_down),'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
+FAULTS={'upstream_withheld':('app.services.agents.runner.checked_model_answer',_withheld),
     'receipt_failed':('app.services.offers.confirm',_receipt_failed),'consent_revoked':('app.services.rm.records.rpc',_consent_revoked)}
 
 
@@ -213,7 +213,10 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
     log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[]
     replies: list[dict[str,Any]]=[];skipped: list[dict[str,str]]=[];history: list[dict[str,Any]]=[];context: dict[str,Any]={}
     keep=('client_id','ticket_ref','appointment_id','note_id','draft','documentation')
+    from evaluation.rm_target import BookEnvelope  # the same book the QA1 RM target gives the judge (rm_target imports this module)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://evaluation',timeout=300) as http:
+        book=await http.get('/rm/book',headers={'Authorization':f'Bearer {token}'});book.raise_for_status()
+        authorised=[client.model_dump(mode='json') for client in BookEnvelope.model_validate_json(book.text).data]
         for step in turns_of(inputs):
             if not step.get('say'):
                 skipped.append(step);continue
@@ -230,7 +233,8 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
                     answer=json.loads(data)
                     context={**(answer.get('context') or {})}
                     reply.update(answer=rm_text(answer),origin=answer.get('origin'),needs_human=answer.get('status')!='ok',status_text=answer.get('status'),
-                        sources=sorted({s.get('id') for s in answer.get('sources') or []}),drafts=len(answer.get('drafts') or [])+bool(answer.get('draft')))
+                        sources=sorted({s.get('id') for s in answer.get('sources') or []}),evidence=answer.get('sources') or [],
+                        drafts=len(answer.get('drafts') or [])+bool(answer.get('draft')))
                 elif event=='error':reply['error']=data
             replies.append(reply)
             client=context.get('client_id')
@@ -243,7 +247,8 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),'exports':sorted({e for w in waves for e in w.get('exports',[])}),
             'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},'rerouted':next((w['rerouted'] for w in waves if w.get('rerouted')),{})},
-        'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,'tickets':{'opened':[],'all':[]}}
+        'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,'tickets':{'opened':[],'all':[]},
+        'authorised_book':authorised}
 
 
 async def tickets(http: httpx.AsyncClient,headers: dict[str,str]) -> list[dict[str,Any]]:
@@ -346,7 +351,7 @@ async def play(inputs: dict[str,Any],app,token: str | None) -> dict[str,Any]:
     waves=[attrs for name,attrs in spans if name=='gather']  # one per turn that ran agents (phase 7)
     return {'answer':'\n\n'.join(r.get('answer') or '' for r in replies),'replies':replies,'routes':routes,'skipped':skipped,'not_offered':missing,'played':bool(replies),
         'setup_turns':setup,'nodes':{'ran':sorted(log.ran),'acted':sorted(log.acted)},'agents':dict(agents),
-        'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),
+        'tools':turn_tools(spans),
         'service_reads':sorted({attrs['tool'] for _,attrs in spans if 'call_id' in attrs and 'tool' in attrs}),
         'model_calls':answer_calls(spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),

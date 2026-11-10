@@ -100,7 +100,7 @@ export default function DocumentationReview({documentation,token,onChange,latest
         :openRequest===a.id?<ServiceRequestForm action={a} customerId={documentation.customer_id} noteId={noteId} token={token}
           onDone={result=>{setDecisions({...decisions,[a.id]:result});setOpenRequest(null);}} onCancel={()=>setOpenRequest(null)}/>
         :<button type="button" className="bank-chat-logout" disabled={!ready} onClick={()=>setOpenRequest(a.id)}>Review request form</button>)}
-      {a.kind==='meeting'&&<p className="rm-small">Meetings are booked by the client from your free times (My requests → Meetings). Check your availability on Schedule.</p>}
+      {a.kind==='meeting'&&<p className="rm-small">Meetings are booked by the client from your free times (their Meetings page). Check your availability on Schedule.</p>}
       {a.kind==='client_note'&&<p className="rm-small">Included in the saved interaction summary.</p>}
       {decisions[a.id]!=='created'&&typeof decisions[a.id]!=='object'&&<button type="button" className="link-button" onClick={()=>setDecisions({...decisions,[a.id]:decisions[a.id]==='rejected'?undefined:'rejected'})}>{decisions[a.id]==='rejected'?'Undo reject':'Reject'}</button>}
     </li>)}</ul>

@@ -3,8 +3,9 @@
 The complete draft retains at most ten distinct decisions and ten actions, matching the existing approved RM writes.
 Exceeding a bound fails explicitly. No action list, transcript or supporting quote is silently truncated.
 """
-import asyncio,json
-from typing import NamedTuple
+import asyncio,json,re
+from datetime import date
+from typing import Any,NamedTuple
 from uuid import UUID,uuid5
 from app.core.config import settings
 from app.core.observability import log_event,span
@@ -55,11 +56,65 @@ def estimated_charge(system: str,payload: str,schema: dict[str,object]) -> int:
     return len(system.encode())+len(payload.encode())+len(json.dumps(schema).encode())+settings.max_tokens
 
 
+def model_schema(node: Any) -> Any:
+    """The schema the model is sent: the same, without `pattern` keywords. On the API transport (OpenRouter) the providers
+    reject MinutesProposal's ten `\\S` patterns as "Schema is too complex", and only after 2-3 minutes, so the gateway
+    timeout reported it as a timeout (8 Nov 2026). Every reply is still validated against the full Pydantic model,
+    which keeps the non-blank rule; a blank field fails as generated_draft_invalid."""
+    if isinstance(node,dict):return {k:model_schema(v) for k,v in node.items() if not (k=='pattern' and isinstance(v,str))}
+    if isinstance(node,list):return [model_schema(v) for v in node]
+    return node
+
+
 async def model_step(prompt: dict[str,str],system: str,payload: str,schema: dict[str,object]) -> LLMResult:
-    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],schema,model=settings.meeting_model or None),timeout=240)
+    try:result=await asyncio.wait_for(call(prompt,system,[('user',payload)],model_schema(schema),model=settings.meeting_model or None),timeout=240)
     except TimeoutError as error:raise LLMTimeout('Meeting model step exceeded 240 seconds; persisted completed chunks can be resumed') from error
     log_event('meeting_model_completed',prompt_version=prompt['id'],input_tokens=result.input_tokens,output_tokens=result.output_tokens,model=result.model,latency_ms=result.latency_ms)
     return result
+
+
+HEDGES=re.compile(r'\b(?:if|unless|might|maybe|possibly)\b',re.I)
+MONTHS=('january','february','march','april','may','june','july','august','september','october','november','december')
+DATE_EVIDENCE=re.compile(r"\b(?:(\d{4}-\d{2}-\d{2})|(\d{1,2}) ("+'|'.join(MONTHS)+r") (\d{4}))\b",re.I)
+DEADLINE_PREFIX=re.compile(r"\b(?:by|on|due(?: on)?|no later than)(?:\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?)?\s+$",re.I)
+
+
+def quoted_dates(text: str,*,deadline: bool=False) -> dict[date,str]:
+    """Only calendar dates explicitly present in the exact evidence, with no relative-date inference."""
+    dates={}
+    for match in DATE_EVIDENCE.finditer(text):
+        if deadline and not DEADLINE_PREFIX.search(text[:match.start()]):continue
+        iso,day,month,year=match.groups()
+        try:due=date.fromisoformat(iso) if iso else date(int(year),MONTHS.index(month.lower())+1,int(day))
+        except ValueError:continue
+        dates[due]=match.group(0)
+    return dates
+
+
+def repair_actions(proposal: MinutesProposal,cues: tuple[Cue,...]) -> MinutesProposal:
+    """Bring each proposed action within the SQL evidence rules (0121) instead of failing the whole draft.
+    Recover an omitted deadline only from one explicit calendar date in the exact action quote. An unsupported date is dropped; an owner who
+    did not say the quoted line becomes unassigned; hedged or unquoted conditions become tentative."""
+    from pydantic import TypeAdapter
+    adapter=TypeAdapter(ProposedAction);by_id={cue.cue_id:cue for cue in cues};fixed=[]
+    for item in proposal.actions:
+        value=item.model_dump(mode='json');cue=by_id.get(value['cue_id']);text=cue.text if cue else ''
+        if item.due_on is not None:
+            value['due_quote']=quoted_dates(text).get(item.due_on)
+            if value['due_quote'] is None:value['due_on']=None
+        else:
+            deadlines=quoted_dates(item.quote,deadline=True) if item.quote in text else {}
+            value['due_quote']=None
+            if len(deadlines)==1:
+                due,quote=next(iter(deadlines.items()))
+                value.update(due_on=due,due_quote=quote)
+        if cue and value['owner']!='unassigned' and value['owner']!=cue.speaker:value['owner']='unassigned'
+        if value['commitment']=='conditional' and not (value['condition'] and value['condition'].strip() and value['condition'] in text):
+            value['commitment']='tentative';value['condition']=None
+        if value['commitment']=='agreed' and HEDGES.search(value['quote'] or ''):value['commitment']='tentative'
+        if value['commitment']=='agreed' and value['owner']=='unassigned':value['commitment']='unclear'
+        fixed.append(adapter.validate_python(value))
+    return proposal.model_copy(update={'actions':tuple(fixed)})
 
 
 async def propose(context: GenerationContext) -> Piece:
@@ -67,7 +122,7 @@ async def propose(context: GenerationContext) -> Piece:
     payload=json.dumps({'source_kind':context.source_kind,'review_note':context.review_note,'cues':[cue.model_dump(mode='json') for cue in context.cues]},ensure_ascii=False)
     with span('meeting.agent','agent',agent=MINUTES_WRITER.name,intent='draft_minutes',side='meeting',path='workflow',prompt_version=prompt['id']):
         result=await model_step(prompt,system,payload,MinutesProposal.model_json_schema())
-        proposal=MinutesProposal.model_validate(result.data)
+        proposal=repair_actions(MinutesProposal.model_validate(result.data),context.cues)
         content=bind_action_ids(proposal,context.source_id)
     charged=(result.input_tokens+result.output_tokens) if result.input_tokens is not None and result.output_tokens is not None else estimated_charge(system,payload,MinutesProposal.model_json_schema())
     return Piece(content,result.input_tokens,result.output_tokens,max(1,charged))

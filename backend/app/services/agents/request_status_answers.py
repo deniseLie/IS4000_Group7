@@ -12,7 +12,7 @@ from app.schemas.agents import Evidence
 from app.schemas.events import Source
 from app.schemas.tickets import CustomerTicket
 from app.schemas.contracts import RequestContext
-from app.services import client_intents,customer_data
+from app.services import client_intents,tools
 
 STATUS_LABELS={'submitted':'Submitted','in_review':'In review','waiting_on_client':'Waiting for your information',
     'resolved':'Resolved','closed':'Closed'}
@@ -70,7 +70,7 @@ def evidence_for(rows: Sequence[CustomerTicket],as_of: datetime) -> list[Evidenc
 async def existing_statement_request(task_id: str,question: str,ctx: RequestContext) -> tuple[AgentResult,list[Evidence]] | None:
     """Show a matching open statement request before a client prepares another one; never create a ticket."""
     if not NEW_REQUEST.search(question) or not client_intents.STATEMENT.search(question):return None
-    snapshot=await customer_data.get_ticket_records(ctx)
+    snapshot=await tools.snapshot('my_tickets',{},ctx,list[CustomerTicket])
     periods=re.findall(r'\b(?:january|february|march|april|may|june|july|august|september|october|november|december|20\d{2})\b',question,re.I)
     rows=[r for r in snapshot.data if r.category=='statement_request' and r.status in ('submitted','in_review','waiting_on_client')
         and all(period.lower() in (r.summary+' '+' '.join(r.details.values())).lower() for period in periods)]
@@ -82,7 +82,7 @@ async def existing_statement_request(task_id: str,question: str,ctx: RequestCont
 
 async def respond(task_id: str,question: str,ctx):
     if not client_intents.request_status(question):return None
-    result=await customer_data.get_ticket_records(ctx)
+    result=await tools.snapshot('my_tickets',{},ctx,list[CustomerTicket])
     rows=result.data
     # Rows are schema-validated CustomerTicket objects, filtered by the caller's
     # authenticated identity in SQL and checked again in customer_data.

@@ -26,14 +26,12 @@ def test_approval_question_breaks_previous_limit_workflow():
 def test_status_answer_uses_owned_records_and_never_infers_approval(monkeypatch):
     import asyncio
     from datetime import datetime,timezone
-    from types import SimpleNamespace
+    from app.services import customer_data
     from app.services.agents import request_status_answers as status
+    from tests.test_client_v8_request_status import customer,owned_tickets
     now=datetime(2026,10,31,tzinfo=timezone.utc)
-    async def owned(_ctx):
-        return SimpleNamespace(as_of=now,data=[SimpleNamespace(reference='TCK-001040',category='card_limit_change',
-            category_label='Card limit change',owner_team='Cards and credit team',status='resolved',created_at=now)])
-    monkeypatch.setattr(status.customer_data,'get_ticket_records',owned)
-    answer,evidence=asyncio.run(status.respond('t1','Has the bank approved my credit limit increase?',object()))
+    monkeypatch.setattr(customer_data,'get_ticket_records',owned_tickets(now))  # read through the my_tickets tool
+    answer,evidence=asyncio.run(status.respond('t1','Has the bank approved my credit limit increase?',customer('relationship')))
     assert answer is not None and evidence
     assert 'TCK-001040' in answer.text
     assert 'Resolved' in answer.text
@@ -43,16 +41,13 @@ def test_status_answer_uses_owned_records_and_never_infers_approval(monkeypatch)
 
 def test_multiple_requests_require_reference(monkeypatch):
     import asyncio
-    from datetime import datetime,timezone,timedelta
-    from types import SimpleNamespace
+    from datetime import datetime,timezone
+    from app.services import customer_data
     from app.services.agents import request_status_answers as status
+    from tests.test_client_v8_request_status import customer,owned_tickets
     now=datetime(2026,10,31,tzinfo=timezone.utc)
-    async def owned(_ctx):
-        return SimpleNamespace(as_of=now,data=[SimpleNamespace(reference=f'TCK-0010{n}',category='card_limit_change',
-            category_label='Card limit change',owner_team='Cards and credit team',status='in_review',created_at=now+timedelta(minutes=n))
-            for n in (40,41)])
-    monkeypatch.setattr(status.customer_data,'get_ticket_records',owned)
-    answer,_=asyncio.run(status.respond('t1','What is the status of my card limit increase?',object()))
+    monkeypatch.setattr(customer_data,'get_ticket_records',owned_tickets(now,*((f'TCK-0010{n}','in_review',n) for n in (40,41))))
+    answer,_=asyncio.run(status.respond('t1','What is the status of my card limit increase?',customer('relationship')))
     assert 'Which reference do you mean?' in answer.text
-    answer,_=asyncio.run(status.respond('t1','What is the status of TCK-001040?',object()))
+    answer,_=asyncio.run(status.respond('t1','What is the status of TCK-001040?',customer('relationship')))
     assert 'TCK-001040' in answer.text and 'TCK-001041' not in answer.text

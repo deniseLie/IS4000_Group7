@@ -38,5 +38,5 @@ def test_ticket_policy_needs_confirmation_and_categories_are_public() -> None:
     customer=RequestContext(session_id=uuid4(),principal=Principal(kind='customer',user_id=uuid4(),customer_id=1002,jwt=SecretStr('x')))
     decision=decide(customer.principal,'ticket.create',{'customer_id':1002},customer)
     assert decision.allow and 'require:confirmation' in decision.obligations
-    agent=customer.model_copy(update={'agent':'retail'})
+    agent=customer.model_copy(update={'agent':'relationship'})
     assert not decide(agent.principal,'ticket.create',{'customer_id':1002},agent).allow   # agents never raise tickets themselves

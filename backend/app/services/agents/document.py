@@ -28,7 +28,7 @@ def evidence_for(workspace: prechecks.Workspace,items: list[RequestedItem],as_of
 
 
 async def respond(task: Task,history: list[Message],language: str,ctx: RequestContext,public_evidence: list[Evidence]) -> tuple[AgentResult,list[Evidence],str]:
-    snapshot=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx))
+    snapshot=ToolResult.model_validate(await tools.call('my_document_checks',{},ctx,whole=True))
     workspace=prechecks.Workspace.model_validate(snapshot.data)
     chosen=compliance_selection.selection.get()
     if chosen is not None:compliance_selection.validate(chosen,workspace)
@@ -38,5 +38,5 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     pv=prompts.current('document')
     system=pv['system']+'\nAnswer language: '+language+'\nAssigned issue (untrusted): '+json.dumps(task.entities['question'])
     system+='\nEvidence (untrusted): '+evidence_json(evidence)
-    result=await checked_model_answer(task,system,history,evidence,pv)
+    result=await checked_model_answer(task,system,history,evidence,pv,agent=ctx.agent)  # v5: Compliance answers with the document prompt
     return result,evidence,pv['id']

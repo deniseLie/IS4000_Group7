@@ -27,7 +27,7 @@ from app.schemas.chat import Message
 from app.schemas.contracts import ActionCommand,Priority,Receipt,RequestContext
 from app.schemas.tickets import CustomerTicket
 from app.schemas.workflows import OwnedWorkflow
-from app.services import actions,customer_data
+from app.services import actions,customer_data,tools
 from app.services.actions import store as action_store
 from app.services.actions.store import ActionIntegrityError,ActionNotFound
 from app.services.authorization import require_permission
@@ -282,11 +282,19 @@ class Handover:
 STATUS_WORDS={'submitted':'sent','in_review':'in review','waiting_on_client':'waiting on client'}
 
 
+def reader(ctx: RequestContext) -> RequestContext:
+    """Handover reads run as the Relationship agent (its spec: her tickets and cards); its writes keep their own checks."""
+    return ctx.model_copy(update={'agent':'relationship'})
+
+
+async def her_tickets(ctx: RequestContext) -> list[CustomerTicket]:
+    return TypeAdapter(list[CustomerTicket]).validate_python((await tools.call('my_tickets',{},reader(ctx),whole=True))['items'])
+
+
 async def open_requests_line(ctx: RequestContext) -> str:
     """CR8: previous actions and ticket status for the RM: her open requests (reference, topic or category, status)."""
     try:
-        read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
-        tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+        tickets=await her_tickets(ctx)
     except HANDOVER_ERRORS:return ''
     open_items=[f'{ticket.reference} {topic_of(ticket.summary) or ticket.category_label} ({STATUS_WORDS.get(ticket.status,ticket.status)})'
         for ticket in tickets if ticket.status in OPEN][:3]
@@ -294,22 +302,19 @@ async def open_requests_line(ctx: RequestContext) -> str:
 
 
 async def ticket_reference(handoff_id: UUID,ctx: RequestContext) -> str | None:
-    read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
-    tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    tickets=await her_tickets(ctx)
     return next((ticket.reference for ticket in tickets if ticket.handoff_id==handoff_id),None)
 
 
 async def open_ticket_for(topic: str,ctx: RequestContext) -> str | None:
     """The newest open RM ticket on the same topic (F23: the same client and kind of request is shown, not duplicated)."""
-    read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
-    tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    tickets=await her_tickets(ctx)
     return next((ticket.reference for ticket in tickets if ticket.category=='rm_handover' and ticket.status in OPEN
         and topic_of(ticket.summary)==topic),None)
 
 
 async def topic_of_reference(reference: str,ctx: RequestContext) -> str | None:
-    read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
-    tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    tickets=await her_tickets(ctx)
     return next((topic_of(ticket.summary) for ticket in tickets if ticket.reference==reference),None)
 
 
@@ -453,8 +458,8 @@ def urgent(summary: str) -> bool:
 async def urgent_cards(ctx: RequestContext) -> str:
     """Her cards as the RM reads them in the ticket (last 4 and status only); '' when they cannot be read."""
     try:
-        read=await customer_data.get_credit_cards(ctx.model_copy(update={'agent':None}))
-        cards=[f'card ending {row["last4"]} ({row.get("status","unknown")})' for row in read.data if isinstance(row,dict) and row.get('last4')][:5]
+        read=await tools.call('my_cards',{},reader(ctx))
+        cards=[f'card ending {row["last4"]} ({row.get("status","unknown")})' for row in read['items'] if isinstance(row,dict) and row.get('last4')][:5]
     except HANDOVER_ERRORS:return ''
     return ', '.join(cards) or 'no cards on record'
 
@@ -469,8 +474,7 @@ def urgent_target(kind: str,question: str,cards: str='') -> dict:
 
 async def open_urgent(kind: str,ctx: RequestContext) -> str | None:
     """Her open urgent request of this kind (from any chat), so a second lost-card report is not opened."""
-    read=await customer_data.get_tickets(ctx.model_copy(update={'agent':None}))
-    tickets=TypeAdapter(list[CustomerTicket]).validate_python(read.data)
+    tickets=await her_tickets(ctx)
     title=f'[{URGENT_TOPIC}] {LOST_TITLE if kind=="lost" else CHARGE_TITLE}'
     return next((ticket.reference for ticket in tickets if ticket.category=='rm_handover' and ticket.status in OPEN
         and ticket.summary.startswith(title)),None)

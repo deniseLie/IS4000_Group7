@@ -21,7 +21,6 @@ import re
 from collections import Counter
 from datetime import date
 from uuid import UUID,uuid4
-from pydantic import TypeAdapter
 from app.core import data_api
 from app.core.config import settings
 from app.core.observability import log_event,span,start_trace
@@ -30,9 +29,8 @@ from app.schemas.contracts import OfferProposal,RequestContext,RiskAssessment
 from app.schemas.customer_data import CustomerEnvelope
 from app.schemas.meetings import TOPIC_NAME,TalkingPoint
 from app.schemas.talking_points import InsightShareResult,InsightShareTarget,MyTalkingPoints,TopicStatus
-from app.services import audit,llm_gateway,offers,prompts
+from app.services import audit,llm_gateway,offers,prompts,tools
 from app.services.authorization import require_permission
-from app.services.customer_data import _read
 
 TOPICS=('home_loan','investments','fixed_deposit','insurance')
 STAGES=('curious','exploring','planning','ready','concern')
@@ -77,8 +75,6 @@ SCHEMA={'title':'talking_points','description':'Talking points in her latest mes
         'topic':{'type':'string','enum':list(TOPICS)},'stage':{'type':'string','enum':list(STAGES)},
         'timeframe':{'type':'string','enum':list(TIMEFRAMES)},'concerns':{'type':'array','items':{'type':'string','enum':list(CONCERNS)}},
         'quote':{'type':'string'}}}}}}
-STATUS=TypeAdapter(CustomerEnvelope[TopicStatus])
-MINE=TypeAdapter(CustomerEnvelope[MyTalkingPoints])
 ACTOR={'actor_type':'agent','actor_id':'talking_points'}
 
 
@@ -125,13 +121,13 @@ def validate(points: list[dict],message: str,muted: set[str]) -> tuple[list[dict
     return kept,dropped
 
 
+def lane(ctx: RequestContext) -> RequestContext:
+    """Both lanes read as the chat insights lane (registry.TOOLS['talking_points']: her topic status only), through the tools."""
+    return ctx.model_copy(update={'agent':'talking_points'})
+
+
 async def status(ctx: RequestContext) -> TopicStatus:
-    return (await _read('insights.status','customer_topic_status',{},STATUS,ctx)).data
-
-
-async def mine(ctx: RequestContext) -> CustomerEnvelope[MyTalkingPoints]:
-    """Her own points (list values, never her words), removed points, mutes and pause (Data sharing > Chat insights)."""
-    return await _read('insights.read','customer_read_talking_points',{},MINE,ctx)
+    return (await tools.snapshot('my_topic_status',{},lane(ctx),TopicStatus)).data
 
 
 def system_text(prompt: dict) -> str:
@@ -180,12 +176,16 @@ async def _after_reply(ctx: RequestContext,batch: audit.AuditBatch,turn_id: UUID
             users=[m.content for m in history if m.role=='user']  # the saved history is redacted; the latest message by the guardrail
             message,previous=risk.redacted_message or users[-1],(users[-2] if len(users)>1 else None)
             from app.services import talking_points_state as v2  # lane 1 v2 (0143); imports this module
-            stateful=v2.version()=='v2'
-            current=await (v2.state(ctx,turn_id) if stateful else status(ctx))
-            reason=('no_consent' if not current.chat_topics else 'paused' if current.paused else  # paused: a pause from before 0145
-                v2.gate(message,risk,offer_reply,current.active_topics) if stateful else prefilter(message,risk,offer_reply))
+            version=v2.version()
+            stateful=version!='v1'
+            if risk.fixed_response is not None or risk.risk_flags:
+                reason='safety'
+            else:
+                current=await (v2.state(ctx,turn_id) if stateful else status(ctx))
+                reason=('no_consent' if not current.chat_topics else 'paused' if current.paused else  # a pause from before 0145
+                    v2.gate(message,risk,offer_reply,current.active_topics) if stateful else prefilter(message,risk,offer_reply))
             attrs['outcome']=reason or 'extracted'
-            tag={'version':'v2'} if stateful else {}
+            tag={'version':version} if stateful else {}
             if reason:batch.add('agent','agent.talking_points_skipped',details={'reason':reason,'turn_id':str(turn_id),**tag},**ACTOR)
             else:
                 counts=await (v2.extract(ctx,turn_id,message,v2.earlier_messages(history),current) if stateful else

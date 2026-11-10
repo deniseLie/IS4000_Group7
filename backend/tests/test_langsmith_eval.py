@@ -66,6 +66,9 @@ def test_a_tap_after_a_skipped_form_is_unplayed_and_an_offer_can_be_expected():
 def test_the_after_reply_talking_points_call_is_not_the_turns_model_call():
     spans=[('agent',{'agent':'relationship'}),('llm',{'agent':'relationship'}),('llm',{'agent':'talking_points'})]
     assert targets.answer_calls(spans)==1 and targets.answer_calls(spans[2:])==0
+    # C06: a fixed reply runs no tools; lane 1 still reads her topic state after it, which is not the turn's read
+    reads=[('tool_call',{'tool':'my_cards','agent':'accounts'}),('tool_call',{'tool':'my_topic_state','agent':'talking_points'})]
+    assert targets.turn_tools(reads)==['my_cards'] and targets.turn_tools(reads[1:])==[]
 
 
 def test_ticket_checks():
@@ -92,6 +95,20 @@ def test_trajectory_checks():
     rm={'pipeline':'rm','nodes':[],'idle':[],'agents':{},'tools':['rm_book'],'model':True}
     assert set(scores(evaluators.checks(out(tools=['rm_book'],model_calls=1),{'trajectory':rm})).values())=={1}
 
+
+def test_limit_request_sources_require_a_matching_client_and_category():
+    rule={'customer_id':1002,'category':'card_limit_change','fallback_source':'cards'}
+    relevant={'reference':'TCK-000001','category':'card_limit_change','customer_id':1002}
+    unrelated={'reference':'TCK-000002','category':'rm_handover','customer_id':1002}
+    other_client={**relevant,'reference':'TCK-000003','customer_id':1003}
+    def score(sources,tickets):
+        return evaluators.request_sources(rule,out(replies=[{'sources':sources}],tickets={'all':tickets}))['score']
+    assert score(['ticket-TCK-000001'],[relevant,unrelated])==1
+    assert score(['cards'],[unrelated])==1
+    assert score(['cards'],[relevant])==0
+    assert score(['cards','ticket-TCK-000002'],[unrelated])==0
+    assert score(['ticket-TCK-000003'],[other_client])==0
+
 def test_direct_record_reads_are_distinct_from_mcp_tool_calls():
     ref={'trajectory':{'nodes':[],'idle':[],'agents':{},'tools':[], 'service_reads':['tickets.list']}}
     assert scores(evaluators.checks(out(service_reads=['tickets.list']),ref))['service_reads']==1
@@ -116,13 +133,6 @@ def test_dependency_checks():
     assert all(found[k]['score']==0 for k in ('nodes','waves','exports','skipped','rerouted'))
     assert found['exports']['comment']=='not passed: accounts>relationship:due_dates'
     assert 'waves' not in scores(evaluators.checks(out(),{'trajectory_v5':t}))  # an output without dependency facts (v4 runs)
-
-def test_the_external_fault_fails_the_public_call(monkeypatch):
-    from app.services import external
-    with targets.inject('external_down') as applied:
-        assert applied
-        with pytest.raises(external.ExternalError):asyncio.run(external.public_holidays('JP',None))
-
 
 def test_the_consent_fault_reads_the_grant_as_revoked(monkeypatch):
     async def rpc(name,params,ctx,tool):

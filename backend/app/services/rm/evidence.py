@@ -186,6 +186,26 @@ def appointments_evidence(result: dict,customer_id: int|None=None) -> Evidence:
     return Evidence('appointments','Confirmed and held appointments (held times are not confirmed)','calendar',rows,str(result.get('as_of')),customer_id)
 
 
+ZOOM_MEANING='No Zoom link for a phone or in-person meeting.'
+ZOOM_UNCHECKED='Zoom could not be checked for this meeting right now, so say it was not checked.'
+
+
+def zoom_evidence(result: dict,appointment: dict|None=None) -> Evidence:
+    """zoom_meeting_check's codes for one meeting (no link, ids or names); one item per appointment when it is known."""
+    d=result['data']
+    if appointment is None:return Evidence('zoom-check',f"Zoom check for the meeting on {d['meeting']}, checked {d['checked_at']}",'calendar',d,str(result.get('as_of')))
+    return Evidence('zoom-check-'+str(appointment['appointment_id'])[-6:],f"Zoom check for {appointment['client']}, {appointment['when']}, checked {d['checked_at']}",
+        'calendar',d,str(result.get('as_of')),appointment.get('customer_id'))
+
+
+def zoom_not_checked(appointment: dict,reason: str) -> Evidence:
+    """No Zoom read for this meeting: `not_video` (phone or in person) or `unavailable` (the check failed)."""
+    data={'meeting':appointment['when'],'format':appointment.get('format'),'checked':False,
+        'meaning':ZOOM_MEANING if reason=='not_video' else ZOOM_UNCHECKED}
+    return Evidence(f"zoom-check-{reason.replace('_','-')}-{str(appointment['appointment_id'])[-6:]}",
+        f"Zoom not checked for {appointment['client']}, {appointment['when']}",'record',data,None,appointment.get('customer_id'))
+
+
 def reviews_bundle(result: dict) -> Bundle:
     bundle=Bundle()
     for row in result['data']:

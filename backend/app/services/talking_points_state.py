@@ -16,24 +16,20 @@ import re
 from collections import Counter
 from typing import get_args
 from uuid import UUID
-from pydantic import TypeAdapter
 from app.core.config import settings
 from app.schemas.chat import Message
 from app.schemas.contracts import RequestContext,RiskAssessment
-from app.schemas.customer_data import CustomerEnvelope
 from app.schemas.meetings import KINDS,ConcernTag
 from app.schemas.talking_points_state import TopicState
-from app.services import llm_gateway,prompts
+from app.services import llm_gateway,prompts,tools
 from app.services import talking_points as tp
 from app.services.authorization import require_permission
-from app.services.customer_data import _read
 
 ACTIONS=('add','update','on_hold')
 CONCERNS=get_args(ConcernTag)
 ALL_KINDS=tuple(kind for kinds in KINDS.values() for kind in kinds)
 RANK=('concern','curious','exploring','planning','ready')  # = insights.stage_rank: the stage only moves up
 EARLIER=5  # her messages before the latest one that the model sees, from this chat only
-STATE=TypeAdapter(CustomerEnvelope[TopicState])
 # Her own words that a plan is off. Only these make an on hold; doubt or a question never does.
 OFF=re.compile(r"\bnot\s+(?:going\s+)?(?:to\s+)?go(?:ing)?\s+ahead\b|\bdecided\s+(?:not\s+to|against)\b|\bput\s+(?:it|this|that|them|things|everything)\s+off\b"
     r"|\bput\s+off\b|\bput\s+(?:the|our|my)\s+\w+(?:\s+\w+)?\s+off\b|\bpostpon\w*|\bhold(?:ing)?\s+off\b|\bon\s+hold\b|\bno\s+longer\b"
@@ -48,7 +44,7 @@ SCHEMA={'title':'talking_point_changes','description':'Changes her latest messag
 
 
 def version() -> str:
-    """The lane 1 prompt in use (prompts.VERSIONS, the one table): "v2" switches lane 1 to this module."""
+    """The lane 1 prompt in use (prompts.VERSIONS, the one table): Versions after v1 use this stateful module."""
     return prompts.VERSIONS['talking_points']
 
 
@@ -139,12 +135,12 @@ def apply(points: dict[str,dict],change: dict,active: list[str]|tuple=(),muted: 
 
 async def state(ctx: RequestContext,turn_id: UUID) -> TopicState:
     """The one read before a turn is classified: the status, her points (list values only) and this chat's active topics."""
-    return (await _read('insights.status','customer_topic_state',{'p_turn_id':str(turn_id)},STATE,ctx)).data
+    return (await tools.snapshot('my_topic_state',{'turn_id':str(turn_id)},tp.lane(ctx),TopicState)).data
 
 
 async def extract(ctx: RequestContext,turn_id: UUID,message: str,earlier: list[str],current: TopicState) -> dict:
     """One classification and the code checks; applies the kept changes under her JWT. Counts only come back."""
-    prompt=prompts.load('talking_points','v2')
+    prompt=prompts.load('talking_points',version())
     result=await llm_gateway.call(prompt,prompt['system'],model_input(current,earlier,message),SCHEMA,model=settings.talking_points_model or None,retries=0)
     proposed=result.data.get('changes') or []
     kept,dropped=validate(proposed,message,current)

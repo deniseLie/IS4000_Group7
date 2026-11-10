@@ -13,7 +13,7 @@ test('staff outcomes remain recorded in customer actions records and inbox',asyn
     for(const id of fixture.staff_command_ids) {
       const command=page.locator(`[data-command-id="${id}"]`);
       await expect(command.getByTestId('command-state')).toHaveText('succeeded');
-      await expect(command.getByTestId('command-receipt')).toContainText(`rcpt_${id.replaceAll('-','')}`);
+      await expect(command.getByTestId('command-receipt')).toHaveAttribute('title',`rcpt_${id.replaceAll('-','')}`);
       await expect(command.getByTestId('review-command')).toHaveCount(0);
     }
     const actions=page.getByTestId('actions-page');

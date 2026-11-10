@@ -45,8 +45,8 @@ def group_for(case_id: UUID) -> UUID:
 
 
 async def save(proposals: list[Proposal], ctx: RequestContext, turn_id: UUID | None = None) -> list[Offer]:
-    """Save a reply's offers in order. Each needs its agent's allow-list to list the type (authorization.decide: the spec's
-    offers for an ENFORCED agent, the v4 TOOLS/AGENT_ACTIONS for compliance and relationship). A chained offer
+    """Save a reply's offers in order. Each needs its agent's spec to list the type (authorization.decide: the spec's
+    offers, for every chat agent). A chained offer
     carries "after_receipt": null, which offer_group_confirm fills with the previous step's receipt (migration 0100)."""
     if not proposals:return []
     if ctx.case_id is None or ctx.principal.kind != 'customer':raise ActionIntegrityError('Offers need a signed-in customer case')

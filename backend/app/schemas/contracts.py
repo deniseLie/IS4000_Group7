@@ -8,10 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, model_v
 
 Priority = Literal['P0', 'P1', 'P2', 'P3']  # P0 urgent card > P2 regulatory deadline or RM handover > P3 everything else (P1 unused since 2b)
 Domain = Literal['fraud', 'retail', 'compliance', 'document', 'relationship', 'smalltalk']
-AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship']
+# talking_points: the chat insights lane after a reply (services/talking_points.lane), allowed only her topic status.
+AgentName = Literal['retail', 'fraud', 'compliance', 'document', 'relationship', 'talking_points']
 # v5 agents (architecture §5.6.1): four client agents (Security removed in build plan 2b) and three RM agents (build
-# plan 3a). `compliance` and `relationship` keep their v4 names; the v4 agents use registry.TOOLS; agents/rules.py still
-# calls the v4 responders under these names.
+# plan 3a). `compliance` and `relationship` keep their v4 names. Every one runs from its AgentSpec (registry.ENFORCED), its
+# rules too (agents/rules.py); `retail` and `document` remain only as domains of the released prompts Accounts and
+# Compliance answer with.
 TargetAgent = Literal['guide', 'accounts', 'compliance', 'relationship', 'rm_client', 'rm_requests', 'rm_calendar']
 TaskStatus = Literal['pending', 'running', 'awaiting_confirmation', 'done', 'failed']
 AgentStatus = Literal['ok', 'needs_clarification', 'needs_confirmation', 'needs_human', 'error']
@@ -191,7 +193,7 @@ class AgentSpec(Contract):
     tools: dict[ToolName, ToolView]
     intents: dict[str, tuple[Read, ...]]  # intent -> default reads (docs/architecture.md §14.5)
     loop_tools: frozenset[ToolName] = frozenset()  # tools an `open` task may choose
-    external: frozenset[str] = frozenset()  # external tools (phase 2): public_holidays, fx_rate; usable in reads and loop_tools
+    external: frozenset[str] = frozenset()  # tools that call an outside service (registry.EXTERNAL: the RM Zoom check); usable in reads and loop_tools
     exports: dict[str, str] = {}  # name -> EXPORT_TYPES name, computed by code (agents/derived.py), never by the model
     sort_by: dict[str, str] = {}  # list export of objects -> the field a fan-out sorts on (a list of dates sorts by value)
     imports: frozenset[str] = frozenset()

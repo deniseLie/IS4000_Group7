@@ -32,6 +32,16 @@ def ticket_check(expected: str | None,out: dict[str,Any]) -> dict[str,Any]:
     return result('ticket',bool(match),', '.join(t['reference'] for t in match) or f'no {expected} ticket opened or quoted')
 
 
+def request_sources(expected: dict[str,Any],out: dict[str,Any]) -> dict[str,Any]:
+    cited={source for reply in out['replies'] for source in reply.get('sources',[])}
+    refs={source for source in cited if source.startswith('ticket-')}
+    matching={'ticket-'+t['reference'] for t in out['tickets']['all']
+        if t.get('customer_id')==expected['customer_id'] and t['category']==expected['category']}
+    # A record-only answer is valid when there is no matching request to cite.
+    ok=refs<=matching and (bool(refs) if matching else expected['fallback_source'] in cited)
+    return result('record_sources',ok,'cited '+(', '.join(sorted(cited)) or 'nothing'))
+
+
 def counts_match(got: dict[str,int],want: dict[str,int|str]) -> bool:
     """Agent run counts: exact, or a range "a-b" (a fan-out whose size depends on the records, R21)."""
     def fits(n: int,w: int|str) -> bool:
@@ -130,7 +140,11 @@ def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     if ref.get('source_prefix'):
         cited={s for r in out['replies'] for s in r.get('sources',[])}
         found.append(result('record_sources',any(s.startswith(ref['source_prefix']) for s in cited),'cited '+(', '.join(sorted(cited)) or 'nothing')))
+    if 'request_sources' in ref:found.append(request_sources(ref['request_sources'],out))
     if 'expected_origin' in ref:found.append(result('origin',first.get('origin')==ref['expected_origin'],f"first turn origin {first.get('origin')}"))
+    if 'expected_response_status' in ref:
+        observed=first.get('response_status')
+        found.append(result('response_status',observed==ref['expected_response_status'],f'first turn status {observed}'))
     if 'expected_route' in ref:found.append(result('fixed_route',out['routes'][0]==ref['expected_route'],f"route {out['routes'][0]}"))
     if 'expect_needs_human' in ref:found.append(result('needs_human',first.get('needs_human')==ref['expect_needs_human'],f"needs_human {first.get('needs_human')}"))
     if 'ticket' in ref:found.append(ticket_check(ref['ticket'],out))
@@ -151,22 +165,37 @@ def judge_name() -> str:
     """Require an explicit judge distinct from the actual answering model on either transport."""
     name=os.getenv('JUDGE_MODEL')
     if not name:raise RuntimeError('Set JUDGE_MODEL to use --judge')
-    from app.services.llm_gateway import model_name
+    from app.services.llm_gateway import model_name,transport
+    if transport()=='codex':name=name.removeprefix('openai/')
     if name==model_name():raise RuntimeError('JUDGE_MODEL must differ from the answering model')
     return name
 
 
-def judge_model():
+def judge_model(schema: dict[str,Any]=JUDGE_SCHEMA,timeout: Any=60):
     name=judge_name()
     from langchain.chat_models import init_chat_model
     provider=os.getenv('LLM_PROVIDER') or 'openai'
     kwargs={'api_key':os.environ['LLM_API_KEY'],'base_url':os.environ['LLM_BASE_URL']} if provider=='openai' else {}
-    return init_chat_model(name,model_provider=provider,timeout=60,max_retries=1,**kwargs).with_structured_output(JUDGE_SCHEMA,method='json_schema',strict=True)
+    return init_chat_model(name,model_provider=provider,timeout=timeout,max_retries=1,**kwargs).with_structured_output(schema,method='json_schema',strict=True)
+
+
+async def judge_answer(system: str,schema: dict[str,Any],messages: list[tuple[str,str]]) -> dict[str,Any]:
+    """One strict-schema judge reply on CHAT_TRANSPORT: the codex or claude CLI, else JUDGE_MODEL on the API (OpenRouter)."""
+    from app.services.llm_gateway import transport
+    if transport() in ('codex','claude'):
+        from app.services import claude_cli,codex_cli
+        return (await (codex_cli if transport()=='codex' else claude_cli).answer_with_model(system,schema,messages,judge_name()))[0]
+    # 180 s: meeting payloads are longer than a chat. An httpx.Timeout is unhashable, so LangChain builds this call its own
+    # HTTP client instead of its cached one: the meeting tests call the judge on a fresh loop (asyncio.run) while the app
+    # serves on another, and a pooled connection from a closed loop fails with "Event loop is closed".
+    import httpx
+    return await judge_model(schema,timeout=httpx.Timeout(180)).ainvoke([('system',system),*messages])
 
 
 def transcript(out: dict[str,Any]) -> str:
     role='Relationship manager' if out.get('pipeline')=='rm' else 'Client'
-    return redact('\n\n'.join(f"{role}: {r['say']}\nAssistant: {r.get('answer') or '(no reply: '+str(r.get('error'))+')'}\nSources: {', '.join(r.get('sources',[])) or 'none'}\nSource records: {json.dumps(r.get('evidence',[]),ensure_ascii=False)}"
+    # Origin and model calls per reply: cases say "fixed reply, no model call", and the judge cannot see the trajectory otherwise.
+    return redact('\n\n'.join(f"{role}: {r['say']}\nAssistant: {r.get('answer') or '(no reply: '+str(r.get('error'))+')'}\nReply origin: {r.get('origin') or 'unknown'}; model calls: {r.get('model_calls','unknown')}\nSources: {', '.join(r.get('sources',[])) or 'none'}\nSource records: {json.dumps(r.get('evidence',[]),ensure_ascii=False)}"
         for r in out['replies']))[0]
 
 

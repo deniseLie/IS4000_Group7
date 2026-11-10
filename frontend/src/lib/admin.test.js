@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,failingFirst,filterGroups,firstLine,isAdmin,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
+import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,evalSuccess,overTarget,traceBudget,usd,failingFirst,filterGroups,firstLine,isAdmin,judgeSummary,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -13,6 +13,7 @@ test('shows the admin dashboard only for the administrator-set admin role',()=>{
 
 test('counts cases and labels scores',()=>{
   assert.deepEqual(summary([{status:'pass'},{status:'fail'},{status:'fail'},{status:'skipped'}]),{pass:1,fail:2,skipped:1,error:0});
+  assert.deepEqual(judgeSummary([{judge:1},{judge:0.5},{judge:0},{judge:null},{}]),{scored:3,full:1});
   assert.deepEqual([1,0,0.5,null].map(scoreLabel),['pass','fail','0.5','n/a']);
   assert.equal(seconds(31.46),'31.5 s');assert.equal(seconds(null),'—');
 });
@@ -24,6 +25,7 @@ test('formats rates and the change since the previous window, with the good dire
   assert.deepEqual(delta(40,46,{kind:'seconds',better:'down'}),{text:'−6.0 s',tone:'down-good'});
   assert.deepEqual(delta(18,12,{kind:'count',better:''}),{text:'+6',tone:''});
   assert.deepEqual(delta(3,3),{text:'no change',tone:''});
+  assert.deepEqual(delta(0.85,0.7,{kind:'score'}),{text:'+0.15',tone:'up-good'});
   assert.equal(delta(0.9,null),null);
 });
 
@@ -66,6 +68,17 @@ test('the All datasets row is the latest full run against the full run before it
   assert.deepEqual(row.problems,[{label:'regressed',count:2},{label:'flaky',count:1}]);
   const never=datasetRow({dataset:'demobank-new',runs:0,timeline:[],heatmap:{labels:{}}});
   assert.equal(never.pass_rate,null);assert.equal(never.counts,null);assert.deepEqual(never.problems,[]);
+  assert.equal(never.judge,null);assert.equal(never.judge_current,false);
+});
+
+test('the judge mean is the latest judged full run against the one before it by the same judge; a run without --judge keeps it', () => {
+  const point=(experiment,judge,subset=false,judge_model='openai/gpt-6-luna')=>({experiment,judge,subset,pass_rate:1,judge_model:judge==null?null:judge_model,started_at:`2026-11-0${experiment.length}T00:00:00Z`});
+  const judged=datasetRow({dataset:'demobank-safety',timeline:[point('a',0.7),point('bb',null),point('ccc',0.4,false,'sonnet'),point('dddd',0.85),point('eeeee',0.2,true)]});
+  assert.equal(judged.judge,0.85);assert.equal(judged.previous_judge,0.7);assert.equal(judged.judge_current,true);assert.equal(judged.judge_model,'openai/gpt-6-luna');
+  assert.equal(datasetRow({dataset:'demobank-qa1-rm',timeline:[point('a',0.97,false,'sonnet'),point('bb',0.62)]}).previous_judge,null);
+  const later=datasetRow({dataset:'demobank-safety',timeline:[point('a',0.7),point('bb',0.85),point('ccc',null)]});
+  assert.equal(later.judge,0.85);assert.equal(later.judge_current,false);assert.equal(later.judge_at,'2026-11-02T00:00:00Z');
+  assert.equal(datasetRow({dataset:'demobank-planner',timeline:[point('a',null)]}).judge,null);
 });
 
 test('heatmap rows put cases that need a look first and a run lists errors and failures first, otherwise in order', () => {
@@ -113,4 +126,18 @@ test('refusal and consent-gap counts read largest first, and the pages filter by
   globalThis.fetch=async url=>{seen.push(url);return {ok:true,json:async()=>({agents:[]})};};
   try{await loadAgents('7d','live','rm','token');}finally{globalThis.fetch=real;}
   assert.equal(seen[0],'/api/admin/agents?window=7d&source=live&side=rm');
+});
+
+test('the overview success rate is cases passed over cases scored across the latest runs',()=>{
+  const rows=[{counts:{pass:10,fail:0,error:0,skipped:2}},{counts:{pass:15,fail:1,error:1,skipped:0}}];
+  assert.deepEqual(evalSuccess(rows),{rate:25/27,passed:25,scored:27,datasets:2,failing:1});
+  assert.equal(evalSuccess([]).rate,null);
+  assert.equal(evalSuccess(undefined).datasets,0);
+});
+
+test('the overview headline formats cost, latency targets and the trace budget',()=>{
+  assert.equal(usd(0.0123),'≈ $0.012');assert.equal(usd(0.0004),'≈ <$0.001');assert.equal(usd(12.5),'≈ $12.50');assert.equal(usd(null),'—');
+  assert.equal(overTarget({p95_client_s:12,p95_rm_s:61}),true);assert.equal(overTarget({p95_client_s:12,p95_rm_s:59}),false);
+  assert.deepEqual(traceBudget({used:6900,limit:7796,resets:'2026-12-01'}),{left:896,used:6900,limit:7796,share:6900/7796,warn:true,resets:'2026-12-01'});
+  assert.equal(traceBudget({used:8000,limit:7796}).left,0);assert.equal(traceBudget(null),null);
 });

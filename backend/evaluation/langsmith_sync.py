@@ -15,8 +15,8 @@ from uuid import NAMESPACE_URL,uuid5
 import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
 from app.schemas.contracts import TargetAgent
-from app.services.tools import TOOLS
-from app.services.agents.registry import TOOLS as SERVICE_TOOLS
+from app.services.tools import MEETING_READS,TOOLS
+from app.services.agents.registry import TOOL_PERMISSION, TOOLS as SERVICE_TOOLS
 
 HERE=Path(__file__).parent
 def article_ids() -> frozenset[str]:
@@ -35,12 +35,12 @@ DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection
               'demobank-safety':'Fixed safety routes that must answer without a model call.',
               'demobank-qa1-client':'Backlog C01-C24 (Michelle): schema, competency and trajectory; UI-only cases explicitly manual.',
               'demobank-qa1-rm':'Backlog R01-R20 and build plan 3b R24-R27 (Sophie): real RM API evaluations; approval and special setup cases explicitly manual.',
-              'demobank-graph':'v4 vs v5 graph cases C28, R21-R23 and failure variants: dependencies, fan-out, handoffs, confirmation chains.',
+              'demobank-graph':'v4 vs v5 graph cases C28, R21, R23 and failure variants: dependencies, fan-out, handoffs, confirmation chains.',
               'demobank-planner':'Planner-only cases: message to expected agents, entities and dependencies; no agents run.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
-EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
-          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','plan','offer')
+EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human','expected_response_status',
+          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','request_sources','plan','offer')
 OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','backlog','owner','manual_reason','legacy_id','pattern','variant_of')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name PLANNED_AGENTS/PLANNED_TOOLS (all built now).
 NODES=('planner','agent','gather','act','compose')
@@ -54,8 +54,8 @@ PLANNED_TOOLS=('rm_book','rm_client_profile','rm_tickets','rm_meeting_notes','rm
 # v5 (architecture §14, §5.6.1): graph cases may also name V5_TOOLS, all built except my_statements; the RM agents are built (phase 9).
 V5_NODES=NODES
 V5_AGENTS=get_args(TargetAgent)  # the built v5 agents (phase 9 added the RM agents; 3a split them into three)
-V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates','public_holidays','fx_rate')
-FAULTS=('external_down','upstream_withheld','receipt_failed','consent_revoked')
+V5_TOOLS=('my_accounts','my_loans','my_statements','my_profile','my_rm','my_appointments','my_consents','travel_flags','document_templates')
+FAULTS=('upstream_withheld','receipt_failed','consent_revoked')
 
 def load(dataset):
     path=HERE/DATASETS[dataset]
@@ -67,11 +67,11 @@ def example_id(dataset,case_id):
 def check_trajectory(name,case,nodes=NODES,agents=AGENTS):
     """Every node, agent and tool a QA1 case names must exist, so a renamed piece fails the sync instead of the run."""
     t=case['trajectory'];spec=case['state']=='spec'
-    agents=agents+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
+    agents=agents+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*MEETING_READS,*(PLANNED_TOOLS if spec else ()))
     problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in nodes]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
     problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
     problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]
-    services={tool for names in SERVICE_TOOLS.values() for tool in names}
+    services={tool for names in (*SERVICE_TOOLS.values(),*TOOL_PERMISSION.values()) for tool in names}  # the permissions the tools check
     problems+=[f'service read {x}' for x in t.get('service_reads',[]) if x not in services]
     if problems:raise ValueError(f'{name}: unknown or inconsistent {problems[0]}')
 
