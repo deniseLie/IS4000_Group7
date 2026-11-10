@@ -136,8 +136,8 @@ def test_extract_applies_each_kept_change_through_the_sql_function(monkeypatch) 
     assert counts=={'proposed':2,'kept':1,'dropped':{'not_active':1},'outcomes':{'recorded':1},'actions':{'update':1},'carried':1}
 
 
-def test_v3_is_the_lane_one_default() -> None:
-    assert v2.version()=='v3'
+def test_v2_is_the_lane_one_default() -> None:
+    assert v2.version()=='v2'  # v3 stays on disk; it misjudged stages (prompt log v3)
 
 
 def test_fixed_refusal_skips_topic_state_before_any_tool_read(monkeypatch) -> None:

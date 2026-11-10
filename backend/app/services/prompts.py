@@ -22,7 +22,7 @@ VERSIONS = {
     'relationship': 'v8',
     'document': 'v6',
     'notice_requirements': 'v2', 'document_evidence': 'v2',  # notice_checks
-    'talking_points': 'v3',  # stateful lane 1 (0143), with explicit topic evidence and timeframe guidance
+    'talking_points': 'v2',  # lane 1 v2 (0143): knows her current points, carry-over, kind, on hold; v3 (10 Nov) misjudged 1-2 stages a run (11 Nov, 4 runs), v2 none in 4
     'rm_planner': 'v6',
     'rm_assistant': 'v9',  # v7: help is a plain reply; follow_up explains the previous answer; v8: UBS Connect name; v9: Zoom check in schedule
 }
