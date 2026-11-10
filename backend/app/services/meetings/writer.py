@@ -4,6 +4,7 @@ The complete draft retains at most ten distinct decisions and ten actions, match
 Exceeding a bound fails explicitly. No action list, transcript or supporting quote is silently truncated.
 """
 import asyncio,json,re
+from datetime import date
 from typing import Any,NamedTuple
 from uuid import UUID,uuid5
 from app.core.config import settings
@@ -73,25 +74,45 @@ async def model_step(prompt: dict[str,str],system: str,payload: str,schema: dict
 
 
 HEDGES=re.compile(r'\b(?:if|unless|might|maybe|possibly)\b',re.I)
+MONTHS=('january','february','march','april','may','june','july','august','september','october','november','december')
+DATE_EVIDENCE=re.compile(r"\b(?:(\d{4}-\d{2}-\d{2})|(\d{1,2}) ("+'|'.join(MONTHS)+r") (\d{4}))\b",re.I)
+DEADLINE_PREFIX=re.compile(r"\b(?:by|on|due(?: on)?|no later than)(?:\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?)?\s+$",re.I)
+
+
+def quoted_dates(text: str,*,deadline: bool=False) -> dict[date,str]:
+    """Only calendar dates explicitly present in the exact evidence, with no relative-date inference."""
+    dates={}
+    for match in DATE_EVIDENCE.finditer(text):
+        if deadline and not DEADLINE_PREFIX.search(text[:match.start()]):continue
+        iso,day,month,year=match.groups()
+        try:due=date.fromisoformat(iso) if iso else date(int(year),MONTHS.index(month.lower())+1,int(day))
+        except ValueError:continue
+        dates[due]=match.group(0)
+    return dates
 
 
 def repair_actions(proposal: MinutesProposal,cues: tuple[Cue,...]) -> MinutesProposal:
     """Bring each proposed action within the SQL evidence rules (0121) instead of failing the whole draft.
-    A due date without its exact ISO text in the quoted cue is dropped (the RM can set it on review); an owner who
+    Recover an omitted deadline only from one explicit calendar date in the exact action quote. An unsupported date is dropped; an owner who
     did not say the quoted line becomes unassigned; hedged or unquoted conditions become tentative."""
     from pydantic import TypeAdapter
     adapter=TypeAdapter(ProposedAction);by_id={cue.cue_id:cue for cue in cues};fixed=[]
     for item in proposal.actions:
         value=item.model_dump(mode='json');cue=by_id.get(value['cue_id']);text=cue.text if cue else ''
-        if value['due_on']:
-            iso=str(value['due_on'])
-            if iso in text and not (value['due_quote'] and iso in value['due_quote'] and value['due_quote'] in text):value['due_quote']=iso
-            elif not (value['due_quote'] and iso in value['due_quote'] and value['due_quote'] in text):value['due_on']=None;value['due_quote']=None
-        else:value['due_quote']=None
+        if item.due_on is not None:
+            value['due_quote']=quoted_dates(text).get(item.due_on)
+            if value['due_quote'] is None:value['due_on']=None
+        else:
+            deadlines=quoted_dates(item.quote,deadline=True) if item.quote in text else {}
+            value['due_quote']=None
+            if len(deadlines)==1:
+                due,quote=next(iter(deadlines.items()))
+                value.update(due_on=due,due_quote=quote)
         if cue and value['owner']!='unassigned' and value['owner']!=cue.speaker:value['owner']='unassigned'
         if value['commitment']=='conditional' and not (value['condition'] and value['condition'].strip() and value['condition'] in text):
             value['commitment']='tentative';value['condition']=None
         if value['commitment']=='agreed' and HEDGES.search(value['quote'] or ''):value['commitment']='tentative'
+        if value['commitment']=='agreed' and value['owner']=='unassigned':value['commitment']='unclear'
         fixed.append(adapter.validate_python(value))
     return proposal.model_copy(update={'actions':tuple(fixed)})
 

@@ -144,6 +144,7 @@ def pick_ticket(message: str,tickets: list[dict]) -> tuple[str|None,list[dict]]:
 
 WEEKDAYS=['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 TIME=re.compile(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b|\b(\d{1,2})[:.](\d{2})\b',re.I)
+NEXT_MEETING=re.compile(r'\bnext\s+(?:confirmed\s+)?(?:meeting|appointment)\b',re.I)
 
 
 def narrows(hint: str) -> bool:
@@ -665,6 +666,8 @@ async def h_brief(t: Turn,plan,client_id):
             return clarify('Which meeting should I prepare for?',[{'label':m['when'],'appointment_id':str(m['appointment_id']),'client_id':client_id} for m in matches],
                 'meeting_brief',t.context(client_id))
         chosen=matches[0] if matches else None
+    elif not chosen and NEXT_MEETING.search(t.req.message):
+        chosen=min(upcoming,key=lambda a:datetime.fromisoformat(str(a['starts_at'])),default=None)
     if not chosen and len(upcoming)==1:chosen=upcoming[0]
     ctx=t.context(client_id,appointment_id=str(chosen['appointment_id']) if chosen else None)
     if chosen is None:

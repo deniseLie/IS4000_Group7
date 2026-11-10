@@ -44,5 +44,5 @@ def test_client_compliance_handover_rm_review_and_client_reply(local_data_api: N
     with psycopg.connect(local_data_api.database_uri) as db:
         assert db.execute("select count(*) from rm.client_messages where customer_id=1002 and edited and body='I have received your compliance document question and will follow up after checking the requirements.'").fetchone()==(1,)
         assert db.execute("select status from compliance.cases where customer_id=1002").fetchone()==('awaiting_client_documents',)
-        assert db.execute("select count(*) from audit.events where action='agent.llm_call' and outcome='success' and details->>'transport'='codex' and details->>'prompt_version'=%s",(prompts.load('rm_assistant','v4')['id'],)).fetchone()[0]>=1
+        assert db.execute("select count(*) from audit.events where action='agent.llm_call' and outcome='success' and details->>'transport'='codex' and details->>'prompt_version'=%s",(prompts.load('rm_assistant',prompts.VERSIONS['rm_assistant'])['id'],)).fetchone()[0]>=1
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)

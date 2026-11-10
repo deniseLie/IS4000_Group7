@@ -109,6 +109,8 @@ WHO=r"(?P<who>[a-z][a-z .'’-]{1,60}?)"
 BRIEF=(r"^(?:please\s+)?(?:brief me (?:on|for|about)|prepare (?:me )?(?:a )?(?:brief(?:ing)? )?(?:for|on)"
         r"(?: (?:my|the) (?:meeting|call) with)?)\s+"+WHO)
 ONE_REQUEST={'meeting_brief':re.compile(BRIEF+r"[.!]?$",re.I),
+    'ticket_summary':re.compile(r"^(?:should|can|could|may) (?:we|i) (?:approve|reject|decline) "+WHO+
+        r"['’]s (?:credit card |card )?limit (?:increase|decrease|change)[.!?]?$",re.I),
     'client_overview':re.compile(r"^(?:please\s+)?(?:(?:give|show) me |can i (?:have|get|see) )?(?:an? )?(?:quick |full )?(?:overview|snapshot|360(?:°| view)?)"
         r" (?:of|on|for)\s+"+WHO+r"[.!?]?$",re.I),
     'today':re.compile(r"^(?:what(?:'s|’s| is) on (?:for )?today|plan my day|what does my day look like|what(?:'s|’s| is) my day looking like)[.!?]?$",re.I)}

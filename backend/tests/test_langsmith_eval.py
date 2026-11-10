@@ -92,6 +92,20 @@ def test_trajectory_checks():
     rm={'pipeline':'rm','nodes':[],'idle':[],'agents':{},'tools':['rm_book'],'model':True}
     assert set(scores(evaluators.checks(out(tools=['rm_book'],model_calls=1),{'trajectory':rm})).values())=={1}
 
+
+def test_limit_request_sources_require_a_matching_client_and_category():
+    rule={'customer_id':1002,'category':'card_limit_change','fallback_source':'cards'}
+    relevant={'reference':'TCK-000001','category':'card_limit_change','customer_id':1002}
+    unrelated={'reference':'TCK-000002','category':'rm_handover','customer_id':1002}
+    other_client={**relevant,'reference':'TCK-000003','customer_id':1003}
+    def score(sources,tickets):
+        return evaluators.request_sources(rule,out(replies=[{'sources':sources}],tickets={'all':tickets}))['score']
+    assert score(['ticket-TCK-000001'],[relevant,unrelated])==1
+    assert score(['cards'],[unrelated])==1
+    assert score(['cards'],[relevant])==0
+    assert score(['cards','ticket-TCK-000002'],[unrelated])==0
+    assert score(['ticket-TCK-000003'],[other_client])==0
+
 def test_direct_record_reads_are_distinct_from_mcp_tool_calls():
     ref={'trajectory':{'nodes':[],'idle':[],'agents':{},'tools':[], 'service_reads':['tickets.list']}}
     assert scores(evaluators.checks(out(service_reads=['tickets.list']),ref))['service_reads']==1

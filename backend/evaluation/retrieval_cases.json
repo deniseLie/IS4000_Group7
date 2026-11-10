@@ -55,7 +55,7 @@
  {"id":"upload-typo","split":"tune","group":"informal","question":"how 2 upload docs","expected":["document-uploads"]},
  {"id":"address-typo","split":"tune","group":"informal","question":"my addr changed what do i do","expected":["personal-details"]},
  {"id":"reminders-informal","split":"tune","group":"informal","question":"why do i keep getting reminders","expected":["review-reminders"]},
- {"id":"home-loan","split":"tune","group":"gap","question":"How do I apply for a home loan?","expected":null},
+ {"id":"home-loan","split":"tune","group":"covered","question":"How do I apply for a home loan?","expected":["home-loans"]},
  {"id":"update-address","split":"tune","group":"covered","question":"How do I update my address?","expected":["personal-details"]},
  {"id":"change-phone","split":"tune","group":"covered","question":"How do I change my phone number?","expected":["personal-details"]},
  {"id":"review-status","split":"tune","group":"covered","question":"What does under review mean for my compliance review?","expected":["review-status"]},

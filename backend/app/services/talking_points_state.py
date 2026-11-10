@@ -44,7 +44,7 @@ SCHEMA={'title':'talking_point_changes','description':'Changes her latest messag
 
 
 def version() -> str:
-    """The lane 1 prompt in use (prompts.VERSIONS, the one table): "v2" switches lane 1 to this module."""
+    """The lane 1 prompt in use (prompts.VERSIONS, the one table): Versions after v1 use this stateful module."""
     return prompts.VERSIONS['talking_points']
 
 
@@ -138,7 +138,7 @@ async def state(ctx: RequestContext,turn_id: UUID) -> TopicState:
 
 async def extract(ctx: RequestContext,turn_id: UUID,message: str,earlier: list[str],current: TopicState) -> dict:
     """One classification and the code checks; applies the kept changes under her JWT. Counts only come back."""
-    prompt=prompts.load('talking_points','v2')
+    prompt=prompts.load('talking_points',version())
     result=await llm_gateway.call(prompt,prompt['system'],model_input(current,earlier,message),SCHEMA,model=settings.talking_points_model or None,retries=0)
     proposed=result.data.get('changes') or []
     kept,dropped=validate(proposed,message,current)

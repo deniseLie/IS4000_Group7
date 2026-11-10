@@ -2,6 +2,7 @@
 Every route needs a verified JWT whose administrator-owned app_metadata.demobank_role is 'admin' (services/quality.py)."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+import re
 from typing import Any
 from uuid import UUID
 from fastapi import APIRouter,Depends,Query
@@ -18,7 +19,7 @@ from app.services.agents import registry
 WINDOW=Query('7d',pattern='^(24h|7d|30d|90d)$')
 SOURCE=Query('all',pattern='^(live|eval|all)$')
 SIDE=Query('all',pattern='^(all|client|rm)$')  # who asked: the client chat or the RM workspace (build plan 3a)
-NAME=r'^demobank-[A-Za-z0-9_.-]{1,120}$'  # an experiment of a synced dataset (quality.DATASET_PREFIX)
+NAME=r'^[A-Za-z0-9][A-Za-z0-9_.-]{1,128}$'  # named() searches only experiments linked to DemoBank datasets
 
 router=APIRouter(prefix='/admin')
 
@@ -106,7 +107,7 @@ async def compare(a: str=Query(...,pattern=NAME),b: str=Query(...,pattern=NAME),
 
 @router.get('/evaluations/{name}')
 async def evaluation(name: str,ctx: RequestContext=Depends(admin)) -> dict[str,Any]:
-    if not name.startswith(quality.DATASET_PREFIX):raise ApiError(404,'not_found','No such experiment.')
+    if not re.fullmatch(NAME,name):raise ApiError(404,'not_found','No such experiment.')
     return insights.experiment_detail(await named(name))
 
 

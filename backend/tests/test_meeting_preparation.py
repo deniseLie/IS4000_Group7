@@ -48,7 +48,7 @@ def test_brief_inputs_are_scoped_stable_and_exclude_unnecessary_private_details(
     assert first.source_hash==second.source_hash
     assert first.sources and first.talking_points
     assert any(source.category=='transaction_insights' for source in first.sources)
-    assert all(set(item.point.model_dump())=={'point_id','topic','stage','timeframe','concerns','origin','first_seen','last_seen'} for item in first.talking_points)
+    assert all(set(item.point.model_dump())=={'point_id','topic','stage','timeframe','kind','concerns','origin','first_seen','last_seen'} for item in first.talking_points)
     text=json.dumps([source.model_dump(mode='json') for source in first.sources]).lower()
     assert 'counterparty' not in text and 'merchant' not in text and 'source_notes' not in text
     for role in ('client','outsider'):

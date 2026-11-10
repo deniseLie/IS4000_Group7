@@ -6,6 +6,7 @@ import httpx
 from pydantic import BaseModel,JsonValue,Field
 from app.core.observability import span_sink
 from app.schemas.rm import RmAssistantRequest,RmContext,RmTurn
+from app.services.tools import MEETING_READS
 from evaluation.targets import prompt_ids,sse,turns_of
 
 
@@ -123,7 +124,8 @@ async def play(inputs: dict[str,JsonValue],app: FastAPI,token: str) -> dict[str,
     return {'answer':'\n\n'.join(str(r.get('answer','')) for r in replies),'replies':replies,'routes':[None for _ in replies],
         'skipped':skipped,'not_offered':[],'played':bool(replies),'nodes':{'ran':[],'acted':[]},
         'agents':dict(Counter(a['agent'] for n,a in spans if n=='llm' and a.get('agent')=='rm_assistant')),
-        'tools':sorted({str(a['tool']) for n,a in spans if n=='tool_call'}),'model_calls':sum(n=='llm' for n,_ in spans),'prompt_ids':prompt_ids(spans),
+        'tools':sorted({str(a['tool']) for n,a in spans if n=='tool_call' or n=='meeting.tool_call' and a.get('tool') in MEETING_READS}),
+        'model_calls':sum(n=='llm' for n,_ in spans),'prompt_ids':prompt_ids(spans),
         'tickets':{'opened':[t.model_dump(mode='json') for t in new if t.reference not in known],
             'all':[t.model_dump(mode='json') for t in new]},'pipeline':'rm',
         'authorised_book':[client.model_dump(mode='json') for client in authorised.data]}

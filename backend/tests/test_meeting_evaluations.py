@@ -35,3 +35,16 @@ def test_synthetic_meeting_quality_through_the_real_api_and_independent_judge(fl
     assert response.status_code==200,response.text
     assert all(item.score==1 for item in result),[(item.key,item.comment) for item in result if item.score!=1]
     assert graded is None or min(graded.faithfulness,graded.privacy,graded.actions,graded.usefulness)==1,graded
+
+
+def test_rehearsal_deadlines_survive_minutes_generation_and_persistence(flow,monkeypatch):
+    monkeypatch.setenv('CHAT_TRANSPORT','codex');start(flow,'client')
+    cues=[{'cue_id':'cue1','speaker':'rm','start_seconds':None,
+        'text':'I will send the document checklist on Thursday, 19 November 2026.'},
+        {'cue_id':'cue2','speaker':'client','start_seconds':None,
+        'text':'I will upload synthetic proof of address on Friday, 20 November 2026.'}]
+    post(flow,'rm','/notes',{'revision':1,'cues':cues,'command_id':str(uuid4())})
+    response=flow.http.post(f'/meetings/{flow.meeting}/generate-notes-draft',headers=headers(flow,'rm'),json={'command_id':str(uuid4())},timeout=300)
+    assert response.status_code==200,response.text
+    actions=MinutesContent.model_validate(view(flow,'rm')['draft']['content']).actions
+    assert {(item.owner,item.due_on.isoformat()) for item in actions if item.due_on}=={('rm','2026-11-19'),('client','2026-11-20')}

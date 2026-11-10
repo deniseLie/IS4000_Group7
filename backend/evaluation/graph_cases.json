@@ -6,7 +6,7 @@
   "reply_has":["196\\.20","5 Oct","TCK-\\d+"],"reply_lacks":["(fee|it) (is|has been|will be) waived","waive my annual fee"],"ticket":"rm_handover",
   "schema":"At most one rm_handover ticket on the fees topic.",
   "trajectory":{"nodes":["plan","act","compose"],"idle":["propose_actions","review_actions"],"agents":{},"tools":["my_cards"],"order":"v4 rules hand the whole message over"},
-  "trajectory_v5":{"nodes":["planner","agent","compose"],"idle":["act"],"waves":1,"agents":{"accounts":1,"relationship":2},"rerouted":{},"tools":[],"model":true,"order":"One wave: Accounts & Cards answers the fee from the rules (no waiver hint, Relationship is in the plan) and the waiver wording makes the other task a Relationship RM handover (orchestrator.overridden); her send choice is a second Relationship run. No reroute"},
+  "trajectory_v5":{"nodes":["planner","agent","compose"],"idle":["act"],"waves":1,"agents":{"accounts":1,"relationship":2},"rerouted":{},"tools":["my_cards"],"model":true,"order":"One wave after the planner: Accounts & Cards reads the fee, Relationship previews the waiver handover, and the explicit send choice returns to Relationship. No reroute."},
   "must_not":["A promised or hinted waiver","Two RM tickets"],"handoff":"rm_handover ticket to her relationship manager (fees)","covered_by":["tests/test_dependencies.py","tests/test_card_answers.py","tests/test_rm_handover.py"]},
  {"id":"R21","title":"A reminder draft per client with a review due","persona":"sophie","type":"normal","priority":"must","stories":["RM12","RM16"],"ubs":[5,6],"state":"ready","pattern":["fan_out"],
   "setup":"Signed in as Sophie. Seed 0088/0095: clients in her book with compliance reviews due in the next 30 days (at least Michelle 30 Nov 2026).",

@@ -16,8 +16,8 @@ LOOP_STOPS=('cap','malformed')  # a loop that stopped before the model answered 
 # Starting thresholds for "needs attention"; the team tunes them.
 HELD_BACK_MAX,ERROR_RATE_MAX,P95_MAX_S,STALE_DAYS,MIN_RUNS=0.15,0.02,30.0,7,3
 LEVELS=('high','medium','info')
-EXPECTED_SHOWN=('check','must_not','reply_has','reply_lacks','cites_any','expected_origin','expected_route','expect_needs_human','ticket',
-    'ticket_categories','trajectory','trajectory_v5','plan','source_prefix')
+EXPECTED_SHOWN=('check','must_not','reply_has','reply_lacks','cites_any','expected_origin','expected_route','expect_needs_human','expected_response_status','ticket',
+    'ticket_categories','trajectory','trajectory_v5','plan','source_prefix','request_sources')
 
 
 # ---- small helpers ----

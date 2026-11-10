@@ -32,6 +32,16 @@ def ticket_check(expected: str | None,out: dict[str,Any]) -> dict[str,Any]:
     return result('ticket',bool(match),', '.join(t['reference'] for t in match) or f'no {expected} ticket opened or quoted')
 
 
+def request_sources(expected: dict[str,Any],out: dict[str,Any]) -> dict[str,Any]:
+    cited={source for reply in out['replies'] for source in reply.get('sources',[])}
+    refs={source for source in cited if source.startswith('ticket-')}
+    matching={'ticket-'+t['reference'] for t in out['tickets']['all']
+        if t.get('customer_id')==expected['customer_id'] and t['category']==expected['category']}
+    # A record-only answer is valid when there is no matching request to cite.
+    ok=refs<=matching and (bool(refs) if matching else expected['fallback_source'] in cited)
+    return result('record_sources',ok,'cited '+(', '.join(sorted(cited)) or 'nothing'))
+
+
 def counts_match(got: dict[str,int],want: dict[str,int|str]) -> bool:
     """Agent run counts: exact, or a range "a-b" (a fan-out whose size depends on the records, R21)."""
     def fits(n: int,w: int|str) -> bool:
@@ -130,7 +140,11 @@ def checks(out: dict[str,Any],ref: dict[str,Any]) -> list[dict[str,Any]]:
     if ref.get('source_prefix'):
         cited={s for r in out['replies'] for s in r.get('sources',[])}
         found.append(result('record_sources',any(s.startswith(ref['source_prefix']) for s in cited),'cited '+(', '.join(sorted(cited)) or 'nothing')))
+    if 'request_sources' in ref:found.append(request_sources(ref['request_sources'],out))
     if 'expected_origin' in ref:found.append(result('origin',first.get('origin')==ref['expected_origin'],f"first turn origin {first.get('origin')}"))
+    if 'expected_response_status' in ref:
+        observed=first.get('response_status')
+        found.append(result('response_status',observed==ref['expected_response_status'],f'first turn status {observed}'))
     if 'expected_route' in ref:found.append(result('fixed_route',out['routes'][0]==ref['expected_route'],f"route {out['routes'][0]}"))
     if 'expect_needs_human' in ref:found.append(result('needs_human',first.get('needs_human')==ref['expect_needs_human'],f"needs_human {first.get('needs_human')}"))
     if 'ticket' in ref:found.append(ticket_check(ref['ticket'],out))
@@ -151,7 +165,8 @@ def judge_name() -> str:
     """Require an explicit judge distinct from the actual answering model on either transport."""
     name=os.getenv('JUDGE_MODEL')
     if not name:raise RuntimeError('Set JUDGE_MODEL to use --judge')
-    from app.services.llm_gateway import model_name
+    from app.services.llm_gateway import model_name,transport
+    if transport()=='codex':name=name.removeprefix('openai/')
     if name==model_name():raise RuntimeError('JUDGE_MODEL must differ from the answering model')
     return name
 

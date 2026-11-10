@@ -162,9 +162,9 @@ async def replay(case: dict,live: bool,version: str) -> dict:
         for text in chat:
             risk=assess([*said,text])
             message=risk.redacted_message or text
-            active=sorted({t for topics in recorded[-WINDOW:] for t in topics if t in points}) if version=='v2' else []
+            active=sorted({t for topics in recorded[-WINDOW:] for t in topics if t in points}) if version!='v1' else []
             step={'chat':chat_no,'gate':None,'called':False,'applied':[],'skipped':[]}
-            step['gate']=(v2.gate(message,risk,active=active) if version=='v2' else tp.prefilter(message,risk)) or 'model'
+            step['gate']=(v2.gate(message,risk,active=active) if version!='v1' else tp.prefilter(message,risk)) or 'model'
             topics=set()
             if step['gate']=='model' and live:
                 step['called']=True
@@ -225,7 +225,7 @@ async def run_conversations(selected: list[dict],live: bool,version: str) -> dic
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--live',action='store_true',help='Call the real model for each case the pre-filter passes')
-    parser.add_argument('--version',choices=('v1','v2'),default=None,help='Lane 1 version (default: the configured one)')
+    parser.add_argument('--version',choices=('v1','v2','v3'),default=None,help='Lane 1 version (default: the configured one)')
     parser.add_argument('--conversations',action='store_true',help='Run the conversation cases instead of the single messages')
     parser.add_argument('--only',help='Comma list of case ids')
     parser.add_argument('--output',type=Path,help='Write the full report as JSON')

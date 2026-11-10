@@ -74,6 +74,7 @@ RELEASED[('relationship','v6')]='v6+eb7307b9'
 RELEASED[('relationship','v7')]='v7+e690200b'  # build plan 6e (consent v2): Data sharing explained, changes offered by rules
 RELEASED[('talking_points','v1')]='v1+254803bd'  # build plan 4 (0108): lane 1 classifier
 RELEASED[('talking_points','v2')]='v2+63a30afe'  # lane 1 v2 (0143): state-aware, carry-over, kind, on hold
+RELEASED[('talking_points','v3')]='v3+6cb5bd7f'
 RELEASED[('planner','v10')]='v10+67067378'  # batch 3: a question needing another agent's data is two tasks; imports; threshold
 RELEASED[('compliance','v7')]='v7+51624f5a'  # batch 3 (P05): her account list from Accounts is citable
 
@@ -102,6 +103,7 @@ RELEASED[('rm_assistant','v8')]='v8+ea931216'
 RELEASED[('accounts','v3')]='v3+ccdade61'
 RELEASED[('guide','v4')]='v4+eb11931a'
 RELEASED[('planner','v12')]='v12+77ebe779'
+RELEASED[('planner','v13')]='v13+ab43a6e4'
 RELEASED[('rm_assistant','v9')]='v9+fb6bbed5'  # Zoom check in the schedule intent
 
 def test_released_prompt_ids_never_change():
