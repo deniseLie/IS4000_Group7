@@ -64,7 +64,7 @@ def test_real_expired_guest_ui(local_data_api: NativeAPI,native_api_client: Test
         db.execute("update conversation.sessions set expires_at=clock_timestamp()-interval '1 second' where session_id=%s",(sid,))
     case=ExpiredFixture(data_api_url=local_data_api.url,access_token=mint_token(local_data_api,1001,'aal1',uuid4()),
         user_id=persona_id(1001),expired_session_id=sid,guest_token=guest_token)
-    run_browser(native_api_client,case,'expired guest chat requires',tmp_path)
+    run_browser(native_api_client,case,'expired guest chat is forgotten',tmp_path)
 
 
 @pytest.mark.parametrize('kind',['customer','guest'])

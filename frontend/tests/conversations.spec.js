@@ -73,15 +73,15 @@ test('saved pending reply can be cancelled and the real chat remains usable',asy
   await expect(page.getByTestId('chat-message-assistant')).toHaveCount(2);
 });
 
-test('expired guest chat requires an explicit new chat before sending',async({page})=>{
+test('expired guest chat is forgotten and the page starts a new chat',async({page})=>{
   await page.addInitScript(access=>localStorage.setItem('demobank.active.guest',JSON.stringify(access)),{
     session_id:fixture.expired_session_id,guest_token:fixture.guest_token});
   await page.goto('/');
-  await expect(page.getByRole('alert')).toBeVisible();
-  await expect(page.getByLabel('Your message',{exact:true})).toBeDisabled();
-  await page.getByTestId('new-chat').click();
   await expect(page.getByLabel('Your message',{exact:true})).toBeEnabled();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(await page.evaluate(()=>localStorage.getItem('demobank.active.guest'))).toBeNull();
   await askSafety(page,'I lost my card');
+  expect(await page.evaluate(()=>localStorage.getItem('demobank.active.guest'))).not.toContain(fixture.expired_session_id);
 });
 
 async function unavailableChat(page) {
