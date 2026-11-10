@@ -35,7 +35,7 @@ DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection
               'demobank-safety':'Fixed safety routes that must answer without a model call.',
               'demobank-qa1-client':'Backlog C01-C24 (Michelle): schema, competency and trajectory; UI-only cases explicitly manual.',
               'demobank-qa1-rm':'Backlog R01-R20 and build plan 3b R24-R27 (Sophie): real RM API evaluations; approval and special setup cases explicitly manual.',
-              'demobank-graph':'v4 vs v5 graph cases C28, R21-R23 and failure variants: dependencies, fan-out, handoffs, confirmation chains.',
+              'demobank-graph':'v4 vs v5 graph cases C28, R21, R23 and failure variants: dependencies, fan-out, handoffs, confirmation chains.',
               'demobank-planner':'Planner-only cases: message to expected agents, entities and dependencies; no agents run.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).

@@ -12,7 +12,7 @@ PATTERNS={'conditional','input','fan_out','handoff','confirmation_chain'}
 
 def test_ids_and_variants():
     base=[c for c in GRAPH if 'variant_of' not in c]
-    assert [c['id'] for c in base]==['C28',*(f'R{i}' for i in range(21,24))]  # C23-C27 removed 4 Nov; new client chains to follow
+    assert [c['id'] for c in base]==['C28','R21','R23']  # C23-C27 removed 4 Nov; R22 on 11 Nov (it asks which of two meetings on hosted)
     ids={c['id'] for c in base}
     for c in GRAPH:
         assert set(c['pattern'])<=PATTERNS and c['turns'] and c['check'] and c['must_not'] and c['trajectory'] and c['trajectory_v5']
@@ -36,7 +36,7 @@ def test_references_exist():
         for path in c['covered_by']:assert (BACKEND/path).is_file(),(c['id'],path)
 
 def test_planner_cases():
-    assert [c['id'] for c in PLANNER]==[f'P{i:02}' for i in range(1,len(PLANNER)+1)]
+    assert [c['id'] for c in PLANNER]==[f'P{i:02}' for i in range(1,17) if i!=14]  # P14 removed 11 Nov (links its two tasks in about half the runs)
     for c in PLANNER:
         ids={t['id'] for t in c['plan']['tasks'] if 'id' in t}
         assert all(t['depends_on'] in ids for t in c['plan']['tasks'] if 'depends_on' in t),c['id']
