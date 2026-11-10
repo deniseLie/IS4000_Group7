@@ -96,7 +96,8 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
 .quick-help button span { margin-left: 5px; }
 
 /* Preserve the real response text, origin labels and source controls. */
-.bank-chat-messages.has-messages { display: flex; flex-direction: column; gap: 30px; padding: 30px 8px 28px 0; overflow-y: auto; max-height: max(300px,calc(100dvh - 350px)); min-height: 260px; scrollbar-width: thin; scrollbar-color: #cccac1 transparent; }
+/* position: relative makes the list the containing block of visually hidden (absolute) labels inside it, so its scroll box clips them instead of letting them stretch the page. */
+.bank-chat-messages.has-messages { position: relative; display: flex; flex-direction: column; gap: 30px; padding: 30px 8px 28px 0; overflow-y: auto; max-height: max(300px,calc(100dvh - 350px)); min-height: 260px; scrollbar-width: thin; scrollbar-color: #cccac1 transparent; }
 .bank-chat-message { display: flex; align-items: flex-start; gap: 14px; }
 .bank-chat-message.user { justify-content: flex-end; }
 .bank-chat-avatar { display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; color: var(--red); }
