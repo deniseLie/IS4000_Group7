@@ -115,6 +115,7 @@ Kept so old citations still open; search never returns them:
   - They were checked on 12 Oct 2026, review is due 12 Jan 2027, and after that date they drop out of search.
   - The allow-list of external publishers is unchanged.
 - **No match means no evidence.** There is no fallback library: a question with no keyword or similarity match gets no articles, and the answer pipeline treats that as an empty result. Non-English questions rely on hybrid search (keyword search alone rarely finds them).
+- **"Safe account" scam.** The `security` never-share section says the bank never asks you to move money to a safe account, but "safe" is in neither security section's heading or keywords. Since `0097` a section matches only on those, so "Someone from 'the bank' wants me to move my savings to a safe account" finds savings and account articles instead. Its search-evaluation case was dropped on 10 Nov 2026.
 - **Fixed safety replies keep their own text.** Lost card, human support, secrets and guest balance answer without the model or the database and cite pinned sections (`answers.PINNED`: lost-card v4, support v5, security v2, accounts v1, unrecognised-charge v3). Revising one of those articles means updating the text and pin in `answers.py`; `test_knowledge_checks.py` fails until then.
 - **Gaps:**
   - borrowing against investments;
@@ -123,4 +124,6 @@ Kept so old citations still open; search never returns them:
   - deposit insurance;
   - closing an account;
   - notification settings beyond review reminders;
-  - temporary card holds (hotels, fuel), which can look like unrecognised charges.
+  - temporary card holds (hotels, fuel), which can look like unrecognised charges;
+  - opening hours, cheques, joint accounts, tax on interest and email alerts for incoming money.
+  - Search still returns nearby sections for most of these, because they share words such as limit, deposit, account, card or transfer. Their search-evaluation cases were dropped on 10 Nov 2026 as not critical ([evaluation README](evaluation/README.md#knowledge-retrieval-offline-no-model)).

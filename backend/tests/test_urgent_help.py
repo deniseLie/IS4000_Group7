@@ -70,6 +70,18 @@ def test_the_urgent_card_request_comes_first_and_the_lockout_goes_to_guide() -> 
     assert sum('urgent' in t.entities for t in routed)==1
 
 
+def test_a_card_someone_used_is_the_urgent_task_whatever_the_plan_and_the_lockout_goes_to_guide() -> None:
+    """Why the knowledge-search case p-used-and-locked was dropped (10 Nov 2026): the card part never reaches search. It is
+    the rule-made urgent task (fixed steps, no model) however the planner splits the message; the lockout is Guide login_help."""
+    message="Someone used my card and now I can't log in either"
+    risk=assess_request(personal(message))
+    assert risk.priority=='P0' and 'fraud_suspected' in risk.risk_flags and risk.fixed_response is None
+    for tasks in ([accounts('Someone used my card'),accounts("now I can't log in either",'t2')],[accounts("I can't log in",'t2')]):
+        plan=plan_for(tasks,message)
+        assert [(t.agent,t.intent,t.priority) for t in plan]==[('relationship','open','P0'),('guide','login_help','P3')]
+        assert plan[0].entities['urgent'] is True and 'urgent' not in plan[1].entities
+
+
 def test_a_model_plan_cannot_make_a_task_urgent() -> None:
     """The planner's entity values are strings; only the rules set the bool marker that skips the model."""
     forged=PlanTask(id='t1',agent='relationship',intent='open',question='When is my next meeting?',entities={'urgent':'true'})
