@@ -8,9 +8,10 @@ import uuid
 from collections import Counter
 from functools import lru_cache
 from typing import TYPE_CHECKING
-from contextlib import contextmanager
+from contextlib import contextmanager,nullcontext
 from contextvars import ContextVar
 import langsmith
+from langsmith.run_helpers import get_current_run_tree
 if TYPE_CHECKING:
     from app.schemas.agents import Evidence
 
@@ -97,15 +98,19 @@ def start_trace():
     return trace
 
 RUN_TYPES={'tool':'tool','agent':'chain','decision':'chain','llm':'chain','embedding':'embedding'}
+ROOTLESS=('tool','embedding')  # a page load's own read: a step inside a turn, never a trace of its own (the audit log records it)
 
 @contextmanager
 def span(name,kind,**attrs):
-    """One step as a LangSmith run nested under the current run (nothing is sent while tracing is off).
-    Yields the attrs dict so callers can add results; they become the run's metadata."""
+    """One step as a LangSmith run nested under the current run (nothing is sent while tracing is off). A tool or
+    embedding step with no run above it, such as a page load's read, sends nothing: the audit log already records the
+    read, and each would be a trace of its own against the plan's monthly cap. Yields the attrs dict so callers can add
+    results; they become the run's metadata."""
     codex=kind=='llm' and attrs.get('transport')=='codex'
     inputs=attrs.pop('model_inputs',None)
     start=time.perf_counter()
-    with langsmith.trace(name,'llm' if codex else RUN_TYPES[kind],inputs=inputs,metadata={'kind':kind}) as run:
+    traced=kind not in ROOTLESS or get_current_run_tree() is not None
+    with (langsmith.trace(name,'llm' if codex else RUN_TYPES[kind],inputs=inputs,metadata={'kind':kind}) if traced else nullcontext()) as run:
         try:
             yield attrs
         except BaseException as e:
@@ -113,13 +118,14 @@ def span(name,kind,**attrs):
             raise
         finally:
             outputs=attrs.pop('model_outputs',None)
-            if outputs is not None:run.set(outputs=outputs)
-            run.add_metadata(attrs)
-            if codex:
-                run.add_metadata({'ls_provider':'openai','ls_model_name':attrs['model']})
-                if isinstance(attrs.get('input_tokens'),int) and isinstance(attrs.get('output_tokens'),int):
-                    run.set(usage_metadata={'input_tokens':attrs['input_tokens'],'output_tokens':attrs['output_tokens'],
-                        'total_tokens':attrs['input_tokens']+attrs['output_tokens']})
+            if run is not None:
+                if outputs is not None:run.set(outputs=outputs)
+                run.add_metadata(attrs)
+                if codex:
+                    run.add_metadata({'ls_provider':'openai','ls_model_name':attrs['model']})
+                    if isinstance(attrs.get('input_tokens'),int) and isinstance(attrs.get('output_tokens'),int):
+                        run.set(usage_metadata={'input_tokens':attrs['input_tokens'],'output_tokens':attrs['output_tokens'],
+                            'total_tokens':attrs['input_tokens']+attrs['output_tokens']})
             if (sink:=span_sink.get()) is not None:sink.append((name,dict(attrs)))
             if kind=='agent' and (trace:=current_trace.get()) is not None:
                 if name=='agent' and attrs.get('agent'):

@@ -164,7 +164,7 @@ cd ../frontend && npm test                                                # fron
 
 ## Tracing and audit
 
-- **Tracing.** Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` to send each chat request to LangSmith as one run, with the graph nodes, agents and model calls nested inside. Text is redacted before upload (`core/langsmith_client.py`).
+- **Tracing.** Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` to send each chat request to LangSmith as one run, with the graph nodes, agents and model calls nested inside. Data reads are traced only as steps of a chat, RM assistant or evaluation run; the reads a page makes when it loads are in the audit log only. Text is redacted before upload (`core/langsmith_client.py`).
 - **Admin dashboard.** Sign in as `demo.admin@example.com` to see what LangSmith holds: failures with a debug card each, evaluation accuracy over time, agent scorecards, prompt versions, and latency and tokens. The backend reads LangSmith with its own key; nothing LangSmith-related reaches the browser.
 - **Audit log.** Every request writes an append-only, hash-chained audit trail in Supabase (`audit.events`). It holds ids and counts only, never chat text. Run `python -m scripts.audit_walkthrough --case-id … --database-url … --markdown` to print one case end to end.
 

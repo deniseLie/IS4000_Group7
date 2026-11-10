@@ -57,7 +57,7 @@ def test_snapshots_match_owned_database_records_and_atomic_audit(local_data_api:
         assert (assignment.data['current']['rm_id'] if assignment.data and assignment.data['current'] else None)==(str(expected_rm[0]) if expected_rm else None)
         reads=db.execute("select resource_id,details->>'tool' from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()
         assert len(reads)==7 and {row[0] for row in reads}=={str(result.call_id) for result in results}
-        assert {run['name'] for run in langsmith_runs.created}=={row[1] for row in reads}
+        assert langsmith_runs.created==[]  # reads outside a turn are audited, not traced (observability.ROOTLESS)
         assert db.execute('select first_bad_event_id from audit.verify_chain(null)').fetchone()==(None,)
     for row in accounts.data:assert row['number'].startswith('****') and len(row['number'])==8
     for row in cards.data:assert len(row['last4'])==4 and not {'pan','card_number','customer_id'}&row.keys()
