@@ -18,7 +18,7 @@ test('at most three, none already asked, personal ones only when signed in', () 
   const signed=followUps({question:'when is my review due',message:answer(),signedIn:true,asked});
   assert.ok(signed.length<=3&&!signed.includes(asked[0])&&!signed.includes('When is my review due?'.toLowerCase()));
   const guest=followUps({question:'what is the minimum payment on a credit card?',message:answer(),signedIn:false});
-  assert.deepEqual(guest,['Does paying only the minimum avoid interest?','Can I increase my credit limit?']);
+  assert.deepEqual(guest,['Does paying only the minimum avoid interest?']);
 });
 
 test('a handed-over question suggests following the request; errors and empty answers suggest nothing', () => {
@@ -121,4 +121,14 @@ test('request answers suggest request questions, a choice offers one tap per ref
 test('several questions in one message get one suggestion per part, in order', () => {
   const message={role:'assistant',content:'a',sections:[{domain:'fraud',answer:'Your card is blocked.'},{domain:'compliance',answer:'Your review is due.'},{domain:'retail',answer:'Your statements are ready.'}]};
   assert.deepEqual(followUps({question:'x',message,signedIn:true}),['What happens after I report a charge?','What do I still need to send for my review?','How do I get an older or certified statement?']);
+});
+test('guests are never offered a personal suggestion, whatever the topic',()=>{
+  const personal=/\b(?:my|your RM|relationship manager)\b|\bthe meeting\b|\bI still\b/i;
+  const questions=['Hello','What is my TCK-123456 status?','I lost my card','How do I upload a document?','When is my review due?','How do I get a statement?',
+    'Can I book a meeting?','Who is my relationship manager?','How do I change my address?','I want to transfer 50,000 overseas','My transfer is pending',
+    'Can I raise my limit?','Tell me about home loans','How do I invest?','What is the annual fee on my card?','What are my savings?'];
+  for(const question of questions)for(const needs_human of [false,true]) {
+    const chips=followUps({question,message:{role:'assistant',content:'An answer.',needs_human},signedIn:false});
+    for(const chip of chips.filter(chip=>chip!=='Will I get my money back?'))assert.doesNotMatch(chip,personal,`${question} → ${chip}`);  // refund policy, not her records
+  }
 });
