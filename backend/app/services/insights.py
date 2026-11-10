@@ -16,6 +16,16 @@ LOOP_STOPS=('cap','malformed')  # a loop that stopped before the model answered 
 # Starting thresholds for "needs attention"; the team tunes them.
 HELD_BACK_MAX,ERROR_RATE_MAX,P95_MAX_S,STALE_DAYS,MIN_RUNS=0.15,0.02,30.0,7,3
 LEVELS=('high','medium','info')
+# Overview targets (11 Nov): p95 per side, a live failure type older than this is history, the trace budget warning.
+P95_TARGET_S={'client':30.0,'rm':60.0};OLD_FAILURE_DAYS=3;TRACE_BUDGET_WARN=0.15
+# Estimated USD per million tokens (input and output together, weighted towards input as these calls are), by model name.
+# An estimate for the dashboard only: provider prices change, so the Overview labels it "≈". Unknown models use DEFAULT_PRICE.
+PRICE_PER_M={'anthropic/claude-haiku-5.5':2.0,'anthropic/claude-sonnet-5.5':6.0,'anthropic/claude-opus-5.5':10.0,'haiku':2.0,'sonnet':6.0,'opus':10.0}
+DEFAULT_PRICE=3.0
+
+
+def cost_usd(r: dict) -> float | None:
+    return None if not r.get('tokens') else r['tokens']/1e6*PRICE_PER_M.get(r.get('model') or '',DEFAULT_PRICE)
 EXPECTED_SHOWN=('check','must_not','reply_has','reply_lacks','cites_any','expected_origin','expected_route','expect_needs_human','expected_response_status','ticket',
     'ticket_categories','trajectory','trajectory_v5','plan','source_prefix','request_sources')
 
@@ -94,7 +104,9 @@ def kpis(rows: list[dict],calls: Counter | None=None) -> dict[str,Any]:
     lat=[r['latency_s'] for r in rows]
     return {'requests':n,'client':sum(r['surface']!='rm' for r in rows),'rm':sum(r['surface']=='rm' for r in rows),'failed':bad,
         'success_rate':ratio(n-bad,n),'held_back_rate':ratio(sum(map(held_back,rows)),n),'handoff_rate':ratio(sum(bool(r.get('needs_human')) for r in rows),n),
-        'p50_s':pct(lat,.5),'p95_s':pct(lat,.95),'tokens_per_request':mean(r.get('tokens') for r in rows),'model_calls_per_request':mean(used)}
+        'p50_s':pct(lat,.5),'p95_s':pct(lat,.95),'tokens_per_request':mean(r.get('tokens') for r in rows),'model_calls_per_request':mean(used),
+        'p95_client_s':pct([r['latency_s'] for r in rows if r['surface']!='rm'],.95),'p95_rm_s':pct([r['latency_s'] for r in rows if r['surface']=='rm'],.95),
+        'cost_per_request':mean(map(cost_usd,rows)),'cost_total':round(sum(c for c in map(cost_usd,rows) if c),4)}
 
 
 def series(rows: list[dict],end: datetime,days: int) -> list[dict[str,Any]]:
@@ -143,6 +155,22 @@ def latest_evals(experiments: list[dict],now: datetime) -> list[dict[str,Any]]:
             'pass_rate':pass_rate(ref['cases']),'previous_pass_rate':pass_rate(prev['cases']) if prev else None,'counts':counts(ref['cases']),
             'cases':len(ref['cases']),'last_run':exps[-1]['started_at'],'stale':now-exps[-1]['started_at']>timedelta(days=STALE_DAYS)})
     return rows
+
+
+def eval_trend(experiments: list[dict],now: datetime,days: int=30) -> list[dict[str,Any]]:
+    """One point per day with a full run: cases passed over cases scored across every dataset's latest full run as of that day."""
+    runs={name:full_runs(exps) for name,exps in by_dataset(experiments).items()}
+    start=(now-timedelta(days=days)).replace(hour=0,minute=0,second=0,microsecond=0);out=[]
+    for d in range(days+1):
+        end=start+timedelta(days=d+1)
+        if not any(start+timedelta(days=d)<=e['started_at']<end for full in runs.values() for e in full):continue
+        c=Counter()
+        for full in runs.values():
+            latest=next((e for e in reversed(full) if e['started_at']<end),None)
+            if latest:c.update(counts(latest['cases']))
+        scored=c['pass']+c['fail']+c['error']
+        if scored:out.append({'day':min(end-timedelta(seconds=1),now),'rate':round(c['pass']/scored,4),'passed':c['pass'],'scored':scored})
+    return out
 
 
 def case_history(exps: list[dict]) -> dict[str,list[tuple[dict,dict]]]:
@@ -285,7 +313,7 @@ def failures(rows: list[dict],steps: list[dict],experiments: list[dict],now: dat
 
 # ---- "Needs attention" ----
 
-def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped: list[dict],now: datetime,untested: list[str] | None=None) -> list[dict[str,Any]]:
+def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped: list[dict],now: datetime,untested: list[str] | None=None,budget: dict | None=None) -> list[dict[str,Any]]:
     items=[]
     def add(level,kind,text,detail,page,**filters):items.append({'level':level,'kind':kind,'title':text,'detail':detail,'page':page,'filter':filters})
     for r in regressions(experiments)[:6]:
@@ -294,12 +322,19 @@ def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped
             f" ({', '.join(r['failed'])})" if r['failed'] else ''),'evaluations',dataset=r['dataset'],case=r['case_id'])
     for g in grouped:
         if g['new'] and g['kind']!='eval_case':
-            add('high' if g['kind'] in ('request_error','agent_error','tool_error') else 'medium','new_failure',g['title'],
-                f"{g['in_window']}× in this window, first seen {sgt(g['first_seen'],time=True)}; not seen in the window before",'failures',signature=g['signature'])
+            old=now-g['last_seen']>timedelta(days=OLD_FAILURE_DAYS)  # history, not an open problem
+            add('info' if old else 'high' if g['kind'] in ('request_error','agent_error','tool_error') else 'medium','new_failure',g['title'],
+                f"{g['in_window']}× in this window, first seen {sgt(g['first_seen'],time=True)}"+(f", last seen {sgt(g['last_seen'],time=True)}" if old else "; not seen in the window before"),
+                'failures',signature=g['signature'])
     n,bad=len(rows),sum(map(failed,rows))
     if n>=MIN_RUNS and bad/n>ERROR_RATE_MAX:add('high','error_rate',f"{bad/n:.0%} of requests failed",f"{bad} of {n} requests (limit {ERROR_RATE_MAX:.0%})",'failures')
-    if n>=MIN_RUNS and (p95:=pct([r['latency_s'] for r in rows],.95)) and p95>P95_MAX_S:
-        add('medium','latency',f"p95 latency {p95:.1f} s",f"Above the {P95_MAX_S:.0f} s target over {n} requests",'latency')
+    for side,target in P95_TARGET_S.items():
+        lat=[r['latency_s'] for r in rows if (r['surface']=='rm')==(side=='rm')]
+        if len(lat)>=MIN_RUNS and (p95:=pct(lat,.95)) and p95>target:
+            add('medium','latency',f"{'RM' if side=='rm' else 'Client'} p95 latency {p95:.1f} s",f"Above the {target:.0f} s target over {len(lat)} requests",'latency')
+    if budget and budget.get('limit') and (left:=budget['limit']-budget['used'])<TRACE_BUDGET_WARN*budget['limit']:
+        add('high' if left<=0 else 'medium','trace_budget',f"{max(left,0):,} LangSmith traces left this month",
+            f"{budget['used']:,} of {budget['limit']:,} used; resets {sgt(budget['resets'])}. Check before live or evaluation runs.",'traces')
     per_agent=defaultdict(Counter)
     for s in agent_runs(steps):per_agent[s['meta']['agent']][agent_status(s)]+=1
     for agent,c in sorted(per_agent.items()):
@@ -321,14 +356,15 @@ def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped
     return sorted(items,key=lambda i:LEVELS.index(i['level']))
 
 
-def overview(rows: list[dict],steps: list[dict],experiments: list[dict],now: datetime,days: int,untested: list[str] | None=None) -> dict[str,Any]:
+def overview(rows: list[dict],steps: list[dict],experiments: list[dict],now: datetime,days: int,untested: list[str] | None=None,budget: dict | None=None) -> dict[str,Any]:
     """rows and steps cover two windows (this one and the one before), so tiles can show the change."""
     since=now-timedelta(days=days);before=since-timedelta(days=days)
     cur=[r for r in rows if r['started_at']>=since];prev=[r for r in rows if before<=r['started_at']<since]
     calls=calls_by_trace(steps)
     grouped=groups([e for e in events(rows,steps,experiments,before,with_eval=False)],since)
     return {'window_days':days,'live':{'now':kpis(cur,calls),'previous':kpis(prev,calls),'series':series(cur,now,days)},
-        'evals':latest_evals(experiments,now),'attention':attention(cur,[s for s in steps if s['started_at']>=since],experiments,grouped,now,untested)}
+        'evals':latest_evals(experiments,now),'eval_trend':eval_trend(experiments,now),'trace_budget':budget,
+        'attention':attention(cur,[s for s in steps if s['started_at']>=since],experiments,grouped,now,untested,budget)}
 
 
 def untested_prompts(in_use: dict[str,str],steps: list[dict],experiments: list[dict]) -> list[str]:

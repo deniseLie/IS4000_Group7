@@ -60,10 +60,10 @@ def together(*loads):
 
 
 def overview_of(days: int) -> dict[str,Any]:
-    rows,steps,exps=together((quality.requests,'live',2*days),(quality.steps,'live',2*days),(quality.experiment_runs,))
+    rows,steps,exps,budget=together((quality.requests,'live',2*days),(quality.steps,'live',2*days),(quality.experiment_runs,),(quality.trace_budget,))
     month=[e for e in exps if e['started_at']>=quality.now()-timedelta(days=30)]
     untested=insights.untested_prompts(prompts.in_use(),[],month)
-    return {**insights.overview(rows,steps,exps,quality.now(),days,untested),'capped':capped(rows,steps)}
+    return {**insights.overview(rows,steps,exps,quality.now(),days,untested,budget),'capped':capped(rows,steps)}
 
 
 def failures_of(days: int,source: str,side: str='all') -> dict[str,Any]:
