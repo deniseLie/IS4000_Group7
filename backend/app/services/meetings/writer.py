@@ -3,7 +3,7 @@
 The complete draft retains at most ten distinct decisions and ten actions, matching the existing approved RM writes.
 Exceeding a bound fails explicitly. No action list, transcript or supporting quote is silently truncated.
 """
-import asyncio,json
+import asyncio,json,re
 from typing import Any,NamedTuple
 from uuid import UUID,uuid5
 from app.core.config import settings
@@ -72,12 +72,36 @@ async def model_step(prompt: dict[str,str],system: str,payload: str,schema: dict
     return result
 
 
+HEDGES=re.compile(r'\b(?:if|unless|might|maybe|possibly)\b',re.I)
+
+
+def repair_actions(proposal: MinutesProposal,cues: tuple[Cue,...]) -> MinutesProposal:
+    """Bring each proposed action within the SQL evidence rules (0121) instead of failing the whole draft.
+    A due date without its exact ISO text in the quoted cue is dropped (the RM can set it on review); an owner who
+    did not say the quoted line becomes unassigned; hedged or unquoted conditions become tentative."""
+    from pydantic import TypeAdapter
+    adapter=TypeAdapter(ProposedAction);by_id={cue.cue_id:cue for cue in cues};fixed=[]
+    for item in proposal.actions:
+        value=item.model_dump(mode='json');cue=by_id.get(value['cue_id']);text=cue.text if cue else ''
+        if value['due_on']:
+            iso=str(value['due_on'])
+            if iso in text and not (value['due_quote'] and iso in value['due_quote'] and value['due_quote'] in text):value['due_quote']=iso
+            elif not (value['due_quote'] and iso in value['due_quote'] and value['due_quote'] in text):value['due_on']=None;value['due_quote']=None
+        else:value['due_quote']=None
+        if cue and value['owner']!='unassigned' and value['owner']!=cue.speaker:value['owner']='unassigned'
+        if value['commitment']=='conditional' and not (value['condition'] and value['condition'].strip() and value['condition'] in text):
+            value['commitment']='tentative';value['condition']=None
+        if value['commitment']=='agreed' and HEDGES.search(value['quote'] or ''):value['commitment']='tentative'
+        fixed.append(adapter.validate_python(value))
+    return proposal.model_copy(update={'actions':tuple(fixed)})
+
+
 async def propose(context: GenerationContext) -> Piece:
     prompt=load(MINUTES_WRITER.prompt,PROMPT);system=prompt['system']
     payload=json.dumps({'source_kind':context.source_kind,'review_note':context.review_note,'cues':[cue.model_dump(mode='json') for cue in context.cues]},ensure_ascii=False)
     with span('meeting.agent','agent',agent=MINUTES_WRITER.name,intent='draft_minutes',side='meeting',path='workflow',prompt_version=prompt['id']):
         result=await model_step(prompt,system,payload,MinutesProposal.model_json_schema())
-        proposal=MinutesProposal.model_validate(result.data)
+        proposal=repair_actions(MinutesProposal.model_validate(result.data),context.cues)
         content=bind_action_ids(proposal,context.source_id)
     charged=(result.input_tokens+result.output_tokens) if result.input_tokens is not None and result.output_tokens is not None else estimated_charge(system,payload,MinutesProposal.model_json_schema())
     return Piece(content,result.input_tokens,result.output_tokens,max(1,charged))

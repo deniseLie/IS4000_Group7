@@ -2,13 +2,27 @@ import {TOPICS} from './meetingRequests.js';
 const API=import.meta.env?.VITE_API_URL||'/api';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export class MeetingError extends Error {constructor(message,status){super(message);this.status=status;}}
+// Plain-language versions of the meeting service's technical errors, each with what to do next.
+const FRIENDLY=[
+  [/transcript position exceeds/i,'This transcript runs longer than the recorded call. Upload it again (it is now fitted to the call length automatically), or correct the call times under "Review call times".'],
+  [/due date needs exact ISO-date/i,'A follow-up date in the draft could not be matched to your notes. Click Draft minutes again; any unmatched date is left blank for you to set when you review.'],
+  [/action owner must match|conditional action needs|conditional or tentative wording|only conditional actions/i,'A follow-up in the draft did not match who said it or how firm it was. Click Draft minutes again; you can adjust owners and dates when you review.'],
+  [/recording permission, notice, occurrence or participant roster/i,'The recording consent or meeting details changed since this page loaded. Refresh the page, then try again.'],
+  [/enter notes for the current completed call occurrence|not current/i,'This page is out of date or the call is not marked as ended yet. Refresh the page and try again.'],
+  [/1-100 bounded redacted cues|Enter between 1 and 100/i,'Enter between 1 and 100 note lines, and keep the notes under about 15,000 characters.'],
+  [/1-1000 redacted cues|128000/i,'This transcript is too long to import. Upload a shorter export or use typed notes instead.'],
+  [/must be redacted|invalid source cue identity, text or speaker/i,'One line could not be saved. Check that every line has text and does not include a card number, ID or password.'],
+  [/generated_draft_invalid|could not be verified/i,'The AI draft did not pass our checks, so nothing was saved. Click Draft minutes again.'],
+  [/timed? ?out|timeout|Schema is too complex|HTTP 50[234]/i,'The AI took too long to respond, so nothing was saved. Wait a few seconds and try again.'],
+];
+export function friendlyMeetingError(message){const found=FRIENDLY.find(([pattern])=>pattern.test(String(message||'')));return found?found[1]:message;}
 export async function meetingRequest(path,method,value,token,signal){
   const response=await fetch(`${API}/meetings${path}`,{method,headers:{Authorization:`Bearer ${token}`,...(value===null?{}:{'Content-Type':'application/json'})},body:value===null?undefined:JSON.stringify(value),signal});
   let body;
   try{body=await response.json();}catch(failure){if(!(failure instanceof SyntaxError))throw failure;throw new MeetingError(`The meeting service returned an unreadable response (HTTP ${response.status}). Check the backend connection before retrying.`,response.status);}
   if(!response.ok){const detail=body.error?.message||body.detail?.message||body.detail;
     const message=Array.isArray(detail)?detail.map(item=>`${Array.isArray(item.loc)?item.loc.filter(part=>part!=='body').join('.'):'request'}: ${item.msg}`).join('; '):detail;
-    throw new MeetingError(typeof message==='string'?message:`Meeting request failed (${response.status}).`,response.status);}
+    throw new MeetingError(friendlyMeetingError(typeof message==='string'?message:`Meeting request failed (HTTP ${response.status}).`),response.status);}
 
   return body;
 }
@@ -32,7 +46,12 @@ export function approvalFor(draft,command){return {draft_id:draft.draft_id,versi
 export function notesCues(text){
   const lines=text.split('\n').map(line=>line.trim()).filter(Boolean);
   if(!lines.length||lines.length>100)throw new Error('Enter between 1 and 100 note statements.');
-  return lines.map((line,index)=>{const match=line.match(/^(rm|client|unmapped):\s*(.+)$/i);if(!match)throw new Error('Start each note with rm:, client:, or unmapped:.');return {cue_id:`cue${index+1}`,speaker:match[1].toLowerCase(),start_seconds:null,text:match[2]};});
+  // Lenient for typed notes: bullets and numbers are ignored, common labels (RM, Client, Me, the demo names) map to a
+  // speaker, and a line with no label is the RM's own note. The SQL still checks every cue.
+  const ALIAS={rm:'rm',me:'rm',i:'rm',advisor:'rm',adviser:'rm',sophie:'rm','sophie lim':'rm',client:'client',customer:'client',michelle:'client','michelle ng':'client',unmapped:'unmapped',other:'unmapped'};
+  return lines.map((raw,index)=>{const line=raw.replace(/^(?:[-*•]|\d+[.)])\s+/,'');const match=line.match(/^([A-Za-z][A-Za-z ]{0,20}?)\s*:\s*(.+)$/);
+    const speaker=match&&ALIAS[match[1].trim().toLowerCase()];const text=(speaker?match[2]:line).trim();
+    if(!text)throw new Error('A note line is empty.');return {cue_id:`cue${index+1}`,speaker:speaker||'rm',start_seconds:null,text};});
 }
 
 // The meeting page shows one meeting as four steps. The lifecycle stage (0132) decides which step is current; the RM

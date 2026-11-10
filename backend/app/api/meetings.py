@@ -215,6 +215,19 @@ def retry_job(meeting: UUID,event: int,body: JobRetry,claims: Annotated[Claims,D
     return call('meeting_retry_job',{'p_meeting_id':meeting,'p_event_id':event,'p_revision':body.revision,
         'p_reason':redact(body.reason)[0],'p_command_id':body.command_id},claims)
 
+def fit_to_call(source,recovery):
+    """SQL (0121) refuses a cue that starts after the recorded call ended. A demo call is often ended early, so cue
+    positions are scaled proportionally into the recorded length; order and text are unchanged."""
+    from datetime import datetime
+    try:
+        length=int((datetime.fromisoformat(str(recovery['ended_at']))-datetime.fromisoformat(str(recovery['started_at']))).total_seconds())
+    except (KeyError,TypeError,ValueError):return source
+    last=max((cue.start_seconds or 0 for cue in source.cues),default=0)
+    if length<0 or last<=length:return source
+    cues=tuple(cue.model_copy(update={'start_seconds':None if cue.start_seconds is None else cue.start_seconds*length//last}) for cue in source.cues)
+    return source.model_copy(update={'cues':cues})
+
+
 @router.post('/meetings/{meeting}/transcript-import')
 def transcript_import(meeting: UUID,body: ImportRequest,claims: Annotated[Claims,Depends(caller)]) -> JsonValue:
     # Check current ownership before parsing user text; the SQL write independently checks it again.
@@ -223,6 +236,8 @@ def transcript_import(meeting: UUID,body: ImportRequest,claims: Annotated[Claims
         raise HTTPException(403,detail='Only the assigned RM can import this meeting transcript')
     try:source=imported(body)
     except ValueError as error:raise HTTPException(422,detail=str(error)) from error
+    try:source=fit_to_call(source,call('meeting_recovery',{'p_meeting_id':meeting},claims))
+    except Exception:pass  # SQL still enforces the rule if the call times can't be read
     receipt=call('meeting_import_transcript',{'p_meeting_id':meeting,'p_revision':body.revision,
         'p_cues':Jsonb([cue.model_dump(mode='json') for cue in source.cues]),'p_origin':source.origin,
         'p_file_hash':source.file_hash,'p_coverage':source.coverage,'p_command_id':body.command_id},claims)

@@ -521,8 +521,8 @@ export default function Chat({session,onSignIn}) {
     if(intent==='statements')return nav('Open Statements','statement-handoff',()=>{navigate('overview');setOverviewFocus({section:'statements',key:Date.now()});});
     if(intent==='personal_details_update'&&message.response_origin!=='validation')return nav('Prepare details update','personal-details-entry',()=>openInlineRequest({category:'personal_details_update',summary:redact(asked).slice(0,500)},index));
     if(intent==='statement_request')return nav('Request a statement copy','ticket-handoff',()=>requestStatement(redact(asked).slice(0,500),index));
-    // 2a: a meeting question ends with a way to the Meetings tab, where she follows her meeting requests (or makes one there).
-    if(relationshipIntent(asked)==='meeting')return nav('Open Meetings','meeting-handoff',()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');});
+    // 2a: a meeting question ends with a way to the Meetings page, where she follows her meeting requests (or makes one there).
+    if(relationshipIntent(asked)==='meeting')return nav('Open Meetings','meeting-handoff',()=>navigate('meetings'));
     // A question handed to the relationship manager: its reference is in the reply; follow it in My requests.
     if(message.needs_human&&/My requests/.test(message.content))
       return nav('Open Requests','ticket-handoff',()=>{setTicketPrefill(null);navigate('requests');});
@@ -622,7 +622,7 @@ export default function Chat({session,onSignIn}) {
                 {meetingDraft(m)&&otherParts(m)&&<Answer message={otherParts(m)} onSource={showSource} loadSource={loadSource}/>}
                 {meetingDraft(m)?<MeetingRequestCard draft={meetingDraft(m)} offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending}
                   onDecide={(decision,on)=>decideOffer(m,decision,on)} onAsk={text=>send(null,text)} onNavigate={navigate}
-                  onMeetings={()=>{setTicketPrefill({tab:'meetings',key:Date.now()});navigate('requests');}}/>
+                  onMeetings={()=>navigate('meetings')}/>
                 :<><Answer message={m} pendingText={loading?'Checking the available information…':''} onSource={showSource} loadSource={loadSource} link={pageLinkFor(m,i)}/>
                 <OfferBlock offer={m.offer} state={offerState(messages,i,now)} busy={loading||booting||!!bootError||!!pending} onDecide={(decision,on)=>decideOffer(m,decision,on)}/></>}
                 {!meetingDraft(m)&&ticketStep(m,i)}{inlineCardFor(m,i)}{!meetingDraft(m)&&nextQuestions(m,i)}
