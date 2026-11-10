@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core import langsmith_client
-from app.core.observability import current_trace, request_facts, span, start_trace
+from app.core.observability import current_trace, request_facts, span, span_sink, start_trace
 from app.services import answers
 
 client=TestClient(app)
@@ -56,11 +56,26 @@ def test_validation_is_a_decision_run_with_its_reason(runs):
     assert meta['passed'] is False and meta['reason']=='action_claim' and meta['kind']=='decision'
 
 def test_failed_step_ends_its_run_with_the_error(runs):
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError),langsmith.trace('chat','chain'):
         with span('documents.inspect','tool'):raise RuntimeError('broken')
-    [run]=runs.named('documents.inspect')
+    [root],[run]=runs.named('chat'),runs.named('documents.inspect')
     end=runs.end(run)
-    assert run['run_type']=='tool' and 'RuntimeError' in end['error'] and end['extra']['metadata']['error_type']=='RuntimeError'
+    assert run['parent_run_id']==root['id'] and run['run_type']=='tool'
+    assert 'RuntimeError' in end['error'] and end['extra']['metadata']['error_type']=='RuntimeError'
+
+def test_a_read_outside_a_turn_is_audited_not_traced(runs):
+    # A page load's read (My requests, RM Today) would be a trace of its own; the audit log records it instead.
+    sink=[];token=span_sink.set(sink)
+    try:
+        with span('tickets.list','tool',tool='tickets.list'):pass
+        with span('embed','embedding',model='m',count=1):pass
+    finally:span_sink.reset(token)
+    assert runs.created==[] and [n for n,_ in sink]==['tickets.list','embed']  # the eval sink still sees both
+    with span('talking_points','llm',agent='talking_points'):pass  # a model call after the reply keeps its own trace
+    with langsmith.trace('chat','chain'):
+        with span('tickets.list','tool',tool='tickets.list'):pass
+    [root],[read],[model]=runs.named('chat'),runs.named('tickets.list'),runs.named('talking_points')
+    assert read['parent_run_id']==root['id'] and model.get('parent_run_id') is None
 
 def test_nothing_is_sent_while_tracing_is_off():
     recorded=Runs()
