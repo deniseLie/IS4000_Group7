@@ -10,9 +10,10 @@
 --     her uploaded documents and their checks.
 --   * Sophie: notes she documented and tasks she created (any client), drafted client messages, assistant chats,
 --     dismissed follow-ups and blocked times. Her working hours go back to Monday to Friday 09:00-17:00.
--- Then re-seeded as by 34 and 51: Michelle's and Mei Ling's meeting requests, the seeded Property financing meeting,
--- Michelle's three sharing grants to Sophie, chat insights, portfolio (no Lombard loan, no collateral alert) and her
--- periodic review (sale agreement to send, proof of address with the bank).
+-- Then re-seeded as by 34 and 51: Mei Ling's open meeting request, Michelle's three sharing grants to Sophie, chat
+-- insights, portfolio (no Lombard loan, no collateral alert) and her periodic review (sale agreement to send, proof of
+-- address with the bank). The Property financing request and meeting 34 seeds for Michelle are removed again: she has
+-- no booked meeting, because she asks for one in the demo.
 --
 -- Kept: the audit log (append-only; every deletion here is itself audited), seeded tickets, notes, tasks, preferences
 -- and appointments, Michelle's standing agreement to meeting transcripts (Data sharing), card statuses, other clients'
@@ -29,7 +30,8 @@ declare
   seeded_grants constant uuid[]:=array['00000000-0000-4000-8000-100200000041','00000000-0000-4000-8000-100200000042',
     '00000000-0000-4000-8000-100200000043']::uuid[];
   i11 constant uuid:='00000000-0000-4000-8000-100200000011'; i12 constant uuid:='00000000-0000-4000-8000-100200000012';
-  m uuid[]; c uuid; n int; counts jsonb:='{}';
+  seeded_request constant uuid:='00000000-0000-4000-8000-100200000071';
+  m uuid[]; c uuid; n int; booked uuid; counts jsonb:='{}';
 begin
   if not exists(select 1 from rm.assignments where customer_id=1002 and advisor_id=sophie and ended_on is null) then
     raise exception 'Michelle (1002) is not in Sophie''s book; nothing was changed' using errcode='P0001';
@@ -72,7 +74,7 @@ begin
   delete from meetings.graph_checkpoints where meeting_id=any(m);
   delete from meetings.graph_runs where meeting_id=any(m);
   delete from meetings.copilot_briefs where meeting_id=any(m);
-  delete from meetings.events where meeting_id=any(m);  -- the reset queues a fresh meeting.scheduled for its meeting
+  delete from meetings.events where meeting_id=any(m);  -- the reset queues a fresh meeting.scheduled; 8b removes it again
   perform meetings.refresh_timers(x) from unnest(m) x;  -- the seeded meetings kept get their preparation reminder back
 
   -- 2. Michelle's saved chats (turns, messages and cases go with them).
@@ -149,6 +151,15 @@ begin
   -- 8. Meetings, grants, chat insights and portfolio re-seeded (as 34_reset_meeting_demo.sql).
   counts:=counts||jsonb_build_object('meeting_demo',rm.reset_meeting_demo());
 
+  -- 8b. No booked meeting for Michelle: she asks for it in the demo. The reset seeds her request ...0071 (Property
+  --     financing options, already scheduled) with a confirmed video meeting and its queued meeting.scheduled; remove
+  --     both. The queued events, timers and graph rows go with the appointment (cascade); notes, sharing grants and
+  --     consent asks that point at it are set to null. Mei Ling's request and the seeded past check-in stay.
+  delete from rm.meeting_requests where request_id=seeded_request returning appointment_id into booked;
+  delete from rm.appointments where appointment_id=booked;
+  get diagnostics n=row_count; counts:=counts||jsonb_build_object('seeded_meeting_removed',n);
+  delete from notify.inbox where customer_id=1002 and template_key like 'meeting.%';
+
   -- 9. Michelle's action ledger (receipts go with it). Last: the rows above pointed at it.
   delete from actions.staff_commands where command_id in (select command_id from actions.commands where customer_id=1002);
   delete from actions.commands where customer_id=1002;
@@ -157,10 +168,12 @@ begin
   raise notice 'Storyline demo reset: %',counts;
 end $$;
 
--- Checks. Expect: one upcoming "Property financing options" meeting from the reset plus the seeded ones; only seeded
+-- Checks. Expect: no upcoming meeting and no meeting request for Michelle; Mei Ling's request requested; only seeded
 -- tickets; the sale agreement not_submitted and the proof of address submitted_awaiting_review; no Lombard loan.
-select 'meeting' as what,purpose as detail,to_char(starts_at at time zone 'Asia/Singapore','Dy DD Mon HH24:MI') as value
+select 'upcoming meetings' as what,count(*)::text as detail,'expect 0' as value
   from rm.appointments where customer_id=1002 and status='confirmed' and starts_at>now()
+union all select 'meeting request',case customer_id when 1002 then 'Michelle' else 'Mei Ling' end,status
+  from rm.meeting_requests where customer_id in (1002,1007)
 union all select 'ticket',reference||' '||category,status from support.tickets where customer_id=1002
 union all select 'review item',label,submission_status from compliance.requested_items
   where case_id=(select case_id from compliance.cases where customer_id=1002 order by created_at desc limit 1)
