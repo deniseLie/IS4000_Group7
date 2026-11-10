@@ -213,7 +213,10 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
     log=NodeLog();spans: list[tuple[str,dict[str,Any]]]=[]
     replies: list[dict[str,Any]]=[];skipped: list[dict[str,str]]=[];history: list[dict[str,Any]]=[];context: dict[str,Any]={}
     keep=('client_id','ticket_ref','appointment_id','note_id','draft','documentation')
+    from evaluation.rm_target import BookEnvelope  # the same book the QA1 RM target gives the judge (rm_target imports this module)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://evaluation',timeout=300) as http:
+        book=await http.get('/rm/book',headers={'Authorization':f'Bearer {token}'});book.raise_for_status()
+        authorised=[client.model_dump(mode='json') for client in BookEnvelope.model_validate_json(book.text).data]
         for step in turns_of(inputs):
             if not step.get('say'):
                 skipped.append(step);continue
@@ -230,7 +233,8 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
                     answer=json.loads(data)
                     context={**(answer.get('context') or {})}
                     reply.update(answer=rm_text(answer),origin=answer.get('origin'),needs_human=answer.get('status')!='ok',status_text=answer.get('status'),
-                        sources=sorted({s.get('id') for s in answer.get('sources') or []}),drafts=len(answer.get('drafts') or [])+bool(answer.get('draft')))
+                        sources=sorted({s.get('id') for s in answer.get('sources') or []}),evidence=answer.get('sources') or [],
+                        drafts=len(answer.get('drafts') or [])+bool(answer.get('draft')))
                 elif event=='error':reply['error']=data
             replies.append(reply)
             client=context.get('client_id')
@@ -243,7 +247,8 @@ async def play_rm(inputs: dict[str,Any],app,token: str) -> dict[str,Any]:
         'tools':sorted({attrs['tool'] for name,attrs in spans if name=='tool_call'}),'model_calls':sum(name=='llm' for name,_ in spans),'prompt_ids':prompt_ids(spans),
         'dependencies':{'waves':max((2 if w.get('sends') else 1 for w in waves),default=0),'exports':sorted({e for w in waves for e in w.get('exports',[])}),
             'skipped':{a:r for w in waves for a,r in w.get('skipped',{}).items()},'rerouted':next((w['rerouted'] for w in waves if w.get('rerouted')),{})},
-        'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,'tickets':{'opened':[],'all':[]}}
+        'fault':{'name':inputs['fault'],'applied':bool(FAULTS[inputs['fault']])} if inputs.get('fault') else None,'tickets':{'opened':[],'all':[]},
+        'authorised_book':authorised}
 
 
 async def tickets(http: httpx.AsyncClient,headers: dict[str,str]) -> list[dict[str,Any]]:

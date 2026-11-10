@@ -171,17 +171,27 @@ def judge_name() -> str:
     return name
 
 
-def judge_model():
+def judge_model(schema: dict[str,Any]=JUDGE_SCHEMA,timeout: int=60):
     name=judge_name()
     from langchain.chat_models import init_chat_model
     provider=os.getenv('LLM_PROVIDER') or 'openai'
     kwargs={'api_key':os.environ['LLM_API_KEY'],'base_url':os.environ['LLM_BASE_URL']} if provider=='openai' else {}
-    return init_chat_model(name,model_provider=provider,timeout=60,max_retries=1,**kwargs).with_structured_output(JUDGE_SCHEMA,method='json_schema',strict=True)
+    return init_chat_model(name,model_provider=provider,timeout=timeout,max_retries=1,**kwargs).with_structured_output(schema,method='json_schema',strict=True)
+
+
+async def judge_answer(system: str,schema: dict[str,Any],messages: list[tuple[str,str]]) -> dict[str,Any]:
+    """One strict-schema judge reply on CHAT_TRANSPORT: the codex or claude CLI, else JUDGE_MODEL on the API (OpenRouter)."""
+    from app.services.llm_gateway import transport
+    if transport() in ('codex','claude'):
+        from app.services import claude_cli,codex_cli
+        return (await (codex_cli if transport()=='codex' else claude_cli).answer_with_model(system,schema,messages,judge_name()))[0]
+    return await judge_model(schema,timeout=180).ainvoke([('system',system),*messages])  # meeting payloads are longer than a chat
 
 
 def transcript(out: dict[str,Any]) -> str:
     role='Relationship manager' if out.get('pipeline')=='rm' else 'Client'
-    return redact('\n\n'.join(f"{role}: {r['say']}\nAssistant: {r.get('answer') or '(no reply: '+str(r.get('error'))+')'}\nSources: {', '.join(r.get('sources',[])) or 'none'}\nSource records: {json.dumps(r.get('evidence',[]),ensure_ascii=False)}"
+    # Origin and model calls per reply: cases say "fixed reply, no model call", and the judge cannot see the trajectory otherwise.
+    return redact('\n\n'.join(f"{role}: {r['say']}\nAssistant: {r.get('answer') or '(no reply: '+str(r.get('error'))+')'}\nReply origin: {r.get('origin') or 'unknown'}; model calls: {r.get('model_calls','unknown')}\nSources: {', '.join(r.get('sources',[])) or 'none'}\nSource records: {json.dumps(r.get('evidence',[]),ensure_ascii=False)}"
         for r in out['replies']))[0]
 
 
