@@ -68,7 +68,8 @@ export function delta(now,before,{kind='rate',better='up'}={}) {
   const diff=now-before;
   if(Math.abs(diff)<1e-9)return {text:'no change',tone:''};
   const size=Math.abs(diff),sign=diff>0?'+':'−';
-  const text=kind==='rate'?`${sign}${(size*100).toFixed(1)} pts`:kind==='seconds'?`${sign}${size.toFixed(1)} s`:`${sign}${Number.isInteger(size)?size:size.toFixed(1)}`;
+  const text=kind==='rate'?`${sign}${(size*100).toFixed(1)} pts`:kind==='seconds'?`${sign}${size.toFixed(1)} s`:kind==='score'?`${sign}${size.toFixed(2)}`
+    :`${sign}${Number.isInteger(size)?size:size.toFixed(1)}`;
   const way=diff>0?'up':'down';
   return {text,tone:better?`${way}-${way===better?'good':'bad'}`:''};
 }
@@ -117,13 +118,18 @@ export function defaultPair(timeline) {
   return full.length>=2?[full.at(-2).experiment,full.at(-1).experiment]:timeline.length>=2?[timeline.at(-2).experiment,timeline.at(-1).experiment]:[null,null];
 }
 
-// One row of the All datasets table: the latest full run against the full run before it, and its problem cases.
+// One row of the All datasets table: the latest full run against the full run before it, and its problem cases. The judge
+// mean (0–1, never decides pass) is the latest judged full run's, so a run without --judge keeps it, against the judged run
+// before it with the same judge model (another judge grades differently, so it has no change).
 export const PROBLEMS=['regressed','flaky','always_failing','failing'];
 export function datasetRow(set) {
   const full=(set.timeline||[]).filter(point=>!point.subset),latest=full.at(-1),previous=full.at(-2);
+  const judged=full.filter(point=>Number.isFinite(point.judge)),graded=judged.at(-1);
+  const before=judged.slice(0,-1).reverse().find(point=>point.judge_model===graded.judge_model);
   const labels=set.heatmap?.labels||{};
   return {dataset:set.dataset,pass_rate:latest?.pass_rate??null,previous_pass_rate:previous?.pass_rate??null,counts:latest?.counts||null,
-    started_at:latest?.started_at||null,last_run:set.last_run||null,stale:!!set.stale,runs:set.runs||0,
+    judge:graded?.judge??null,previous_judge:before?.judge??null,judge_at:graded?.started_at||null,judge_model:graded?.judge_model||null,
+    judge_current:!!graded&&graded===latest,started_at:latest?.started_at||null,last_run:set.last_run||null,stale:!!set.stale,runs:set.runs||0,
     problems:PROBLEMS.filter(label=>labels[label]).map(label=>({label,count:labels[label]})),fixed:labels.fixed||0};
 }
 
