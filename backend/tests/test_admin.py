@@ -47,11 +47,16 @@ def test_an_admin_is_not_a_relationship_manager():
 
 
 def test_meeting_experiments_can_be_opened_by_their_published_name(monkeypatch):
-    names=['meeting-eval-20261106T211612Z','meeting-eval-20261107T121212Z']
-    monkeypatch.setattr(quality,'experiment_runs',lambda:[{**EXPERIMENT,'name':name,'dataset':'demobank-meetings'} for name in names])
+    names=['preparation-eval-20261106T221848Z','preparation-eval-20261107T121212Z']
+    versions=['meeting-preparation-v1','meeting-preparation-v2']
+    monkeypatch.setattr(quality,'experiment_runs',lambda:[{**EXPERIMENT,'name':name,'dataset':'demobank-meeting-preparation',
+        'judge_rubric_version':version} for name,version in zip(names,versions)])
     admin=bearer(app_metadata=ADMIN)
-    assert client.get('/admin/evaluations/'+names[0],headers=admin).json()['name']==names[0]
-    assert client.get(f'/admin/evaluations/compare?a={names[0]}&b={names[1]}',headers=admin).status_code==200
+    detail=client.get('/admin/evaluations/'+names[0],headers=admin).json()
+    assert detail['name']==names[0] and detail['judge_rubric_version']==versions[0]
+    comparison=client.get(f'/admin/evaluations/compare?a={names[0]}&b={names[1]}',headers=admin)
+    assert comparison.status_code==200
+    assert comparison.json()['changes']==['judge rubric meeting-preparation-v1 → meeting-preparation-v2']
     assert code(client.get('/admin/evaluations/unknown-project',headers=admin))=='not_found'
 
 

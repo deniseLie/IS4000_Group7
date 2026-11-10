@@ -20,10 +20,13 @@ from app.schemas.meeting_lifecycle import Hash
 from app.schemas.meeting_preparation import PreparedBrief
 
 AGENDA={'goals':'Confirm the meeting goals','status':'Review the current status','documents':'Discuss the required documents',
- 'options':'Discuss the available options','next_steps':'Agree next steps and responsibilities','questions':'Answer your questions'}
+ 'options':'Discuss the available options','product_terms':'Review the listed product terms','next_steps':'Agree next steps and responsibilities','questions':'Answer your questions'}
 QUESTIONS={'clarify_objective':'What would you like to achieve?','confirm_documents':'Which documents or information should we clarify?',
  'review_options':'Which options would you like to discuss?','confirm_next_steps':'What should happen next, and who will do it?',
- 'ask_product_risks':'What risks, terms and charges should we clarify?','confirm_timeframe':'What timeframe matters to you?'}
+ 'ask_product_risks':'What risks, terms and charges should we clarify?','confirm_timeframe':'What timeframe matters to you?',
+ 'confirm_document_review':'Which documents has the bank received, which still need to be provided or corrected, and who will confirm the next step and due date?',
+ 'compare_catalogue_options':'Which of the listed product terms should we compare, including applicable rates, charges, minimum amounts and term lengths?',
+ 'review_catalogue_product':'Which terms of the listed product would you like to review, such as the rate, charges, minimum amount or term length where applicable?'}
 
 
 class Section(BaseModel):
@@ -35,7 +38,7 @@ class Section(BaseModel):
 class Document(BaseModel):
     model_config=ConfigDict(frozen=True,extra='forbid')
     title: str
-    reference: str
+    reference: str|None
     status: str
     sections: tuple[Section,...]=Field(min_length=1)
 
@@ -75,8 +78,8 @@ def discussion_pack(pack: PackView) -> Document:
     if pack.content.questions:sections.append(Section(heading='Questions to discuss',paragraphs=tuple(QUESTIONS[code] for code in pack.content.questions)))
     sections.append(Section(heading='About this document',paragraphs=(
         'Discussion material. The meeting does not execute a transaction or establish suitability.',
-        f'Saved document {pack.document_id}. Version {pack.version}. Content reference {pack.content_hash}.')))
-    return Document(title=pack.content.title,reference=str(pack.meeting_id),status=pack.status,sections=tuple(sections))
+        f'Version {pack.version}.')))
+    return Document(title=pack.content.title,reference=None,status=pack.status,sections=tuple(sections))
 
 
 def internal_brief(prepared: PreparedBrief) -> Document:
@@ -116,7 +119,8 @@ def pdf(document: Document) -> bytes:
     def footer(canvas: Canvas,template: SimpleDocTemplate) -> None:
         canvas.saveState();canvas.setStrokeColor(red);canvas.line(42,42,A4[0]-42,42)
         canvas.setFont('DemoBankNoto',7);canvas.setFillColor(ink)
-        canvas.drawString(42,29,'Meeting '+document.reference);canvas.drawRightString(A4[0]-42,29,'Page '+str(template.page))
+        if document.reference:canvas.drawString(42,29,'Meeting '+document.reference)
+        canvas.drawRightString(A4[0]-42,29,'Page '+str(template.page))
         canvas.restoreState()
     SimpleDocTemplate(output,pagesize=A4,rightMargin=42,leftMargin=42,topMargin=32,bottomMargin=58,
         title=document.title,author='UBS Connect',invariant=1).build(story,onFirstPage=footer,onLaterPages=footer,

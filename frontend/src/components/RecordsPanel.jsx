@@ -31,7 +31,7 @@ export default function RecordsPanel({onClose,onReviewActions}) {
         if(!data.session)throw new Error('Please sign in again to view your records.');
         const result=await loadRecords(data.session.access_token,query,controller.signal);
         if(!controller.signal.aborted)setRecords(remember(key,result,scope));
-      } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
+      } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted){setRecords(null);setError(failure.message);}}
       finally {if(!controller.signal.aborted)setLoading(false);}
     }
     load();return ()=>controller.abort();

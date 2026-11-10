@@ -302,7 +302,8 @@ def experiment_runs() -> list[dict[str,Any]]:
         for d,p in projects:
             m=(p.extra or {}).get('metadata') or {};git=m.get('git') or {}
             found.append({'id':str(p.id),'name':p.name,'dataset':d['name'],'started_at':p.start_time,'url':p.url,'model':m.get('model'),
-                'pipeline':m.get('pipeline'),'transport':m.get('transport'),'judge_model':m.get('judge_model'),'answer_prompt':m.get('answer_prompt'),
+                'pipeline':m.get('pipeline'),'transport':m.get('transport'),'judge_model':m.get('judge_model'),
+                'judge_rubric_version':m.get('judge_rubric_version'),'answer_prompt':m.get('answer_prompt'),
                 'prompts':m.get('prompts_in_use'),'commit':(git.get('commit') or m.get('app_version') or '')[:7] or None,'branch':git.get('branch'),
                 'partial':m.get('partial'),'cases':sorted(cases[str(p.id)],key=lambda c:c['case_id'] or '')})
         return sorted(found,key=lambda e:e['started_at'])

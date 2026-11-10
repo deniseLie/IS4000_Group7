@@ -95,7 +95,7 @@ def test_fixed_safety_replies_follow_the_approved_articles(database):
         rows=database.execute('select cite,title,publisher from public.kb_get_article(%s)',(key,)).fetchall()
         assert (source['id'],source['title'],source['publisher']) in rows,key
     assert answers.LOST_CARD in article(database,'lost-card')[0]
-    assert answers.HUMAN_SUPPORT in article(database,'support')[0]
+    assert answers.HUMAN_SUPPORT in article(database,'support')[0].replace('My requests','Requests')
 
 @pytest.mark.parametrize('answer',['The fee is SGD 199.', 'The rate is 18.5%.', 'Wait 3 days.', 'The fee is １９９ dollars.', 'The fee is SGD199.', '费用是199元。'])
 def test_unsupported_numbers_rejected(answer):

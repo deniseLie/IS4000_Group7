@@ -44,6 +44,6 @@ test('owned document metadata stays scoped and reloads at mobile widths',async({
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/documents-${width}.png`,fullPage:true});
   }
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('open-account-menu')).toBeFocused();
+  await expect(page.getByTestId('open-records')).toBeFocused();
   expect(chatCalls).toEqual([]);
 });

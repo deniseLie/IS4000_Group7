@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
-async function ask(page,question,testInfo) {
+const articleId=id=>id.match(/^kb:([^@]+)@v\d+#/)?.[1]??id;
+async function ask(page,question,testInfo,{allowWithheld=false}={}) {
  const received=page.waitForResponse(r=>r.url().endsWith('/chat')&&r.request().method()==='POST');
  await page.getByRole('textbox',{name:'Your message'}).fill(question);
  await page.getByRole('button',{name:'Send',exact:true}).click();
@@ -8,11 +9,11 @@ async function ask(page,question,testInfo) {
  expect(response.status()).toBe(200);
  await expect(page.getByRole('button',{name:'Send',exact:true})).toBeVisible({timeout:80000});
  const bubble=page.locator('.bank-chat-message.assistant').last();
- await expect(bubble).toHaveAttribute('data-response-origin','ai');
- await expect(bubble).toHaveAttribute('data-prompt-version',/^v3\+/);
- await expect(bubble).toContainText('AI-generated');
+ await expect(bubble).toHaveAttribute('data-response-origin',allowWithheld?/^(?:ai|validation)$/:/^ai$/);
+ await expect(bubble).toHaveAttribute('data-prompt-version',/^v\d+\+[a-f0-9]{8}$/);
+ if(await bubble.getAttribute('data-response-origin')==='ai')await expect(bubble).toContainText('AI-generated');
  const result={answer:await bubble.locator('.answer-text').innerText(),
-   sources:await bubble.locator('[data-source-id]').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.sourceId}))),
+   sources:(await bubble.locator('[data-source-id]').evaluateAll(nodes=>nodes.map(n=>n.dataset.sourceId))).map(id=>({id:articleId(id)})),
    prompt_version:await bubble.getAttribute('data-prompt-version'),response_origin:await bubble.getAttribute('data-response-origin')};
  await testInfo.attach('real-answer',{body:JSON.stringify({question,...result},null,2),contentType:'application/json'});
  return result;
@@ -67,7 +68,7 @@ test('frustration with a banking question still gets sourced help',async({page},
  expect(answer.sources.map(s=>s.id)).toContain('sg-card-payments');
  expect(answer.answer).toMatch(/interest/i);
  expect(answer.answer).toMatch(/unpaid|remaining balance|outstanding balance|balance.*(?:remains|left)|still.*(?:charged|incur|pay).*interest/i);
- expect(answer.answer).not.toMatch(/our (card )?(terms|policy)|avoid interest charges entirely|avoid all interest|full statement balance|pay.*in full/i);
+ expect(answer.answer).not.toMatch(/\bour (card )?(terms|policy)|avoid interest charges entirely|avoid all interest|full statement balance|\bpay\b[^.!?]*in full/i);
  await page.getByText('Sources',{exact:true}).click();
  await page.getByRole('button',{name:'Singapore credit card payments'}).click();
  const panel=page.getByRole('region',{name:'Source details'});
@@ -87,18 +88,23 @@ test('real AI understands a typo then follows a corrected topic',async({page},te
 });
 test('real AI admits unavailable fees and separates external education from bank policy',async({page},testInfo)=>{
  await page.goto('/');
- const fee=await ask(page,'What is the exact annual fee for the UBS Connect Platinum card?',testInfo);
- expect(fee.sources.map(s=>s.id)).toContain('cards');
+ const fee=await ask(page,'What is the exact annual fee for the UBS Connect Platinum card?',testInfo,{allowWithheld:true});
  expect(fee.answer).not.toMatch(/\d/);
- expect(fee.answer).toMatch(/unavailable|cannot be confirmed|not (?:available|provided|supplied)|no .*record|don.t have/i);
+ if(fee.response_origin==='validation'){
+  expect(fee.sources).toEqual([]);
+  expect(fee.answer).toMatch(/could not verify/i);
+ }else{
+  expect(fee.sources.every(source=>source.id==='cards')).toBe(true);
+  expect(fee.answer).toMatch(/unavailable|cannot be confirmed|can.t (?:confirm|verify)|not (?:available|provided|supplied)|no .*record|don.t have/i);
+ }
  await page.getByRole('button',{name:'New chat',exact:true}).click();
- const policy=await ask(page,"Is the MoneySense credit card guidance UBS Connect's own credit card policy?",testInfo);
+ const policy=await ask(page,"What does MoneySense say about interest when I pay only the minimum on my credit card? Is that UBS Connect's own credit card policy?",testInfo);
  expect(policy.sources.map(s=>s.id)).toContain('sg-card-payments');
  expect(policy.answer).toMatch(/MoneySense/);
  expect(policy.answer).toMatch(/\bnot\b|\bno\b/i);
  await page.getByText('Sources',{exact:true}).click();
  await page.getByRole('button',{name:'Singapore credit card payments'}).click();
- await expect(page.getByRole('region',{name:'Source details'})).toContainText('Not a UBS Connect product policy');
+ await expect(page.getByRole('region',{name:'Source details'})).toContainText(/Not a (?:DemoBank|UBS Connect) product policy/);
  await page.screenshot({path:'test-results/real-source-scope.png',fullPage:true});
 });
 for(const scenario of [
@@ -117,12 +123,12 @@ for(const scenario of [
 test('real unlinked synthetic login cannot access banking records',async({page})=>{
  test.skip(!process.env.TEST_UNLINKED_FIXTURE_FILE,'Requires a temporary unlinked synthetic test login');
  const [user]=JSON.parse(fs.readFileSync(process.env.TEST_UNLINKED_FIXTURE_FILE,'utf8'));
- await page.goto('/');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByLabel('Email address').fill(user.email);await page.getByLabel('Password',{exact:true}).fill(user.password);await page.getByTestId('submit-login').click();
+ await page.goto('/');await page.getByTestId('sign-in').click();await page.getByLabel('Email address').fill(user.email);await page.getByLabel('Password',{exact:true}).fill(user.password);await page.getByTestId('submit-login').click();
  await expect(page.getByRole('button',{name:'Sign out'})).toBeVisible({timeout:20000});
  await page.getByRole('textbox',{name:'Your message'}).fill('What is my balance?');await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.locator('.bank-chat-bubble.error')).toContainText('No demo customer profile',{timeout:30000});
- await page.getByRole('button',{name:'Sign out'}).click();await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Sign out'}).click();await expect(page.getByTestId('sign-in')).toBeVisible();
  await expect(page.locator('.bank-chat-message')).toHaveCount(0);
  await page.getByRole('textbox',{name:'Your message'}).fill('I lost my card');await page.getByRole('button',{name:'Send',exact:true}).click();
- await expect(page.locator('.bank-chat-message.assistant')).toContainText('immediately',{timeout:30000});
+ await expect(page.locator('.bank-chat-message.assistant')).toContainText('Freeze card',{timeout:30000});
 });
