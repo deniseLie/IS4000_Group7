@@ -38,9 +38,9 @@ export default function OverviewPage({onNavigate,views=[]}) {
         <Tile testid="admin-tile-latency" label="Latency p95 (client / RM)" value={`${number(now.p95_client_s)} / ${number(now.p95_rm_s)} s`} alert={overTarget(now)}
           note={`p50 ${number(now.p50_s)} s · targets ${P95_TARGET.client} / ${P95_TARGET.rm} s`}
           change={delta(now.p95_s,before.p95_s,{kind:'seconds',better:'down'})} spark={<Sparkline values={series.map(b=>b.p95_s)} label="p95 latency over the window"/>}/>
-        <Tile testid="admin-tile-cost" label="Cost / request" value={usd(now.cost_per_request)}
-          note={`${usd(now.cost_total)} in this window · ${number(now.tokens_per_request,0)} tokens / request`}
-          change={delta(now.cost_per_request,before.cost_per_request,{kind:'count',better:'down'})}/>
+        <Tile testid="admin-tile-cost" label="Cost in this window" value={usd(now.cost_total)}
+          note={`${usd(now.cost_per_request)} / request · ${number(now.tokens_per_request,0)} tokens / request`}
+          change={delta(now.cost_total,before.cost_total,{kind:'count',better:'down'})}/>
         <Tile testid="admin-tile-traces" label="LangSmith traces this month" alert={budget?.warn}
           value={budget?`${number(budget.left,0)} left`:'—'}
           note={budget?`${number(budget.used,0)} of ${number(budget.limit,0)} used · resets ${formatDate(budget.resets)}`:'Usage not readable with this key'}
