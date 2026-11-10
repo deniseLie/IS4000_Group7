@@ -217,8 +217,9 @@ def test_conversations_are_saved_per_rm_and_hide_clients_who_left_the_book(datab
     with pytest.raises(Exception):database.execute('select rm_conversations()')
 
 
-def test_clients_can_book_at_most_two_meetings_a_week(database: 'Connection[SqlRow]') -> None:
-    """0092: a third meeting in one week is neither offered nor accepted; other weeks stay open."""
+def test_clients_have_no_weekly_meeting_limit(database: 'Connection[SqlRow]') -> None:
+    """0159 lifts 0092's limit of two: a week with two meetings still offers free times and accepts a third, and the RM's
+    availability carries no booking rule."""
     meeting=database.execute("select starts_at,advisor_id from rm.appointments where customer_id=1002 and status='confirmed' "
         "and starts_at>now() order by starts_at limit 1").fetchone()
     week=lambda t:database.execute("select date_trunc('week',%s::timestamptz at time zone 'Asia/Singapore')",(t,)).fetchone()[0]
@@ -233,14 +234,12 @@ def test_clients_can_book_at_most_two_meetings_a_week(database: 'Connection[SqlR
     assert same_week, 'one meeting that week: still bookable'
     database.execute("insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status) values (1002,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed')",
         (meeting[1],same_week[0],same_week[0]))
-    assert not [s for s in offered() if week(s)==week(meeting[0])]
-    target=json.dumps({'advisor_id':str(meeting[1]),'starts_at':str(same_week[-1]),'ends_at':None})
-    database.execute('savepoint limit_check')
-    with pytest.raises(Exception,match='2 meetings with your relationship manager that week'):
-        database.execute("select actions.require_available_slot(jsonb_set(%s::jsonb,'{ends_at}',to_jsonb((%s::timestamptz+interval '30 minutes')::text)),1002)",(target,same_week[-1]))
-    database.execute('rollback to savepoint limit_check')
+    still=[s for s in offered() if week(s)==week(meeting[0])]
+    assert still, 'two meetings that week: still offered'
+    target=json.dumps({'advisor_id':str(meeting[1]),'starts_at':str(still[-1]),'ends_at':None})
+    database.execute("select actions.require_available_slot(jsonb_set(%s::jsonb,'{ends_at}',to_jsonb((%s::timestamptz+interval '30 minutes')::text)),1002)",(target,still[-1]))
     as_rm(database)
-    assert call(database,'rm_availability()')['rules']['weekly_meetings_per_client']==2
+    assert call(database,'rm_availability()')['rules']['weekly_meetings_per_client'] is None
 
 
 def test_demo_book_is_michelle_and_mei_ling(database: 'Connection[SqlRow]') -> None:
