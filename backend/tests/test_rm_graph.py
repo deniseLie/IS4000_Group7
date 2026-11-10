@@ -1056,3 +1056,28 @@ def test_a_one_request_message_is_planned_by_rule_and_anything_else_by_the_model
             ('', 'Brief me on Wei Ming', True), ('Michelle', 'Brief me on David', False), ('Michelle', 'When is Michelle’s review due?', False),
             ('Michelle', "What's on today with Michelle?", False)):
         assert graph.rule_plan(rt(named, outside), message) is None, message
+
+
+def inbox_tickets(n: int, owned: bool) -> list[dict]:
+    return [{'reference': f"TCK-00{2 if owned else 3}{i:03d}", 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'rm_owned': owned,
+        'category': 'rm_handover' if owned else 'suspected_fraud', 'category_label': 'Question' if owned else 'Suspected fraud',
+        'status': 'submitted', 'urgency': 'normal', 'restricted': not owned, 'summary': 'Waiting for a reply.'} for i in range(n)]
+
+
+def test_the_ticket_inbox_shows_her_first_10_tickets_and_5_specialist_ones_and_counts_the_rest(records, model):
+    """11 Nov 2026: 37 open tickets were 85% of a 19,000-token prompt. The model gets the first 10 of hers and the first 5
+    specialist-managed ones in the inbox's own order (rm_tickets sorts each group); code adds the line counting the rest."""
+    calls, data = records
+    seen, _ = model
+    data['rows']['rm_tickets'] = {'data': {'rm_owned': inbox_tickets(13, True), 'specialist': inbox_tickets(24, False)}, 'as_of': 'now'}
+    reply = run('What needs my attention?', None, intent='ticket_inbox')
+    evidence = json.loads(evidence_in(seen[-1]))
+    assert [e['id'] for e in evidence if e['kind'] == 'ticket'] == [f'ticket-TCK-002{i:03d}' for i in range(10)] + [f'ticket-TCK-003{i:03d}' for i in range(5)]
+    counts = next(e['record'] for e in evidence if e['id'] == 'inbox-summary')
+    assert (counts['rm_owned_open'], counts['rm_owned_listed'], counts['specialist_open'], counts['specialist_listed']) == (13, 10, 24, 5)
+    assert reply['sections'][-1]['heading'] == 'Not listed here' and [i['text'] for i in reply['sections'][-1]['items']] == [
+        '3 more tickets of yours and 19 more specialist-managed tickets are not listed here. Your Ticket inbox page shows them all.']
+    seen.clear()
+    data['rows']['rm_tickets'] = TICKETS  # everything fits: all listed, no line
+    reply = run('What needs my attention?', None, intent='ticket_inbox')
+    assert 'ticket-TCK-001001' in evidence_in(seen[-1]) and all(s['heading'] != 'Not listed here' for s in reply['sections'])

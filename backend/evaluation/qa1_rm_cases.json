@@ -22,7 +22,7 @@
       }
     ],
     "check": "Separates RM-owned work needing attention from read-only specialist-managed tickets, flags recorded urgency/overdue targets, cites real tickets and never changes them.",
-    "schema": "One item per open ticket in Sophie's book and no other; every reference exists; card numbers show the last 4 digits only.",
+    "schema": "One item per listed ticket and no other: at most 10 of her own and 5 specialist-managed ones, in the inbox's order, then one line counting the rest; every reference exists; card numbers show the last 4 digits only.",
     "trajectory": {
       "nodes": [],
       "idle": [],

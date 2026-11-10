@@ -159,12 +159,16 @@ def ticket_detail_bundle(result: dict,guidance: list[KnowledgeSection] | None=No
     return bundle
 
 
-def tickets_bundle(result: dict) -> Bundle:
+def tickets_bundle(result: dict,owned: int|None=None,specialist: int|None=None) -> Bundle:
+    """Every open ticket, or only the first `owned` of hers and `specialist` specialist-managed ones in the inbox's order
+    (rm_tickets sorts each group); the counts record says how many of each are open and how many are listed."""
     bundle=Bundle()
     as_of=str(result.get('as_of'))
-    for ticket in result['data']['rm_owned']+result['data']['specialist']:bundle.add(ticket_evidence(ticket,as_of))
-    bundle.add(Evidence('inbox-summary','Ticket counts','record',{'rm_owned_open':len(result['data']['rm_owned']),
-        'specialist_open':len(result['data']['specialist']),'ordering_rule':'urgent first, then past target time, then urgency, then age'},as_of))
+    mine,theirs=result['data']['rm_owned'][:owned],result['data']['specialist'][:specialist]
+    for ticket in mine+theirs:bundle.add(ticket_evidence(ticket,as_of))
+    bundle.add(Evidence('inbox-summary','Ticket counts','record',{'rm_owned_open':len(result['data']['rm_owned']),'rm_owned_listed':len(mine),
+        'specialist_open':len(result['data']['specialist']),'specialist_listed':len(theirs),
+        'ordering_rule':'urgent first, then past target time, then urgency, then age'},as_of))
     return bundle
 
 

@@ -18,7 +18,8 @@ approves through the existing write routes), and what needs judgement is written
    `today` and `priorities` code has already ranked the records (services/rm/priority.py, build plan 3b): the model
    explains each record's score parts and code puts the items back in rank order (in_rank_order). The model sees only
    the top RANKED_SHOWN ranked records (and FOLLOWUPS_SHOWN other follow-ups), so the answer's length stays bounded
-   however full her queue is; code adds one fixed line counting the rest (not_listed).
+   however full her queue is; code adds one fixed line counting the rest (not_listed). The ticket inbox is bounded the
+   same way (INBOX_OWNED_SHOWN of her tickets, INBOX_SPECIALIST_SHOWN specialist-managed ones, tickets_not_listed).
 4. Checks: figures, dates and references must be in the cited records; no advice, decisions, action claims, secrets or
    links. Failing items are withheld and counted. Proposed actions must quote the RM's notes and are checked for
    missing fields and duplicates. Nothing is saved or sent here: the RM approves each write separately.
@@ -350,6 +351,7 @@ def in_rank_order(sections: list[dict],bundle: ev.Bundle,headings: list[str]) ->
 # Context budget for `today` and `priorities`: the prompt writes one item per record it is given, so the answer grows with
 # her queue (18 records ran into MAX_TOKENS). The model gets the top records only; the rest are counted in a fixed line.
 RANKED_SHOWN,FOLLOWUPS_SHOWN=10,5
+INBOX_OWNED_SHOWN,INBOX_SPECIALIST_SHOWN=10,5  # the same bound for the ticket inbox (h_inbox)
 RANKED_WORDS={'request':('client request','client requests'),'meeting_request':('meeting request to answer','meeting requests to answer'),
     'review':('compliance review','compliance reviews'),'meeting':('confirmed meeting','confirmed meetings'),'task':('task','tasks'),
     'milestone':('milestone','milestones')}
@@ -374,6 +376,15 @@ def not_listed(ranked: list[dict],followups: list[dict]=()) -> dict|None:
     if followups:lines.append(f"{len(followups)} more {'follow-up is' if len(followups)==1 else 'follow-ups are'} not listed here: "
         f"{counted([f.get('kind') for f in followups],FOLLOWUP_WORDS)}. See all on your Today page shows them.")
     return {'heading':'Not listed here','items':[{'text':t,'kind':'gap','owner':'none','source_ids':[]} for t in lines]} if lines else None
+
+
+def tickets_not_listed(mine: int,theirs: int) -> dict|None:
+    """The inbox's fixed section (no model, counts only) for the tickets left out of the model's evidence."""
+    parts=[(n,f"{n} more {word}{'' if n==1 else 's'}{tail}") for n,word,tail in ((mine,'ticket',' of yours'),(theirs,'specialist-managed ticket','')) if n>0]
+    if not parts:return None
+    verb='is' if len(parts)==1 and parts[0][0]==1 else 'are'
+    text=' and '.join(p for _,p in parts)+f' {verb} not listed here. Your Ticket inbox page shows them all.'
+    return {'heading':'Not listed here','items':[{'text':text,'kind':'gap','owner':'none','source_ids':[]}]}
 
 
 def with_rest(reply: dict,rest: dict|None) -> dict:
@@ -404,9 +415,17 @@ def handover_order(sections: list[dict]) -> list[dict]:
 
 # Intent handlers ------------------------------------------------------------------------------------------------------
 async def h_inbox(t: Turn,plan,client_id):
+    """The model sees her first INBOX_OWNED_SHOWN tickets and the first INBOX_SPECIALIST_SHOWN specialist-managed ones in
+    the inbox's order (11 Nov 2026: 37 open tickets were 85% of a 19,000-token prompt, and the answer is one item each);
+    code adds one fixed line counting the rest."""
     await t.say('Reading open tickets across your book…')
-    bundle=ev.tickets_bundle(await t.read('rm_tickets',{}))
-    return brief_reply('ticket_inbox',await t.model('ticket_inbox',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
+    result=await t.read('rm_tickets',{})
+    mine,theirs=result['data']['rm_owned'],result['data']['specialist']
+    t.facts.update(tickets_shown=min(len(mine),INBOX_OWNED_SHOWN)+min(len(theirs),INBOX_SPECIALIST_SHOWN),
+        not_shown=max(len(mine)-INBOX_OWNED_SHOWN,0)+max(len(theirs)-INBOX_SPECIALIST_SHOWN,0))
+    bundle=ev.tickets_bundle(result,INBOX_OWNED_SHOWN,INBOX_SPECIALIST_SHOWN)
+    reply=brief_reply('ticket_inbox',await t.model('ticket_inbox',bundle,brief_schema(bundle.ids()),None),bundle,t.context(None))
+    return with_rest(reply,tickets_not_listed(len(mine)-INBOX_OWNED_SHOWN,len(theirs)-INBOX_SPECIALIST_SHOWN))
 
 
 async def h_priorities(t: Turn,plan,client_id):
