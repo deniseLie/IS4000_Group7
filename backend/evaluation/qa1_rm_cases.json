@@ -204,8 +204,7 @@
         "rm_meeting_notes",
         "meeting_preparation_inputs"
       ],
-      "model": true,
-      "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.",
+      "order": "Authorised RM records → the saved Brief Writer version (or a new one) and source checks → reply. No model-call check: a saved brief is reused without one. Business writes require separate human approval.",
       "pipeline": "rm"
     },
     "must_not": [

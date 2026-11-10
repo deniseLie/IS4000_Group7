@@ -472,7 +472,7 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Expected output | Uses the next confirmed Michelle meeting and prepares a brief from authorised evidence, with open matters and gaps. No invented date or unconsented shared note. |
 | Must not happen | Unsourced claims; Investment or refinancing recommendations |
 | Schema | Sections present: profile, preferences, commitments, open tickets, shared note, questions; every point has a source id. |
-| Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_client_profile", "rm_meeting_notes", "meeting_preparation_inputs"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
+| Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_client_profile", "rm_meeting_notes", "meeting_preparation_inputs"], "order": "Authorised RM records → the saved Brief Writer version (or a new one) and source checks → reply. No model-call check: a saved brief is reused without one. Business writes require separate human approval.", "pipeline": "rm"} |
 | Automated cover | tests/test_rm_seed.py |
 
 ## R05 – Pre-meeting brief (no consent)

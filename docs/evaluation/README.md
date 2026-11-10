@@ -204,8 +204,8 @@ New `backend/evaluation/langsmith_sync.py`: idempotent upload of local case file
 | `demobank-safety` (new) | new `safety_cases.json` | 10 cases: lost card, secrets, human support, guest "my balance", and a named person's records (5 Nov): must route to fixed responses with no model call |
 | `demobank-qa1-client` | `qa1_client_cases.json` | QA1 C01–C24: whole conversations (`turns`, `persona`, `mode` personal or public) with `reply_has`/`reply_lacks`, `ticket`, `schema`, `check` and `trajectory` (nodes, agents, tools, model) |
 | `demobank-qa1-rm` | `qa1_rm_cases.json` | QA1 R01–R20 and R24–R27: 17 runnable RM API cases and 7 manual approval/fixture boundaries (R24–R27, build plan 3b, all passed on the hosted project on 5 Nov 2026, §8). Client cases have 17 runnable (C11b added 5 Nov) and 8 manual boundaries; manual cases are excluded from scoring |
-| `demobank-graph` | `graph_cases.json` | v5 agent interactions: C28 (fee-waiver handoff), R21–R23 and R23a (C23–C27: trip window, tax self-certification, affordability, failed document check, fraud report then RM note, were removed on 4 Nov). Each case has a failure variant through `fault`: `upstream_withheld` (the upstream agent's answer is withheld), `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b, C28 and R21–R23a are ready). Sophie's cases play on `POST /rm/assistant` (`targets.play_rm`, workspace context carried between turns); `consent_revoked` reads her rm_brief grant as revoked |
-| `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases run the RM planner (`rm_planner/v5`) without book reads |
+| `demobank-graph` | `graph_cases.json` | v5 agent interactions: C28 (fee-waiver handoff), R21, R23 and R23a (C23–C27: trip window, tax self-certification, affordability, failed document check, fraud report then RM note, were removed on 4 Nov; R22, brief then follow-ups from the latest note, on 11 Nov). Each case has a failure variant through `fault`: `upstream_withheld` (the upstream agent's answer is withheld), `receipt_failed` (an earlier offer's executor fails) or `consent_revoked` (RM cases, phase 9). `trajectory_v5` adds `waves`, `exports`, `skipped` and `rerouted`. Cases whose missing piece is not built yet are `state: spec` with `blocked_by` (4 Nov: C23b, C28 and R21–R23a were ready). Sophie's cases play on `POST /rm/assistant` (`targets.play_rm`, workspace context carried between turns); `consent_revoked` reads her rm_brief grant as revoked |
+| `demobank-planner` | `planner_cases.json` | Planner-only: `say` (plus optional `history`, `open_offers`) → expected `plan` (route, agents, `depends_on`, `condition`, priority). Sophie's cases run the RM planner (`rm_planner/v5`) without book reads. P14 was removed on 11 Nov |
 
 Each example: `inputs={question, history, language, mode:'public'}`, `outputs={check, expected_sources?, expected_origin?, expect_needs_human?}`, `metadata={case_id}`. Example ids are `uuid5(dataset, case_id)` so re-syncing updates rather than duplicates. After each sync, tag the dataset version with the file's sha256 so every experiment points to an exact dataset version.
 
@@ -397,6 +397,36 @@ What changed is in [rm-answer-speed.md](../planning/rm-answer-speed.md#what-was-
 - R21 and R23a: the judge got no source records for the graph cases ("authorised book is null"), so it marked the reply as not checkable. R21 also gave two drafts without saying which one to use.
 
 **Not checked live:** the section streaming in the browser. Unit and frontend tests cover it (`test_rm_graph.py`, `rm.test.js`); `targets.play_rm` reads only the `answer` event. Admin → Latency should show `first_section_ms` for these requests.
+
+### 10. Every set at 100% (11 Nov 2026)
+
+Goal: every runnable case passes, with one full published run per set for the admin dashboard. Rule (as for search on 10 Nov): a failing case on a critical path (safety, scams, money at risk, privacy) is fixed; any other failing case is removed and listed here as a known limit. Each set first ran locally with tracing off (no LangSmith traces), then once in full with `langsmith_run.py` against the hosted project (batches up to 0156): OpenRouter `LLM_MODEL`, `CHAT_TRANSPORT=api`, deterministic checks only (no `--judge`), `MEETINGS_ENABLED=true` for the RM sets.
+
+| Dataset | Experiment | Cases | Passed |
+|---|---|---|---|
+| `demobank-safety` | `demobank-safety-v2-1eaabc0e` | 10 | 10 |
+| `demobank-standard` | `demobank-standard-v2-685980d7` | 12 | 12 |
+| `demobank-focused` | `demobank-focused-v2-c4b9bb88` | 6 | 6 |
+| `demobank-planner` | `demobank-planner-v2-209513d3` | 15 | 15 |
+| `demobank-graph` | `demobank-graph-v2-c65cc338` | 4 | 4 |
+| `demobank-qa1-client` | `demobank-qa1-client-v2-a3076456` | 17 | 17 |
+| `demobank-qa1-rm` | `demobank-qa1-rm-v2-0ad5d06c` (the earlier `…-caea7ee2` errored on R02 and R12, below) | 17 | 17 |
+| `demobank-chat-insights` | `demobank-chat-insights-v2-20261110-180503` | 55 | 55 |
+| `demobank-chat-insights-conversations` | `demobank-chat-insights-conversations-v2-20261110-180705` | 14 | 14 |
+| `demobank-meeting-tool-rules` | `demobank-meeting-tool-rules-policy-20261110-180727` | 22 | 22 |
+| `demobank-search` | not republished: unchanged since 10 Nov, 156 of 156 locally | 156 | 156 |
+
+**Fixed**
+- **The RM planner could choose `follow_up`.** Its schema offered every intent in `registry.INTENT_AGENT`, including `follow_up`, which only `graph.rule_plan` sets and `rm_planner` never describes; the model took it for "draft follow-up tickets" (P14). `graph.RULE_ONLY` keeps it out of `plan_schema`; test `test_the_model_planner_may_choose_only_the_intents_its_prompt_describes`.
+- **Chat insights back on `talking_points/v2`.** Four runs of v3 misjudged one or two stages each (TP06, TP23, TP19); four runs of v2 got every stage right and kept 14 of 14 conversations. `prompts.VERSIONS` is back on v2 (prompt log v3).
+- **R04 expected a model call.** A saved Brief Writer version is reused without one, so the case no longer checks `model` (here and in `test-cases.md`).
+- **Hosted test data, not code (C11, C21, R24, R25).** Requests left open by earlier runs changed what C11 sees and pushed Mei Ling's meeting request out of Sophie's top 10 (R24, R25). Before the client run and again before the RM run: `41_eval_cleanup.sql`, which now also closes the urgent "[Urgent card] Charge the client does not recognise" requests the client cases open (P0, they fill Sophie's queue). R02 and R12 need one open RM-owned request for Michelle: the first RM run errored on both after every such request had been closed, so the normal-urgency "[Request to contact you]" request (TCK-001110) was reopened and the set was run again in full. `rm.reset_meeting_demo()` fails on hosted (`meetings.workflows` rows reference the meetings it deletes, with no cascade), so Mei Ling's open request was added by hand as the reset's 1007 branch would.
+
+**Removed as not critical (known limits)**
+- **P14** (planner, "Brief me on David and draft follow-up tickets for anything still open"): after the fix above it passed 6 of 14 runs; the planner links the two tasks only some of the time.
+- **R22** (graph, a brief then follow-ups from the latest note): Michelle now has two confirmed meetings on hosted, so the brief rightly asks which one. Its two waves stay covered by `test_rm_graph.py`.
+
+**Not run:** `demobank-meetings` and `demobank-meeting-preparation` need the Codex CLI judge (`codex_cli.answer_with_model`), which this machine does not have. They belong to the meeting side.
 
 ## Client chat insights: lane 1 v1 against v2 (8 Nov 2026)
 
