@@ -136,7 +136,9 @@ def test_dashboard_routes_answer_from_the_reads(monkeypatch):
     monkeypatch.setattr(quality,'steps',lambda source,days:[])
     monkeypatch.setattr(quality,'experiment_runs',lambda:[full('e1',1,9),exp('e2','demobank-graph',1,[('C23','pass',(),['planner/v7+ab12'])])])
     monkeypatch.setattr(prompts,'in_use',lambda:{'answer':'v8','planner':'v7'})
+    monkeypatch.setattr(quality,'trace_budget',lambda:None)
     body=client.get('/admin/overview?window=24h',headers=ADMIN).json()
+    assert body['trace_budget'] is None and body['eval_trend'][-1]['rate']==0.9091
     assert body['window_days']==1 and body['live']['now']['failed']==1
     assert {e['dataset']:e['pass_rate'] for e in body['evals']}=={'demobank-graph':1.0,'demobank-qa1-client':0.9}
     attention={i['kind']:i for i in body['attention']}
@@ -353,3 +355,26 @@ def test_agents_and_failures_filter_by_side_and_count_stops_refusals_and_consent
     assert (failures['side'],failures['tool_refusals'],failures['loop_stops'],failures['consent_gaps'])==(
         'rm',{'rm_ticket: not_in_book':1},{'cap':1},{'transaction_insights':1})
     assert insights.failures(rows,steps,[],NOW,1,'live','client')['groups']==[]
+
+
+def test_overview_headline_cost_side_latency_and_eval_trend():
+    rows=[req(1,latency_s=10,tokens=2000,model='anthropic/claude-haiku-5.5'),req(2,latency_s=50,surface='rm',tokens=1000,model='unknown'),req(3,tokens=None)]
+    k=insights.kpis(rows)
+    assert k['p95_client_s']==9.75 and k['p95_rm_s']==50
+    assert k['cost_per_request']==round((0.004+0.003)/2,3) and k['cost_total']==0.007
+    trend=insights.eval_trend([full('e1',5,5),full('e2',1,9),exp('g1','demobank-graph',1,[('R21','pass')])],NOW)
+    assert [(p['passed'],p['scored']) for p in trend]==[(5,10),(10,11)]  # each day: every dataset's latest full run so far
+
+
+def test_attention_demotes_old_failures_and_warns_on_the_trace_budget():
+    group={'kind':'request_error','new':True,'title':'Request failed: LLMError','in_window':3,'signature':'s',
+        'first_seen':NOW-timedelta(days=6),'last_seen':NOW-timedelta(days=5)}
+    budget={'used':6900,'limit':7796,'resets':NOW+timedelta(days=27)}
+    items={i['kind']:i for i in insights.attention([],[],[],[group],NOW,budget=budget)}
+    assert items['new_failure']['level']=='info' and 'last seen' in items['new_failure']['detail']
+    assert items['trace_budget']['level']=='medium' and items['trace_budget']['title']=='896 LangSmith traces left this month'
+    fresh={**group,'last_seen':NOW-timedelta(hours=2)}
+    assert insights.attention([],[],[],[fresh],NOW)[0]['level']=='high'
+    assert not [i for i in insights.attention([],[],[],[],NOW,budget={**budget,'used':100}) if i['kind']=='trace_budget']
+    slow=[req(h,latency_s=70,surface='rm') for h in (1,2,3)]+[req(4,latency_s=20)]
+    assert [i['title'] for i in insights.attention(slow,[],[],[],NOW) if i['kind']=='latency']==['RM p95 latency 70.0 s']

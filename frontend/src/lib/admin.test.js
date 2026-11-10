@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,failingFirst,filterGroups,firstLine,isAdmin,judgeSummary,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
+import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,evalSuccess,overTarget,traceBudget,usd,failingFirst,filterGroups,firstLine,isAdmin,judgeSummary,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -114,4 +114,18 @@ test('refusal and consent-gap counts read largest first, and the pages filter by
   globalThis.fetch=async url=>{seen.push(url);return {ok:true,json:async()=>({agents:[]})};};
   try{await loadAgents('7d','live','rm','token');}finally{globalThis.fetch=real;}
   assert.equal(seen[0],'/api/admin/agents?window=7d&source=live&side=rm');
+});
+
+test('the overview success rate is cases passed over cases scored across the latest runs',()=>{
+  const rows=[{counts:{pass:10,fail:0,error:0,skipped:2}},{counts:{pass:15,fail:1,error:1,skipped:0}}];
+  assert.deepEqual(evalSuccess(rows),{rate:25/27,passed:25,scored:27,datasets:2,failing:1});
+  assert.equal(evalSuccess([]).rate,null);
+  assert.equal(evalSuccess(undefined).datasets,0);
+});
+
+test('the overview headline formats cost, latency targets and the trace budget',()=>{
+  assert.equal(usd(0.0123),'≈ $0.012');assert.equal(usd(0.0004),'≈ <$0.001');assert.equal(usd(12.5),'≈ $12.50');assert.equal(usd(null),'—');
+  assert.equal(overTarget({p95_client_s:12,p95_rm_s:61}),true);assert.equal(overTarget({p95_client_s:12,p95_rm_s:59}),false);
+  assert.deepEqual(traceBudget({used:6900,limit:7796,resets:'2026-12-01'}),{left:896,used:6900,limit:7796,share:6900/7796,warn:true,resets:'2026-12-01'});
+  assert.equal(traceBudget({used:8000,limit:7796}).left,0);assert.equal(traceBudget(null),null);
 });

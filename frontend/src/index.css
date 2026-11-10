@@ -1467,6 +1467,11 @@ small{font-size:max(12px,.83em)}
 .admin-tile > span { font-size: 13px; font-weight: 600; }
 .admin-tile small { font-size: 12px; color: var(--muted); }
 .admin-tile svg.admin-spark { width: 100%; height: 28px; margin-top: 6px; }
+.admin-headline { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.admin-headline .admin-tile { padding: 18px 20px; }
+.admin-headline .admin-tile strong { font-size: 32px; }
+.admin-meter { height: 8px; margin-top: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.admin-meter span { display: block; height: 100%; background: currentColor; opacity: .55; }
 .admin-tile.alert { border-color: #f5c9c4; background: #fff8f7; }
 .admin-delta.up-good, .admin-delta.down-good { color: #1f6a35; }
 .admin-delta.up-bad, .admin-delta.down-bad { color: #a32b1d; }

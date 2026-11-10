@@ -42,6 +42,24 @@ export const loadFailure=(runId,token,signal)=>get(`/failures/${encodeURICompone
 
 const missing=value=>value===null||value===undefined||Number.isNaN(value);
 export function percent(value,digits=0) {return missing(value)?'—':`${(value*100).toFixed(digits)}%`;}
+// The Overview's success rate: cases passed over cases scored (skipped left out) across each dataset's latest full run.
+export function evalSuccess(evals=[]) {
+  const sum=key=>evals.reduce((total,row)=>total+(row.counts?.[key]||0),0);
+  const passed=sum('pass'),scored=passed+sum('fail')+sum('error');
+  return {rate:scored?passed/scored:null,passed,scored,datasets:evals.length,
+    failing:evals.filter(row=>(row.counts?.fail||0)+(row.counts?.error||0)>0).length};
+}
+// The Overview's p95 targets per side (insights.P95_TARGET_S).
+export const P95_TARGET={client:30,rm:60};
+export function overTarget(now) {return (now?.p95_client_s??0)>P95_TARGET.client||(now?.p95_rm_s??0)>P95_TARGET.rm;}
+// An estimated cost (insights.PRICE_PER_M): "≈ $0.012", or "≈ <$0.001" for tiny amounts.
+export function usd(value) {return missing(value)?'—':value>0&&value<0.001?'≈ <$0.001':`≈ $${value<1?value.toFixed(3):value.toFixed(2)}`;}
+// LangSmith traces left this month and whether to warn (under 15% left, insights.TRACE_BUDGET_WARN).
+export function traceBudget(budget) {
+  if(!budget?.limit)return null;
+  const left=Math.max(budget.limit-budget.used,0);
+  return {left,used:budget.used,limit:budget.limit,share:budget.used/budget.limit,warn:left<0.15*budget.limit,resets:budget.resets};
+}
 export function number(value,digits=1) {return missing(value)?'—':Number.isInteger(value)?String(value):value.toFixed(digits);}
 
 // The change since the previous window. `better` says which direction is good ('up', 'down' or '' when neither).
