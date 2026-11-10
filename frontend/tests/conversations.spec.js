@@ -105,7 +105,7 @@ test('saved customer v2 unavailable section stays withheld after refresh and the
   await unavailableChat(page);
   await expect(page.getByTestId('offer-block')).toHaveCount(1);
   await openMenuItem(page,'open-actions');
-  await expect(page.getByTestId('command-state')).toHaveText('proposed');
+  await expect(page.getByRole('region',{name:'Waiting for you to confirm'}).getByTestId('review-command')).toBeVisible();
   await expect(page.getByTestId('command-receipt')).toHaveCount(0);
   await page.getByTestId(page.viewportSize().width<=760?'tab-chat':'open-chat').click();
   await page.reload();

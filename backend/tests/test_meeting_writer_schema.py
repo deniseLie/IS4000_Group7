@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 from app.schemas.meeting_chunks import MinutesSelection
 from app.schemas.meeting_lifecycle import Cue,GenerationContext,MinutesProposal
-from app.services.meetings.writer import model_schema,propose
+from app.services.meetings.writer import model_schema,propose,repair_actions
 
 NOTES=(('rm','You mentioned buying a condo next year. Is it a resale or new launch?'),
     ('client','Resale, within the next three months if the price is right.'),
@@ -33,6 +33,22 @@ def test_the_sent_schema_drops_only_the_pattern_keywords(model):
 
 def test_a_property_named_pattern_is_kept():
     assert model_schema({'properties':{'pattern':{'type':'string','pattern':'\\S'}},'required':['pattern']})=={'properties':{'pattern':{'type':'string'}},'required':['pattern']}
+
+
+@pytest.mark.parametrize('quote,expected',[
+    ('I will send the checklist on Thursday, 19 November 2026.','2026-11-19'),
+    ('I will send the checklist by 2026-11-19.','2026-11-19'),
+    ('I will send the checklist by next Thursday.',None),
+    ('I can send it on 19 November 2026 or on 20 November 2026.',None),
+])
+def test_repair_keeps_only_one_explicit_date_from_the_action_quote(quote,expected):
+    cue=Cue(cue_id='n1',speaker='rm',start_seconds=None,text=quote)
+    proposal=MinutesProposal.model_validate({'title':'Review','summary':[{'text':'Checklist discussed','quote':quote,'cue_id':'n1'}],
+        'decisions':[],'actions':[{'text':'Send the checklist','quote':quote,'cue_id':'n1','owner':'rm',
+            'commitment':'agreed','condition':None,'due_on':None,'due_quote':None}]})
+    action=repair_actions(proposal,(cue,)).actions[0]
+    assert (action.due_on.isoformat() if action.due_on else None)==expected
+    assert action.due_quote in quote if expected else action.due_quote is None
 
 
 @pytest.mark.parametrize('field',['title','text','quote'])

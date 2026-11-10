@@ -94,7 +94,8 @@ export function speakerList(roles){return Object.entries(roles).filter(([,role])
 
 // Where a cited brief source comes from, in the RM's words (mirrors services/meetings/assistant.TITLES).
 const SOURCE_TITLES={rm_client_profile:'Client record',rm_review_status:'Compliance case',rm_tickets:'Requests',rm_meeting_notes:'Meeting notes',
-  rm_transaction_insights:'Shared transaction insights',rm_talking_points:'Chat (topics she shared)',meeting_followups:'Follow-ups and tasks',rm_collateral_alert:'Collateral alert'};
+  rm_transaction_insights:'Shared transaction insights',rm_talking_points:'Chat (topics she shared)',meeting_followups:'Follow-ups and tasks',rm_collateral_alert:'Collateral alert',
+  meeting_agenda:'Agreed meeting agenda'};
 export function sourceTitle(reference){const reader=String(reference).split(':')[0];return SOURCE_TITLES[reader]||reader.replaceAll('_',' ');}
 
 // The approved minutes as plain notes for the assistant's "Document this meeting" (specialist and compliance hand-offs).

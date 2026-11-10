@@ -148,7 +148,7 @@ def test_rule_planning_and_the_relationship_spec() -> None:
     spec=registry.SPECS['relationship']
     assert 'meeting.request' in spec.offers and not {'appointment.hold','appointment.confirm'}&spec.offers
     assert [read.tool for read in spec.intents['meeting_request']]==['my_rm','free_slots']
-    assert prompts.VERSIONS['planner']=='v12'  # v8's meeting line is kept in v9 (2b), v10 (batch 3), v11 and v12
+    assert 'Relationship meeting_request task' in prompts.current('planner')['system']
 
 
 def outcome(kind: str,target: dict,result: dict) -> dict:

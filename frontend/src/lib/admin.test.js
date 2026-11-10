@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,failingFirst,filterGroups,firstLine,isAdmin,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
+import {KINDS,MIN_COMPARE,SIDES,counted,datasetRow,defaultPair,delta,failingFirst,filterGroups,firstLine,isAdmin,judgeSummary,loadAgents,mix,problemFirst,tally,waterfall,kindCounts,number,percent,scoreLabel,seconds,sparkSegments,summary,versionPair} from './admin.js';
 import {isRm} from './rm.js';
 
 test('shows the admin dashboard only for the administrator-set admin role',()=>{
@@ -13,6 +13,7 @@ test('shows the admin dashboard only for the administrator-set admin role',()=>{
 
 test('counts cases and labels scores',()=>{
   assert.deepEqual(summary([{status:'pass'},{status:'fail'},{status:'fail'},{status:'skipped'}]),{pass:1,fail:2,skipped:1,error:0});
+  assert.deepEqual(judgeSummary([{judge:1},{judge:0.5},{judge:0},{judge:null},{}]),{scored:3,full:1});
   assert.deepEqual([1,0,0.5,null].map(scoreLabel),['pass','fail','0.5','n/a']);
   assert.equal(seconds(31.46),'31.5 s');assert.equal(seconds(null),'—');
 });

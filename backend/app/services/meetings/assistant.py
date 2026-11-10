@@ -6,7 +6,8 @@ from app.schemas.meeting_preparation import PreparedBrief
 # Where each cited reference comes from, in the words the RM uses (storyline: Chat, Account, Portfolio, Compliance case).
 TITLES={'rm_client_profile':'Client record (profile, accounts, portfolio, dates)','rm_review_status':'Compliance case',
     'rm_tickets':'Requests','rm_meeting_notes':'Meeting notes','rm_transaction_insights':'Shared transaction insights',
-    'rm_talking_points':'Chat (topics she shared)','meeting_followups':'Follow-ups and tasks','rm_collateral_alert':'Collateral alert'}
+    'rm_talking_points':'Chat (topics she shared)','meeting_followups':'Follow-ups and tasks','rm_collateral_alert':'Collateral alert',
+    'meeting_agenda':'Agreed meeting agenda'}
 
 
 def title(reference: str) -> str:

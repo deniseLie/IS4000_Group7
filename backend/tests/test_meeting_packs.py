@@ -3,7 +3,9 @@ import json,os
 from uuid import uuid4
 import httpx,psycopg,pytest
 from tests.test_meeting_lifecycle import flow,start,headers
-from app.schemas.meeting_packs import PackContent
+from app.schemas.meeting_packs import PackContent,PackInputs,PackPlan,PackView
+from app.services.meetings.documents import discussion_pack
+from app.services.meetings.packs import with_discussion_items
 
 
 def pack_inputs(flow,local_data_api,amounts):
@@ -66,9 +68,37 @@ def test_catalogue_change_blocks_stale_pack_and_duplicate_plan_codes_are_refused
     duplicate={**body,'p_command_id':str(uuid4()),'p_source_hash':fresh['source_hash'],'p_plan':{**body['p_plan'],'agenda':['goals','goals']}}
     response=httpx.post(local_data_api.url+'/rpc/meeting_save_pack',headers=headers(flow,'rm'),json=duplicate)
     assert response.status_code==400,response.text
+    for question,product_ids in [('confirm_document_review',fresh['catalogue'][:1]),('compare_catalogue_options',[]),
+        ('compare_catalogue_options',fresh['catalogue'][:1]),('review_catalogue_product',[])]:
+        plan={**body['p_plan'],'questions':[question],'product_ids':[product['item_id'] for product in product_ids]}
+        response=httpx.post(local_data_api.url+'/rpc/meeting_save_pack',headers=headers(flow,'rm'),
+            json={**body,'p_command_id':str(uuid4()),'p_source_hash':fresh['source_hash'],'p_plan':plan})
+        assert response.status_code==400 and response.json()['code']=='22023',response.text
     for amounts in ([{'label':'Bad amount','currency':'SGD','amount':'-0.01'}],[{'label':'Bad amount','currency':'SGD','amount':'100000000000000.00'}]):
         response=flow.http.post(f'/meetings/{flow.meeting}/pack/draft',headers=headers(flow,'rm'),json={'amounts':amounts,'command_id':str(uuid4())})
         assert response.status_code==422,response.text
+
+
+def test_product_discussion_matches_the_saved_catalogue_selection(flow,local_data_api):
+    with psycopg.connect(flow.uri) as db:
+        db.execute("update rm.appointments set topics=array['fixed_deposit','home_loan'] where appointment_id=%s",(flow.meeting,))
+    start(flow,'rm')
+    frame=PackInputs.model_validate(pack_inputs(flow,local_data_api,[]))
+    assert len(frame.catalogue)==2
+    expected=(None,'Which terms of the listed product','Which of the listed product terms should we compare')
+    for count,question in enumerate(expected):
+        selection=PackPlan(agenda=('goals','options'),questions=('review_options',),product_ids=tuple(item.item_id for item in frame.catalogue[:count]))
+        plan=with_discussion_items(selection,frame)
+        result=httpx.post(local_data_api.url+'/rpc/meeting_save_pack',headers=headers(flow,'rm'),json={
+            'p_meeting_id':str(flow.meeting),'p_revision':frame.revision,'p_source_hash':frame.source_hash,'p_amounts':[],
+            'p_plan':plan.model_dump(mode='json'),'p_command_id':str(uuid4())})
+        assert result.status_code==200,result.text
+        document=discussion_pack(PackView.model_validate({**result.json(),'sources_changed':False}))
+        rendered=[paragraph for section in document.sections if section.heading=='Questions to discuss' for paragraph in section.paragraphs]
+        assert len(rendered)==int(question is not None)
+        if question is not None:assert rendered[0].startswith(question)
+        agenda=next(section.paragraphs for section in document.sections if section.heading=='Agenda')
+        assert agenda[1:]==((),('Review the listed product terms',),('Discuss the available options',))[count]
 
 
 @pytest.mark.skipif(os.getenv('TEST_MEETING_PREP_LIVE')!='1',reason='Real Codex preparation-agent opt-in required')
@@ -81,5 +111,7 @@ def test_real_proposal_drafter_uses_only_agreed_topics_and_code_inserted_figures
     document=response.json();assert document['status']=='draft' and document['content']['stated_amounts']==body['amounts']
     assert all(item['topic']=='fixed_deposit' and item['annual_rate']=='2.5000' for item in document['content']['products'])
     assert document['content']['products'],'The explicit product agenda should be represented in the pack'
+    assert 'product_terms' in document['content']['agenda'] and 'options' not in document['content']['agenda']
+    assert 'review_catalogue_product' in document['content']['questions'] and 'compare_catalogue_options' not in document['content']['questions']
     assert flow.http.post(f'/meetings/{flow.meeting}/pack/draft',headers=headers(flow,'rm'),json=body).json()==document
     assert flow.http.get(f'/meetings/{flow.meeting}/pack',headers=headers(flow,'client')).json() is None

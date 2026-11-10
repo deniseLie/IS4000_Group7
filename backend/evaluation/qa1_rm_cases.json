@@ -185,13 +185,14 @@
       6
     ],
     "state": "ready",
-    "setup": "Signed in as Sophie with Michelle (1002) selected. Read her current confirmed appointments, authorised history and open matters. No fixed date or meeting is seeded by the evaluation.",
+    "setup": "Signed in as Sophie with Michelle (1002) selected. Use an upcoming confirmed appointment with an agreed outcome, authorised history and open matters.",
     "turns": [
       {
         "say": "Brief me for my next confirmed meeting with Michelle"
       }
     ],
-    "check": "Uses an actual confirmed Michelle meeting, source-backed history/open matters and gaps; asks which meeting if several match. No invented date or unconsented shared note.",
+    "check": "Uses the next confirmed Michelle meeting and prepares a brief from authorised evidence, with open matters and gaps. No invented date or unconsented shared note.",
+    "expected_response_status": "ok",
     "schema": "Sections present: profile, preferences, commitments, open tickets, shared note, questions; every point has a source id.",
     "trajectory": {
       "nodes": [],
@@ -201,7 +202,7 @@
         "rm_book",
         "rm_client_profile",
         "rm_meeting_notes",
-        "rm_shared_summary"
+        "meeting_preparation_inputs"
       ],
       "model": true,
       "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.",
@@ -457,7 +458,11 @@
     },
     "adaptation": "Sophie owns Michelle (1002) and Mei Ling (1007); David, Grace and Hafiz are outside her current book. RM calls /rm/assistant and never the client LangGraph.",
     "ticket": null,
-    "source_prefix": "cards"
+    "request_sources": {
+      "customer_id": 1002,
+      "category": "card_limit_change",
+      "fallback_source": "cards"
+    }
   },
   {
     "id": "R09",

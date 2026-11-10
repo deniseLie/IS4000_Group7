@@ -29,8 +29,9 @@ test('checklist preparation saves an audited mark and preserves bank status',asy
     await page.keyboard.press('Escape');
     await openMenuItem(page,'open-actions');
     const action=page.locator(`[data-command-id="${saved.command.command_id}"]`);
-    await expect(action.getByTestId('command-receipt')).toContainText(saved.receipt.receipt_id);
-    await expect(action.getByTestId('command-checklist')).toBeVisible();
+    await action.locator('summary').click();
+    await expect(action.getByTestId('command-receipt')).toHaveAttribute('title',saved.receipt.receipt_id);
+    await expect(action).toContainText('Only your own checklist mark changed.');
     await page.keyboard.press('Escape');
   }
 });

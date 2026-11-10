@@ -48,7 +48,7 @@ def test_brief_inputs_are_scoped_stable_and_exclude_unnecessary_private_details(
     assert first.source_hash==second.source_hash
     assert first.sources and first.talking_points
     assert any(source.category=='transaction_insights' for source in first.sources)
-    assert all(set(item.point.model_dump())=={'point_id','topic','stage','timeframe','concerns','origin','first_seen','last_seen'} for item in first.talking_points)
+    assert all(set(item.point.model_dump())=={'point_id','topic','stage','timeframe','kind','concerns','origin','first_seen','last_seen'} for item in first.talking_points)
     text=json.dumps([source.model_dump(mode='json') for source in first.sources]).lower()
     assert 'counterparty' not in text and 'merchant' not in text and 'source_notes' not in text
     for role in ('client','outsider'):
@@ -70,7 +70,7 @@ def test_stored_brief_contains_only_references_and_revocation_blocks_approval(fl
     response=flow.http.get(f'/meetings/{flow.meeting}/preparation',headers=headers(flow,'rm'));assert response.status_code==200,response.text
     result=response.json();assert result['sources_changed'] and result['card']['withheld']==2
     assert source.text not in response.text
-    assert result['card']['sections'][0]['items'][0]['label']=='gap'
+    assert any(item['label']=='gap' for section in result['card']['sections'] for item in section['items'])
     decision={'version':row['version'],'revision':row['revision'],'content_hash':row['content_hash'],'outcome':'approve','note':None,'command_id':str(uuid4())}
     refused=flow.http.post(f'/meetings/{flow.meeting}/preparation/decision',headers=headers(flow,'rm'),json=decision)
     assert refused.status_code==409,refused.text
@@ -83,7 +83,7 @@ def test_deleted_topic_is_replaced_with_its_removal_date_and_question_is_dropped
     with psycopg.connect(flow.uri) as db:
         db.execute("update insights.talking_points set deleted_at=clock_timestamp(),purge_after=clock_timestamp()+interval '7 days',deleted_reason='client' where point_id=%s",(topic.point.point_id,))
     response=flow.http.get(f'/meetings/{flow.meeting}/preparation',headers=headers(flow,'rm'));assert response.status_code==200,response.text
-    result=response.json();items=result['card']['sections'][0]['items']
+    result=response.json();items=next(section['items'] for section in result['card']['sections'] if section['heading']=='Questions to clarify')
     assert len(items)==1 and items[0]['label']=='gap' and 'Removed on' in items[0]['text']
     assert topic.point.line() not in response.text
 
@@ -117,8 +117,9 @@ def test_current_private_client_products_and_collateral_alerts_cannot_be_omitted
     current=source_frame(flow,local_data_api)
     assert current.source_hash!=before.source_hash
     assert any(source.text.startswith('Recorded financing product:') for source in current.sources)
-    assert any(source.text.startswith('Recorded Lombard borrowing:') for source in current.sources)
+    borrowing=next(source for source in current.sources if source.text.startswith('Recorded Lombard borrowing:'))
     alert=next(source for source in current.sources if source.reference.startswith('rm_collateral_alert:'))
+    agenda=next(source for source in current.sources if source.reference.startswith('meeting_agenda:'))
     assert '33000.00' in alert.text and 'only the bank decides' in alert.text
     unrelated=next(source for source in current.sources if source.source_id!=alert.source_id)
     invalid=httpx.post(local_data_api.url+'/rpc/meeting_save_brief',headers=headers(flow,'rm'),json={'p_meeting_id':str(flow.meeting),
@@ -126,11 +127,17 @@ def test_current_private_client_products_and_collateral_alerts_cannot_be_omitted
             {'source_id':str(unrelated.source_id),'kind':'question','question':'review_collateral_next_step'}]}]},'p_command_id':str(uuid4())})
     assert invalid.status_code==400 and invalid.json()['code']=='22023',invalid.text
     saved=store_reference_plan(flow,local_data_api,current,[{'source_id':str(unrelated.source_id),'kind':'record','question':None},
+        {'source_id':str(borrowing.source_id),'kind':'record','question':None},
         {'source_id':str(alert.source_id),'kind':'question','question':'review_collateral_next_step'}])
     response=flow.http.get(f'/meetings/{flow.meeting}/preparation',headers=headers(flow,'rm'))
     assert response.status_code==200,response.text
-    section=next(section for section in response.json()['card']['sections'] if section['heading']=='Recorded collateral alert')
-    assert [item['text'] for item in section['items']]==[alert.text]
+    sections=response.json()['card']['sections']
+    assert sections[0]['heading']=='Agreed meeting agenda'
+    assert [item['text'] for item in sections[0]['items']]==[agenda.text]
+    assert sections[0]['items'][0]['sources']==[agenda.reference]
+    section=next(section for section in sections if section['heading']=='Recorded collateral alert')
+    assert [item['text'] for item in section['items'] if item['label']=='record']==[alert.text,borrowing.text]
+    assert sum(item['text']==borrowing.text for section in sections for item in section['items'])==1
     assert len(section['items'][0]['sources'])==1 and section['items'][0]['sources'][0].startswith('rm_collateral_alert:')
     assert any('which lending values and borrowing figures' in item['text'] for section in response.json()['card']['sections'] for item in section['items'] if item['label']=='ai_suggestion')
     with psycopg.connect(flow.uri) as database:database.execute('select banking.reset_portfolio_demo()')
@@ -139,6 +146,23 @@ def test_current_private_client_products_and_collateral_alerts_cannot_be_omitted
     body={'version':saved['version'],'revision':saved['revision'],'content_hash':saved['content_hash'],'outcome':'approve','note':None,'command_id':str(uuid4())}
     refused=flow.http.post(f'/meetings/{flow.meeting}/preparation/decision',headers=headers(flow,'rm'),json=body)
     assert refused.status_code==409,refused.text
+
+
+def test_document_agenda_renders_current_review_and_only_the_dated_commitment_excerpt(flow,local_data_api):
+    with psycopg.connect(flow.uri) as db:
+        db.execute("update rm.appointments set topics=array['compliance_review'] where appointment_id=%s",(flow.meeting,))
+    start(flow,'client')
+    frame=source_frame(flow,local_data_api)
+    note=next(source for source in frame.sources if 'will upload the sale agreement' in source.text)
+    store_reference_plan(flow,local_data_api,frame,[{'source_id':str(note.source_id),'kind':'record','question':None}])
+    result=flow.http.get(f'/meetings/{flow.meeting}/preparation',headers=headers(flow,'rm'))
+    assert result.status_code==200,result.text
+    sections=result.json()['card']['sections']
+    items=next(section['items'] for section in sections if section['heading']=='Document review and follow-ups')
+    assert any(item['label']=='record' and 'Outstanding compliance requirement:' in item['text'] for item in items)
+    assert any(item['label']=='ai_suggestion' and 'recorded commitment was completed' in item['text']
+        and 'sale agreement' in item['text'] for item in items)
+    assert 'incoming transfer' not in result.text
 
 
 @pytest.mark.skipif(os.getenv('TEST_MEETING_PREP_LIVE')!='1',reason='Real Codex preparation-agent opt-in required')

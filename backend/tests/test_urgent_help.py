@@ -164,7 +164,7 @@ def test_the_rm_hears_her_own_words_about_the_card_never_the_planners() -> None:
 
 def test_personal_agents_use_the_v5_runner_and_the_moved_v4_prompts() -> None:
     from app.services.agents import runner
-    assert runner.PROMPTED=={'guide','accounts'} and (prompts.VERSIONS['guide'],prompts.VERSIONS['accounts'],prompts.VERSIONS['planner'])==('v4','v3','v12')
+    assert runner.PROMPTED=={'guide','accounts'} and (prompts.VERSIONS['guide'],prompts.VERSIONS['accounts'],prompts.VERSIONS['planner'])==('v4','v3','v13')
     assert prompts.VERSIONS['retail']=='v12'  # the computed-checks path keeps its released prompt
     assert set(runner.RULES)=={'guide','accounts','compliance','relationship'}
 

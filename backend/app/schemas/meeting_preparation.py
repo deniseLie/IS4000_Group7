@@ -41,7 +41,7 @@ class PreparationInputs(HiddenInput):
     revision: int=Field(strict=True,gt=0)
     purpose: str|None
     topics: tuple[str,...]=Field(max_length=10)
-    sources: tuple[BriefSource,...]=Field(max_length=128)
+    sources: tuple[BriefSource,...]=Field(max_length=129)  # Up to 128 scoped records plus the agreed agenda.
     talking_points: tuple[PointReference,...]=Field(max_length=50)
     gaps: tuple[BriefGap,...]
     removed_sources: tuple[RemovedSource,...]

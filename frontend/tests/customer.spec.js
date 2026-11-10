@@ -46,7 +46,7 @@ test('customer records use real scoped audited services at all viewport sizes',a
     await page.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/customer-bottom-${width}.png`,fullPage:true});
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByTestId('open-account-menu')).toBeFocused();
+    await expect(page.getByTestId('open-records')).toBeFocused();
   }
   expect(chatCalls).toEqual([]);
 });

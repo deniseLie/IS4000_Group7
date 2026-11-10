@@ -8,9 +8,8 @@ test('client compliance handover reaches the assigned RM and only her approved r
  const capture=response=>{const url=new URL(response.url());if(url.pathname.startsWith('/api/'))network.push({method:response.request().method(),path:url.pathname,status:response.status()});};
  page.on('response',capture);
  await seedSession(page);await page.goto('/#compliance');
- const item=page.locator('[data-item-id="00000000-0000-4000-8000-100200000011"]');
- await item.getByTestId('compliance-support').click();
- await expect(page.getByTestId('handoff-summary')).toContainText('not_submitted');
+ await page.getByRole('region',{name:'Need help?'}).getByTestId('compliance-support').click();
+ await expect(page.getByTestId('handoff-summary')).toContainText('Recorded case status:');
  await page.getByTestId('handoff-message').fill('Please help me confirm which proof of address to send for my compliance review.');
  const created=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().method()==='POST');
  await page.getByTestId('approve-handoff').click();
@@ -42,7 +41,8 @@ test('client compliance handover reaches the assigned RM and only her approved r
   await draft.getByTestId('rm-draft-approve').click();expect((await sent).status()).toBe(200);
   await expect(draft.getByTestId('rm-draft-sent')).toBeVisible();
   await page.reload();await page.getByTestId('ticket-tab-all').click();
-  await expect(page.locator(`[data-testid="ticket"][data-reference="${reference}"]`)).toContainText(body);
+  await page.locator(`[data-testid="ticket"][data-reference="${reference}"]`).getByRole('button').click();
+  await expect(page.getByTestId('ticket-update')).toContainText(body);
   await rm.goto('/#rm-tickets');await rm.getByTestId('rm-tab-specialist').click();
   await expect(rm.getByTestId('rm-ticket-draft')).toHaveCount(0);
   await rm.screenshot({path:`${process.env.NATIVE_SCREENSHOT_DIR}/rm-followup-specialist.png`,fullPage:true});

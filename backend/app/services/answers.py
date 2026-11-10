@@ -13,6 +13,7 @@ from app.services.privacy import redact
 from app.services.guardrail import assess_request,DELEGATE_CLAIM
 from app.services.source_checks import check_sources, numbers
 from app.services.llm import llm,answer_prompt
+from app.services.retrieval_context import public_query
 from app.services import kb
 
 EvidenceLoader=Callable[[str,list[Message],str],Awaitable[list[Evidence]]]
@@ -87,7 +88,8 @@ async def make_answer(req: ChatRequest,context: str | None=None,ctx: RequestCont
     async def load(question: str,history: list[Message],language: str) -> list[Evidence]:
         with span('retrieve','tool') as attrs:
             with data_api.connect(ctx) as db:
-                sections=await kb.search(KnowledgeQuery(query=question,scope='public',k=4),ctx,db)
+                query=public_query(question,history)
+                sections=await kb.search(KnowledgeQuery(query=query,scope='public',k=4),ctx,db)
             attrs.update(store='database',count=len(sections),article_ids=[item.cite for item in sections])
         return [Evidence(id=item.cite,text=item.body,publisher=item.publisher,scope=item.scope,source=item.source()) for item in sections]
     return await produce_answer(req,context,allow_model,load)

@@ -20,7 +20,7 @@ test('real v2 agent answer renders a sourced section and opens its source',async
   await expect(section).toHaveAttribute('data-response-origin','ai');
   await expect(section.locator('.answer-text')).toContainText(/interest/i);
   await section.locator('summary').click();
-  await section.locator('[data-source-id="sg-accounts"]').click();
+  await section.getByRole('button',{name:/Singapore bank account basics/}).click();
   await expect(page.locator('[aria-label="Source details"]').first()).toBeVisible();
 });
 

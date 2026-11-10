@@ -21,6 +21,10 @@ export function summary(cases) {
   for(const item of cases)counts[item.status]+=1;
   return counts;
 }
+export function judgeSummary(cases) {
+  const scored=cases.filter(item=>Number.isFinite(item.judge));
+  return {scored:scored.length,full:scored.filter(item=>item.judge===1).length};
+}
 export function scoreLabel(score) {return score===null||score===undefined?'n/a':score===1?'pass':score===0?'fail':String(score);}
 export function seconds(value) {return value===null||value===undefined?'—':`${value.toFixed(1)} s`;}
 

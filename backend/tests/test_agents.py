@@ -102,9 +102,21 @@ def test_guests_get_only_guide_and_unknown_intents_are_checked():
     # A guest's urgent card task keeps only its marker, so she gets the fixed steps (no offer, no reads).
     urgent=checked([PlanTask(id='t1',agent='relationship',intent='open',question='not mine',priority='P0',entities={'urgent':True,'message':'x'})],guest)
     assert [(t.agent,t.priority,t.entities) for t in urgent]==[('guide','P0',{'urgent':True})]
+
     days=checked([PlanTask(id='t1',agent='accounts',intent='transactions',question='q',entities={'days':'31','status':'pending'}),
         PlanTask(id='t2',agent='accounts',intent='transactions',question='q',entities={'days':'400'})],PERSONAL)
     assert days[0].entities=={'days':31,'status':'pending'} and days[1].entities=={}
+
+
+def test_fee_question_with_fraud_cannot_skip_the_urgent_override():
+    text='How much was the annual fee on my card with the suspicious charge and can you get it waived?'
+    req=ChatRequest(mode='personal',messages=[{'role':'user','content':text}])
+    risk=assess_request(req)
+    assert 'fraud_suspected' in risk.risk_flags
+    assert orchestrator.rule_plan(req,risk,req.messages) is None
+    fee=planned('accounts','How much was the annual fee on my card?','card_fees')
+    assert any(item.agent=='relationship' and item.priority=='P0' and orchestrator.is_urgent(item)
+        for item in checked(overridden([fee],risk),req))
 
 
 def test_one_withheld_section_does_not_discard_other_sections():

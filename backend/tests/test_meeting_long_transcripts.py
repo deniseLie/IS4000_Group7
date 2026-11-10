@@ -2,12 +2,26 @@
 import asyncio,json,os
 from uuid import uuid4
 import psycopg,pytest
+from psycopg.types.json import Jsonb
 from app.schemas.meeting_lifecycle import EvidenceClaim,MinutesContent
 from app.schemas.meeting_chunks import MinutesSelection
 from app.services.meetings.writer import PROMPT,chunks,selected_summaries,selected_decisions,claim_groups
 from app.services.meetings.graph import process_transcript
 from app.services.prompts import load
 from tests.test_meeting_lifecycle import flow,start,post,headers,view,claim_transcript,approve_body
+
+
+def test_sql_checks_explicit_dates_without_reducing_the_recap_limit(database):
+    quote='I will send the checklist on 19 November 2026.'
+    cues=[{'cue_id':'cue1','speaker':'rm','start_seconds':None,'text':quote}]
+    action={'action_id':str(uuid4()),'text':'Send the checklist','cue_id':'cue1','quote':quote,'owner':'rm',
+        'commitment':'agreed','condition':None,'due_on':'2026-11-19','due_quote':'19 November 2026'}
+    content={'title':'Review','summary':[{'text':'Checklist discussed.','cue_id':'cue1','quote':quote}],
+        'decisions':[],'actions':[action],'client_recap':'We discussed sending the checklist. '*20}
+    validate='select meetings.validate_content(%s,%s)'
+    database.execute(validate,(Jsonb(cues),Jsonb(content)))
+    with pytest.raises(psycopg.errors.InvalidParameterValue,match='exact calendar-date evidence'), database.transaction():
+        database.execute(validate,(Jsonb(cues),Jsonb({**content,'actions':[{**action,'due_on':'2026-11-20'}]})))
 
 
 @pytest.mark.parametrize('indices,error',[

@@ -216,12 +216,12 @@ RM_CALENDAR=AgentSpec(name='rm_calendar',role='rm',scope='rm_book',prompt='rm_as
 CHAT_SPECS: MappingProxyType[TargetAgent, AgentSpec] = MappingProxyType({s.name:s for s in (GUIDE,ACCOUNTS,COMPLIANCE,RELATIONSHIP,RM_CLIENT,RM_REQUESTS,RM_CALENDAR)})
 
 # Fixed connectors for the separate meeting workflow. The model never chooses or invokes them.
-BRIEF_WRITER = MeetingAgentSpec('brief_writer', 'brief_writer', 'v4',
+BRIEF_WRITER = MeetingAgentSpec('brief_writer', 'brief_writer', 'v6',
     'Select references from the assigned RM’s currently permitted preparation records.', (
         MeetingTool('meeting_preparation_inputs', 'assigned_rm', 'read'),
         MeetingTool('meeting_save_brief', 'assigned_rm', 'draft_write'),
     ))
-PROPOSAL_DRAFTER = MeetingAgentSpec('proposal_drafter', 'proposal_drafter', 'v1',
+PROPOSAL_DRAFTER = MeetingAgentSpec('proposal_drafter', 'proposal_drafter', 'v4',
     'Draft a discussion pack from the agreed agenda and approved catalogue.', (
         MeetingTool('meeting_pack_inputs', 'assigned_rm', 'read'),
         MeetingTool('meeting_save_pack', 'assigned_rm', 'draft_write'),

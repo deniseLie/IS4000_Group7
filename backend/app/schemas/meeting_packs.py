@@ -7,8 +7,9 @@ from pydantic import AwareDatetime,Field,model_validator
 from app.schemas.meeting_lifecycle import Command,Hash,Text
 from app.schemas.meeting_preparation import HiddenInput
 
-AgendaCode=Literal['goals','status','documents','options','next_steps','questions']
-PackQuestion=Literal['clarify_objective','confirm_documents','review_options','confirm_next_steps','ask_product_risks','confirm_timeframe']
+AgendaCode=Literal['goals','status','documents','options','next_steps','questions','product_terms']
+PackQuestion=Literal['clarify_objective','confirm_documents','review_options','confirm_next_steps','ask_product_risks','confirm_timeframe',
+    'confirm_document_review','compare_catalogue_options','review_catalogue_product']
 
 class StatedAmount(HiddenInput):
     label: Text=Field(max_length=80)

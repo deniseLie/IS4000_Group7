@@ -14,7 +14,8 @@ def test_pdf_pack_uses_saved_terms_and_enforces_sharing_and_exact_version(flow,l
     amounts=[{**body['p_amounts'][0],'label':'Budget <review> 中文'}]
     inputs=pack_inputs(flow,local_data_api,amounts)
     stored=httpx.post(local_data_api.url+'/rpc/meeting_save_pack',headers=headers(flow,'rm'),json={
-        **body,'p_amounts':amounts,'p_source_hash':inputs['source_hash'],'p_command_id':str(uuid4())})
+        **body,'p_amounts':amounts,'p_source_hash':inputs['source_hash'],'p_command_id':str(uuid4()),
+        'p_plan':{**body['p_plan'],'agenda':['goals','product_terms','next_steps'],'questions':['review_catalogue_product']}})
     assert stored.status_code==200,stored.text
     pack=stored.json();query={key:pack[key] for key in ('document_id','version','content_hash')}
     url=f'/meetings/{flow.meeting}/pack/pdf'
@@ -25,6 +26,9 @@ def test_pdf_pack_uses_saved_terms_and_enforces_sharing_and_exact_version(flow,l
     reader=PdfReader(BytesIO(draft.content));text='\n'.join(page.extract_text() for page in reader.pages)
     assert '3.1234%' in text and '12,345.67' in text and '99,999,999,999,999.99' in text
     assert 'Budget <review> 中文' in text and 'draft' in text
+    assert 'Review the listed product terms' in text
+    assert 'Which terms of the listed product would you like to review' in text
+    assert str(flow.meeting) not in text and pack['document_id'] not in text and pack['content_hash'] not in text
     assert flow.http.get(url,headers=headers(flow,'client'),params=query).status_code==404
     assert flow.http.get(url,headers=headers(flow,'outsider'),params=query).status_code==403
     assert flow.http.get(url,headers=headers(flow,'rm'),params={**query,'content_hash':'0'*64}).status_code==409

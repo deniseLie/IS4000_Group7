@@ -16,8 +16,8 @@ LOOP_STOPS=('cap','malformed')  # a loop that stopped before the model answered 
 # Starting thresholds for "needs attention"; the team tunes them.
 HELD_BACK_MAX,ERROR_RATE_MAX,P95_MAX_S,STALE_DAYS,MIN_RUNS=0.15,0.02,30.0,7,3
 LEVELS=('high','medium','info')
-EXPECTED_SHOWN=('check','must_not','reply_has','reply_lacks','cites_any','expected_origin','expected_route','expect_needs_human','ticket',
-    'ticket_categories','trajectory','trajectory_v5','plan','source_prefix')
+EXPECTED_SHOWN=('check','must_not','reply_has','reply_lacks','cites_any','expected_origin','expected_route','expect_needs_human','expected_response_status','ticket',
+    'ticket_categories','trajectory','trajectory_v5','plan','source_prefix','request_sources')
 
 
 # ---- small helpers ----
@@ -357,6 +357,8 @@ def changes(before: dict | None,after: dict) -> list[str]:
     """What changed between two runs of a dataset: model, pipeline, transport and prompt versions (when both recorded them)."""
     if before is None:return []
     found=[f'{k} {before[k]} → {after[k]}' for k in ('model','pipeline','transport') if before.get(k) and after.get(k) and before[k]!=after[k]]
+    if before.get('judge_rubric_version')!=after.get('judge_rubric_version'):
+        found.append(f"judge rubric {before.get('judge_rubric_version') or 'unrecorded'} → {after.get('judge_rubric_version') or 'unrecorded'}")
     a,b=before.get('prompts') or {},after.get('prompts') or {}
     if a and b:found+=[f'{f} {a.get(f) or "—"} → {b.get(f) or "—"}' for f in sorted(set(a)|set(b)) if a.get(f)!=b.get(f)]
     elif before.get('answer_prompt') and after.get('answer_prompt') and before['answer_prompt']!=after['answer_prompt']:
@@ -447,7 +449,7 @@ def compare(a: dict,b: dict) -> dict[str,Any]:
 
 
 def experiment_detail(e: dict) -> dict[str,Any]:
-    return {**{k:e.get(k) for k in ('name','dataset','started_at','url','model','pipeline','transport','judge_model','commit','branch','partial','prompts')},
+    return {**{k:e.get(k) for k in ('name','dataset','started_at','url','model','pipeline','transport','judge_model','judge_rubric_version','commit','branch','partial','prompts')},
         'counts':counts(e['cases']),'pass_rate':pass_rate(e['cases']),
         'cases':[{**c,'repro':f"python -m evaluation.langsmith_run --dataset {e['dataset']} --case {c['case_id']}" if c['case_id'] else None} for c in e['cases']]}
 

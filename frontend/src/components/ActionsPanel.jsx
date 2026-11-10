@@ -250,7 +250,7 @@ export default function ActionsPanel() {
       if(!controller.signal.aborted){
         setItems(previous=>previous.map(item=>item.command.command_id===commandId?result:item));setSelected(null);setAcknowledged(false);setAnswer('');
         const recorded=await loadActions(await token(),controller.signal);
-        if(!controller.signal.aborted)setItems(recorded);
+        if(!controller.signal.aborted){setItems(recorded);return result;}
       }
     } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setError(failure.message);}
     finally {if(!controller.signal.aborted){setBusy(false);setDeciding(false);}}
@@ -263,13 +263,14 @@ export default function ActionsPanel() {
   // Waiting for you to confirm: the same request asked more than once is one row (one confirmation sends it; the
   // older copies are cancelled in the same step). Everything else is a simple history by day.
   const proposed=all.filter(item=>item.command.state==='proposed').sort((a,b)=>Date.parse(b.command.proposed_at)-Date.parse(a.command.proposed_at));
-  const groups=[];for(const item of proposed){const key=`${item.command.type}|${activity(item.command)[1]}`,found=groups.find(g=>g.key===key);if(found)found.items.push(item);else groups.push({key,items:[item]});}
+  const groups=[];for(const item of proposed){const {command}=item;const key=command.type==='handoff.create'?JSON.stringify(command.target):command.command_id;
+    const found=groups.find(g=>g.key===key);if(found)found.items.push(item);else groups.push({key,items:[item]});}
   const history=visible.filter(item=>item.command.state!=='proposed');
   const days=[];for(const item of history){const label=dayLabel(item.receipt?.created_at||item.command.proposed_at);const last=days[days.length-1];if(last&&last[0]===label)last[1].push(item);else days.push([label,[item]]);}
   async function confirmGroup(group) {
     const [latest,...older]=group.items,command=latest.command;
-    await submit(command.type==='card.dispute'?(id,key,signal)=>confirmAction(id,key,signal,{card_in_possession:answer}):confirmAction,command.command_id);
-    for(const item of older)await submit(rejectAction,item.command.command_id);
+    const result=await submit(command.type==='card.dispute'?(id,key,signal)=>confirmAction(id,key,signal,{card_in_possession:answer}):confirmAction,command.command_id);
+    if(result?.command.state==='succeeded')for(const item of older)await submit(rejectAction,item.command.command_id);
   }
   return <section className="app-page-body activity-page" aria-label="Activity" data-testid="actions-page">
     <header className="page-header"><div><span className="eyebrow">Your account</span><h1>Activity</h1><p>What you asked for or confirmed, newest first. Nothing happens until you confirm it.</p></div>

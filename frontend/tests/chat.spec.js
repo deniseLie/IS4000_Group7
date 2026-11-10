@@ -33,7 +33,7 @@ test('language scope is explained and safety guidance stays labelled',async({pag
  await ask(page,'I lost my card');
  expect((await sent).postDataJSON().language).toBe('Chinese');
  await expect(page.locator('.bank-chat-message.assistant')).toContainText('Safety guidance');
- await expect(page.locator('.bank-chat-message.assistant')).toContainText('immediately');
+ await expect(page.locator('.bank-chat-message.assistant')).toContainText('Freeze card');
  await expect(page.getByText('AI answers can contain errors',{exact:false})).toContainText('AI answers can contain errors');
 });
 test('new chat discards an in-flight request and remains usable',async({page})=>{
@@ -75,7 +75,7 @@ test('privacy input is withheld before any request',async({page})=>{
 test('lost card and unauthenticated personal enquiry',async({page})=>{
  for(const q of ['I lost my card','Someone stole my debit card',"I can't find my card"]) {
   await ask(page,q);const answer=page.locator('.bank-chat-message.assistant').last();
-  await expect(answer).toContainText('immediately');await expect(answer).toHaveAttribute('data-response-origin','safety');
+  await expect(answer).toContainText('Freeze card');await expect(answer).toHaveAttribute('data-response-origin','safety');
   await expect(answer).toContainText('Safety guidance');
  }
  await ask(page,'What is my balance?');await expect(page.locator('.bank-chat-message.assistant').last()).toContainText('Sign in');
@@ -87,7 +87,7 @@ test('guests are not offered Talk to a person (it needs a signed-in client and h
 test('network failure is shown and next request still works',async({page})=>{
  await page.route('**/api/chat',route=>route.abort('failed'),{times:1});
  await ask(page,'I lost my card');await expect(page.locator('.bank-chat-bubble.error')).toBeVisible();
- await ask(page,'I lost my card');await expect(page.locator('.bank-chat-message.assistant').last()).toContainText('immediately');
+ await ask(page,'I lost my card');await expect(page.locator('.bank-chat-message.assistant').last()).toContainText('Freeze card');
 });
 test('mobile layout fits and controls remain usable',async({page})=>{
  await page.setViewportSize({width:390,height:844});await ask(page,'I lost my card');
@@ -107,7 +107,7 @@ test('responsive home, topic drafts and sign-in navigation work at desktop and m
   await expect(page.getByRole('textbox',{name:'Your message'})).toBeFocused();
   await expect(page.getByRole('textbox',{name:'Your message'})).toHaveValue('Does paying only the minimum on my credit card avoid interest?');
   await expect(page.locator('.bank-chat-message')).toHaveCount(0);
-  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByTestId('sign-in').click();
   await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();
   await page.getByLabel('Password',{exact:true}).fill('synthetic-ui-only');
   await page.getByRole('button',{name:'Show',exact:true}).click();

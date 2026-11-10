@@ -5,7 +5,7 @@ from langgraph.graph import START,END,StateGraph
 from psycopg.types.json import Jsonb
 from app.core.config import settings
 from app.schemas.contracts import RequestContext
-from app.schemas.meeting_packs import PackGraphState,PackInputs,PackPlan,PackRequest,PackView,ProductChoice,ProposalContext,StoredPack
+from app.schemas.meeting_packs import AgendaCode,PackGraphState,PackInputs,PackPlan,PackQuestion,PackRequest,PackView,ProductChoice,ProposalContext,StoredPack
 from app.core.observability import span
 from app.services.agents.registry import PROPOSAL_DRAFTER
 from app.services.meetings.database import ApplicationDatabase
@@ -19,6 +19,24 @@ def safe_context(frame: PackInputs) -> ProposalContext:
     return ProposalContext(purpose=redact(frame.purpose)[0] if frame.purpose else None,topics=frame.topics,
         catalogue=tuple(ProductChoice(item_id=item.item_id,name=item.name,topic=item.topic,currency=item.currency) for item in frame.catalogue),
         amount_currencies=tuple(sorted({amount.currency for amount in frame.amounts})))
+
+def with_discussion_items(plan: PackPlan,frame: PackInputs) -> PackPlan:
+    required: list[PackQuestion]=[]
+    product_count=len(plan.product_ids)
+    product_agenda: AgendaCode='product_terms' if product_count==1 else 'options'
+    agenda=[]
+    for code in plan.agenda:
+        if code in ('options','product_terms'):
+            if product_count and product_agenda not in agenda:agenda.append(product_agenda)
+        else:agenda.append(code)
+    if product_count and product_agenda not in agenda:agenda.append(product_agenda)
+    if product_count==1:required.append('review_catalogue_product')
+    if product_count>1:required.append('compare_catalogue_options')
+    if 'compliance_review' in frame.topics:required.append('confirm_document_review')
+    replaced={'compare_catalogue_options','review_catalogue_product','review_options','ask_product_risks','confirm_document_review'}
+    if 'confirm_document_review' in required:replaced.add('confirm_documents')
+    questions=(*required,*(question for question in plan.questions if question not in replaced))
+    return plan.model_copy(update={'agenda':tuple(agenda) or ('goals',),'questions':questions[:6]})
 
 
 async def read(meeting: UUID,ctx: RequestContext) -> PackView|None:
@@ -40,7 +58,7 @@ async def draft(meeting: UUID,body: PackRequest,ctx: RequestContext) -> PackView
             result=await call({'agent':PROPOSAL_DRAFTER.prompt,'id':prompt['id']},prompt['system'],[('user',safe_context(frame).model_dump_json())],PackPlan.model_json_schema(),model=settings.meeting_model or None)
             plan=PackPlan.model_validate(result.data)
             if not set(plan.product_ids)<={item.item_id for item in frame.catalogue}:raise ValueError('Proposal Drafter selected a catalogue item outside the agreed agenda')
-            return {'plan':plan}
+            return {'plan':with_discussion_items(plan,frame)}
     async def save(state: PackGraphState) -> dict[str,UUID]:
         if state.plan is None:raise RuntimeError('Pack graph reached storage without a checked plan')
         result=await asyncio.to_thread(database.agent_call,PROPOSAL_DRAFTER.name,'meeting_save_pack',meeting,{'p_meeting_id':meeting,'p_revision':frame.revision,'p_source_hash':frame.source_hash,

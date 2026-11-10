@@ -1,7 +1,10 @@
 import {useState} from 'react';
 
-const agenda={goals:'Confirm the meeting goals',status:'Review the current status',documents:'Discuss the required documents',options:'Discuss the available options',next_steps:'Agree next steps and responsibilities',questions:'Answer your questions'};
-const questions={clarify_objective:'What would you like to achieve?',confirm_documents:'Which documents or information should we clarify?',review_options:'Which options would you like to discuss?',confirm_next_steps:'What should happen next, and who will do it?',ask_product_risks:'What risks, terms and charges should we clarify?',confirm_timeframe:'What timeframe matters to you?'};
+const agenda={goals:'Confirm the meeting goals',status:'Review the current status',documents:'Discuss the required documents',options:'Discuss the available options',product_terms:'Review the listed product terms',next_steps:'Agree next steps and responsibilities',questions:'Answer your questions'};
+const questions={clarify_objective:'What would you like to achieve?',confirm_documents:'Which documents or information should we clarify?',review_options:'Which options would you like to discuss?',confirm_next_steps:'What should happen next, and who will do it?',ask_product_risks:'What risks, terms and charges should we clarify?',confirm_timeframe:'What timeframe matters to you?',
+  confirm_document_review:'Which documents has the bank received, which still need to be provided or corrected, and who will confirm the next step and due date?',
+  compare_catalogue_options:'Which of the listed product terms should we compare, including applicable rates, charges, minimum amounts and term lengths?',
+  review_catalogue_product:'Which terms of the listed product would you like to review, such as the rate, charges, minimum amount or term length where applicable?'};
 
 function money(value,currency){return new Intl.NumberFormat('en-SG',{style:'currency',currency,maximumFractionDigits:2}).format(value);}
 

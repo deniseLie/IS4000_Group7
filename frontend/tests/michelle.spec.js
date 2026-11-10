@@ -96,7 +96,7 @@ test('rechecks expired Michelle upload before a new submission',async({page})=>{
  await page.getByTestId('open-compliance').click();
  const workspace=page.getByTestId('compliance-workspace');
  // Historical findings remain visible, explicitly expired for new submissions.
- await expect(workspace.getByTestId('precheck-result')).toContainText('Expired for new submissions.');
+ await expect(workspace.getByTestId('precheck-result')).toContainText('check it again before sending');
  await workspace.getByTestId('check-current-upload').click();
  await expect(workspace.getByTestId('item-sent')).toBeVisible({timeout:170000});
  await expect(workspace.getByTestId('submission-receipt')).toBeVisible();

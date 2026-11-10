@@ -2,7 +2,7 @@
 gather →] compose, and planner → act → compose when the client answers an open offer.
 
 The planner tries English rules first (an answer to an open offer, an answer to our own question, the selected record,
-urgent card and login wording, an explicit request for a person, greetings), then one planner/v12 call, then the rule
+urgent card and login wording, an explicit request for a person, greetings), then one planner call, then the rule
 overrides and a plan check against registry.CHAT_SPECS. Each task runs on its agent through runner.run_agent, except an
 urgent card task (a lost card or a charge she doesn't recognise), which gets fixed steps and one urgent RM request
 offer from code, never the model (build plan 2b: there is no Security agent). Agents never
@@ -519,7 +519,8 @@ async def planner(state: Turn, runtime: Runtime[TurnContext]) -> dict:
             else:
                 try:tasks = await model_plan(history)
                 except (LLMError, ValidationError, KeyError, TypeError) as error:
-                    # A clear single-topic question may fall back to the rules; never fabricate an answer.
+                    # Keep urgent guidance available for a mixed request even if its ordinary plan fails.
+                    if single is None and req.language == 'English' and urgent_wording(question):single = urgent_task(question, question)
                     log_event('intent_fallback', reason=type(error).__name__, agent=single.agent if single else None)
                     if single is None:return {'confirm': None, 'tasks': [], 'lines': [fixed_section('t1', REPHRASE)]}
                     tasks = [single]

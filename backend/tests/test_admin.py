@@ -46,12 +46,26 @@ def test_an_admin_is_not_a_relationship_manager():
     assert code(client.get('/rm/me',headers=bearer(app_metadata=ADMIN)))=='rm_only'
 
 
+def test_meeting_experiments_can_be_opened_by_their_published_name(monkeypatch):
+    names=['preparation-eval-20261106T221848Z','preparation-eval-20261107T121212Z']
+    versions=['meeting-preparation-v1','meeting-preparation-v2']
+    monkeypatch.setattr(quality,'experiment_runs',lambda:[{**EXPERIMENT,'name':name,'dataset':'demobank-meeting-preparation',
+        'judge_rubric_version':version} for name,version in zip(names,versions)])
+    admin=bearer(app_metadata=ADMIN)
+    detail=client.get('/admin/evaluations/'+names[0],headers=admin).json()
+    assert detail['name']==names[0] and detail['judge_rubric_version']==versions[0]
+    comparison=client.get(f'/admin/evaluations/compare?a={names[0]}&b={names[1]}',headers=admin)
+    assert comparison.status_code==200
+    assert comparison.json()['changes']==['judge rubric meeting-preparation-v1 → meeting-preparation-v2']
+    assert code(client.get('/admin/evaluations/unknown-project',headers=admin))=='not_found'
+
+
 def test_langsmith_failure_is_reported_and_names_are_bounded(monkeypatch):
     def down():raise ConnectionError('down')
     monkeypatch.setattr(quality,'experiment_runs',down)
     admin=bearer(app_metadata=ADMIN)
     assert code(client.get('/admin/evaluations',headers=admin))=='admin_unavailable'
-    assert code(client.get('/admin/evaluations/someone-elses-project',headers=admin))=='not_found'
+    assert code(client.get('/admin/evaluations/invalid!name',headers=admin))=='not_found'
     assert client.get('/admin/evaluations/compare?a=x&b=demobank-a',headers=admin).status_code==422
     assert client.get('/admin/traces/not-a-uuid',headers=admin).status_code==422
     assert client.get('/admin/traces?limit=500',headers=admin).status_code==422

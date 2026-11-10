@@ -45,7 +45,8 @@ export default function OverviewPage({onNavigate,onAsk,onRequestStatement,onRais
   // Opened from the assistant's "Go to Statements" button: scroll to that section once the records are on screen.
   // CR2/CR15: a "Go to …" button in the chat scrolls to its section (statements, accounts, cards, loans, recent activity).
   useEffect(()=>{if(focus&&records)document.getElementById(focus==='statements'?'statements':`ov-${focus}`)?.scrollIntoView({behavior:'smooth',block:'start'});},[focus,!!records]);
-  if(error&&!records)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p></section>;
+  if(error&&!records)return <section className="app-page-body ov" data-testid="overview-page"><p role="alert">{error}</p>
+    {onRecords&&<button className="bank-chat-logout" data-testid="open-records" onClick={onRecords}>See all your records<Icon name="arrow"/></button>}</section>;
   if(!records)return <section className="app-page-body ov" data-testid="overview-page"><p className="loading" role="status">Loading your accounts…</p>
     <div className="skeleton-page" aria-hidden="true"><span className="skeleton-line wide"/><span className="skeleton-block tall"/>
       <div className="ov-grid"><div className="ov-main"><span className="skeleton-block"/><span className="skeleton-block"/></div><div className="ov-side"><span className="skeleton-block"/><span className="skeleton-block"/></div></div></div></section>;

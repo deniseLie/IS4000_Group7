@@ -15,7 +15,7 @@ from uuid import NAMESPACE_URL,uuid5
 import app.core.config  # noqa: F401  loads the root .env
 from app.core import langsmith_client
 from app.schemas.contracts import TargetAgent
-from app.services.tools import TOOLS
+from app.services.tools import MEETING_READS,TOOLS
 from app.services.agents.registry import TOOLS as SERVICE_TOOLS
 
 HERE=Path(__file__).parent
@@ -39,8 +39,8 @@ DESCRIPTIONS={'demobank-standard':'Public questions: languages, prompt injection
               'demobank-planner':'Planner-only cases: message to expected agents, entities and dependencies; no agents run.'}
 # Reference fields an evaluator may read; cites_any passes when the answer cites at least one listed article.
 # QA1 cases add reply_has/reply_lacks (regexes), ticket (category opened), schema/check (S/C rubrics) and trajectory (T).
-EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human',
-          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','plan','offer')
+EXPECTED=('check','cites_any','expected_origin','expected_route','expect_needs_human','expected_response_status',
+          'reply_has','reply_lacks','ticket','ticket_categories','schema','trajectory','trajectory_v5','must_not','handoff','source_prefix','request_sources','plan','offer')
 OWNED=('case_id','dataset','title','persona','type','priority','stories','ubs','state','backlog','owner','manual_reason','legacy_id','pattern','variant_of')
 # QA1 trajectories name real graph nodes, agents and tools; a spec case (state 'spec') may also name PLANNED_AGENTS/PLANNED_TOOLS (all built now).
 NODES=('planner','agent','gather','act','compose')
@@ -67,7 +67,7 @@ def example_id(dataset,case_id):
 def check_trajectory(name,case,nodes=NODES,agents=AGENTS):
     """Every node, agent and tool a QA1 case names must exist, so a renamed piece fails the sync instead of the run."""
     t=case['trajectory'];spec=case['state']=='spec'
-    agents=agents+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*(PLANNED_TOOLS if spec else ()))
+    agents=agents+(PLANNED_AGENTS if spec else ());tools=(*TOOLS,*MEETING_READS,*(PLANNED_TOOLS if spec else ()))
     problems=[f'node {n}' for n in t['nodes']+t['idle'] if n not in nodes]+[f'node {n} both runs and is idle' for n in set(t['nodes'])&set(t['idle'])]
     problems+=[f'agent {a}' for a in t['agents'] if a not in agents]
     problems+=[f'tool {x}' for x in t['tools']+t.get('no_tools',[]) if not any(fnmatch(tool,x) for tool in tools)]

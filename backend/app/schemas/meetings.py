@@ -136,7 +136,7 @@ class BriefCard(Contract):
     meeting_id: UUID
     version: int = Field(ge=1)
     status: Literal['draft', 'approved']
-    sections: list[BriefSection] = Field(max_length=12)
+    sections: list[BriefSection] = Field(max_length=13)
     documents: list[BriefDocument] = Field(default_factory=list, max_length=5)
     consent: dict[ConsentCategory, bool] = Field(default_factory=dict)  # which gated categories the client shared at as_of
     withheld: int = Field(default=0, ge=0)  # items that failed checks: counted, never shown
