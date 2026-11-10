@@ -417,6 +417,15 @@ The gate (no false on hold, false points not above v1, final state clearly above
 
 The table was run on 61 single messages and 15 conversations. After 0145 retired the care pause, the care cases (C01–C04, CV09) were removed: care is no longer a path of its own in chat insights, so the datasets now hold 57 messages and 14 conversations. Before removal, a live v2 run on 8 Nov recorded nothing for them.
 
+**10 Nov 2026, after the first published runs (54 of 57 messages, 12 of 14 conversations).**
+- **Fixed: TP04.** The code check (`talking_points_state.validate`) looked for the topic word in the model's quote, so "We've found an HDB flat and want to apply for the loan now", quoted as its shortest span without "HDB", counted as a follow-up in a chat with no active topic and was dropped. It now looks in her message, as the prompt defines a follow-up ("without the topic's name"); the SQL takes the `carried` flag from code, so no migration was needed. Test: `test_a_topic_named_in_her_message_counts_when_the_quote_leaves_the_word_out`.
+- **Removed as not critical, kept here as known limits:**
+  - TP24 ("What does an endowment plan cost per month?"): the code counts "endowment" as an insurance word, but the prompt defines insurance only as life, home or travel cover, so the model recorded nothing.
+  - TP27 ("Before we take the mortgage I want our life insurance sorted out"): the model treated the mortgage as mentioned in passing and recorded only the insurance.
+  - The dataset now holds 55 messages.
+- **Narrowed to what each case tests:** CV01 (follow-ups fill in kind, timeframe and a concern) no longer checks the stage; the model set the six-month timeframe but left the stage at exploring. CV02 (a carried-over follow-up moves the stage up) no longer checks the timeframe; "I'll place one this week" was read as within 3 months, not now. Both kept, since they are the only cases for carry-over.
+- **For a v3 prompt:** name endowment plans under insurance, say that a stated time means at least planning, and define "now" (today or this week).
+
 ## Earlier results (13–24 Oct 2026)
 
 Before LangSmith, answers were checked with the offline validator (`python -m evaluation.run`) and reviewed by hand. On 14 Oct 2026, 151 backend tests and all 19 offline validator cases passed, and 19 browser workflows had passing runs. Three focused live questions were answered by the real model and reviewed by a person, not scored automatically. No released prompt was changed for those runs. The raw files are in [evidence/core-2026-10-14](evidence/core-2026-10-14) (synthetic questions only). Limits that still apply: the validator checks sources and figures, not meaning, so live answers still need human review.

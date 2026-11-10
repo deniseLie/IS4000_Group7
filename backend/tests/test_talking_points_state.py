@@ -60,8 +60,18 @@ def test_a_carry_over_counts_only_for_an_active_topic_and_her_own_words() -> Non
         change(topic='insurance',quote='lock-in for three years')],  # not her words
         message,state([HOME],active=['home_loan']))
     assert kept==[{'action':'update','topic':'home_loan','stage':'planning','timeframe':'unknown','kind':None,'concerns':['lock_in'],
-        'quote':'Is the lock-in usually two years?','carried':True}]
+        'quote':'Is the lock-in usually two years?','carried':False}]  # her message names it (HDB), so it is no carry-over
     assert dropped==Counter({'not_active':2,'repeat':1,'not_her_words':1})
+    follow_up='Is the lock-in usually two years?'
+    assert v2.validate([change(quote=follow_up)],follow_up,state([HOME],active=['home_loan']))[0][0]['carried'] is True
+    assert v2.validate([change(quote=follow_up)],follow_up,state([HOME]))==([],Counter({'not_active':1}))
+
+
+def test_a_topic_named_in_her_message_counts_when_the_quote_leaves_the_word_out() -> None:
+    """Evaluation case TP04: the model quotes the shortest span, which need not hold the topic word."""
+    message="We've found an HDB flat and want to apply for the loan now"
+    [kept],dropped=v2.validate([change(action='add',quote='want to apply for the loan now',stage='ready',timeframe='now')],message,state())
+    assert (kept['action'],kept['stage'],kept['carried'],dropped)==('add','ready',False,Counter())
 
 
 def test_kinds_points_and_confirmed_topics_are_checked_by_code() -> None:
