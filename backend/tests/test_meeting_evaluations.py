@@ -14,6 +14,13 @@ WRITER=os.getenv('TEST_MEETING_TRANSPORT','codex')  # the writer and judge's tra
 pytestmark=pytest.mark.skipif(os.getenv('TEST_MEETING_EVAL_LIVE')!='1',reason='Real synthetic meeting evaluation opt-in required')
 
 
+@pytest.fixture(autouse=True)
+def fresh_model_client():
+    """Each test serves the app on a new event loop; on api, LangChain's cached HTTP client would reuse the last loop's connections."""
+    from langchain_openai.chat_models._client_utils import _cached_async_httpx_client
+    _cached_async_httpx_client.cache_clear()
+
+
 def store(row):
     if destination:=os.getenv('TEST_MEETING_EVAL_OUTPUT'):
         path=Path(destination);previous=json.loads(path.read_text()) if path.exists() else []

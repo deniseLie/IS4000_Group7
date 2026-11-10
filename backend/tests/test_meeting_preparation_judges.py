@@ -18,6 +18,12 @@ from evaluation.meetings import Check
 WRITER=os.getenv('TEST_MEETING_TRANSPORT','codex')  # the writer and judge's transport: codex, claude or api (OpenRouter)
 pytestmark=pytest.mark.skipif(os.getenv('TEST_MEETING_PREP_JUDGE')!='1',reason='Explicit real synthetic preparation/judge opt-in required')
 
+@pytest.fixture(autouse=True)
+def fresh_model_client():
+    """Each test serves the app on a new event loop; on api, LangChain's cached HTTP client would reuse the last loop's connections."""
+    from langchain_openai.chat_models._client_utils import _cached_async_httpx_client
+    _cached_async_httpx_client.cache_clear()
+
 @pytest.fixture
 def rendered_frames(monkeypatch):
     """Grade the API's actual response against the same authorised read used to render it."""

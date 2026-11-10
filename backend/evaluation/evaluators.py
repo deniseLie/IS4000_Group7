@@ -171,7 +171,7 @@ def judge_name() -> str:
     return name
 
 
-def judge_model(schema: dict[str,Any]=JUDGE_SCHEMA,timeout: int=60):
+def judge_model(schema: dict[str,Any]=JUDGE_SCHEMA,timeout: Any=60):
     name=judge_name()
     from langchain.chat_models import init_chat_model
     provider=os.getenv('LLM_PROVIDER') or 'openai'
@@ -185,7 +185,11 @@ async def judge_answer(system: str,schema: dict[str,Any],messages: list[tuple[st
     if transport() in ('codex','claude'):
         from app.services import claude_cli,codex_cli
         return (await (codex_cli if transport()=='codex' else claude_cli).answer_with_model(system,schema,messages,judge_name()))[0]
-    return await judge_model(schema,timeout=180).ainvoke([('system',system),*messages])  # meeting payloads are longer than a chat
+    # 180 s: meeting payloads are longer than a chat. An httpx.Timeout is unhashable, so LangChain builds this call its own
+    # HTTP client instead of its cached one: the meeting tests call the judge on a fresh loop (asyncio.run) while the app
+    # serves on another, and a pooled connection from a closed loop fails with "Event loop is closed".
+    import httpx
+    return await judge_model(schema,timeout=httpx.Timeout(180)).ainvoke([('system',system),*messages])
 
 
 def transcript(out: dict[str,Any]) -> str:
