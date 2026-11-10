@@ -19,9 +19,9 @@ const TOPICS=[
   {key:'statements',match:/\bstatements?\b/i,ask:[
     ['How do I get an older or certified statement?',false],['What is my account balance?',true],['Show my recent transactions',true]]},
   {key:'meeting',match:/\b(?:meet|meeting|appointment|book(?:ing)?|schedule)\b/i,ask:[
-    ['Who is my relationship manager?',true],['What should I prepare for the meeting?',false],['What is the status of my request?',true]]},
+    ['Who is my relationship manager?',true],['What should I prepare for the meeting?',true],['What is the status of my request?',true]]},
   {key:'relationship',match:/\b(?:relationship manager|my rm|advis[eo]r|banker)\b/i,ask:[
-    ['Request a meeting with your RM',true],['What should I prepare for the meeting?',false],['What can you help me with?',false]]},
+    ['Request a meeting with your RM',true],['What should I prepare for the meeting?',true],['What can you help me with?',false]]},
   {key:'details',match:/\b(?:(?:my|new|home|mailing) address|phone number|mobile number|email address|personal details|change my name)\b/i,ask:[
     ['What does a proof of address need to show?',false],['What is the status of my request?',true],['What can you help me with?',false]]},
   {key:'large_transfer',match:/\b(?:large|big|significant|substantial|complex|cross[- ]border)\b[^.?!]{0,30}\b(?:transfers?|wires?|remittances?)\b|\b(?:transfer\w*|send\w*|wir\w+|mov\w+)\b[^.?!]{0,30}(?:\d{1,3}(?:,\d{3}){1,}|\b\d{5,}|\b\d+\s?k\b|\bmillion\b)/i,ask:[
@@ -31,13 +31,13 @@ const TOPICS=[
   {key:'limit',match:/\blimit\b/i,ask:[
     ['What documents do I need for a higher limit?',false],['What is the status of my request?',true],['When is my card payment due?',true]]},
   {key:'loans',match:/\b(?:loans?|mortgages?|borrow\w*|refinanc\w*|property|condo|hdb|house)\b/i,ask:[
-    ['Which financing do you offer?',false],['How is property financing arranged?',false],['Can I borrow against my investments?',false]]},
+    ['Which financing do you offer?',false],['How is property financing arranged?',false],['Can I borrow against my investments?',true]]},
   {key:'investments',match:/\b(?:invest\w*|unit trusts?|funds?|portfolio|stocks?|shares|bonds?|wealth|retirement)\b/i,ask:[
     ['What is a unit trust?',false],['What are the risks of investing?',false]]},
   {key:'cards',match:/\b(?:card|credit|minimum payment|interest|annual fee)\b/i,ask:[
-    ['When is my card payment due?',true],['Does paying only the minimum avoid interest?',false],['Can I increase my credit limit?',false]]},
+    ['When is my card payment due?',true],['Does paying only the minimum avoid interest?',false],['Can I increase my credit limit?',true]]},
   {key:'accounts',match:/\b(?:accounts?|balances?|savings?|fees?|charges?|deposits?|withdraw\w*|spen[dt]\w*|transactions?|matur\w*|income|money)\b/i,ask:[
-    ['What is my account balance?',true],['Show my recent transactions',true],['Are there fees on my savings account?',false]]},
+    ['What is my account balance?',true],['Show my recent transactions',true],['Are there fees on my savings account?',true]]},
 ];
 const DOMAIN={fraud:'fraud',compliance:'compliance',document:'document',relationship:'meeting'};
 const MEETING_TOPICS=new Set(['loans','investments','large_transfer']);
