@@ -66,6 +66,9 @@ def test_a_tap_after_a_skipped_form_is_unplayed_and_an_offer_can_be_expected():
 def test_the_after_reply_talking_points_call_is_not_the_turns_model_call():
     spans=[('agent',{'agent':'relationship'}),('llm',{'agent':'relationship'}),('llm',{'agent':'talking_points'})]
     assert targets.answer_calls(spans)==1 and targets.answer_calls(spans[2:])==0
+    # C06: a fixed reply runs no tools; lane 1 still reads her topic state after it, which is not the turn's read
+    reads=[('tool_call',{'tool':'my_cards','agent':'accounts'}),('tool_call',{'tool':'my_topic_state','agent':'talking_points'})]
+    assert targets.turn_tools(reads)==['my_cards'] and targets.turn_tools(reads[1:])==[]
 
 
 def test_ticket_checks():
