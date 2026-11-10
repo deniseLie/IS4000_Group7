@@ -25,6 +25,7 @@ test('formats rates and the change since the previous window, with the good dire
   assert.deepEqual(delta(40,46,{kind:'seconds',better:'down'}),{text:'−6.0 s',tone:'down-good'});
   assert.deepEqual(delta(18,12,{kind:'count',better:''}),{text:'+6',tone:''});
   assert.deepEqual(delta(3,3),{text:'no change',tone:''});
+  assert.deepEqual(delta(0.85,0.7,{kind:'score'}),{text:'+0.15',tone:'up-good'});
   assert.equal(delta(0.9,null),null);
 });
 
@@ -67,6 +68,17 @@ test('the All datasets row is the latest full run against the full run before it
   assert.deepEqual(row.problems,[{label:'regressed',count:2},{label:'flaky',count:1}]);
   const never=datasetRow({dataset:'demobank-new',runs:0,timeline:[],heatmap:{labels:{}}});
   assert.equal(never.pass_rate,null);assert.equal(never.counts,null);assert.deepEqual(never.problems,[]);
+  assert.equal(never.judge,null);assert.equal(never.judge_current,false);
+});
+
+test('the judge mean is the latest judged full run against the one before it by the same judge; a run without --judge keeps it', () => {
+  const point=(experiment,judge,subset=false,judge_model='openai/gpt-6-luna')=>({experiment,judge,subset,pass_rate:1,judge_model:judge==null?null:judge_model,started_at:`2026-11-0${experiment.length}T00:00:00Z`});
+  const judged=datasetRow({dataset:'demobank-safety',timeline:[point('a',0.7),point('bb',null),point('ccc',0.4,false,'sonnet'),point('dddd',0.85),point('eeeee',0.2,true)]});
+  assert.equal(judged.judge,0.85);assert.equal(judged.previous_judge,0.7);assert.equal(judged.judge_current,true);assert.equal(judged.judge_model,'openai/gpt-6-luna');
+  assert.equal(datasetRow({dataset:'demobank-qa1-rm',timeline:[point('a',0.97,false,'sonnet'),point('bb',0.62)]}).previous_judge,null);
+  const later=datasetRow({dataset:'demobank-safety',timeline:[point('a',0.7),point('bb',0.85),point('ccc',null)]});
+  assert.equal(later.judge,0.85);assert.equal(later.judge_current,false);assert.equal(later.judge_at,'2026-11-02T00:00:00Z');
+  assert.equal(datasetRow({dataset:'demobank-planner',timeline:[point('a',null)]}).judge,null);
 });
 
 test('heatmap rows put cases that need a look first and a run lists errors and failures first, otherwise in order', () => {

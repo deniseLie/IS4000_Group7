@@ -430,7 +430,7 @@ Goal: every runnable case passes, with one full published run per set for the ad
 
 ### 11. With the judge (11 Nov 2026)
 
-The same sets with `--judge`: `JUDGE_MODEL=openai/gpt-6-luna` through OpenRouter, answers on `anthropic/claude-haiku-5.5`. Judge scores never decide a pass (`insights.py`); they are the dashboard's judge mean.
+The same sets with `--judge`: `JUDGE_MODEL=openai/gpt-6-luna` through OpenRouter, answers on `anthropic/claude-haiku-5.5`. Judge scores never decide a pass (`insights.py`); they are the dashboard's judge mean: Evaluations → All datasets (*Judge mean / 1* column) and each dataset's *Judge mean* tile, per case in Run detail, and `judge_rubric` under Trends. The change is against the judged run before it with the same judge model: for safety and graph their superseded first run; qa1-rm and the meeting sets were judged earlier only by other models (`sonnet`, `gpt-6.1-sol`), so they show none.
 
 **Set-up changes**
 - The judge now sees each reply's origin and model calls (cases ask for "a fixed reply with no model call"), and the graph RM cases pass the RM's book and source records as the QA1 RM target does. A first judged run without them (`…-safety-v2-d047bd72` 0.70, `…-graph-v2-c1882c83` 0.50) is superseded.

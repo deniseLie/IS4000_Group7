@@ -1,7 +1,7 @@
 import {Fragment,useEffect,useRef,useState} from 'react';
 import Icon from '../Icon';
 import {formatDate,formatDateTime} from '../../lib/format';
-import {COMPARED,GROUPS,LABELS,datasetRow,defaultPair,delta,failingFirst,judgeSummary,loadCompare,loadEvaluation,loadEvaluations,percent,problemFirst,scoreLabel,seconds} from '../../lib/admin';
+import {COMPARED,GROUPS,LABELS,datasetRow,defaultPair,delta,failingFirst,judgeSummary,loadCompare,loadEvaluation,loadEvaluations,number,percent,problemFirst,scoreLabel,seconds} from '../../lib/admin';
 import {HeatLegend,Heatmap,LineChart,Sparkline} from './charts';
 import {Failed,Loading,Page,Status,useLoad} from './shared';
 
@@ -114,12 +114,15 @@ function AllDatasets({sets,onOpen}) {
   return <section className="admin-card" data-testid="admin-all-datasets">
     <div className="admin-card-head"><h2>All datasets</h2><span className="admin-muted">The latest full run of each dataset, against the full run before it</span></div>
     <div className="admin-table-wrap"><table className="admin-table">
-      <thead><tr><th>Dataset</th><th className="num">Rule pass rate</th><th className="num">Change</th><th>Pass · fail · error · skipped</th><th>Cases to look at</th><th>Last run</th></tr></thead>
-      <tbody>{rows.map(row=>{const change=delta(row.pass_rate,row.previous_pass_rate);
+      <thead><tr><th>Dataset</th><th className="num">Rule pass rate</th><th className="num">Change</th><th className="num">Judge mean / 1</th><th>Pass · fail · error · skipped</th><th>Cases to look at</th><th>Last run</th></tr></thead>
+      <tbody>{rows.map(row=>{const change=delta(row.pass_rate,row.previous_pass_rate),judged=delta(row.judge,row.previous_judge,{kind:'score'});
         return <tr key={row.dataset} data-testid={`admin-all-${row.dataset}`}>
           <td className="admin-nowrap"><button className="link-button" onClick={()=>onOpen(row.dataset,'run')}>{short(row.dataset)}</button></td>
           <td className="num">{percent(row.pass_rate)}</td>
           <td className="num admin-nowrap">{change?<span className={`admin-delta ${change.tone}`}>{change.text}</span>:'—'}</td>
+          <td className="num admin-nowrap" data-testid={`admin-judge-${row.dataset}`}>{row.judge==null?'—':<>{number(row.judge,2)}
+            {judged&&<> <span className={`admin-delta ${judged.tone}`}>{judged.text}</span></>}
+            {!row.judge_current&&<div className="admin-muted">run of {formatDate(row.judge_at)}</div>}</>}</td>
           <td className="admin-nowrap">{row.counts?`${row.counts.pass} · ${row.counts.fail} · ${row.counts.error} · ${row.counts.skipped}`:'—'}</td>
           <td>{!row.runs?'—':<>{row.problems.length?<button className="link-button" onClick={()=>onOpen(row.dataset,'cases')}>
             {row.problems.map(item=>`${item.count} ${LABELS[item.label].toLowerCase()}`).join(' · ')}</button>:<span className="admin-muted">none</span>}
@@ -127,6 +130,7 @@ function AllDatasets({sets,onOpen}) {
           <td className="admin-nowrap">{row.last_run?formatDateTime(row.last_run):'never'}{row.stale&&<> <Status value="stale"/></>}</td>
         </tr>;})}</tbody></table></div>
     <p className="admin-muted">Each dataset tests something different, so their pass rates are not added together. Pass rate and counts are the latest full run;
+      Judge mean is the AI judge's average score (0 to 1) on the latest full run made with <code>--judge</code>, against the judged run before it with the same judge model, and never decides pass or fail;
       Last run also counts subset runs (<code>--case</code>). Cases to look at come from each case's whole history, re-runs included,
       so a failure in the full run that passed when re-run counts as fixed.</p>
   </section>;
@@ -153,9 +157,12 @@ function Dataset({data,start}) {
   const cases=problemFirst(data.heatmap.rows).filter(row=>!hidePassing||row.label!=='passing');
   const shown=data.timeline.find(point=>point.experiment===name);
   const which=name===latest?(full.length?'The latest full run':'The latest run'):shown?.subset?'A subset run (--case)':'An earlier full run';
+  const graded=datasetRow(data);
   return <>
     <div className="admin-tiles">
       <div className="admin-tile"><span>Rule pass rate</span><strong>{percent(data.pass_rate)}</strong><small>{data.cases_last_full} cases in the latest full run</small></div>
+      <div className="admin-tile" data-testid="admin-judge-tile"><span>Judge mean</span><strong>{number(graded.judge,2)}{graded.judge!=null&&<small> / 1</small>}</strong>
+        <small>{graded.judge==null?'no run with --judge yet':`${graded.judge_current?'latest full run':`full run of ${formatDate(graded.judge_at)}`}${graded.judge_model?` · ${graded.judge_model}`:''} · never decides pass`}</small></div>
       <div className="admin-tile"><span>Runs</span><strong>{data.runs}</strong><small>{data.full_runs} full · {data.runs-data.full_runs} subset</small></div>
       <div className={`admin-tile${data.stale?' alert':''}`}><span>Last run</span><strong>{formatDate(data.last_run)}</strong><small>{data.stale?'older than 7 days':'recent'}</small></div>
       <div className="admin-tile"><span>Cases in the dataset</span><strong>{data.examples??'—'}</strong><small>synced examples</small></div>

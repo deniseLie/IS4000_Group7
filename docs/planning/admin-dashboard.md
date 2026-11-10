@@ -164,7 +164,7 @@ Judge scores are always labelled **model-graded**. They never decide pass or fai
 
 ### 2.2 Evaluations: accuracy over time
 
-**Layout (5 Nov 2026).** The page opens on **All datasets**: one row per dataset with the latest full run's pass rate, the change since the full run before it, pass/fail/error/skipped, the cases to look at (regressed, flaky, always failing, failing) and the last run in SGT. Pass rates are not added across datasets, because each dataset tests something different. Picking a dataset shows its tiles and four views:
+**Layout (5 Nov 2026).** The page opens on **All datasets**: one row per dataset with the latest full run's pass rate, the change since the full run before it, the judge mean (below), pass/fail/error/skipped, the cases to look at (regressed, flaky, always failing, failing) and the last run in SGT. Pass rates are not added across datasets, because each dataset tests something different. Picking a dataset shows its tiles and four views. **Judge mean (11 Nov 2026):** the AI judge's average `judge_rubric` score (0 to 1) on the latest full run made with `--judge`, with the change since the judged run before it by the same judge model (another judge grades differently, so no change is shown); a later run without `--judge` keeps the last judged mean and names its date. It is a column in All datasets and a tile beside the rule pass rate, and never decides pass or fail (`lib/admin.js` `datasetRow`).
 
 - **Run detail** (the default): one run's cases with errors and failures first. It shows the latest run until another is picked.
 - **Trends:** the timeline and the check-level trend.
