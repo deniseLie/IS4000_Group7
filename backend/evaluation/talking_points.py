@@ -5,6 +5,8 @@ Offline (default): python -m evaluation.talking_points   (code only: the pre-fil
 Live (opt-in):     python -m evaluation.talking_points --live --output talking-points-results.json
 Version:           --version v1|v2 (default: prompts.VERSIONS['talking_points'], the version in use)
 Conversations:     python -m evaluation.talking_points --conversations [--live] [--version v1|v2]
+Publish:           add --publish to a live run (datasets demobank-chat-insights and demobank-chat-insights-conversations,
+                   evaluation/publish.py; an offline run scores only the pre-filter, so it is not published)
 
 Each single-message case runs the steps `talking_points.after_reply` runs, without a database: the guardrail on her
 (redacted) history, the code pre-filter, then (live only) the real model call through `llm_gateway.call`
@@ -31,6 +33,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import time
 from collections import Counter
 from pathlib import Path
 from app.core.config import settings
@@ -126,8 +129,9 @@ def score(rows: list[dict]) -> dict:
 async def run(selected: list[dict],live: bool,version: str='v1') -> dict:
     rows=[]
     for case in selected:
+        start=time.perf_counter()
         row={'id':case['id'],'group':case['group'],'expect':case['expect'],**await classify(case,live,version),'share':lane_two(case)}
-        rows.append(row)
+        rows.append(row|{'ms':round((time.perf_counter()-start)*1000,1)})
     gates=Counter(r['gate'] for r in rows)
     labelled=[r for r in rows if r['expect']]
     report={'mode':'live' if live else 'offline','version':version,'cases':len(rows),'dataset_sha256':hashlib.sha256(CASES.read_bytes()).hexdigest(),
@@ -206,9 +210,10 @@ def judge(case: dict,result: dict) -> dict:
 async def run_conversations(selected: list[dict],live: bool,version: str) -> dict:
     rows=[]
     for case in selected:
+        start=time.perf_counter()
         result=await replay(case,live,version)
         rows.append({'id':case['id'],'note':case.get('note'),**judge(case,result),'calls':sum(t['called'] for t in result['turns']),
-            'final':result['final'],'turns':result['turns'],'errors':result['errors']})
+            'final':result['final'],'turns':result['turns'],'errors':result['errors'],'ms':round((time.perf_counter()-start)*1000,1)})
     calls=[r['calls'] for r in rows]
     report={'mode':'live' if live else 'offline','version':version,'cases':len(rows),
         'dataset_sha256':hashlib.sha256(CONVERSATIONS.read_bytes()).hexdigest(),'prompt_version':prompts.load('talking_points',version)['id'],
@@ -222,6 +227,72 @@ async def run_conversations(selected: list[dict],live: bool,version: str) -> dic
     return report
 
 
+# LangSmith -----------------------------------------------------------------------------------------------------------
+DATASET,CONVERSATION_DATASET='demobank-chat-insights','demobank-chat-insights-conversations'
+DESCRIPTION=('Client chat insights, lane 1: which topics a single message records (hand-labelled; positive, multi, previous, '
+    'negative, sensitive and injection groups) and whether the Let-your-RM-know rule offers only on a labelled topic.')
+CONVERSATION_DESCRIPTION='Client chat insights over whole conversations: the final topic state, no topic she never planned, no false on hold.'
+
+
+def topics_line(points: dict) -> str:
+    return ', '.join(f"{t} ({p['stage'] if isinstance(p,dict) else p})" for t,p in sorted(points.items()))
+
+
+def published_cases() -> list:
+    from evaluation.publish import Case
+    said=lambda c:{'turns':[{'say':c['previous']},{'say':c['message']}]} if c.get('previous') else {'say':c['message']}
+    return [Case(c['id'],said(c),{'check':'Record '+topics_line(c['expect']) if c['expect'] else 'Record nothing','expect':c['expect']},{'group':c['group']})
+        for c in cases()]
+
+
+def published_result(row: dict):
+    """Exact topics, no false point, the same stage where both agree on a topic, and no Let-your-RM-know offer on a topic
+    she was not labelled with. A model failure is the run's error."""
+    from evaluation.publish import Result,scored
+    expected,got=set(row['expect']),set(row['topics'] or [])
+    both=expected&got
+    checks={'topics_match':scored(got==expected,f'want {sorted(expected)} got {sorted(got)}'),
+        'no_false_point':scored(not got-expected,f'recorded {sorted(got-expected)}'),
+        'stage_match':scored(all(row['stages'].get(t)==row['expect'][t] for t in both),
+            '; '.join(f"{t}: want {row['expect'][t]} got {row['stages'].get(t)}" for t in sorted(both) if row['stages'].get(t)!=row['expect'][t])) if both else (None,''),
+        'no_false_share':scored(not row['share'] or row['share'] in expected,f"offered {row['share']}")}
+    answer=f"Recorded {topics_line(row['stages'])}" if row['stages'] else 'Recorded nothing'+('' if row['gate']=='model' else f" (stopped before the model: {row['gate']})")
+    return Result(row['id'],{'answer':answer,'gate':row['gate'],'topics':sorted(got),'stages':row['stages'],'share':row['share'],
+        'dropped':row.get('dropped') or {},'model_calls':int(row['gate']=='model')},checks,row.get('ms'),f"LLMError: {row['error']}" if row.get('error') else None)
+
+
+def published_conversations() -> list:
+    from evaluation.publish import Case
+    def turns(c):return [{'say':text,'chat':n} for n,chat in enumerate(c['chats']) for text in chat]
+    def check(c):
+        want=[f"{t}: "+', '.join(f'{k} {v}' for k,v in fields.items()) for t,fields in sorted(c.get('expect',{}).items())]
+        if 'unchanged_from' in c:want.append(f"unchanged after her first {c['unchanged_from']} messages")
+        return (c.get('note')+'. ' if c.get('note') else '')+('; '.join(want) or 'No new topic')
+    return [Case(c['id'],{'turns':turns(c),'start':c.get('start',[]),'muted':c.get('muted',[])},
+        {'check':check(c)}|{k:c[k] for k in ('expect','unchanged_from','allow_on_hold') if k in c}) for c in conversations()]
+
+
+def published_conversation(row: dict):
+    from evaluation.publish import Result,scored
+    checks={'final_state_match':scored(row['match'],'; '.join(row['problems']+[f'false point {t}' for t in row['false_points']]+[f'false on hold {t}' for t in row['false_on_hold']])),
+        'no_false_point':scored(not row['false_points'],', '.join(row['false_points'])),
+        'no_false_on_hold':scored(not row['false_on_hold'],', '.join(row['false_on_hold']))}
+    final='; '.join(f"{t}: {p.get('stage')}"+(f", {p['timeframe']}" if p.get('timeframe') else '')+(' (on hold)' if p.get('on_hold') else '') for t,p in sorted(row['final'].items()))
+    return Result(row['id'],{'answer':'Final topics: '+(final or 'none'),'final':row['final'],'model_calls':row['calls']},checks,row.get('ms'),
+        'LLMError: '+', '.join(row['errors']) if row['errors'] else None)
+
+
+def publish(report: dict,conversation: bool) -> dict:
+    from evaluation.publish import publish as send
+    meta={'model':report['model'],'transport':llm_gateway.transport(),'pipeline':f"talking_points {report['version']}",'answer_prompt':report['prompt_version'],
+        'prompts_in_use':{'talking_points':report['version']},'model_calls':report['model_calls']}
+    if conversation:
+        return send(CONVERSATION_DATASET,CONVERSATION_DESCRIPTION,CONVERSATIONS,published_conversations(),[published_conversation(r) for r in report['rows']],
+            report['version'],meta|{'summary':{'final_state_match':report['final_state_match'],'cases':report['cases']}})
+    return send(DATASET,DESCRIPTION,CASES,published_cases(),[published_result(r) for r in report['rows']],report['version'],
+        meta|{'summary':{k:report.get(k) for k in ('micro','stage_agreement','false_points')}})
+
+
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--live',action='store_true',help='Call the real model for each case the pre-filter passes')
@@ -229,13 +300,16 @@ def main() -> int:
     parser.add_argument('--conversations',action='store_true',help='Run the conversation cases instead of the single messages')
     parser.add_argument('--only',help='Comma list of case ids')
     parser.add_argument('--output',type=Path,help='Write the full report as JSON')
+    parser.add_argument('--publish',action='store_true',help='Publish the live run to LangSmith as an experiment')
     args=parser.parse_args()
+    if args.publish and not args.live:parser.error('--publish needs --live: an offline run scores only the pre-filter')
     version=args.version or v2.version()
     pool=conversations() if args.conversations else cases()
     selected=[c for c in pool if not args.only or c['id'] in args.only.split(',')]
     report=asyncio.run(run_conversations(selected,args.live,version) if args.conversations else run(selected,args.live,version))
     if args.output:args.output.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding='utf-8')
     print(json.dumps({k:v for k,v in report.items() if k!='rows'},indent=2,ensure_ascii=False))
+    if args.publish:print(json.dumps(publish(report,args.conversations)))
     return 0
 
 
