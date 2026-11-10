@@ -42,6 +42,7 @@ class PreparationResult(HiddenInput):
     prompt_id: str
     judge_model: str
     judge_rubric_version: str='meeting-preparation-v1'
+    transport: Literal['api','codex','claude']='codex'  # result files before 11 Nov 2026 were all Codex
 
     @model_validator(mode='after')
     def completed_judge(self) -> 'PreparationResult':
@@ -104,11 +105,9 @@ async def judged_pack(frame: PackInputs,pack: PackView,case_objective: str='') -
 
 
 async def grade(payload: dict[str,JsonValue]) -> Judgement:
-    from app.services import codex_cli
-    from evaluation.evaluators import judge_name
+    from evaluation.evaluators import judge_answer
     prompt=Path(__file__).parent.joinpath('judge',f'{JUDGE_RUBRIC_VERSION}.md').read_text()
-    answer,usage=await codex_cli.answer_with_model(prompt,Judgement.model_json_schema(),[('user',redact(json.dumps(payload,ensure_ascii=False))[0])],judge_name())
-    return Judgement.model_validate(answer)
+    return Judgement.model_validate(await judge_answer(prompt,Judgement.model_json_schema(),[('user',redact(json.dumps(payload,ensure_ascii=False))[0])]))
 
 
 def publish(path: Path,project: str) -> dict[str,str|int]:
@@ -120,7 +119,7 @@ def publish(path: Path,project: str) -> dict[str,str|int]:
     connection=client();connection.read_project(project_name=project);name='demobank-meeting-preparation'
     dataset=connection.read_dataset(dataset_name=name) if connection.has_dataset(dataset_name=name) else connection.create_dataset(name,description='Synthetic Brief Writer and Proposal Drafter: audience boundaries, current cited facts, exact catalogue figures and human approvals.')
     label='preparation-eval-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    experiment=connection.create_project(label,reference_dataset_id=dataset.id,metadata={'pipeline':'meeting','transport':'codex','synthetic':True,'timing_kind':'result_publication',
+    experiment=connection.create_project(label,reference_dataset_id=dataset.id,metadata={'pipeline':'meeting','transport':', '.join(sorted({row.transport for row in rows})),'synthetic':True,'timing_kind':'result_publication',
         'model':', '.join(sorted({row.producer for row in rows})),'judge_model':', '.join(sorted({row.judge_model for row in rows})),
         'judge_rubric_version':', '.join(sorted({row.judge_rubric_version for row in rows})),
         'answer_prompt':', '.join(sorted({row.agent+'/'+row.prompt_id for row in rows}))},description='Published real native preparation-agent results. Publication timing is not model latency.')
