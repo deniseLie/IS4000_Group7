@@ -1,5 +1,6 @@
 """58_reset_storyline_demo.sql over real temporary PostgreSQL: after a rehearsal, Michelle (1002) and Sophie are back
-to the seed, row count for row count, and the script runs again without error.
+to the seed, row count for row count, Michelle has no meeting request or booked meeting (she asks in the demo), and the
+script runs again without error.
 
 Run from backend/: TEST_DATABASE_LOCAL=1 ../.venv/bin/python -m pytest tests/test_storyline_reset.py -q
 The meeting-workspace case also needs TEST_DATA_API_LOCAL=1 (it drives a meeting to approved minutes through the API).
@@ -46,6 +47,21 @@ def reset(db: 'Connection[SqlRow]') -> None:
     db.execute(body())
 
 
+def not_from_requests(db: 'Connection[SqlRow]') -> list:
+    """Michelle's appointments that did not come from a meeting request (the seeded check-ins), before any reset."""
+    return db.execute("""select appointment_id from rm.appointments where customer_id=1002 and appointment_id not in
+        (select appointment_id from rm.meeting_requests where appointment_id is not null) order by 1""").fetchall()
+
+
+def no_booked_meeting(db: 'Connection[SqlRow]',kept: list) -> None:
+    """She asks for her meeting in the demo, so the reset leaves her no request and no meeting from one. Her seeded
+    check-ins stay: 0090's is dated from the day the migration ran (past on hosted, next week in a fresh test database)."""
+    assert db.execute('select count(*) from rm.meeting_requests where customer_id=1002').fetchone()[0]==0
+    assert db.execute('select appointment_id from rm.appointments where customer_id=1002 order by 1').fetchall()==kept
+    assert db.execute("select count(*) from notify.inbox where customer_id=1002 and template_key like 'meeting.%'").fetchone()[0]==0
+    assert db.execute('select status from rm.meeting_requests where customer_id=1007').fetchall()==[('requested',)]
+
+
 def as_sophie(db: 'Connection[SqlRow]') -> None:
     db.execute("select set_config('request.jwt.claims',%s,true)",(json.dumps({'sub':str(SOPHIE_LOGIN),'role':'authenticated','aal':'aal1',
         'session_id':str(uuid4()),'app_metadata':{'demobank_role':'rm','rm_id':SOPHIE}}),))
@@ -53,7 +69,9 @@ def as_sophie(db: 'Connection[SqlRow]') -> None:
 
 
 def test_a_rehearsal_is_undone_and_seeded_rows_stay(database: 'Connection[SqlRow]') -> None:
-    reset(database)  # the demo's start state (51 keeps two review items; the reset's meeting has its current queue rows)
+    kept=not_from_requests(database)
+    reset(database)  # the demo's start state (51 keeps two review items; no meeting request or booked meeting for Michelle)
+    no_booked_meeting(database,kept)
     seed=snapshot(database)
     seeded_tickets=database.execute("select ticket_id from support.tickets where customer_id=1002 and source='seed' order by 1").fetchall()
     seeded_notes=database.execute("select note_id from rm.meeting_notes where customer_id=1002 order by 1").fetchall()
@@ -107,8 +125,10 @@ def test_a_rehearsal_is_undone_and_seeded_rows_stay(database: 'Connection[SqlRow
     assert database.execute("select count(*) from rm.client_milestones where customer_id=1002 and kind='collateral_alert'").fetchone()[0]==0
     assert database.execute("select array_agg(c order by c) from consent.grants,unnest(categories) c where customer_id=1002 and revoked_at is null").fetchone()[0]==[
         'chat_topics','meeting_recording','transaction_insights']
+    no_booked_meeting(database,kept)
     reset(database)  # a second run finds nothing left and re-seeds the same
     assert {k:(seed[k],v) for k,v in snapshot(database).items() if seed[k]!=v}=={}
+    no_booked_meeting(database,kept)
 
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='The meeting workspace needs TEST_DATA_API_LOCAL=1')
