@@ -33,7 +33,7 @@ import Sidebar,{TabBar} from './components/Sidebar';
 import LockedPage from './components/LockedPage';
 import { supabase } from './lib/supabase';
 import { boundedHistory, handoffMessage, handoffSummary, readEvents, recallStep, redact, sentHistory, supportSummary } from './lib/chatTools';
-import {capabilities,clearActive,listConversations,createConversation,loadConversation,readActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
+import {capabilities,clearActive,listConversations,createConversation,loadConversation,reopenActive,writeActive,newCustomerAccess,newGuestAccess,parseMetadata,cancelConversationTurn} from './lib/conversations';
 import {OFFER_REPLIES,fill,offerReply,offerState,parseOffer,placeholders} from './lib/offers';
 import {createActionCase,loadActions,proposeAction,rejectAction} from './lib/actions';
 
@@ -172,11 +172,8 @@ export default function Chat({session,onSignIn}) {
           let fresh=false;
           try {fresh=!!session&&sessionStorage.getItem('demobank.fresh-sign-in')==='1';sessionStorage.removeItem('demobank.fresh-sign-in');} catch {}
           if(fresh)clearActive(session.user.id);  // just signed in: start on the welcome page, not the last saved chat
-          const access=fresh?null:readActive(session?.user.id||null);
-          if(access) {
-            const history=await loadConversation(access,await sessionHeaders(),controller.signal);
-            if(!controller.signal.aborted)restore(history,access);
-          }
+          const saved=fresh?null:await reopenActive(session?.user.id||null,async access=>loadConversation(access,await sessionHeaders(),controller.signal));
+          if(saved&&!controller.signal.aborted)restore(saved.history,saved.access);
         }
       } catch(failure) {if(failure.name!=='AbortError'&&!controller.signal.aborted)setBootError(failure.message);}
       finally {if(!controller.signal.aborted)setBooting(false);}

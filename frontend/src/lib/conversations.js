@@ -86,6 +86,14 @@ export function readActive(userId) {
 }
 export function writeActive(userId,access) {localStorage.setItem(activeKey(userId),JSON.stringify({session_id:access.session_id,guest_token:access.guest_token}));}
 export function clearActive(userId) {localStorage.removeItem(activeKey(userId));}
+// The page reopens the active chat on load. One the server no longer has (a guest chat after 24 hours, a chat saved in
+// another database or by another login) is forgotten, so the page starts a new chat instead of failing on every load.
+export async function reopenActive(userId,load) {
+  const access=readActive(userId);
+  if(!access)return null;
+  try {return {access,history:await load(access)};}
+  catch(error) {if(error?.code!=='conversation_not_found')throw error;clearActive(userId);return null;}
+}
 export function newCustomerAccess() {return {session_id:crypto.randomUUID(),guest_token:null};}
 export function newGuestAccess() {
   const token=btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
@@ -96,7 +104,8 @@ async function responseBody(response) {
   let value;
   try {value=await response.json();}
   catch(error) {if(error instanceof SyntaxError)throw invalid();throw error;}
-  if(!response.ok)throw new Error(typeof value?.error?.message==='string'&&value.error.message.trim()?value.error.message:`The saved-chat request failed (HTTP ${response.status}). Please retry.`);
+  if(!response.ok)throw Object.assign(new Error(typeof value?.error?.message==='string'&&value.error.message.trim()?value.error.message:`The saved-chat request failed (HTTP ${response.status}). Please retry.`),
+    {code:typeof value?.error?.code==='string'?value.error.code:null});
   return value;
 }
 export async function capabilities(signal) {
