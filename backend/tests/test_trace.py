@@ -77,6 +77,17 @@ def test_a_read_outside_a_turn_is_audited_not_traced(runs):
     [root],[read],[model]=runs.named('chat'),runs.named('tickets.list'),runs.named('talking_points')
     assert read['parent_run_id']==root['id'] and model.get('parent_run_id') is None
 
+def test_an_agent_run_is_named_after_its_agent(runs):
+    sink=[];token=span_sink.set(sink)
+    try:
+        with langsmith.trace('chat','chain'):
+            with span('agent','agent',agent='accounts',intent='open'):pass
+            with span('route','agent',route='llm'):pass
+    finally:span_sink.reset(token)
+    [run]=runs.named('accounts')
+    assert runs.end(run)['extra']['metadata']['step_name']=='agent' and not runs.named('agent') and runs.named('route')
+    assert [n for n,_ in sink]==['agent','route']  # evaluation checks still see the step name
+
 def test_nothing_is_sent_while_tracing_is_off():
     recorded=Runs()
     with langsmith.tracing_context(enabled=False,client=recorded.client):

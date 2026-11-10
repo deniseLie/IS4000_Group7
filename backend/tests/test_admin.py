@@ -115,3 +115,10 @@ def test_a_quoted_v2_error_reads_as_its_text():
     assert quality.as_run(run('a','agent',error=quoted)).error=="LLMError('Model request failed')\n\nTraceback (most recent call last)"
     assert quality.as_run(run('a','agent',error='CancelledError()')).error=='CancelledError()'
     assert quality.as_run(run('a','agent',latency_seconds=12.609659910202026)).latency==12.60966
+
+
+def test_an_agent_row_named_after_its_agent_reads_back_as_an_agent_step():
+    named=quality.as_step(quality.as_run(run('b','accounts',['a'],metadata={'agent':'accounts','intent':'open','step_name':'agent'})))
+    assert named['name']=='agent' and named['meta']['agent']=='accounts'
+    assert quality.as_step(quality.as_run(run('c','accounts',['a'])))['name']=='accounts'  # only rows the span marked
+    assert 'eq(name, "accounts")' in quality.STEPS_AND_MODELS and 'eq(name, "agent")' in quality.STEPS_AND_MODELS  # old traces too
