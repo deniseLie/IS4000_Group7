@@ -222,8 +222,8 @@ TICKET={'ticket_id':str(uuid4()),'reference':'TCK-001040','category':'card_limit
 
 def test_a_client_turn_reads_every_record_through_mcp_as_its_own_agent(monkeypatch) -> None:
     """Two agents in parallel (Accounts: her card balance from the retail loader; Relationship: request status from her
-    tickets). Every tool_call span says transport=mcp, and each tool ran with the agent's own context, set per call by the
-    MCP server from the call's `_meta` key."""
+    tickets). Every tool_call span says transport=mcp and names the v5 agent, and each tool ran with the agent's own
+    context, set per call by the MCP server from the call's `_meta` key (the rules read as the v5 agent since 10 Nov 2026)."""
     ran=[]
     def tool(name,result):
         async def run(**args):
@@ -252,5 +252,6 @@ def test_a_client_turn_reads_every_record_through_mcp_as_its_own_agent(monkeypat
     calls=[a for n,a in spans if n=='tool_call']
     assert len(calls)==len(ran)>=7 and {a['transport'] for a in calls}=={'mcp'} and all(a['allowed'] for a in calls)
     assert {name for name,_,_ in ran}>={'my_profile','my_accounts','my_cards','my_loans','my_transactions','my_tickets'}
-    assert {customer for _,_,customer in ran}=={1002} and {(name,agent) for name,agent,_ in ran if name=='my_tickets'}=={('my_tickets','retail')}
-    assert {agent for name,agent,_ in ran if name in {'my_profile','my_cards'}}=={'retail'}  # the v4 retail allow-list the rules run under
+    assert {customer for _,_,customer in ran}=={1002} and {(name,agent) for name,agent,_ in ran if name=='my_tickets'}=={('my_tickets','relationship')}
+    assert {agent for name,agent,_ in ran if name in {'my_profile','my_cards'}}=={'accounts'}  # the Accounts spec, on the rules path too
+    assert {a['agent'] for a in calls}=={'accounts','relationship'}

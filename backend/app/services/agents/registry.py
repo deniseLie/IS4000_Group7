@@ -1,10 +1,10 @@
 """Domain registry and the tool boundaries to enforce as each shared service is integrated.
 
-TOOLS is the v4 allow-list (permission names per agent). CHAT_SPECS is the v5 chat catalogue (architecture §5.6.1, §14.8):
-one AgentSpec per target agent is the single source for its tools, field views, limits, intents and default reads,
-loop tools and offers. authorization.decide and tools.call both read it. The client specs run on /chat since phase 5, but
-the rules in agents/rules.py still call the v4 responders under their v4 names (retail, compliance, document,
-relationship) with the v4 allow-lists, so only the names without a v4 entry are enforced from CHAT_SPECS (ENFORCED).
+CHAT_SPECS is the v5 chat catalogue (architecture §5.6.1, §14.8): one AgentSpec per target agent is the single source for
+its tools, field views, limits, intents and default reads, loop tools and offers. authorization.decide and tools.call
+both read it, for every chat agent (ENFORCED): its runner path and its rules (agents/rules.py), which read whole records
+within the same tools and limits and hand a model only the field views (tools.visible). TOOLS keeps the v4 allow-list
+(permission names) for the two callers that are not chat agents: the chat insights lane and the legacy fraud agent.
 The three RM specs (Client, Requests, Calendar; build plan 3a) run on the RM graph (services/rm/graph.py) for a verified
 `rm` login; the client planner never sees them (CLIENT_SPECS). SPECS also includes the separate meeting workflow.
 """
@@ -15,16 +15,7 @@ from app.schemas.meeting_agents import MeetingAgent, MeetingAgentSpec, MeetingTo
 AGENT_FOR: dict[Domain, AgentName] = {'retail':'retail','smalltalk':'retail','fraud':'fraud',
     'compliance':'compliance','document':'document','relationship':'relationship'}
 TOOLS: dict[AgentName, tuple[str, ...]] = {
-    'retail': ('kb.search','customer.get_profile','customer.get_accounts',
-        'customer.get_transactions','customer.get_credit_cards','customer.get_loans','tickets.list','handoff.create'),
     'fraud': ('customer.get_transactions','customer.get_credit_cards','actions.propose','handoff.create'),
-    'compliance': ('compliance.get_case','compliance.workspace','compliance.update_checklist_item','kb.search','handoff.create'),
-    'document': ('documents.precheck','compliance.workspace'),
-    'relationship': ('kb.search','customer.get_profile','rm.get_assignment','rm.get_introduction','requests.list',
-        'appointments.find_slots','appointments.list','consent.check','consent.records','actions.propose','agenda.save','consent.request','handoff.create',
-        'meeting_requests.list',  # agents/meeting_answers counts her open meeting requests before offering another (0106 allows 3)
-        'consent.sharing','insights.read',  # consent v2 (6e): agents/consent_answers reads her cards and topics to offer a change
-        'tickets.list','customer.get_credit_cards'),  # rm_handover: her open requests and, for an urgent card request, last 4 and status
     'talking_points': ('insights.status',),  # the chat insights lane (lanes 1 and 2) reads her topic status and state only
 }
 
@@ -123,7 +114,7 @@ RELATIONSHIP=AgentSpec(name='relationship',role='client',scope='own_customer',pr
         'my_requests':ToolView(fields=frozenset({'who','what','urgency','deadline','country','currency','status','customer_action',
             'created_at','updated_at'}),max_rows=50,free_text=True),
         'my_introduction':ToolView(fields=frozenset({'current.name','current.role','current.team','current.started_on','previous.name',
-            'previous.ended_on','notice.cite','notice.heading','notice.body'})),
+            'previous.ended_on','notice.cite','notice.heading','notice.body','notice.publisher'})),
         'my_consent_sharing':ToolView(fields=frozenset({'rm.name','categories.code','categories.label','categories.gated',
             'categories.grant.basis','categories.grant.until','categories.grant.expires_at','categories.grant.scope',
             'accounts.type','accounts.number','accounts.currency','next_meeting.starts_at','topic_areas','today'})),
@@ -253,7 +244,7 @@ BORROWED: MappingProxyType[TargetAgent, frozenset[str]] = MappingProxyType({'rm_
 # Reads SQL answers only under the client's consent (rm.consent_active, 0106; rm_brief for the shared note and handover):
 # fixed reads of the Client agent only, never in loop_tools, their purpose set by the intent.
 CONSENT_GATED=frozenset({'rm_transaction_insights','rm_talking_points','rm_cash_events','rm_shared_summary','rm_handover_sources'})
-ENFORCED = frozenset(CHAT_SPECS) - frozenset(TOOLS)  # guide, accounts and the RM agents; the rest once the v4 responders move into specs
+ENFORCED = frozenset(CHAT_SPECS) - frozenset(TOOLS)  # every chat agent since the rules moved onto the specs (10 Nov 2026)
 # A condition or for_each export only this intent computes: a link that names it sets the upstream task's intent
 # (orchestrator.export_intents), so a declared link is not skipped as unknown because the planner chose another intent.
 EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'trip_due_dates','due_dates':'trip_due_dates',
@@ -261,7 +252,7 @@ EXPORT_INTENT: MappingProxyType[str, str] = MappingProxyType({'due_in_window':'t
 
 
 def spec_for(agent: str | None) -> AgentSpec | None:
-    """The enforced v5 spec for this backend-assigned agent, or None (no agent, or a v4 agent)."""
+    """The enforced v5 spec for this backend-assigned agent, or None (no agent, or the chat insights lane or fraud)."""
     return CHAT_SPECS[agent] if agent in ENFORCED else None
 
 

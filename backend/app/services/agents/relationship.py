@@ -9,7 +9,7 @@ from app.schemas.contracts import AgentResult,RequestContext,Task
 from app.schemas.customer_data import RelationshipAssignment
 from app.schemas.events import Source
 from app.schemas.relationship_records import RelationshipRecords
-from app.services import llm_gateway,prompts
+from app.services import llm_gateway,prompts,tools
 from app.core.observability import log_event
 from app.services.agents import relationship_records
 from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
@@ -26,25 +26,29 @@ def advisor_name(advisor_id: UUID | None,assignment: RelationshipAssignment | No
     return None
 
 
+def view(name: str,row: object) -> JsonValue:
+    """One record as the Relationship spec's field view of tool `name` shows it (ids, emails and reason codes stay out)."""
+    return tools.visible('relationship',name,row.model_dump(mode='json') if hasattr(row,'model_dump') else row)
+
+
 def evidence_for(records: RelationshipRecords) -> list[Evidence]:
+    """Her records for the relationship prompt, each through the spec's field view; names and flags code adds from the ids."""
     assignment=records.assignment.data
-    requests: list[JsonValue]=[{**row.model_dump(mode='json',exclude={'customer_id','request_id','advisor_id'}),
+    requests: list[JsonValue]=[{**view('my_requests',row),
         'who':redact(row.who)[0],'what':redact(row.what)[0],'customer_action':redact(row.customer_action)[0] if row.customer_action else None,
         'advisor_name':advisor_name(row.advisor_id,assignment),'recorded_with_current_advisor':bool(assignment and assignment.current and row.advisor_id==assignment.current.rm_id)}
         for row in records.requests.data]
-    appointments: list[JsonValue]=[{**row.model_dump(mode='json',exclude={'appointment_id','advisor_id','case_id'}),
+    appointments: list[JsonValue]=[{**view('my_appointments',row),
         'advisor_name':advisor_name(row.advisor_id,assignment)} for row in records.appointments.data]
     rows: list[tuple[str,str,JsonValue,str]]=[
-        ('assignment','Your recorded relationship manager',assignment.model_dump(mode='json',exclude={
-            'current':{'rm_id':True,'transition_reason_code':True,'contact':{'email'}},
-            'previous':{'rm_id':True,'transition_reason_code':True,'contact':{'email'}}}) if assignment else None,records.assignment.as_of.isoformat()),
+        ('assignment','Your recorded relationship manager',view('my_rm',assignment) if assignment else None,records.assignment.as_of.isoformat()),
         ('requests','Your recorded relationship requests',requests,records.requests.as_of.isoformat()),
         ('appointments','Your recorded appointments',appointments,records.appointments.as_of.isoformat()),
         ('slots','Available appointment suggestions',{'search':records.search.model_dump(mode='json'),'slots':[
-            {**row.model_dump(mode='json',exclude={'customer_id','advisor_id'}),'advisor_name':advisor_name(row.advisor_id,assignment)}
+            {**view('free_slots',row),'advisor_name':advisor_name(row.advisor_id,assignment)}
             for row in records.slots.data]},records.slots.as_of.isoformat())]
     evidence=[Evidence(id='relationship-'+key,text=json.dumps({'records':data},ensure_ascii=False),publisher='UBS Connect demo records',
-        scope='Own-customer audited snapshot. Separate reads, not one atomic statement. Latest 200 requests/appointments; at most 20 suggestions within the recorded 14-day Singapore-date search. No consent, sharing, booking or financial execution.',
+        scope='Own-customer audited snapshot. Separate reads, not one atomic statement. Latest 50 requests/appointments; at most 20 suggestions within the recorded 14-day Singapore-date search. No consent, sharing, booking or financial execution.',
         source=Source(id='relationship-'+key,title=title,url=None,version=as_of,publisher='UBS Connect demo records'))
         for key,title,data,as_of in rows]
     return evidence+transition_evidence(records)

@@ -133,9 +133,9 @@ def test_compliance_tools_keep_owned_records_and_policy_through_mcp(local_data_a
         other=context(local_data_api,1003).model_copy(update={'agent':'compliance'})
         assert (await tools.call('my_compliance_case',{},other))['data'] is None
         for name in ['my_compliance_case','my_document_checks']:
-            with pytest.raises(PolicyDenied):await tools.call(name,{},ctx.model_copy(update={'agent':'retail'}))
+            with pytest.raises(PolicyDenied):await tools.call(name,{},ctx.model_copy(update={'agent':'accounts'}))
             with pytest.raises(PolicyDenied):await tools.call(name,{},RequestContext(session_id=uuid4(),principal=Principal(kind='guest')))
-        denied,allowed=await asyncio.gather(tools.call('my_compliance_case',{},ctx.model_copy(update={'agent':'retail'})),
+        denied,allowed=await asyncio.gather(tools.call('my_compliance_case',{},ctx.model_copy(update={'agent':'accounts'})),
             tools.call('my_compliance_case',{},ctx),return_exceptions=True)
         assert isinstance(denied,PolicyDenied) and allowed['data']['case_id']==case.data['case_id']
     asyncio.run(read())

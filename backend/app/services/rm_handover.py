@@ -283,12 +283,12 @@ STATUS_WORDS={'submitted':'sent','in_review':'in review','waiting_on_client':'wa
 
 
 def reader(ctx: RequestContext) -> RequestContext:
-    """Handover reads run as the Relationship agent (its allow-list: her tickets and cards); its writes keep their own checks."""
+    """Handover reads run as the Relationship agent (its spec: her tickets and cards); its writes keep their own checks."""
     return ctx.model_copy(update={'agent':'relationship'})
 
 
 async def her_tickets(ctx: RequestContext) -> list[CustomerTicket]:
-    return TypeAdapter(list[CustomerTicket]).validate_python((await tools.call('my_tickets',{},reader(ctx)))['items'])
+    return TypeAdapter(list[CustomerTicket]).validate_python((await tools.call('my_tickets',{},reader(ctx),whole=True))['items'])
 
 
 async def open_requests_line(ctx: RequestContext) -> str:

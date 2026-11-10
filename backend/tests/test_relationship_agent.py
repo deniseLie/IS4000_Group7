@@ -55,7 +55,7 @@ def test_relationship_snapshots_are_dynamic_owned_bounded_and_checkpoint_safe(lo
         assert all(row.advisor_id==records.assignment.data.current.rm_id for row in records.appointments.data)
         if cid==1001:assert records.appointments.data==[]
         assert evidence[-1].id=='relationship-transition' if records.introduction.data.notice else len(evidence)==4
-    with pytest.raises(PolicyDenied):asyncio.run(relationship_records.load(ctx.model_copy(update={'agent':'retail'})))
+    with pytest.raises(PolicyDenied):asyncio.run(relationship_records.load(ctx.model_copy(update={'agent':'accounts'})))  # my_rm is not in Accounts' spec
     with psycopg.connect(local_data_api.database_uri) as db:
         tools={row[0] for row in db.execute("select details->>'tool' from audit.events where customer_id=%s and action='data.read'",(cid,)).fetchall()}
         assert {'rm.get_assignment','rm.get_introduction','requests.list','appointments.list','appointments.find_slots'}<=tools

@@ -1,10 +1,12 @@
 """Rules that answer before the runner's model call (architecture §5.6.2; build plan phase 5).
 
 The v4 rule answerers move here unchanged: card, account and transaction figures (Accounts), meetings, request status
-and RM handovers (Relationship), app guidance (Guide). Compliance and Relationship still answer with their released v4
-prompts, so these reads run under the v4 agent names and allow-lists (registry.TOOLS) until their own runner prompts
-land. Urgent card help (a lost card, a charge she doesn't recognise) is not a rule here: the orchestrator answers it
-with fixed steps and an urgent RM request (build plan 2b).
+and RM handovers (Relationship), app guidance (Guide). Compliance and Relationship, and Accounts' computed checks, still
+answer with their released v4 prompts (compliance, document, relationship, retail), but every read runs as the v5 agent
+under its spec: its tools and per-call limits, whole records for the rule code (tools.call whole=True), and only the
+field views in what reaches a model (retail.evidence_for, relationship.evidence_for use tools.visible).
+Urgent card help (a lost card, a charge she doesn't recognise) is not a rule here: the orchestrator answers it with
+fixed steps and an urgent RM request (build plan 2b).
 A rule returns None to let the runner's model answer. Importing this module registers the rules in runner.RULES."""
 import re
 from zoneinfo import ZoneInfo
@@ -34,10 +36,6 @@ def shim(task: PlanTask, domain: str) -> Task:
     """The v4 Task the moved answerers take: the question as an entity, plus the planner's entities."""
     return Task(task_id=task.id, domain=domain, intent='answer_question', priority=task.priority,
         entities={**task.entities, 'question': task.question})
-
-
-def as_v4(ctx: RequestContext, agent: str) -> RequestContext:
-    return ctx.model_copy(update={'agent': agent})
 
 
 async def knowledge(task: PlanTask, ctx: RequestContext) -> list[Evidence]:
@@ -83,11 +81,11 @@ async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, h
     if WAIVER.search(task.question) and not task.rerouted:
         return AgentOutput(task_id=task.id, agent=spec.name, status='out_of_scope', suggested='relationship')
     if task.intent in COMPUTED:return None  # computed by code (agents/derived.py), answered by the accounts prompt
-    v4, current = shim(task, 'retail'), as_v4(ctx, 'retail')
+    v4 = shim(task, 'retail')
     public = await knowledge(task, ctx)
     if (found := client_guidance.respond(task.id, task.question, public, ctx.received_at)) is not None:
         return out(spec, task, found, public, runner.prompt_id(spec))
-    records = await retail_records.load(current)
+    records = await retail_records.load(ctx)
     evidence = [*public, *retail.evidence_for(records)]
     refs = derived.account_refs_from(records.accounts)
     latest = history[-1].content if history and history[-1].role == 'user' else task.question
@@ -96,7 +94,7 @@ async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, h
         or transaction_answers.respond(task.id, task.question, latest, records))
     if direct is not None:return out(spec, task, direct, evidence, runner.prompt_id(spec), exports=refs)
     if not retail_checks.relevant(records, task.question, ctx.received_at.astimezone(SGT).date()):return None
-    result, evidence, prompt_id = await retail.model_answer(v4, task.question, history, language, current, records, evidence)
+    result, evidence, prompt_id = await retail.model_answer(v4, task.question, history, language, ctx, records, evidence)
     return out(spec, task, result, evidence, prompt_id, exports=refs)
 
 
@@ -104,7 +102,7 @@ async def accounts_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, h
 
 async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
         inputs: dict[str, Export] | None = None) -> AgentOutput:
-    """The released compliance v7 and document v5 answers, scoped to the record the client selected, if any. Imported
+    """The released compliance and document prompts' answers, scoped to the record the client selected, if any. Imported
     values (her account list from Accounts, P05) are citable evidence; whether the document she asked about failed its
     preliminary check is exported (check_failed, P07), computed by code from the check rows the answer used."""
     raw = task.entities.get('record_context')
@@ -113,7 +111,7 @@ async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext,
     agent = 'document' if documents else 'compliance'
     public = [*runner.input_evidence(inputs or {}), *await knowledge(task, ctx)]
     token = compliance_selection.selection.set(chosen)
-    try:result, evidence, prompt_id = await (document.respond if documents else compliance.respond)(shim(task, agent), history, language, as_v4(ctx, agent), public)
+    try:result, evidence, prompt_id = await (document.respond if documents else compliance.respond)(shim(task, agent), history, language, ctx, public)
     finally:compliance_selection.selection.reset(token)
     return out(spec, task, result, evidence, prompt_id, exports=derived.check_failed(evidence, task.question))
 
@@ -123,7 +121,7 @@ async def compliance_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext,
 async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history: list[Message], language: str,
         inputs: dict[str, Export] | None = None) -> AgentOutput:
     """RM handovers (preview, then her choice), request status from her tickets, a consent change from her records (6e),
-    a meeting request drafted from the records (one meeting.request offer, 2a), then the released relationship v7 answer."""
+    a meeting request drafted from the records (one meeting.request offer, 2a), then the released relationship prompt's answer."""
     question = task.question
     if task.entities.get('handover') == 'rm':
         current = ctx.model_copy(update={'agent': None})
@@ -142,22 +140,22 @@ async def relationship_rules(spec: AgentSpec, task: PlanTask, ctx: RequestContex
         else:text = (await rm_handover.route(question, task.priority, current, None, key, history=history, document_ids=documents)).reply()
         return out(spec, task, conversation(task, 'relationship', rm_handover.SORRY), [], None, origin='safety', decision=text)
     if client_intents.request_status(question):
-        try:found = await request_status_answers.respond(task.id, question, as_v4(ctx, 'retail'))
+        try:found = await request_status_answers.respond(task.id, question, ctx)
         except runner.FAILURES:
             return out(spec, task, conversation(task, 'relationship', STATUS_UNAVAILABLE, 'ok'), [], None, origin='safety')
         if found is not None:
             result, evidence = found
             return out(spec, task, result, evidence, None)
-    public, current = await knowledge(task, ctx), as_v4(ctx, 'relationship')
-    if ctx.principal.kind == 'customer' and (change := await consent_answers.respond(task.id, question, current)) is not None:
+    public = await knowledge(task, ctx)
+    if ctx.principal.kind == 'customer' and (change := await consent_answers.respond(task.id, question, ctx)) is not None:
         return out(spec, task, change.result, change.evidence, None, proposals=change.proposals)
-    records = await relationship_records.load(current)
-    if (meeting := await meeting_answers.respond(task.id, question, history, records, current, task.intent)) is not None:
+    records = await relationship_records.load(ctx)
+    if (meeting := await meeting_answers.respond(task.id, question, history, records, ctx, task.intent)) is not None:
         evidence = [*public, *relationship.evidence_for(records)]
-        shares = await consent_answers.meeting_shares(task.id, current) if meeting.proposal else []
+        shares = await consent_answers.meeting_shares(task.id, ctx) if meeting.proposal else []
         return out(spec, task, meeting.result, evidence, prompts.current('relationship')['id'],
             proposals=[meeting.proposal, *shares] if meeting.proposal else [])
-    result, evidence, prompt_id = await relationship.respond(shim(task, 'relationship'), history, language, current, public, records)
+    result, evidence, prompt_id = await relationship.respond(shim(task, 'relationship'), history, language, ctx, public, records)
     return out(spec, task, result, evidence, prompt_id)
 
 

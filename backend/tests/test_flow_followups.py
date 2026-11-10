@@ -56,7 +56,7 @@ def test_guest_delegate_claim_is_refused_before_any_model_or_record_read(questio
 
 @pytest.mark.skipif(os.getenv('TEST_DATA_API_LOCAL')!='1',reason='Opt in to real native customer ticket reads')
 def test_statement_follow_up_uses_the_owned_ticket_and_keeps_internal_notes_private(local_data_api,native_api_client) -> None:
-    ctx=context(local_data_api,1002).model_copy(update={'agent':'retail'})
+    ctx=context(local_data_api,1002).model_copy(update={'agent':'relationship'})
     first='Any update on my ticket?'
     initial=asyncio.run(request_status_answers.respond('t1',first,ctx))[0]
     follow='The statement copy one. Who is handling it and what happens next?'

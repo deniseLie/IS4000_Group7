@@ -31,7 +31,7 @@ def test_status_answer_uses_owned_records_and_never_infers_approval(monkeypatch)
     from tests.test_client_v8_request_status import customer,owned_tickets
     now=datetime(2026,10,31,tzinfo=timezone.utc)
     monkeypatch.setattr(customer_data,'get_ticket_records',owned_tickets(now))  # read through the my_tickets tool
-    answer,evidence=asyncio.run(status.respond('t1','Has the bank approved my credit limit increase?',customer('retail')))
+    answer,evidence=asyncio.run(status.respond('t1','Has the bank approved my credit limit increase?',customer('relationship')))
     assert answer is not None and evidence
     assert 'TCK-001040' in answer.text
     assert 'Resolved' in answer.text
@@ -47,7 +47,7 @@ def test_multiple_requests_require_reference(monkeypatch):
     from tests.test_client_v8_request_status import customer,owned_tickets
     now=datetime(2026,10,31,tzinfo=timezone.utc)
     monkeypatch.setattr(customer_data,'get_ticket_records',owned_tickets(now,*((f'TCK-0010{n}','in_review',n) for n in (40,41))))
-    answer,_=asyncio.run(status.respond('t1','What is the status of my card limit increase?',customer('retail')))
+    answer,_=asyncio.run(status.respond('t1','What is the status of my card limit increase?',customer('relationship')))
     assert 'Which reference do you mean?' in answer.text
-    answer,_=asyncio.run(status.respond('t1','What is the status of TCK-001040?',customer('retail')))
+    answer,_=asyncio.run(status.respond('t1','What is the status of TCK-001040?',customer('relationship')))
     assert 'TCK-001040' in answer.text and 'TCK-001041' not in answer.text
