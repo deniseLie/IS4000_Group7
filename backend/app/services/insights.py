@@ -316,6 +316,8 @@ def failures(rows: list[dict],steps: list[dict],experiments: list[dict],now: dat
 def attention(rows: list[dict],steps: list[dict],experiments: list[dict],grouped: list[dict],now: datetime,untested: list[str] | None=None,budget: dict | None=None) -> list[dict[str,Any]]:
     items=[]
     def add(level,kind,text,detail,page,**filters):items.append({'level':level,'kind':kind,'title':text,'detail':detail,'page':page,'filter':filters})
+    recent=now-timedelta(days=OLD_FAILURE_DAYS)  # rates and limits count only what still happens: last week's fixed failures do not alert
+    rows=[r for r in rows if r['started_at']>=recent];steps=[s for s in steps if s['started_at']>=recent]
     for r in regressions(experiments)[:6]:
         add('high','regression',f"{r['case_id']} regressed in {r['dataset']}",
             f"Passed in {r['previous_experiment']}, {r['status']} in {r['experiment']}"+(f": {'; '.join(f'{k}: {v}' for k,v in r['comments'].items())}" if r['comments'] else
