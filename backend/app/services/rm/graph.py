@@ -76,9 +76,13 @@ class RmTurn(TypedDict,total=False):
 
 # ---- Planner ----
 
+# Set by rule_plan only. Offered to the model it caught "draft follow-up tickets" (P14), and rm_planner never describes it.
+RULE_ONLY={'follow_up'}
+
+
 def plan_schema() -> dict:
     o=handlers._obj
-    task=o({'intent':{'type':'string','enum':[*sorted(registry.INTENT_AGENT),OPEN_INTENT]},
+    task=o({'intent':{'type':'string','enum':[*sorted(set(registry.INTENT_AGENT)-RULE_ONLY),OPEN_INTENT]},
         'agent':{'type':'string','enum':['',*sorted(n for n,s in registry.RM_SPECS.items() if s.loop_tools)]},  # for `open` only
         'client_name':handlers.S,'uses_active_client':{'type':'boolean'},
         'ticket_ref':handlers.S,'draft_scope':{'type':'string','enum':['client','ticket']},'appointment_hint':handlers.S,'is_new_notes':{'type':'boolean'},

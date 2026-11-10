@@ -364,6 +364,14 @@ def test_the_planner_routes_each_intent_to_one_of_three_agents_and_open_to_the_n
     assert (prompts.VERSIONS['rm_planner'], prompts.VERSIONS['rm_assistant']) == ('v6', 'v9')
 
 
+def test_the_model_planner_may_choose_only_the_intents_its_prompt_describes():
+    """follow_up is set by rule only; offered to the model it took "draft follow-up tickets" (P14)."""
+    import re
+    listed = set(re.findall(r'^- ([a-z_]+):', prompts.current('rm_planner')['system'], re.M))
+    assert set(graph.plan_schema()['properties']['tasks']['items']['properties']['intent']['enum']) == listed
+    assert 'follow_up' in registry.INTENT_AGENT and 'follow_up' not in listed
+
+
 def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without_consent(records, model, monkeypatch):
     calls, data = records
     seen, state = model
