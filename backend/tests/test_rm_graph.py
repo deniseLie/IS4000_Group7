@@ -531,7 +531,8 @@ def recorded(runs, message: str) -> tuple[list[tuple[str, dict]], dict]:
     for r in runs.created[start:]:
         end = next(u for u in runs.updated if u['id'] == r['id'])
         meta = end['extra']['metadata']
-        if OWN.get(r['name']) in meta:own.append((r['name'], {**meta, 'inputs': r.get('inputs'), 'outputs': end.get('outputs')}))
+        name = r['name'] if r['name'] in OWN else meta.get('step_name') or r['name']  # an agent's run is named after the agent (rm_client…); children inherit its step_name
+        if OWN.get(name) in meta:own.append((name, {**meta, 'inputs': r.get('inputs'), 'outputs': end.get('outputs')}))
     return own, request_facts(trace)
 
 

@@ -21,6 +21,8 @@ from langsmith.utils import LangSmithRateLimitError
 from app.core import langsmith_client
 from app.services import insights
 from app.schemas.quality import Check,Span,Trace
+from typing import get_args
+from app.schemas.contracts import TargetAgent
 
 ADMIN_ROLE='admin'
 DATASET_PREFIX='demobank-'  # every evaluation dataset langsmith_sync uploads (evaluation/langsmith_sync.DATASETS)
@@ -33,7 +35,8 @@ REQUESTS='or(eq(name, "chat"), eq(name, "rm_assistant"))'
 STEPS=('llm','agent','tool_call','kb.search','planner','gather','act','compose','embed','loop_step')
 MEETING_STEPS=('meeting.agent','meeting.tool_call')
 # Steps plus the model client's own runs (run_type llm), whose tokens add up to a request's total as /runs/query summed it.
-STEPS_AND_MODELS='or('+', '.join(f'eq(name, "{n}")' for n in STEPS)+', eq(run_type, "llm"))'
+AGENT_ROWS=get_args(TargetAgent)  # since 10 Nov an agent's row is named after the agent (observability.span), read back as 'agent'
+STEPS_AND_MODELS='or('+', '.join(f'eq(name, "{n}")' for n in (*STEPS,*AGENT_ROWS))+', eq(run_type, "llm"))'
 MAX_REQUESTS,MAX_STEPS,MAX_TRACE=2000,20000,500  # bounded reads; the page says "sampled" when a cap is reached
 POOL,RUN_QUERIES,BACKOFF_S=6,4,(2,5,10)  # parallel project reads, of which at most RUN_QUERIES query LangSmith at once (with backoff on 429)
 FINISHED_MIN,FINISHED_S=60,6*3600  # an experiment older than an hour has finished, so its runs are cached for hours
@@ -162,7 +165,8 @@ def as_request(run,source: str) -> dict[str,Any]:
 
 def as_step(run) -> dict[str,Any]:
     m=meta(run)
-    return {'run_id':str(run.id),'trace_id':str(run.trace_id),'parent_id':str(run.parent_run_id) if run.parent_run_id else None,'name':run.name,
+    name='agent' if m.get('step_name')=='agent' and run.name in AGENT_ROWS else run.name
+    return {'run_id':str(run.id),'trace_id':str(run.trace_id),'parent_id':str(run.parent_run_id) if run.parent_run_id else None,'name':name,
         'run_type':run.run_type,'started_at':run.start_time,'latency_s':run.latency,'run_status':run.status,'error':short(run.error),'tokens':run.total_tokens,
         'meta':{k:m[k] for k in STEP_KEYS if m.get(k) is not None}}
 
@@ -242,7 +246,7 @@ def read_runs(base: dict[str,Any],source: str,root: bool | None=None) -> tuple[l
         asked=pool.submit(query,{**base,'filter':REQUESTS,'selects':REQUEST_SELECTS,**({'is_root':root} if root is not None else {})},MAX_REQUESTS)
         inner=pool.submit(query,{**base,'filter':STEPS_AND_MODELS,'selects':STEP_SELECTS,**({'trace_filter':REQUESTS} if root else {})},MAX_STEPS)
         runs=inner.result();found=with_tokens(asked.result(),runs)
-    return [as_request(r,source) for r in found],[dict(as_step(r),source=source) for r in runs if r.name in STEPS]
+    return [as_request(r,source) for r in found],[s for r in runs if (s:=dict(as_step(r),source=source))['name'] in STEPS]
 
 
 def per_project(kind: str,projects: list,read) -> list:

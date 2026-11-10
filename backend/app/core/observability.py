@@ -110,7 +110,10 @@ def span(name,kind,**attrs):
     inputs=attrs.pop('model_inputs',None)
     start=time.perf_counter()
     traced=kind not in ROOTLESS or get_current_run_tree() is not None
-    with (langsmith.trace(name,'llm' if codex else RUN_TYPES[kind],inputs=inputs,metadata={'kind':kind}) if traced else nullcontext()) as run:
+    # An agent's row is named after the agent (accounts, guide, rm_client…); the eval sink and quality.as_step keep 'agent'.
+    shown=attrs['agent'] if name=='agent' and kind=='agent' and isinstance(attrs.get('agent'),str) and attrs['agent'] else name
+    meta={'kind':kind,**({'step_name':name} if shown!=name else {})}
+    with (langsmith.trace(shown,'llm' if codex else RUN_TYPES[kind],inputs=inputs,metadata=meta) if traced else nullcontext()) as run:
         try:
             yield attrs
         except BaseException as e:
