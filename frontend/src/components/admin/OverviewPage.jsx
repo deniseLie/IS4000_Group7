@@ -21,8 +21,10 @@ export function WindowPicker({value,onChange}) {
 // What an AI engineer checks first: is anything failing, how well the agents answer, and how the evaluations stand.
 export default function OverviewPage({onNavigate,views=[]}) {
   const [range,setRange]=useState('7d');
+  const [showNotes,setShowNotes]=useState(false);  // info items (history, set-up, coverage) stay folded: not something to act on now
   const [state,refresh]=useLoad((auth,signal)=>loadOverview(range,auth,signal),range);
   const data=state.data,now=data?.live.now,before=data?.live.previous,series=data?.live.series||[],evals=evalSuccess(data?.evals),trend=data?.eval_trend||[],budget=traceBudget(data?.trace_budget);
+  const urgent=(data?.attention||[]).filter(item=>item.level!=='info'),notes=(data?.attention?.length||0)-urgent.length;
   return <Page id="overview" title="Overview" intro="How the evaluations stand, how fast and costly live requests are, the trace budget, and what needs attention."
     actions={<div className="admin-controls"><WindowPicker value={range} onChange={setRange}/>
       <button className="bank-chat-logout" onClick={refresh} disabled={state.busy}><Icon name="refresh"/>Refresh</button></div>}>
@@ -55,12 +57,14 @@ export default function OverviewPage({onNavigate,views=[]}) {
 
       <section className="admin-card" data-testid="admin-attention">
         <div className="admin-card-head"><h2>Needs attention</h2><span className="admin-muted">Regressions, new failures and limits crossed in this window</span></div>
-        {!data.attention.length&&<p className="admin-empty">Nothing needs attention: no regressions, no new failure types and every rate is within its limit.</p>}
-        <ul className="admin-attention">{data.attention.map((item,index)=><li key={index} data-testid={`admin-attention-${item.kind}`}>
+        {!urgent.length&&<p className="admin-empty">Nothing needs attention: no regressions, no new failure types and every rate is within its limit.</p>}
+        <ul className="admin-attention">{(showNotes?data.attention:urgent).map((item,index)=><li key={index} data-testid={`admin-attention-${item.kind}`}>
           <Status value={item.level}/>
           <div><strong>{item.title}</strong><p>{item.detail}</p></div>
           {views.includes(item.page)&&<button className="link-button" onClick={()=>onNavigate(item.page,item.filter)}>Open</button>}
         </li>)}</ul>
+        {notes>0&&<button className="link-button" data-testid="admin-attention-notes" onClick={()=>setShowNotes(!showNotes)}>
+          {showNotes?'Hide notes':`Show ${notes} note${notes===1?'':'s'} (older failures, setup and coverage reminders)`}</button>}
       </section>
 
       <section className="admin-card" data-testid="admin-latest-evals">
