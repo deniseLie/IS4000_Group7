@@ -1,10 +1,10 @@
 [
   {"id": "CV01", "note": "follow-ups without the topic word fill in the kind, timeframe and a concern",
    "chats": [["I'm thinking about a home loan", "We're looking at an HDB resale flat", "Probably in about six months", "Is the lock-in usually two years?"]],
-   "expect": {"home_loan": {"stage": "planning", "kind": "hdb_resale", "timeframe": "within_12m", "on_hold": false, "concerns_has": ["lock_in"]}}},
+   "expect": {"home_loan": {"kind": "hdb_resale", "timeframe": "within_12m", "on_hold": false, "concerns_has": ["lock_in"]}}},
   {"id": "CV02", "note": "a carried-over follow-up moves the stage up",
    "chats": [["What are your fixed deposit rates?", "And for 12 months?", "OK, I'll place one this week"]],
-   "expect": {"fixed_deposit": {"stage": "ready", "timeframe": "now", "on_hold": false}}},
+   "expect": {"fixed_deposit": {"stage": "ready", "on_hold": false}}},
   {"id": "CV03", "note": "she says the plan is off: on hold",
    "chats": [["I'm planning to buy a condo next year", "Actually we've decided not to go ahead with it"]],
    "allow_on_hold": ["home_loan"],

@@ -3,6 +3,7 @@
 Local database (default): python -m evaluation.retrieval   (temporary pgserver database with every migration, dbtest extra)
 Another database:         python -m evaluation.retrieval --database-url postgresql://...   (calls public.kb_search, k=4)
 Compare set-ups:          python -m evaluation.retrieval --search keyword,hybrid --respell on,off --embedding-cache .cache/embeddings.json
+Publish to LangSmith:     python -m evaluation.retrieval --search hybrid --publish   (one set-up; dataset demobank-search, evaluation/publish.py)
 
 The app always tries hybrid search and falls back to keyword search (services/kb.search), so both are measured here.
 Keyword runs make no model calls. Hybrid runs (migration 0099) embed each question with the real embedding provider
@@ -160,6 +161,39 @@ def headline(report: dict) -> str:
         f"search p50 {report['latency']['p50_ms']} p95 {report['latency']['p95_ms']} ms, embed p50 {embed.get('p50_ms')} p95 {embed.get('p95_ms')} ms")
 
 
+DATASET='demobank-search'
+DESCRIPTION='Knowledge search: does the database search rank an approved article that answers the question in the top 4 (or return nothing when none covers it)? Synthetic, hand-labelled; no model call.'
+
+
+def published_cases() -> list:
+    """Every case in the file as a LangSmith example: her question and the articles that would be right."""
+    from evaluation.publish import Case
+    want=lambda c:f"An approved article from {', '.join(c['expected'])} in the top {K}" if c['expected'] else 'Nothing: no approved article covers this'
+    return [Case(c['id'],{'say':c['question']},{'check':want(c),'expected':c['expected']},{k:c[k] for k in ('group','split','batch') if c.get(k)})
+        for c in cases()]
+
+
+def published_result(row: dict):
+    """One case run: in the top K is the pass mark (the model sees K sections); the reciprocal rank grades how high."""
+    from evaluation.publish import Result,scored
+    found=', '.join(row['found']) or 'nothing'
+    if row['expected']:
+        rank=row['rank']
+        checks={f'in_top_{K}':scored(rank is not None,f'got {found}'),'reciprocal_rank':(round(1/rank,3) if rank else 0.0,f'rank {rank}' if rank else 'not found')}
+    else:checks={'nothing_returned':scored(not row['found'],f'got {found}')}
+    return Result(row['id'],{'answer':f'Ranked: {found}','found':row['found'],'rank':row['rank']},checks,row['ms'])
+
+
+def publish(report: dict) -> dict:
+    from evaluation.publish import publish as send
+    label=report['search']+('' if report['respell'] else '-norespell')
+    meta={'pipeline':f"{report['search']} search",'model':report.get('embedding_model'),'search':report['search'],'respell':report['respell'],
+        'min_similarity':report['min_similarity'],'store':report['store'],'k':K,
+        'summary':{'hit_at_1':report['overall']['hit_at_1'],f'hit_at_{K}':report['overall'][f'hit_at_{K}'],'mrr':report['overall']['mrr'],
+            'no_match_accuracy':report['overall']['no_match_accuracy']}}
+    return send(DATASET,DESCRIPTION,HERE/'retrieval_cases.json',published_cases(),[published_result(r) for r in report['rows']],label,meta)
+
+
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--database-url',help='Evaluate this database (owner connection) instead of a temporary local one')
@@ -170,11 +204,14 @@ def main() -> int:
     parser.add_argument('--split',choices=('all','tune','holdout'),default='all')
     parser.add_argument('--output',type=Path,help='Write the full reports as JSON')
     parser.add_argument('--misses',action='store_true',help='List every case not ranked first')
+    parser.add_argument('--publish',action='store_true',help=f'Publish the run to LangSmith as an experiment on {DATASET} (one set-up only)')
     args=parser.parse_args()
     searches=args.search.split(',')
     respells=[value=='on' for value in args.respell.split(',')]
     minimums=[float(value) for value in args.min_similarity.split(',')]
     if not set(searches)<={'keyword','hybrid'} or not set(args.respell.split(','))<={'on','off'}:parser.error('unknown --search or --respell value')
+    if args.publish and (len(searches)>1 or len(respells)>1 or ('hybrid' in searches and len(minimums)>1)):
+        parser.error('--publish takes one set-up: one --search, one --respell and one --min-similarity')
     selected=[c for c in cases() if args.split=='all' or c['split']==args.split]
     reports=[]
 
@@ -204,6 +241,7 @@ def main() -> int:
     for report in reports:
         print(headline(report))
         if args.misses:print('\n'.join(misses(report))+'\n')
+        if args.publish:print(json.dumps(publish(report)))
     return 0
 
 

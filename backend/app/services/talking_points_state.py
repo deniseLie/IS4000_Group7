@@ -81,7 +81,9 @@ def merge_concerns(old,new) -> list[str]:
 
 def validate(changes: list[dict],message: str,state: TopicState) -> tuple[list[dict],Counter]:
     """The code checks on what the model proposed: listed values and a kind of that topic, not muted, her exact words
-    from her latest message, a topic word in the quote or a topic active in this chat (a carry-over), no sensitive word,
+    from her latest message, a topic word in that message or a topic active in this chat (a carry-over: a message without
+    the topic's name, as the prompt says; the quote is only her shortest span, so "We've found an HDB flat and want to
+    apply for the loan now" may be quoted without its topic word), no sensitive word,
     confirmed points untouched, update and on hold only for a point she has (an update with a topic word becomes an add),
     on hold only with her words for it, one change per topic. Amounts in a kept quote are masked."""
     kept,dropped,seen=[],Counter(),set()
@@ -95,7 +97,7 @@ def validate(changes: list[dict],message: str,state: TopicState) -> tuple[list[d
         if topic in state.muted:dropped['muted']+=1;continue
         if topic in seen:dropped['repeat']+=1;continue
         if not quote or len(quote)>200 or quote not in message:dropped['not_her_words']+=1;continue
-        named=bool(tp.TOPIC_WORDS[topic].search(quote))
+        named=bool(tp.TOPIC_WORDS[topic].search(message))
         if not named and topic not in state.active_topics:dropped['not_active']+=1;continue
         if tp.SENSITIVE.search(quote):dropped['sensitive']+=1;continue
         point=points.get(topic)
