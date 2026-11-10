@@ -195,3 +195,16 @@ def test_a_question_across_the_book_only_sees_dates_inside_the_period_it_asks_ab
     assert '15 Dec 2026' not in text and '30 Nov 2026' in text and '"days_from_today": 28' in text and 'asked-period' in text
     # Without a period the 90-day list stays, with days from today added.
     assert '15 Dec 2026' in json.dumps([vars(item) for item in ev.book_bundle(facts,'who has a fixed deposit coming up?',today).items],default=str)
+
+
+def test_a_ticket_reaches_the_model_without_the_parts_of_its_last_update_it_already_says():
+    """Fewer tokens (11 Nov 2026): the UTC time beside the Singapore one and a note or status equal to the ticket's own
+    are left out for the model; the workspace's record is unchanged."""
+    update={'at':'2026-11-05T03:08:26+00:00','at_sgt':'Thu 5 Nov 2026, 11:08 am','note':'Received.','status':'submitted'}
+    ticket={'reference':'TCK-000001','client':'Michelle Ng','category_label':'Question','rm_owned':True,'status':'submitted',
+        'client_safe_status':'Received.','customer_id':1002,'created_at':'x','target_at':'y','last_update':update}
+    item=ev.ticket_evidence(ticket,'now')
+    assert item.for_model()['record']['last_update']=={'at_sgt':'Thu 5 Nov 2026, 11:08 am'} and item.for_ui()['record']['last_update']==update
+    moved=ev.ticket_evidence({**ticket,'last_update':{**update,'note':'Waiting for the statement.','status':'in_review'}},'now')
+    assert moved.for_model()['record']['last_update']=={'at_sgt':'Thu 5 Nov 2026, 11:08 am','note':'Waiting for the statement.','status':'in_review'}
+    assert ev.ticket_evidence({**ticket,'last_update':{'at':'2026-11-05T03:08:26+00:00'}},'now').for_model()['record']['last_update']=={'at':'2026-11-05T03:08:26+00:00'}

@@ -14,6 +14,21 @@ from app.services.agents.registry import AGENT_FOR
 WITHHELD = "I couldn't verify that answer from the available information, so I won't guess. You can rephrase your question or use the relevant service page."
 
 
+def as_json(text: str) -> JsonValue:
+    """A record written as JSON text, as JSON; any other text unchanged."""
+    if text[:1] in ('{', '['):
+        try:return json.loads(text)
+        except ValueError:pass
+    return text
+
+
+def evidence_json(evidence: list[Evidence]) -> str:
+    """The evidence as the model reads it, in fewer tokens (11 Nov 2026): compact JSON, and a record's JSON text goes in as
+    JSON instead of an escaped string, where every quote cost an escape. Same fields and values; the source is left out,
+    and the checks still read each item's own text."""
+    return json.dumps([{**item.model_dump(exclude={'source'}), 'text': as_json(item.text)} for item in evidence], ensure_ascii=False, separators=(',', ':'))
+
+
 def draft_schema(evidence: list[Evidence]) -> dict[str, JsonValue]:
     """The provider receives only the strict schema supported by the existing gateway."""
     ids = [item.id for item in evidence]

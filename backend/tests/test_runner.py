@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.schemas.contracts import Export, PlanTask, Principal, RequestContext, Task
 from app.services import llm_gateway, tools
 from app.services.agents import runner
-from app.services.agents.answer import WITHHELD, validate_draft
+from app.services.agents.answer import WITHHELD, as_json, evidence_json, validate_draft
 from app.services.agents.registry import SPECS
 from app.services.agents.runner import Gathered, LoopState, PlanRefused, advance, check_task, default_reads, read
 from app.services.authorization import PolicyDenied
@@ -193,6 +193,18 @@ def test_an_answer_with_figures_not_in_the_evidence_is_withheld(served, answer, 
     assert out.agent == 'accounts' and out.reads == got.log
     if ok:assert out.status == 'ok' and out.result.text == answer and [c.source_id for c in out.result.citations] == ['my_cards']
     else:assert out.status == 'error' and out.result.text == WITHHELD and out.result.citations == []
+
+
+def test_the_model_reads_each_record_as_json_with_the_same_values(served):
+    """Fewer tokens, same evidence (11 Nov 2026): a record's JSON text goes in as JSON, not as an escaped string."""
+    got = evidence(served)
+    shown = json.loads(evidence_json(got.evidence))
+    assert [s['id'] for s in shown] == [e.id for e in got.evidence] and all('source' not in s for s in shown)
+    for item, seen in zip(got.evidence, shown):
+        assert seen['text'] == (json.loads(item.text) if item.text.startswith(('{', '[')) else item.text)
+        assert {k: v for k, v in seen.items() if k != 'text'} == item.model_dump(exclude={'source', 'text'})
+    assert any(isinstance(s['text'], (dict, list)) for s in shown)
+    assert as_json('[Urgent card] Charge she does not recognise') == '[Urgent card] Charge she does not recognise' and as_json('') == ''
 
 
 # ---- Real provider (opt-in): hosted project, persona logins ----

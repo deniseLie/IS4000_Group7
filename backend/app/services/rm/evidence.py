@@ -28,7 +28,7 @@ class Evidence:
     @property
     def text(self) -> str:return json.dumps(self.data,ensure_ascii=False,default=str)
 
-    def for_model(self) -> dict:return {'id':self.id,'title':self.title,'kind':self.kind,'as_of':self.as_of,'record':self.data}
+    def for_model(self) -> dict:return {'id':self.id,'title':self.title,'kind':self.kind,'as_of':self.as_of,'record':lean_ticket(self.data) if self.kind=='ticket' else self.data}
 
     def for_ui(self) -> dict:return {'id':self.id,'title':self.title,'kind':self.kind,'as_of':self.as_of,'record':self.data}
 
@@ -50,6 +50,17 @@ SGT=timezone(timedelta(hours=8))
 
 
 def _strip(record: dict,*keys: str) -> dict:return {k:v for k,v in record.items() if k not in keys}
+
+
+def lean_ticket(data: Any) -> Any:
+    """A ticket as the model reads it (11 Nov 2026): its last update without what the ticket already says, the UTC time
+    beside the Singapore one (as created_at and target_at are left out) and a status or note equal to the ticket's own.
+    The workspace and the checks keep the whole record."""
+    update=data.get('last_update') if isinstance(data,dict) else None
+    if not isinstance(update,dict):return data
+    kept={k:v for k,v in update.items() if not (k=='at' and update.get('at_sgt')) and not (k=='status' and v==data.get('status'))
+        and not (k=='note' and v==data.get('client_safe_status'))}
+    return {**data,'last_update':kept}
 
 
 def note_ids(notes: list[dict]) -> list[str]:
@@ -148,12 +159,16 @@ def ticket_detail_bundle(result: dict,guidance: list[KnowledgeSection] | None=No
     return bundle
 
 
-def tickets_bundle(result: dict) -> Bundle:
+def tickets_bundle(result: dict,owned: int|None=None,specialist: int|None=None) -> Bundle:
+    """Every open ticket, or only the first `owned` of hers and `specialist` specialist-managed ones in the inbox's order
+    (rm_tickets sorts each group); the counts record says how many of each are open and how many are listed."""
     bundle=Bundle()
     as_of=str(result.get('as_of'))
-    for ticket in result['data']['rm_owned']+result['data']['specialist']:bundle.add(ticket_evidence(ticket,as_of))
-    bundle.add(Evidence('inbox-summary','Ticket counts','record',{'rm_owned_open':len(result['data']['rm_owned']),
-        'specialist_open':len(result['data']['specialist']),'ordering_rule':'urgent first, then past target time, then urgency, then age'},as_of))
+    mine,theirs=result['data']['rm_owned'][:owned],result['data']['specialist'][:specialist]
+    for ticket in mine+theirs:bundle.add(ticket_evidence(ticket,as_of))
+    bundle.add(Evidence('inbox-summary','Ticket counts','record',{'rm_owned_open':len(result['data']['rm_owned']),'rm_owned_listed':len(mine),
+        'specialist_open':len(result['data']['specialist']),'specialist_listed':len(theirs),
+        'ordering_rule':'urgent first, then past target time, then urgency, then age'},as_of))
     return bundle
 
 

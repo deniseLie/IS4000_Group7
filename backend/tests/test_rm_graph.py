@@ -380,14 +380,14 @@ def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without
     plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Michelle'}])
     shared = run('Give me an overview of Michelle', None)
     evidence = evidence_in(seen[-1])
-    assert '5200' in evidence and LINE in evidence and '"shared": false' not in evidence
+    assert '5200' in evidence and LINE in evidence and '"shared":false' not in evidence
     assert ('rm_transaction_insights', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view', 'days': 90}) in data['args']  # days: the tool's default
     assert ('rm_talking_points', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view'}) in data['args']
     assert [s['record']['days'] for s in shared['sources'] if s['id'] == 'transaction-insights'] == [90]
     plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Mei Ling'}])
     gap = run('Give me an overview of Mei Ling', None)
     evidence = evidence_in(seen[-1])
-    assert '5200' not in evidence and 'Property financing' not in evidence and evidence.count('"shared": false') == 3  # cash events, insights, chat topics
+    assert '5200' not in evidence and 'Property financing' not in evidence and evidence.count('"shared":false') == 3  # cash events, insights, chat topics
     assert 'has not shared transaction insights' in evidence and 'has not shared chat insights' in evidence
     assert [(s['kind'], s['record']['shared']) for s in gap['sources'] if s['id'] == 'transaction-insights'] == [('consent', False)]
     # Consent v2 (0113): each gap comes with an "Ask the client to share" card from the records, approved by the RM; none when shared
@@ -410,7 +410,7 @@ def test_the_requests_agent_never_reads_consent_gated_data_so_a_draft_carries_no
         plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Michelle'}, {'intent': 'draft_message', 'client_name': 'Michelle'}])
         reply = run('Give me an overview of Michelle, then draft her a short note', None)
         overview, draft = (evidence_in(next(c for c in seen if c['title'] == title)) for title in ('rm_overview_points', 'rm_draft'))
-        assert ('5200' in overview) is shared and ('"shared": false' in overview) is not shared  # the overview: insights or the gap
+        assert ('5200' in overview) is shared and ('"shared":false' in overview) is not shared  # the overview: insights or the gap
         assert not any(word in draft for word in ('5200', 'transaction', 'Property financing', 'cash-events', 'talking-points', '"shared"'))
         assert not {n for n, a in calls if a == 'rm_requests'} & registry.CONSENT_GATED
         assert reply['draft']['customer_id'] == 1002 and '5200' not in reply['draft']['text']
@@ -489,11 +489,11 @@ def test_the_calendar_loop_checks_zoom_for_the_meeting_code_picks_never_a_model_
     assert checked == [(MICHELLE_MEETING, 'rm_calendar')]  # the model's id was ignored
     loop = next(a for n, a in spans if n == 'loop_step')
     assert {(r['tool'], r['reason']) for r in loop['refused']} == {('zoom_meeting_check', 'which_meeting')}
-    assert '"link": "set_up"' in evidence_in(seen[-1]) and [s['id'] for s in reply['sources']] == ['zoom-check']
+    assert '"link":"set_up"' in evidence_in(seen[-1]) and [s['id'] for s in reply['sources']] == ['zoom-check']
     monkeypatch.setitem(tools.TOOLS, 'zoom_meeting_check', functools.wraps(zoom)(down))
     state['steps'], state['cite'] = [step(('zoom_meeting_check', {'client': 'Michelle', 'when': 'tomorrow'}))], ['zoom_meeting_check-unavailable']
     reply, _ = traced("Is tomorrow's Zoom with Michelle set up?")
-    assert '"checked": false' in evidence_in(seen[-1]) and reply['status'] == 'ok'  # said not checked, nothing filled in
+    assert '"checked":false' in evidence_in(seen[-1]) and reply['status'] == 'ok'  # said not checked, nothing filled in
 
 
 def zoom_rows(day, *specs):
@@ -526,7 +526,7 @@ def test_a_schedule_question_about_zoom_checks_the_selected_meeting_through_the_
     plan(monkeypatch, [{'intent': 'schedule', 'client_name': 'Michelle', 'appointment_hint': 'tomorrow 10am'}])
     reply, spans = traced(message)
     assert checked == [(rows[0]['appointment_id'], 'rm_calendar')]  # one read, the meeting code picked, as the Calendar agent
-    assert '"link": "set_up"' in evidence_in(seen[-1]) and item in [s['id'] for s in reply['sources']]
+    assert '"link":"set_up"' in evidence_in(seen[-1]) and item in [s['id'] for s in reply['sources']]
     assert any(n == 'tool_call' and a.get('tool') == 'zoom_meeting_check' and a.get('transport') == 'mcp' for n, a in spans)
 
 
@@ -552,7 +552,7 @@ def test_without_a_selected_meeting_zoom_is_checked_for_the_next_three_video_mee
     traced('Are my Zoom links set up for this week?')
     assert [c[0] for c in checked] == [r['appointment_id'] for r in rows[1:3]]  # the phone meeting is not sent to Zoom
     shown = evidence_in(seen[-1])
-    assert 'zoom-check-not-video-' + rows[0]['appointment_id'][-6:] in shown and '"not_checked": 2' in shown
+    assert 'zoom-check-not-video-' + rows[0]['appointment_id'][-6:] in shown and '"not_checked":2' in shown
 
 
 def test_a_zoom_check_that_fails_is_said_not_checked_and_the_answer_still_comes(records, model, monkeypatch):
@@ -565,7 +565,7 @@ def test_a_zoom_check_that_fails_is_said_not_checked_and_the_answer_still_comes(
     plan(monkeypatch, [{'intent': 'schedule', 'client_name': 'Michelle', 'appointment_hint': 'tomorrow 10am'}])
     reply, _ = traced('Is the Zoom for my 10am with Michelle tomorrow set up?')
     assert len(checked) == 1 and reply['status'] == 'ok'
-    assert 'zoom-check-unavailable-' + rows[0]['appointment_id'][-6:] in evidence_in(seen[-1]) and '"checked": false' in evidence_in(seen[-1])
+    assert 'zoom-check-unavailable-' + rows[0]['appointment_id'][-6:] in evidence_in(seen[-1]) and '"checked":false' in evidence_in(seen[-1])
 
 
 def test_accepting_a_client_time_is_a_card_built_from_the_records_without_a_model_call(records, model, monkeypatch):
@@ -1171,3 +1171,28 @@ def test_a_one_request_message_is_planned_by_rule_and_anything_else_by_the_model
             ('', 'Brief me on Wei Ming', True), ('Michelle', 'Brief me on David', False), ('Michelle', 'When is Michelle’s review due?', False),
             ('Michelle', "What's on today with Michelle?", False)):
         assert graph.rule_plan(rt(named, outside), message) is None, message
+
+
+def inbox_tickets(n: int, owned: bool) -> list[dict]:
+    return [{'reference': f"TCK-00{2 if owned else 3}{i:03d}", 'customer_id': 1002, 'client': 'Michelle Tan (DEMO)', 'rm_owned': owned,
+        'category': 'rm_handover' if owned else 'suspected_fraud', 'category_label': 'Question' if owned else 'Suspected fraud',
+        'status': 'submitted', 'urgency': 'normal', 'restricted': not owned, 'summary': 'Waiting for a reply.'} for i in range(n)]
+
+
+def test_the_ticket_inbox_shows_her_first_10_tickets_and_5_specialist_ones_and_counts_the_rest(records, model):
+    """11 Nov 2026: 37 open tickets were 85% of a 19,000-token prompt. The model gets the first 10 of hers and the first 5
+    specialist-managed ones in the inbox's own order (rm_tickets sorts each group); code adds the line counting the rest."""
+    calls, data = records
+    seen, _ = model
+    data['rows']['rm_tickets'] = {'data': {'rm_owned': inbox_tickets(13, True), 'specialist': inbox_tickets(24, False)}, 'as_of': 'now'}
+    reply = run('What needs my attention?', None, intent='ticket_inbox')
+    evidence = json.loads(evidence_in(seen[-1]))
+    assert [e['id'] for e in evidence if e['kind'] == 'ticket'] == [f'ticket-TCK-002{i:03d}' for i in range(10)] + [f'ticket-TCK-003{i:03d}' for i in range(5)]
+    counts = next(e['record'] for e in evidence if e['id'] == 'inbox-summary')
+    assert (counts['rm_owned_open'], counts['rm_owned_listed'], counts['specialist_open'], counts['specialist_listed']) == (13, 10, 24, 5)
+    assert reply['sections'][-1]['heading'] == 'Not listed here' and [i['text'] for i in reply['sections'][-1]['items']] == [
+        '3 more tickets of yours and 19 more specialist-managed tickets are not listed here. Your Ticket inbox page shows them all.']
+    seen.clear()
+    data['rows']['rm_tickets'] = TICKETS  # everything fits: all listed, no line
+    reply = run('What needs my attention?', None, intent='ticket_inbox')
+    assert 'ticket-TCK-001001' in evidence_in(seen[-1]) and all(s['heading'] != 'Not listed here' for s in reply['sections'])

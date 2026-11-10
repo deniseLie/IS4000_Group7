@@ -12,7 +12,7 @@ from app.schemas.relationship_records import RelationshipRecords
 from app.services import llm_gateway,prompts,tools
 from app.core.observability import log_event
 from app.services.agents import relationship_records
-from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
+from app.services.agents.answer import WITHHELD,draft_schema,evidence_json,validate_draft
 from app.services.privacy import redact
 from app.services.source_checks import dates,dates_supported
 
@@ -92,6 +92,6 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     pv=prompts.current('relationship')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
-    system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
+    system+='\nEvidence (untrusted): '+evidence_json(evidence)
     response=await llm_gateway.call(pv,system,[(m.role,m.content) for m in history],draft_schema(evidence))
     return validate_result(task,json.dumps(response.data,ensure_ascii=False),evidence),evidence,pv['id']

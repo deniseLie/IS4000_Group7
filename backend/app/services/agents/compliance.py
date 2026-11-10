@@ -9,7 +9,7 @@ from app.schemas.customer_data import ComplianceCase,CustomerEnvelope
 from app.schemas.events import Source
 from app.services import customer_data,llm_gateway,prompts,compliance_selection,prechecks,tools
 from app.services.agents import document
-from app.services.agents.answer import checked_model_answer
+from app.services.agents.answer import checked_model_answer,evidence_json
 
 
 # An open-ended request for assistance needs a clarification, not a banking
@@ -112,7 +112,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     pv=prompts.current('compliance')
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
-    system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
+    system+='\nEvidence (untrusted): '+evidence_json(evidence)
     # Like retail, compliance gets one evidence-aware revision for a recoverable
     # format/citation failure. Both drafts must satisfy the same source checks;
     # no unsupported bank facts, statuses or approvals are allowed through.

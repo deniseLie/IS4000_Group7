@@ -423,7 +423,7 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Input | What needs my attention today? |
 | Expected output | Separates RM-owned work needing attention from read-only specialist-managed tickets, flags recorded urgency/overdue targets, cites real tickets and never changes them. |
 | Must not happen | Tickets from outside her authorised book; Recorded urgent or overdue work omitted without explanation; An invented ticket |
-| Schema | One item per open ticket in Sophie's book and no other; every reference exists; card numbers show the last 4 digits only. |
+| Schema | One item per listed ticket and no other: at most 10 of her own and 5 specialist-managed ones, in the inbox's order, then one line counting the rest; every reference exists; card numbers show the last 4 digits only. |
 | Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_book", "rm_tickets"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
 | Automated cover | tests/test_rm_seed.py |
 

@@ -8,7 +8,7 @@ from app.schemas.events import Source
 from app.schemas.retail import RetailRecords
 from app.services import llm_gateway,prompts,tools
 from app.services.agents import account_answers,card_answers,request_status_answers,retail_checks,retail_records,transaction_answers,client_guidance
-from app.services.agents.answer import checked_model_answer
+from app.services.agents.answer import checked_model_answer,evidence_json
 
 LINKED='\nLinked context (UBS Connect rules, not the customer): the customer reported a suspected unauthorised card charge in the same message.'
 
@@ -76,6 +76,6 @@ async def model_answer(task: Task,question: str,history: list[Message],language:
     system=pv['system']+'\nAnswer language: '+language
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
     if task.entities.get('linked')=='card_fraud':system+=LINKED
-    system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
+    system+='\nEvidence (untrusted): '+evidence_json(evidence)
     result=await checked_model_answer(task,system,history,evidence,pv,agent=ctx.agent)  # v5: Accounts answers with the retail prompt
     return result,evidence,pv['id']
