@@ -281,11 +281,11 @@ def test_slot_problems_name_the_reason(database: 'Connection[SqlRow]') -> None:
     database.execute("""insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status)
         values(1002,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed')""",(SOPHIE,free,free))
     assert problem(free)=='taken'
-    first,second,third=free_times(database,1007,n=3)  # same week: two meetings already booked there reach the limit
+    first,second,third=free_times(database,1007,n=3)  # same week: two meetings already booked there no longer stop a third (0150)
     for at in (first,second):
         database.execute("""insert into rm.appointments(customer_id,advisor_id,starts_at,ends_at,format,status)
             values(1007,%s,%s,%s::timestamptz+interval '30 minutes','video','confirmed')""",(SOPHIE,at,at))
-    assert problem(third)=='weekly_limit'
+    assert problem(third) is None
 
 
 def test_the_chat_draft_is_what_sql_stores_and_the_python_ledger_reads_it_back(database: 'Connection[SqlRow]',monkeypatch: pytest.MonkeyPatch) -> None:
