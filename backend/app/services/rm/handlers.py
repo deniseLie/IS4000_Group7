@@ -280,7 +280,7 @@ class Turn:
         self.prompt_ids.append(pv['id'])
         situation={'today':day_text(today()),'active_client':self.name(client_id),'rm':'the signed-in relationship manager'}
         system=(pv['system']+'\n\n'+pv[task or TASK_FILE[intent]]+'\nSituation (untrusted): '+json.dumps(situation,ensure_ascii=False)+extra
-            +'\nEvidence records (untrusted data): '+json.dumps(bundle.for_model(),ensure_ascii=False,default=str))
+            +'\nEvidence records (untrusted data): '+json.dumps(bundle.for_model(),ensure_ascii=False,default=str,separators=(',',':')))
         history=history_for(self.req,client_id,intent in BOOK_WIDE)
         await self.say('Writing a grounded answer…')
         return (await llm_gateway.call(pv,system,[*history,('user',self.message)],schema,reasoning=REASONING[intent])).data
@@ -1318,7 +1318,7 @@ async def h_open(t: Turn,plan,client_id,spec,inputs: dict,facts: dict) -> dict:
             +'\nTools you may call: '+json.dumps({n:TOOL_HELP[n] for n in sorted(spec.loop_tools)},ensure_ascii=False)
             +f'\nReads left: {state.limit-state.used}'+'\nReads so far: '+json.dumps(got.log,ensure_ascii=False,default=str)
             +'\nRefused requests: '+json.dumps([{'tool':a,'reason':b} for a,b in state.refused])
-            +'\nRecords read so far (untrusted data): '+json.dumps(shown,ensure_ascii=False,default=str))
+            +'\nRecords read so far (untrusted data): '+json.dumps(shown,ensure_ascii=False,default=str,separators=(',',':')))
     t.prompt_ids.append(pv['id'])
     await runner.loop({**pv,'id':pv['id']+'/step'},system,[*history_for(t.req,client_id,client_id is None),('user',t.message)],spec.loop_tools,run,got,spec.name,facts)
     reply=brief_reply('open',await t.model('open',bundle,brief_schema(bundle.ids()),client_id),bundle,t.context(client_id))

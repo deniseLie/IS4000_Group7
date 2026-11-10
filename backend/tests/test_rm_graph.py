@@ -373,14 +373,14 @@ def test_the_client_overview_shows_shared_transaction_insights_and_a_gap_without
     plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Michelle'}])
     shared = run('Give me an overview of Michelle', None)
     evidence = evidence_in(seen[-1])
-    assert '5200' in evidence and LINE in evidence and '"shared": false' not in evidence
+    assert '5200' in evidence and LINE in evidence and '"shared":false' not in evidence
     assert ('rm_transaction_insights', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view'}) in data['args']
     assert ('rm_talking_points', 'rm_client', {'customer_id': 1002, 'purpose': 'client_view'}) in data['args']
     assert [s['record']['days'] for s in shared['sources'] if s['id'] == 'transaction-insights'] == [90]
     plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Mei Ling'}])
     gap = run('Give me an overview of Mei Ling', None)
     evidence = evidence_in(seen[-1])
-    assert '5200' not in evidence and 'Property financing' not in evidence and evidence.count('"shared": false') == 3  # cash events, insights, chat topics
+    assert '5200' not in evidence and 'Property financing' not in evidence and evidence.count('"shared":false') == 3  # cash events, insights, chat topics
     assert 'has not shared transaction insights' in evidence and 'has not shared chat insights' in evidence
     assert [(s['kind'], s['record']['shared']) for s in gap['sources'] if s['id'] == 'transaction-insights'] == [('consent', False)]
     # Consent v2 (0113): each gap comes with an "Ask the client to share" card from the records, approved by the RM; none when shared
@@ -403,7 +403,7 @@ def test_the_requests_agent_never_reads_consent_gated_data_so_a_draft_carries_no
         plan(monkeypatch, [{'intent': 'client_overview', 'client_name': 'Michelle'}, {'intent': 'draft_message', 'client_name': 'Michelle'}])
         reply = run('Give me an overview of Michelle, then draft her a short note', None)
         overview, draft = (evidence_in(next(c for c in seen if c['title'] == title)) for title in ('rm_overview_points', 'rm_draft'))
-        assert ('5200' in overview) is shared and ('"shared": false' in overview) is not shared  # the overview: insights or the gap
+        assert ('5200' in overview) is shared and ('"shared":false' in overview) is not shared  # the overview: insights or the gap
         assert not any(word in draft for word in ('5200', 'transaction', 'Property financing', 'cash-events', 'talking-points', '"shared"'))
         assert not {n for n, a in calls if a == 'rm_requests'} & registry.CONSENT_GATED
         assert reply['draft']['customer_id'] == 1002 and '5200' not in reply['draft']['text']

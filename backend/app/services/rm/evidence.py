@@ -28,7 +28,7 @@ class Evidence:
     @property
     def text(self) -> str:return json.dumps(self.data,ensure_ascii=False,default=str)
 
-    def for_model(self) -> dict:return {'id':self.id,'title':self.title,'kind':self.kind,'as_of':self.as_of,'record':self.data}
+    def for_model(self) -> dict:return {'id':self.id,'title':self.title,'kind':self.kind,'as_of':self.as_of,'record':lean_ticket(self.data) if self.kind=='ticket' else self.data}
 
     def for_ui(self) -> dict:return {'id':self.id,'title':self.title,'kind':self.kind,'as_of':self.as_of,'record':self.data}
 
@@ -50,6 +50,17 @@ SGT=timezone(timedelta(hours=8))
 
 
 def _strip(record: dict,*keys: str) -> dict:return {k:v for k,v in record.items() if k not in keys}
+
+
+def lean_ticket(data: Any) -> Any:
+    """A ticket as the model reads it (11 Nov 2026): its last update without what the ticket already says, the UTC time
+    beside the Singapore one (as created_at and target_at are left out) and a status or note equal to the ticket's own.
+    The workspace and the checks keep the whole record."""
+    update=data.get('last_update') if isinstance(data,dict) else None
+    if not isinstance(update,dict):return data
+    kept={k:v for k,v in update.items() if not (k=='at' and update.get('at_sgt')) and not (k=='status' and v==data.get('status'))
+        and not (k=='note' and v==data.get('client_safe_status'))}
+    return {**data,'last_update':kept}
 
 
 def note_ids(notes: list[dict]) -> list[str]:

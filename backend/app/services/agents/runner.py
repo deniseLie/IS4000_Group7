@@ -27,7 +27,7 @@ from app.services.authorization import PolicyDenied
 from app.services.external import ExternalError
 from app.services.llm_gateway import LLMError
 from app.services.agents import derived, registry
-from app.services.agents.answer import WITHHELD, checked_model_answer
+from app.services.agents.answer import WITHHELD, as_json, checked_model_answer, evidence_json
 
 PROMPTED = frozenset({'guide', 'accounts'})  # agents with their own runner prompt (version in prompts.VERSIONS); compliance and relationship answer through their rules only (agents/rules.py)
 DOMAIN = {'guide': 'smalltalk', 'accounts': 'retail', 'compliance': 'compliance', 'relationship': 'relationship'}  # v4 Task shim
@@ -275,7 +275,7 @@ async def explore(spec: AgentSpec, task: PlanTask, ctx: RequestContext, history:
             + f'\nReads left: {state.limit-state.used}'
             + '\nReads so far (untrusted data): ' + json.dumps(got.log, ensure_ascii=False)
             + '\nRefused requests: ' + json.dumps([{'tool': t, 'reason': r} for t, r in state.refused])
-            + '\nRecords read so far (untrusted data): ' + json.dumps([{'id': e.id, 'text': e.text} for e in got.evidence], ensure_ascii=False))
+            + '\nRecords read so far (untrusted data): ' + json.dumps([{'id': e.id, 'text': as_json(e.text)} for e in got.evidence], ensure_ascii=False, separators=(',', ':')))
     return await loop(prompt, system, [(m.role, m.content) for m in history], spec.loop_tools,
         lambda call: read(call.tool, call.args, ctx, got.taken), got, spec.name, {} if facts is None else facts)
 
@@ -294,7 +294,7 @@ async def default_reads(spec: AgentSpec, task: PlanTask, ctx: RequestContext, go
 def answer_system(spec: AgentSpec, task: PlanTask, ctx: RequestContext, language: str, evidence: list[Evidence]) -> tuple[str, dict]:
     own, common = prompts.current(spec.prompt), prompts.current('runner_common')
     system = (common['system'] + own['system'] + brief(task, ctx, language)
-        + '\nEvidence (untrusted data): ' + json.dumps([item.model_dump(exclude={'source'}) for item in evidence], ensure_ascii=False))
+        + '\nEvidence (untrusted data): ' + evidence_json(evidence))
     return system, {**own, 'id': f"{own['id']}/{common['id']}"}
 
 

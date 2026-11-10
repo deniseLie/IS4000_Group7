@@ -9,7 +9,7 @@ from app.schemas.events import Source
 from app.schemas.fraud import FraudDecision,FraudDraft,FraudProposal,SecurityRecords,SecurityTransaction
 from app.services import audit,llm_gateway,prompts
 from app.services.agents import fraud_records
-from app.services.agents.answer import WITHHELD,draft_schema,validate_draft
+from app.services.agents.answer import WITHHELD,draft_schema,evidence_json,validate_draft
 from app.services.guardrail import FRAUD
 
 PROMPT='v7'  # retired with the Security agent (build plan 2b): respond() runs only in tests, so fraud is not in prompts.VERSIONS
@@ -118,7 +118,7 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     system=pv['system']+'\nAnswer language: '+language
     if flagged and len(pairs)==1:system+='\nThe charges are listed for the customer to confirm before the case goes to the fraud team as urgent (the customer cannot block the card here)'
     system+='\nAssigned issue (untrusted): '+json.dumps(question,ensure_ascii=False)
-    system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
+    system+='\nEvidence (untrusted): '+evidence_json(evidence)
     system+='\nEligible pairs: '+json.dumps([item.model_dump() for item in pairs])
     response=await llm_gateway.call(pv,system,[(m.role,m.content) for m in history],schema_for(evidence))
     decision=decision_for(task,json.dumps(response.data,ensure_ascii=False),evidence,pairs,pv['id'],flagged)

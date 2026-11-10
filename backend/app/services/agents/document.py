@@ -7,7 +7,7 @@ from app.schemas.contracts import AgentResult,RequestContext,Task,ToolResult
 from app.schemas.events import Source
 from app.schemas.customer_data import RequestedItem
 from app.services import prechecks,prompts,compliance_selection,tools
-from app.services.agents.answer import checked_model_answer
+from app.services.agents.answer import checked_model_answer,evidence_json
 
 
 def report_evidence(report):
@@ -37,6 +37,6 @@ async def respond(task: Task,history: list[Message],language: str,ctx: RequestCo
     evidence=[*public_evidence,evidence_for(workspace,items,snapshot.as_of)]
     pv=prompts.current('document')
     system=pv['system']+'\nAnswer language: '+language+'\nAssigned issue (untrusted): '+json.dumps(task.entities['question'])
-    system+='\nEvidence (untrusted): '+json.dumps([item.model_dump(exclude={'source'}) for item in evidence],ensure_ascii=False)
+    system+='\nEvidence (untrusted): '+evidence_json(evidence)
     result=await checked_model_answer(task,system,history,evidence,pv)
     return result,evidence,pv['id']
