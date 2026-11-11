@@ -68,4 +68,4 @@
 
 Never drop a table that `01_inventory.sql` marks "in use": SQL functions and triggers use it even when no Python file names it.
 
-After applying, restart the backend. `DOCUMENT_PRECHECK_SIGNING_KEY` in `backend/.env` must equal `select secret from compliance.precheck_keys where key_id='v1';`.
+After applying, restart the backend. `DOCUMENT_PRECHECK_SIGNING_KEY` in the root `.env` must equal `select secret from compliance.precheck_keys where key_id='v1';`. Setting up `.env`, the keys and the restricted database logins: the root [README](../../../README.md), sections 2 and 3.

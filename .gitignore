@@ -18,3 +18,15 @@ backend/.cache/
 
 # Persona test logins for tests/test_rls_live.py (never commit)
 personas.json
+
+# Build and sync leftovers (pip install -e, FUSE mounts, Git Bash crashes, sync tools)
+*.egg-info/
+.fuse_hidden*
+*.stackdump
+/state/
+# Presentation and recording files are shared separately, never in Git (docs/datasets.md)
+*.pptx
+*.mp4
+*.mov
+/Video_DEMO/
+*-Source.zip
