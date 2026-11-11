@@ -1,6 +1,8 @@
 # RM copilot build plan (client, copilot and consent side)
 
-The target is the RM Copilot Architecture (meeting as the unit of work) and the seam in [architecture.md §15](../architecture.md#15-meeting-lifecycle-seam-rm-copilot-target-agreed-4-nov-2026-not-built-yet). This plan covers **our half**: the client app, the RM copilot, and consent. The **meeting lifecycle graph is built by the second developer** (brief, proposal pack, minutes, provider and webhooks); we build what it needs from us and call its four functions. The talking-point pipeline runs on seeded consent. **Consent v2** (design agreed 5 Nov 2026, [architecture §15.2](../architecture.md)) is the last phase; everything before it runs on the seeded grants.
+Status (11 Nov 2026): built. Phases 1–4, 5b and 6 (6a, 6b, 6d–6f) on 5 Nov 2026, with hosted batches 33–40; 6c by the meeting side in 0122; 5a in another shape on 7 Nov: the copilot's `meeting_brief` opens the meeting side's saved brief (`rm/handlers.h_brief`, `services/meetings/preparation`) instead of a `prepare_meeting` intent. Later changes: consent is instant only (0147, the 0113 *Delete all my data* ticket is gone), one transcript yes for every meeting (0149), no weekly meeting limit (0159).
+
+The target is the RM Copilot Architecture (meeting as the unit of work) and the seam in [architecture.md §15](../architecture.md#15-meeting-lifecycle-seam-rm-copilot-target-hybrid-slice-implemented). This plan covers **our half**: the client app, the RM copilot, and consent. The **meeting lifecycle graph is built by the second developer** (brief, proposal pack, minutes, provider and webhooks); we build what it needs from us and call its four functions. The talking-point pipeline runs on seeded consent. **Consent v2** (design agreed 5 Nov 2026, [architecture §15.2](../architecture.md)) is the last phase; everything before it runs on the seeded grants.
 
 - **Branch:** one branch for our half. Phase 1 is merged into `main` at `5d3e81c` (5 Nov 2026); later parts branch from `main` as it is then. One commit per part; merge into `main` and push `main` only, when asked.
 - **Migrations:** our range is `0106`–`0119` (meeting side `0120`–`0139`). `0106` and `0107` are applied on the hosted project (5 Nov 2026), so they are never edited again: contract changes go into a new migration with `create or replace`, or drop and create when a signature changes. Allocation: phase 4 `0108`, phase 6 `0109`–`0113`; take the next free one in the range. Phases 2 and 3 need no migration.
@@ -24,8 +26,8 @@ The target is the RM Copilot Architecture (meeting as the unit of work) and the 
 | 2b | ~~Remove the Security agent~~ **Done 5 Nov 2026** | S–M | 1 | No |
 | 3 | ~~RM copilot: three agents, tracing, daily work~~ **Done 5 Nov 2026** (R24–R27 pass on hosted) | L | 2a | No |
 | 4 | ~~Talking-point pipeline, on seeded consent (`0108`)~~ **Built 5 Nov 2026**, 0108 on hosted (done-when not yet run in the browser) | L | 2a (`care` flag), 3a | Uses `rm_talking_points` data |
-| 5 | Connect to the meeting graph, evaluate, demo, document: 5b **run 5 Nov 2026**; 5a waits on the meeting side | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
-| 6 | ~~Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log~~ **Built 5 Nov 2026** (`0109`, `0110`, `0112`–`0114`; hosted batches not applied); 6c shipped by the meeting side in `0122` | L | 2a, 4 | Delivered: `meeting_transcript_revoke` (0122) replaces `transcript.revoke` (0111) |
+| 5 | Connect to the meeting graph, evaluate, demo, document: 5b **run 5 Nov 2026**; 5a built in another shape on 7 Nov (see *Status* above) | M | 2b, 3, 4; 5a also the meeting side's `prepare`/`status` | – |
+| 6 | ~~Consent v2: scoped, expiring grants, deletion with undo, transcript revoke, access log~~ **Built 5 Nov 2026** (`0109`, `0110`, `0112`–`0114`; hosted batches `36`–`40` applied 5 Nov); 6c shipped by the meeting side in `0122` | L | 2a, 4 | Delivered: `meeting_transcript_revoke` (0122) replaces `transcript.revoke` (0111) |
 
 - **Why this order.**
   - Meeting requests come first: the demo story starts with one, phase 4 needs its `care` flag, and the meeting side gets events from real clicks instead of only the reset script. The RM's accept / propose / decline buttons move here from 3a. The SQL has existed since `0106`, so the loop closes without waiting for the agent split. 3a then adds the copilot card on the same route.
@@ -409,7 +411,7 @@ Runs on the seeded grants, so the results and the demo do not wait for consent v
 
 **Status:** 6a, 6b, 6d, 6e and 6f built 5 Nov 2026.
 - **Commits:** `79c51e1`, `7e0a00a`, `fceed33`, `d10b328`, `f77b25f`, `79db2ce`.
-- **Migrations:** `0109`, `0110`, `0112`, `0113`, `0114`; hosted batches `36`–`40` are prepared and **not applied**.
+- **Migrations:** `0109`, `0110`, `0112`, `0113`, `0114`; hosted batches `36`–`40`, applied on hosted 5 Nov 2026.
 - **Prompt:** `relationship/v7`.
 - **6c** shipped on the meeting side instead (commit `45e2ea9`, `0122`): the client's *Withdraw transcript access* calls `meeting_transcript_revoke` (`POST /meetings/{id}/transcript-revoke`), which sets `revoked_at` and purges the transcript within 7 days; approved minutes stay. `0111` stays unused.
 - **Checks:** native only (SQL, API and unit tests); no live model run. The consent red-team cases and the demo's consent step have not been re-run on v2. 5b rehearsed the step on v1.

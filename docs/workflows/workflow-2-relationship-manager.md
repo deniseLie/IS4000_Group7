@@ -1,6 +1,6 @@
 # Workflow 2 – Relationship manager (Sophie)
 
-**Status: built (1 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Since then: meeting requests, the three-agent copilot, Today's ranking and talking points (build plan 2a–5b, `0106`–`0108`), consent v2 (`0109`–`0114`), and the meeting side's notes and follow-up (`0120`–`0124`, below). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **My requests** as *Latest update*.
+**Status: built (1 Nov 2026; checked against the code 11 Nov 2026).** Stories RM1–RM12 and RM16 (future scope, built early). Migrations `0089` (access rules, RM reads and approved writes), `0090` (demo data), `0091` (saved conversations), `0092` (weekly meeting limit, team names in status notes; the limit was removed by `0159`) and `0093` (book reduced to Michelle and Mei Ling), `0094` (customer grant fix) and `0095` (RM insights). Since then: meeting requests, the three-agent copilot, Today's ranking and talking points (build plan 2a–5b, `0106`–`0108`), consent v2 (`0109`–`0114`), the Lombard storyline (`0115`–`0117`), the meeting side's notes and follow-up (`0120`–`0141`, below) and one standing transcript agreement from the client (`0149`). Persona 1 (Michelle) is unchanged apart from one addition: an update Sophie approves on a request shows in Michelle's **Requests** under *What the bank told you*.
 
 ## Who she is
 
@@ -13,14 +13,14 @@ flowchart LR
   UI[RM workspace<br/>RmWorkspace.jsx] -->|/rm/*, JWT| API[api/rm.py<br/>app_metadata role=rm]
   UI -->|POST /rm/assistant SSE| AS[services/rm/graph.py<br/>v5 RM graph, phase 9]
   AS --> BC[Book check: rm_match_clients<br/>outside book = refused + audited, no model]
-  AS --> PL[Planner: rule plan or<br/>rm_planner/v5: up to 5 tasks]
+  AS --> PL[Planner: rule plan or<br/>rm_planner/v6: up to 5 tasks]
   AS --> RS[Per agent: deterministic resolution<br/>client, ticket, meeting, note]
   RS --> AG[RM Client / Requests / Calendar<br/>handlers.py or the open loop, own spec's tools only]
   AG --> TL[RM tools: services/tools.py<br/>rm_book, rm_client_profile, rm_tickets…]
   TL --> DB[(SQL: rm.current_advisor + rm.in_book<br/>audit every read and refusal)]
   AG --> BF[Client reports: record sections<br/>by code, brief_facts.py]
   BF -->|section events| UI
-  AG --> LLM[Answer model<br/>rm_assistant/v6 + task file]
+  AG --> LLM[Answer model<br/>rm_assistant/v9 + task file]
   LLM --> CK[Item-level checks<br/>services/rm/checks.py]
   CK --> UI
   UI -->|approve| W[Write RPCs: documentation, tasks,<br/>service requests, client messages, availability]
@@ -47,21 +47,21 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 | RM1 Sign-in and client book | Login → RM workspace; *My clients*; `rm_book`, `rm_match_clients` | Refused lookups audited; active client always shown |
 | RM2 360° overview | *My clients* → client; assistant "overview of …" | Sources and as-of on every block; gaps listed; client-stated vs AI labelled |
 | RM3 Meeting history | Assistant "summarise past meetings with …" | Previous RM's notes included, private ones withheld; asks which meeting when ambiguous |
-| RM4 Meeting briefing | *Schedule* → Prepare briefing; "Brief me for my meeting with Michelle" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
+| RM4 Meeting briefing | *Today* or *Schedule* → *Briefing* on a meeting, *My clients* → client → *Prepare briefing* (each opens the assistant); "Brief me for my meeting with Michelle" | Uses the confirmed appointment; consent-checked handover note; suggestions cite records; no advice |
 | RM5 Interaction documentation | Paste notes in the assistant (or *Document a call* on a client) | Facts, decisions, commitments, requests separately; confirmed vs tentative; corrections by chat keep the source notes; saved only on approval |
 | RM6 Service requests | Documentation → *Review request form* | Prefilled from notes, missing fields and open duplicates checked in SQL, verification tick, reference after creation |
 | RM7 Ticket inbox | *Ticket inbox*; "What needs my attention today?" | *My tickets* (draft a reply, summarise, details) vs *Specialist tickets* (status only: no summarise or reply, the owning team deals with the client); "Received 26 hours ago", "Due …" / "Overdue · was due …"; priority filter |
 | RM8 Ticket summary | *Summarise* on a ticket | What the bank, the chat assistant and RMs told the client; who decides; required fields present/missing; never closes the ticket |
 | RM9 Client communication | *Draft a reply*; "make it shorter" for revisions | Approve and send: on her ticket (optional status), on a non-restricted specialist ticket (message only), or to the Inbox (no ticket). Approval and result recorded; failures recorded as failed |
 | RM10 Follow-up tasks | Documentation → tasks; "turn the 2 Sep note into tasks" | Only actions quoting the notes; owner/due flagged when missing; duplicates detected; linked to the saved interaction |
-| RM11 Follow-up priorities | *Follow-ups*; *Prioritise with assistant* | Live from records; reason, date and source per item; never suggests a second meeting when one is confirmed; dismiss. Since 3b ranked by code (below), the model explains the ranking |
-| RM12 Availability | *Schedule* → Appointments / Availability / Working hours | Meetings grouped by day; weekly hours edited in one table (apply to all weekdays, save once); blocks drive the free times clients book (CR17); **at most 2 meetings per client per week** (0092), enforced at booking and shown with a warning for older bookings over the limit |
+| RM11 Follow-up priorities | *Today* → *See all* (it replaced the *Follow-ups* page on 7 Nov); "which clients need follow-up?" in the assistant (`priorities`) | Live from records; reason, date and source per item; never suggests a second meeting when one is confirmed. Since 3b ranked by code (below), the model explains the ranking |
+| RM12 Availability | *Schedule* → Appointments / Availability / Working hours | Meetings grouped by day; weekly hours edited in one table (apply to all weekdays, save once); blocks drive the free times clients book (CR17); no weekly limit per client since 0159 (0092 allowed 2 a week), so Schedule shows no booking rule |
 | Meeting requests (2a) | *Schedule* → Requests; Today → *Meeting requests to answer* | The client's purpose as written (text only), topics, preferred times and *respond by*. **Accept** one of her times, **Propose a time** (held for the client up to two business days) or **Decline** with a reason (answered in a message, passed to the team, no meeting needed); *Move* a confirmed meeting with a reason. Each is one press. SQL checks the book, hours, blocks and overlap (no weekly limit since 0159), records once per decision or change id, sends the client an Inbox notice, and queues `meeting.scheduled` / `meeting.rescheduled` |
 | RM16 Handover brief | Inherited client → *Handover brief* | Only with a recorded reassignment; fixed eight sections; consent-filtered handover note (revoked/expired excluded); audited with the sources used |
 
 ## RM insights (0095, rm_assistant v2, rm_planner v2)
 
-- **Today** (start page, no model call): requests waiting for her (new today, past target), meetings in the next 7 days with *Brief me*, **meetings to document** (confirmed meetings in the last 30 days without a note), maturities and reviews in the next 14 days, overdue tasks, and a box to **ask across the book**.
+- **Today** (start page, no model call; one ranked list since 7 Nov, next section): requests waiting for her (new today, past target), meetings in the next 7 days with *Brief me*, **meetings to document** (confirmed meetings in the last 30 days without a note), maturities and reviews in the next 14 days, overdue tasks, and a box to **ask across the book**.
 - **Conversation starters** in every briefing: open questions tied to a recorded event – a large money movement (`rm_cash_events`: 10,000 or more in 180 days, recurring ones marked, never interpreted), a maturity, a request or something the client said – each with its source. The overview adds *Recent large movements*.
 - **Meeting → notes → recap**: *Document this meeting* on a past appointment prefills the client and meeting; the saved note is linked to the appointment in SQL (`rm.meeting_notes.appointment_id`, same client and RM only). After saving, *Draft a recap* writes a client message from that note only, for her approval.
 - **Ask across my book** (`book_question` intent): one facts line per client (`rm_book_facts`: last interaction and days since, next meeting, open requests, maturities and reviews in 90 days, tasks, large movements) – book only, cited per client.
@@ -69,25 +69,25 @@ Each RM conversation is saved after every reply and listed under **Recent chats*
 
 ## Today and priorities (build plan 3b, rm_assistant v5, rm_planner v5)
 
-- **One score, in code** (`services/rm/priority.py`): her requests (RM-owned tickets only), meeting requests to answer, compliance reviews due within 14 days, confirmed meetings in the next 7 days, her tasks with a due date and milestones within 14 days. Points: urgent request 50, past its target or overdue 30, a meeting request past its respond-by time 30, a review due within 14 days 20, a meeting within 2 days 20, plus 1 a day waiting (up to 10). Each item carries its score parts (factor code, points and a reason in words); milestones are listed with 0 points. Ties: higher score, then the earlier date (a date counts from midnight SGT), then kind (request, meeting request, review, meeting, task, milestone), client name and key. The top 3 with a score above 0 are *Do first*. Specialist tickets are never ranked.
-- **Today** (start page, still no model call) gets the ranking from `GET /rm/priorities` (her book only, caller JWT): a *Do first* card with each item's reasons and one next step, every list in rank order with its reasons under each row, and **Plan my day**, which asks the assistant.
-- **Plan my day** (`today` intent, Requests agent): one answer with *Do first*, meeting requests to answer, client requests, meetings in the next 7 days, deadlines and tasks. Code adds the Calendar (`schedule`, `meeting_requests`) and Client (`reviews`) reads as hidden feed tasks and passes their exports (`meetings_next_7d`, `requests_to_answer`, `reviews_due`: ids, dates and codes only); an empty category is said, and one not passed is a gap. Every line cites its ranked record; the model never ranks and code keeps its items in rank order. A name outside the book is refused before anything is read.
-- **Prioritise with assistant** (`priorities`) uses the same score: *Do first*, *Coming up* (ranked items, then later follow-ups and recorded commitments) and *Specialist-managed*.
+- **One score, in code** (`services/rm/priority.py`): her requests (RM-owned tickets only), meeting requests to answer, compliance reviews due within 14 days, confirmed meetings in the next 7 days, her tasks with a due date and milestones within 14 days. Points: urgent request 50, Lombard borrowing above its collateral's lending value 40 (the 0116 collateral alert), past its target or overdue 30, a meeting request past its respond-by time 30, a review due within 14 days 20, a meeting within 2 days 20, plus 1 a day waiting (up to 10). Each item carries its score parts (factor code, points and a reason in words); milestones are listed with 0 points. Ties: higher score, then the earlier date (a date counts from midnight SGT), then kind (request, meeting request, review, meeting, task, milestone), client name and key. The top 3 with a score above 0 are *Do first*. Specialist tickets are never ranked.
+- **Today** (start page, still no model call) gets the ranking from `GET /rm/priorities` (her book only, caller JWT). Since the 7 Nov redesign: her next meeting on top (*Briefing*, *Open meeting*), then one list (`lib/rm.js` `todayList`): urgent *Do first* items, meetings to document or prepare, the other *Do first* items, topics clients shared, then the rest, each with its reasons and one button; the top 5 show, *See all* shows everything plus *For awareness* (specialist cases, commitments, later dates). Beside it *This week* and counts (client requests, meetings to document, dates coming up, meeting requests to answer), and **Ask the assistant**, which asks "What's on today?".
+- **Plan my day** (`today` intent, Requests agent; "What's on today?" or "Plan my day" in the assistant): one answer with *Do first*, meeting requests to answer, client requests, meetings in the next 7 days, deadlines and tasks. Code adds the Calendar (`schedule`, `meeting_requests`) and Client (`reviews`) reads as hidden feed tasks and passes their exports (`meetings_next_7d`, `requests_to_answer`, `reviews_due`: ids, dates and codes only); an empty category is said, and one not passed is a gap. Every line cites its ranked record; the model never ranks and code keeps its items in rank order. A name outside the book is refused before anything is read.
+- **Priorities** (`priorities`, for example "which clients need follow-up?"; the *Prioritise with assistant* button went with the Follow-ups page) uses the same score: *Do first*, *Coming up* (ranked items, then later follow-ups and recorded commitments) and *Specialist-managed*.
 - Spans carry only codes and counts (`scored`, `scored_kinds`, `factors`, `top_score`, `feeds`). QA1 R24–R27 (`docs/evaluation/test-cases.md`) cover Plan my day, accepting a client's time, blocking Friday afternoon and the prioritised list.
 
 ## Client reports and streaming (RM answer speed, 6 Nov, rm_assistant v6)
 
 - **Code writes the records, the model the judgement.** The meeting brief, client overview, handover brief and meeting history are built from the records by `services/rm/brief_facts.py` (each item cites its record; lists stop at 5 and count the rest). The model gets a bounded extract (latest note, first 3 open tickets, no account numbers) and writes only the summary and the points: conversation starters, discussion points and questions for a brief, points worth raising for an overview, introductory topics and outdated records for a handover, gaps for a history. `checks.check_sections` checks them against the extract.
 - **A question is not a report.** "When is her review due?" is answered from the full records; a button, report wording without a question mark, or just her name asks for the report (`handlers.wants_report`).
-- **Rule plans.** "Brief me on Michelle", "overview of David", *plan my day*, or a brief then follow-ups from the latest note are planned without the planner model when the words taken as the client are only her book name (`graph.rule_plan`).
+- **Rule plans.** "Brief me on Michelle", "overview of David", *plan my day*, or a brief then follow-ups from the latest note are planned without the planner model when the words taken as the client are only her book name (`graph.rule_plan`). Since `rm_assistant/v7`, a short question about her last answer ("1 not known is what?") is the `follow_up` intent, explained from that answer only (`graph.is_follow_up`).
 - **Streaming.** `POST /rm/assistant` sends `section` events between `status` and `answer`: the record sections once read, then the checked points. The assistant and Clients pages show them in the pending reply (`lib/rm.js` `partialReply`). Not yet checked live in the browser.
 - Plan, slices and live results: [rm-answer-speed.md](../planning/rm-answer-speed.md), [evaluation §9](../evaluation/README.md#9-rm-answer-speed-6-nov-2026-rm_assistantv6) (R22 from a failed 139 s run to a 48 s pass at the default limits).
 
 ## Topics from her clients' chats (build plan phase 4, 0108)
 
-- **What she gets**: topic lines only, for example *Home loan · planning · within 12 months*. Each is labelled *Inferred from chat* (AI suggestion) or *Shared by the client*. She never sees the client's words, and no RM role or `rm_*` function can read the quotes table.
-- **Client overview and meeting brief** read `rm_talking_points` as a fixed read (purpose `client_view` or `meeting_prep`, set by code). Inferred topics come back only while the client's grant covers `chat_topics`, after a 24-hour hold, and outside a 60-day care pause. A topic still on hold or paused becomes a gap ("some topics are not available yet"), never which topic or why. Topics the client shared herself always come back; without the grant the read is audited with `basis: client_shared`.
-- **Today → Client chat insights shared with you**: confirmed insights (topics she shared herself) from the last 30 days across her book (at most 20, newest first, *New* while a notice is fresh), each with *Ask*. Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
+- **What she gets**: topic lines only, for example *Property financing · planning · within 12 months* (labels since 0117; the kind and concerns follow when the client named them, 0143). Each is labelled *Inferred from chat* (AI suggestion) or *Shared by the client*. She never sees the client's words: since 0142 they are not kept (the evidence table holds only the turn and time, and no RM role or `rm_*` function reads it).
+- **Client overview and meeting brief** read `rm_talking_points` as a fixed read (purpose `client_view` or `meeting_prep`, set by code). Inferred topics come back only while the client's grant covers `chat_topics` and after a 24-hour hold (the 60-day care pause was retired in 0145). A topic still in its hold becomes a gap ("some topics are not available yet"), never which topic or why; a plan the client called off (*on hold*, 0143) is not shown. Topics the client shared herself always come back; without the grant the read is audited with `basis: client_shared`.
+- **Today**: confirmed insights (topics she shared herself) from the last 30 days across her book (`GET /rm/shared-topics`, at most 20) are *Shared topic* rows in Today's one list, each with *Plan a follow-up*, which asks the assistant (the separate *Client chat insights shared with you* card, `SharedTopics.jsx`, is no longer shown since the 7 Nov redesign). Inferred topics never show on Today: they stay per client, behind consent and the hold. The client's notice names no topic. At most 20 notices per RM per day; the rest are only on Today.
 - Reassigning the client ends access at once (book check first); one client per call.
 
 ## Consent v2: what clients share and asking for more (build plan phase 6, 0109–0113, 0147)
@@ -97,62 +97,64 @@ The PDPA rules behind these are in the [PDPA baseline](../pdpa-baseline.md).
 - Each grant now has a scope and an end: transaction insights for all accounts or the ones the client picked, over 3, 6 or 12 months; chat topics for the topic areas the client picked; until a date, the end of a meeting, or until her meeting request is answered (then the meeting it becomes). Readers return only what the scope covers; reassignment ends every grant to the previous RM at once.
 - **Ask the client to share**: a brief or overview that hits a consent gap carries an *Ask the client to share* card per missing category, with a fixed reason (`meeting_prep` with the meeting, else `review`); Sophie approves it through `POST /rm/consent-requests` (`rm_ask_consent`, book check first, one open ask per client and category). The client gets an Inbox notice and an `rm_consent_request` ticket; the ask closes when she shares (any grant of that category), says *Not now*, or after 14 days. Sophie never writes the wording.
 - The client sees every read of her shared data in an access log built from the audit trail (ids, codes and dates only).
-- Every change to what a client shares is hers and takes effect at once: the Data sharing switches and, for recording, *I agree* / *Withdraw* on each meeting. No request goes to a data protection team (0147). When a client asks Sophie to stop recording her meetings, Sophie points her to *Withdraw* on the meeting (My requests → Meetings → *Notes and follow-up*); Sophie cannot switch it for her.
+- Every change to what a client shares is hers and takes effect at once: the Data sharing switches and, for recording, *I agree* / *Withdraw* on each meeting, or one agreement for every meeting on Data sharing › Meeting recording (0149; the RM no longer has to agree, since the bank records the call). No request goes to a data protection team (0147). When a client asks Sophie to stop recording her meetings, Sophie points her to *Withdraw* on the meeting (Meetings → *Open meeting*) or to that switch; Sophie cannot switch it for her.
 
 ## Meeting notes and follow-up (meeting side, 0120–0124)
 
-With `MEETINGS_ENABLED=true`, Schedule → Appointments lets the RM propose a time for the client to accept, then open its meeting workspace. The calendar loads the same 40-day horizon as the proposal slots; availability and working-hour controls retain their 14-day view. Briefing, the RM assistant and the meeting workspace use one canonical Brief Writer version with current-source checks and exact approval. The Minutes Writer drafts from imported transcript evidence or RM recollections; minutes, selected follow-ups and client recap sharing require separate approvals. [Architecture §15](../architecture.md#15-meeting-lifecycle-seam-rm-copilot-target-hybrid-slice-implemented) describes the agent boundaries, consent, durable graph, Zoom API intake and operating limits.
+With `MEETINGS_ENABLED=true`, Schedule → Appointments lets the RM propose a time for the client to accept, then open its meeting workspace. The calendar loads the same 40-day horizon as the proposal slots; availability and working-hour controls retain their 14-day view. Briefing, the RM assistant and the meeting workspace use one canonical Brief Writer version with current-source checks and exact approval. The Minutes Writer drafts from imported transcript evidence or RM recollections; minutes, selected follow-ups and client recap sharing require separate approvals. Running it: minutes need `MEETINGS_ENABLED=true` and the meeting worker (README section 2); a transcript can be uploaded as `.vtt` or `.txt` without Zoom (*Upload transcript* on the meeting page); a Zoom link needs `ZOOM_OAUTH_DIRECTORY` and a backend on macOS, Linux or WSL ([zoom-wsl.md](../setup/zoom-wsl.md)). A transcript is used only when the client agreed, on that meeting or for every meeting (0149). [Architecture §15](../architecture.md#15-meeting-lifecycle-seam-rm-copilot-target-hybrid-slice-implemented) describes the agent boundaries, consent, durable graph, Zoom API intake and operating limits.
 
 ## Layout (Nov 2026 redesign)
 
 - **Answers read as short reports**: title, summary, sections. Recorded facts are plain bullets; only *Client said*, *AI suggestion*, *Gap* and *Guidance* are marked. Numbered references (1, 2…) after each point open that record in the *Sources* list at the end of the report, in place (no side panel). *Copy* and *Print / PDF* on every report.
-- **My clients** always opens on the full list; search filters as you type, clearing it shows everyone, Enter on a name outside the book is refused and recorded. A client page has a header with quick actions, tabs (*Overview*, *Requests & tickets*, *Meetings & notes*) and an *AI client overview* generated only on request.
+- **My clients** always opens on the full list; search filters as you type, clearing it shows everyone, Enter on a name outside the book is refused and recorded. A client page has a header with quick actions (*Summarise client*, *Draft a message*, *Document a call*, *Prepare briefing*, *Handover brief* for an inherited client, each opening the assistant) and tabs (*Overview*, *Requests & tickets*, *Meetings & notes*); the AI overview is generated only on request.
 - **Small screens**: pages move to a bottom tab bar, the header keeps only the avatar (sign out). The client app does the same: its account menu keeps only *Sign out* on phones, and guests see one *Sign in* button.
 
 ## Demo data (0090)
 
 - **Sophie's own notes**: Michelle (15 Apr 2026 annual review, 24 Sep 2026 review preparation, 20 Oct 2026 deliberately unclear call), Grace (12 Aug 2026), Hafiz (3 Jun 2026). Rachel's notes for David (0088) and Mei Ling (8 Jul 2025, 19 Jun 2026) plus one **private** note each that Sophie never sees.
-- **Client-stated preferences** tied to their notes; **maturities and reviews** (Michelle's fixed deposit ****4410, Mei Ling's ****9051, Grace's check-in, Hafiz's account review, David's annual review).
+- **Client-stated preferences** tied to their notes; **maturities and reviews** (Michelle's fixed deposit ****4410, called a time deposit since 0117, Mei Ling's ****9051, Grace's check-in, Hafiz's account review, David's annual review).
 - **Appointments** relative to the day 0090 is applied: next Tuesday 10:00 David (local only), next Wednesday 14:30 Michelle (video), next Thursday 11:00 Grace (phone, no purpose recorded), the Monday after next 16:00 Hafiz, and a **held** (unconfirmed) Friday slot for Grace.
-- **Tasks**: "Send Michelle fixed deposit options" (due in 5 days) and an **overdue** task for Hafiz's fee review.
+- **Tasks**: "Send Michelle fixed deposit options" (due in 5 days; "time deposit" since 0117, and `58_reset_storyline_demo.sql` re-dates it and the maturity to this Friday, or next Friday when fewer than 2 days away) and an **overdue** task for Hafiz's fee review.
 - Since `0093`, Grace, Hafiz and David belong to Priya: their meetings with Sophie are cancelled and her open tasks for them closed, so Sophie's book is Michelle and Mei Ling.
 - **Mei Ling** (1007): request to Rachel with a bank update, a chat question about a renewal rate that the assistant handed to the RM, a consented handover note, and two notes whose consent expired or was revoked.
 
 ## Demo script (about 10 minutes)
 
-1. Sign in as `demo.sophie@example.com`. The workspace shows *RM assistant* with her book size.
+1. Sign in as `demo.sophie@example.com`. The workspace opens on *Today*; open *RM assistant* for the steps below.
 2. **Ticket triage**: "What needs my attention today?" → Mei Ling's two requests for Sophie first, Michelle's specialist-managed requests read-only.
 3. **Outside the book**: "Show me Ong Wei Ming's recent transactions" → refused, no records read (audit: `policy.rm_client_denied`).
-4. **Overview**: My clients → Michelle → blocks with sources and gaps → *Ask for an overview*; then "what did she say about her mother?" (follow-up on the same client; the 20 Oct note is flagged as unclear).
-5. **Briefing**: Schedule → Michelle → *Prepare briefing* → then "add a question about the sale agreement" (refines the same briefing).
+4. **Overview**: My clients → Michelle → blocks with sources and gaps → *Summarise client*; then "what did she say about her mother?" (follow-up on the same client; the 20 Oct note is flagged as unclear).
+5. **Briefing**: Schedule → Michelle's meeting → *Briefing* → then "add a question about the sale agreement" (refines the same briefing). This needs a confirmed meeting: after `58_reset_storyline_demo.sql` Michelle has none until she asks for one and Sophie accepts it.
 6. **Documentation**: Michelle → *Document a call*, paste the long phone-call note in [demo-call-note-michelle.md](demo-call-note-michelle.md) (with what to expect), or this short one:
    `Notes from my call today with Michelle (phone): she will upload the sale agreement this week. She asked the compliance team to confirm whether a sale agreement in Thai with a certified English translation is acceptable for her review. She also wants a copy of her September 2026 statement. She might review her card limit in December, not decided. I'll send her fixed deposit options by Friday.`
    The summary separates facts, commitments and requests, marks the card limit as tentative, proposes a compliance question (service request), flags the statement copy as a duplicate of her open statement request, and flags the fixed deposit task as similar to the open one. Correct by chat ("Correction: the statement is for August 2026") → approve → *Review request form* on the compliance question → fill anything missing → tick verification → submit (the TCK- reference appears only now) → *Create selected tasks*.
-7. **Client message**: Ticket inbox → Michelle's statement request → *Draft a reply* → "make it warmer" → edit → tick → *Approve and send*. Sign in as Michelle: My requests shows *Latest update* and an Inbox notice.
+7. **Client message**: Ticket inbox → Michelle's statement request → *Draft a reply* → "make it warmer" → edit → tick → *Approve and send*. Sign in as Michelle: Requests shows the reply under *What the bank told you*, and an Inbox notice.
 8. **Handover**: My clients → Tan Mei Ling → *Handover brief* (eight sections; the revoked and expired notes are excluded; Rachel's private note is counted, not shown).
-9. **Availability**: Schedule → block a free half hour → Michelle's *Meetings* tab no longer offers it.
+9. **Availability**: Schedule → block a free half hour → Michelle's *Meetings* page no longer offers it.
 
 ## Copilot demo (build plan 5b, 12 steps)
 
 Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project through the API (evaluation README §8). The rest have not been run end to end in the browser. Step 9 waits for build plan 5a.
 
 1. **Reset** (owner, SQL editor): run `backend/supabase/hosted/34_reset_meeting_demo.sql`. This seeds:
-   - Michelle's grant to Sophie and her confirmed home loan meeting on the first free Thursday;
+   - Michelle's grant to Sophie and her confirmed *Property financing options* meeting on the first free Thursday (0117 wording);
    - Mei Ling's open request (Monday and Tuesday 16:30);
-   - Michelle's inferred home loan topic, already past its 24-hour hold.
+   - Michelle's inferred property financing topic, already past its 24-hour hold.
+
+   The end-to-end demo uses `58_reset_storyline_demo.sql` instead: the same seed plus a clean slate, but Michelle has no booked meeting.
 2. **Michelle shares a topic**: in chat, "I'm thinking of buying a condo next year". The reply offers *Let her know* / *Not now*. *Let her know* makes the topic confirmed, and Sophie gets a notice that names no topic.
-3. **Michelle asks for a meeting**: "I'd like to see my RM next week about an investment review". The chat drafts a request (purpose, topics, up to 3 free times) and she taps *Confirm*. My requests → Meetings shows it open.
+3. **Michelle asks for a meeting**: "I'd like to see my RM next week about an investment review". The chat drafts a request (purpose, topics, up to 3 free times) and she taps *Confirm*. Meetings shows it open.
 4. **Sophie's Today**: sign in as `demo.sophie@example.com`. Today shows:
    - *Do first*, with each item's score reasons;
    - the requests to answer (Mei Ling's and Michelle's);
-   - *Client chat insights shared with you* (Michelle's home loan).
+   - a *Shared topic* row (Michelle's property financing).
 5. **Plan my day**: one cited answer in the code's rank order (R24).
 6. **Answer a request**: in the copilot, "Accept Mei Ling's Monday 4:30 pm time". Sophie approves the card (R25). Then she accepts Michelle's request in Schedule → Requests. Michelle's Meetings shows it confirmed, with an Inbox notice.
 7. **Availability**: "Block Friday afternoon" gives a card, which Sophie approves (R26). Michelle's free times no longer include it.
-8. **Overview**: My clients → Michelle → *Ask for an overview*. The overview shows transaction insights and her topics (home loan, confirmed), and every line is cited.
-9. **Brief** (needs 5a): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available.
+8. **Overview**: My clients → Michelle → *Summarise client*. The overview shows transaction insights and her topics (property financing, confirmed), and every line is cited.
+9. **Brief** (5a, built since: the meeting side's Brief Writer, 0129): "Prepare my brief for Michelle's Thursday meeting" shows the meeting side's brief, or says meeting preparation isn't available (without `MEETINGS_ENABLED=true`).
 10. **Reply**: Ticket inbox → one of Michelle's requests → *Draft a reply* → edit → tick → *Approve and send*.
-11. **Consent change**: as Michelle, open Data sharing and switch off the transaction insights and chat topics cards (consent v2; batches `36`–`40` are on hosted since 5 Nov).
+11. **Consent change**: as Michelle, open Data sharing and switch off *Transaction insights* and *Chat insights* (consent v2; batches `36`–`40` are on hosted since 5 Nov).
 12. **The gap**: as Sophie, open Michelle's overview again.
     - Transaction insights and chat topics are listed as not shared.
     - Inferred topics are deleted; the topic she shared herself stays.
@@ -179,7 +181,7 @@ Written 5 Nov 2026. Steps 1, 11 and 12 were rehearsed on the hosted project thro
 
 ## Known limits
 
-- Audio recordings and speech recognition (RM5 stretch) are not built; notes are typed or pasted, or a Zoom text transcript is imported on the meeting side.
+- Audio recordings and speech recognition (RM5 stretch) are not built; notes are typed or pasted, or on the meeting side a Zoom text transcript (`.vtt`/`.txt`) is uploaded or the worker reads the Zoom My Notes of a registered meeting (`services/meetings/my_notes.py`).
 - Checks are conservative format checks (figures, dates, references, wording), not proof that each sentence is true.
 - RM MFA (aal2) is not required in the demo; the support role keeps its aal2 requirement.
 - QA1 RM last ran on the hosted project on 5 Nov (16 of 17; R24–R27 pass); re-run `qa1_rm_cases.json` after changes and record the results.

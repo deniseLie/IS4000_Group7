@@ -1,5 +1,7 @@
 # Talking points that follow the conversation (lane 1 v2)
 
+Status (11 Nov 2026): built 8 Nov 2026 (0143–0144, hosted batch 49; `talking_points/v2` is the default); the 10 Nov validator fix (TP04) is in `docs/evaluation/README.md`.
+
 Plan written 8 Nov 2026 in a side session. **Built 8 Nov 2026** in slices 1–5 (migrations 0143 and 0144, hosted batch 49; 0145 later the same day retired the care pause); v2 is the default in `prompts.VERSIONS` since slice 5 (results in `docs/prompt-log/talking_points/v2.md`). The feature is called *Client chat insights* in words people read (*Chat insights* on her pages). It changes lane 1 of the talking points (`services/talking_points.py`, migration 0108/0110): the step that picks up what a client is planning from her chats. Lane 2 (*Let Sophie know*, a rule) is unchanged.
 
 ## Why

@@ -1,5 +1,7 @@
 # Faster RM answers (R22 and the other briefs)
 
+Status (11 Nov 2026): built (slices 1–5, 6 Nov 2026, `rm_assistant/v6`; v7 and v8 since then leave the report rules as they are). Results in `docs/evaluation/README.md` §9.
+
 Plan written 6 Nov 2026; slices 1–5 built the same day (see [What was built](#what-was-built-6-nov-2026)). It covers the **model** side of a slow RM turn; the database side is in [database-speed.md](database-speed.md).
 
 ## What was measured (5 Nov 2026)

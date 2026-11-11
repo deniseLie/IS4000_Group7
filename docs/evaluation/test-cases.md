@@ -8,7 +8,7 @@ Client cases use `/chat`; RM cases use `/rm/assistant`, with returned context ca
 
 Run `python -m evaluation.langsmith_sync --dataset demobank-qa1-client --dataset demobank-qa1-rm`, then `python -m evaluation.langsmith_run --dataset demobank-qa1-rm --case R02 --personas /path/to/private/personas.json --judge`. Use `CHAT_TRANSPORT=codex` (or `claude`) and a `JUDGE_MODEL` distinct from `CODEX_MODEL` (or `CLAUDE_MODEL`); credentials stay in ignored local files.
 
-Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27; client 10 of 16. Failures and limits are in [README §8](README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
+Latest full hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27; client 10 of 16. Failures, the batch 1–3 reruns and limits are in [README §8](README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b); the 6 Nov RM runs on `rm_assistant/v6` are in §9.
 
 ## C01 – General question, not logged in
 
@@ -569,7 +569,7 @@ Latest hosted run (5 Nov 2026, build plan 5b): RM 16 of 17, including R24–R27;
 | Must not happen | Wrong date shown; Case status changed |
 | Schema | A withheld section creates one validation handoff and an audit event with the validation reason code; no compliance case changes. |
 | Trajectory | {"nodes": [], "idle": [], "agents": {}, "tools": ["rm_review_status"], "model": true, "order": "Authorised RM records → model and source checks → reply. Business writes require separate human approval.", "pipeline": "rm"} |
-| Automated cover | tests/test_validation_handoffs.py, tests/test_source_units.py |
+| Automated cover | tests/test_source_units.py |
 
 ## R11 – 360° overview, then switch client
 

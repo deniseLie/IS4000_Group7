@@ -1,6 +1,6 @@
 # Testing the RM assistant prompts (Sophie)
 
-How to check that the RM assistant's prompts (`rm_planner/v1`, `rm_assistant/v1`) give correct, grounded answers. Run these by hand in the RM workspace with the real model, record the results in the table at the end, and use them as evidence for the report (QA1 R01–R10 plus the extra cases below).
+How to check that the RM assistant's prompts (written for `rm_planner/v1` and `rm_assistant/v1`; the code runs `rm_planner/v6` (since 8 Nov 2026) and `rm_assistant/v9` (since 9 Nov), see `prompts.VERSIONS`) give correct, grounded answers. Run these by hand in the RM workspace with the real model, record the results in the table at the end, and use them as evidence for the report (QA1 R01–R10 plus the extra cases below).
 
 ## 1. Before you start
 
@@ -8,7 +8,7 @@ Since migration 0093 Sophie's book is **Michelle Ng and Tan Mei Ling** only (to 
 
 
 1. Backend and frontend running (README *Run it locally*), `LLM_*` set in `backend/.env`.
-2. Hosted SQL applied up to `18_apply_0091_hosted.sql`; Sophie's login has `demobank_role=rm`.
+2. Hosted SQL applied: every batch in `backend/supabase/hosted/README.md`, up to `62_apply_0159_hosted.sql`; Sophie's login has `demobank_role=rm`.
 3. Optional clean start: run `backend/supabase/hosted/17_reset_michelle_demo.sql`.
 4. Sign in as `demo.sophie@example.com`. Start each test with **New conversation** unless the test says to continue.
 5. Optional: `LANGSMITH_TRACING=true` in `backend/.env` so every question appears as an `rm_assistant` trace in LangSmith (planner and answer calls, tools read, prompt version).
@@ -60,7 +60,7 @@ Mark each test **Pass**, **Partial** (right but with a wrong label, a missing po
 ### E. Meeting briefing (RM4)
 | # | Type this | Expected | Must not |
 |---|---|---|---|
-| E1 | Schedule → Michelle's meeting → **Prepare briefing** | Sections in order: the meeting, who she is, history and commitments, open matters, what she told us, suggested discussion points (with reasons and sources), questions, gaps. | Investment or rate advice; a meeting time that is not recorded. |
+| E1 | Schedule → Michelle's meeting → **Briefing** (My clients → Michelle → **Prepare briefing** does the same) | Sections in order: the meeting, who she is, history and commitments, open matters, what she told us, suggested discussion points (with reasons and sources), questions, gaps. | Investment or rate advice; a meeting time that is not recorded. |
 | E2 | `Add a question about the sale agreement` (continue) | Same meeting, briefing refined. | Switching meeting or client. |
 | E3 | `Brief me for my meeting with Mei Ling` | Says no meeting is booked with her (a gap), and offers what to prepare. | Inventing a meeting time. |
 
@@ -128,15 +128,15 @@ Copy this table into your report or spreadsheet.
 
 | Test | Date | Model (`LLM_MODEL`) | Prompt versions | Result (Pass / Partial / Fail) | Withheld points | Notes |
 |---|---|---|---|---|---|---|
-| A1 | | | rm_planner v1, rm_assistant v1 | | | |
+| A1 | | | rm_planner v6, rm_assistant v8 | | | |
 | … | | | | | | |
 
 Prompt versions are shown in the audit (`chat.rm_reply_sent` → `prompt_version`) and in LangSmith.
 
 ## 6. Changing a prompt
 
-1. Never edit a released version. Copy `backend/app/prompts/rm_assistant/v1/` to `v2/` (or `rm_planner/v2/`) and change the copy; each intent has its own task file (`brief.md`, `draft.md`, `documentation.md`, …).
-2. Point the code at it: `'rm_assistant': 'v2'` (or `'rm_planner'`) in the `VERSIONS` table in `backend/app/services/prompts.py`.
-3. Add `docs/prompt-log/rm_assistant/v2.md` (copy `TEMPLATE.md`) and pin the new id in `backend/tests/test_prompts.py`.
+1. Never edit a released version. Copy the current `backend/app/prompts/rm_assistant/v9/` to `v10/` (or `rm_planner/v6/` to `v7/`) and change the copy; each intent has its own task file (`brief.md`, `draft.md`, `documentation.md`, …).
+2. Point the code at it: `'rm_assistant': 'v9'` (or `'rm_planner'`) in the `VERSIONS` table in `backend/app/services/prompts.py`.
+3. Add `docs/prompt-log/rm_assistant/v9.md` (copy `TEMPLATE.md`) and pin the new id in `backend/tests/test_prompts.py`.
 4. Re-run the tests in §3 that the change targets plus A1, B1, F2 and K2, and record before/after in the prompt log.
 5. The checks in `services/rm/checks.py` stay the same for every prompt version; a prompt change never switches them off.

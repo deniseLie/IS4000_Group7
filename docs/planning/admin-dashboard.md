@@ -1,5 +1,7 @@
 # Admin dashboard (AI engineering view)
 
+Status (11 Nov 2026): built 5 Nov 2026 (`api/admin.py`, `services/quality.py`, `services/insights.py`, `AdminWorkspace.jsx`); later changes (LangSmith's v2 run query on 6 Nov, local suites published through `evaluation/publish.py` since 10 Nov) are in AGENTS.md's *Admin dashboard* row.
+
 Plan written 4 Nov 2026; built 5 Nov 2026 in the six slices under *Build order*. Where the build differs from this plan:
 
 - The source filter is `source=live|eval|all` (live is the app's tracing project, eval the requests inside the latest experiments); there is no separate surface filter. Latency is split by surface on the page, and agents by client and RM.

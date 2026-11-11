@@ -1,6 +1,6 @@
 # Client view (Michelle): acceptance criteria traceability
 
-Checked against the finalised product backlog (client stories CR1–CR17) on 31 Oct 2026.
+Checked against the finalised product backlog (client stories CR1–CR17) on 31 Oct 2026; the evidence for CR12, CR13 and CR17 was updated to the current code on 11 Nov 2026 (urgent card help since build plan 2b, meeting requests since 2a).
 **Met** = implemented and covered by an automated test or a row in `assistant-prompt-tests.xlsx`.
 **Partly** = the main flow works; the listed criteria still need work or a live check.
 **Check** = implemented earlier and confirmed by the code review, not re-verified line by line here.
@@ -18,9 +18,9 @@ Checked against the finalised product backlog (client stories CR1–CR17) on 31 
 | CR9 Raise a ticket | Met | Confirmation before submission; possible duplicate offered ("Add to TCK-…" / "Open a new request"); different topic = new ticket (0085); withheld answers create no ticket; meetings and general answers never create tickets | — |
 | CR10 Ticket status | Check | My requests shows reference, category, status, team, last update (`TicketsPage.jsx`) | RM-side same record: check on the RM interface |
 | CR11 Card limit change | Met | Card limit request form; chat button pre-fills the latest amount she stated, noting corrections (`limitSummary`) | — |
-| CR12 Suspicious charge / lost card | Met | Charges listed and confirmed before the urgent fraud ticket; lost card: safety steps first, then "Yes, report my card"; fraud team, not RM | — |
-| CR13 Failed / pending transaction | Met | Pending Lim Interiors transfer explained; fraud wording goes to the fraud flow; case only after confirmation | — |
+| CR12 Suspicious charge / lost card | Met | Fixed urgent steps first (freeze the card on Overview or call the fraud line), then one urgent request to her RM, recorded only when she confirms (`orchestrator.urgent_output`, `rm_handover.urgent_*`); guests get the steps only; an open urgent lost-card request is quoted, not repeated | — |
+| CR13 Failed / pending transaction | Met | Pending Lim Interiors transfer explained; fraud wording gets the urgent card steps; a request to the RM only after confirmation | — |
 | CR14 Credit card enquiry | Met | `card_answers.py`: figures from records, "which card?" with one-tap replies, follow-ups stay on the card, topic switch does not carry it | — |
 | CR15 Account information | Met | Balances, recent transactions, fees and "what was this charge?" from records (`transaction_answers.py`); Go to Statements | Statement month retention: live check |
 | CR16 Loans | Partly | Private-client financing since 0115: property financing, Lombard, `loans` v3 (personal and car loans retired); no approval or rate promises | Run the five loan rows before marking complete |
-| CR17 Book a meeting | Met | Free times in chat, 10-minute hold, booking summary, Confirm booking, expiry handling, My requests > Meetings | RM schedule sync (RM12): check on the RM interface |
+| CR17 Book a meeting | Met | Meeting requests, not direct bookings (2a, 0106): the chat drafts one from her words and free times and ends with one `meeting.request` offer (`meeting_answers.py`); My requests > Meetings has *Request a meeting* (purpose, topics, 1–3 free times), *Accept <time>* / *No, close this request* on a time the RM proposed and *Withdraw*; the RM accepts, proposes a time or declines on Schedule → Requests; no weekly limit since 0159 | — |

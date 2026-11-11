@@ -1,4 +1,4 @@
-# Status (8 Nov 2026)
+# Status (11 Nov 2026)
 
 Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog.xlsx`, deleted in commit `712eacb`; its last version is in git history). Both personas are built; the dated sections below are history, newest first.
 
@@ -29,10 +29,24 @@ Story IDs follow the product backlog spreadsheet (`docs/planning/product-backlog
 | F23 | Ticket service | Done | – |
 | F24 | Request categories | Done | – |
 | F25 | MCP tool layer | Done | Every read that feeds a model or an agent's rules goes through `tools.call`, and every call is an MCP `tools/call` to the in-process server (8 Nov 2026; `TOOL_TRANSPORT` removed). The RM tools (`rm_*`) are in the same table. The meeting agents' reads followed (8 Nov 2026; their drafts and the worker's private login stay direct). Left: the v1 `kb.search`. |
-| F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches the admin dashboard. Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
+| F26 | LangSmith tracing and evaluation | **Partly** | Client/RM tracing, versioned datasets, real API targets and independent Codex judge are working. Native Codex usage reaches the admin dashboard, and since 10 Nov the local suites are published there too (`evaluation/publish.py`). Rule failures, judge review, manual workflow boundaries and annotation-queue automation remain open; see [evaluation](../evaluation/README.md). |
 | F27 | Model comparison | **Not started** | Needs F26 experiments. |
 | F28 | Audit trail walkthrough | Done | – |
 | QA1 | Test case set (49 cases) | **Runnable / manual boundaries explicit** | [C01–C24, C11b, R01–R20 and R24–R27](../evaluation/test-cases.md) follow the current downloaded backlog IDs, titles and owners, with source row/hash and current-record adaptations. Client: 17 runnable, 8 manual; RM: 17 runnable through `/rm/assistant`, 7 manual. The runner supports independent Codex judging; deterministic and judge scores require separate review. Approval, upload and specially prepared failure/consent fixtures remain outside automated scoring. |
+
+## Done on 8–11 Nov (instant consent, UBS Connect name, transcripts, meetings, evaluation publishing; migrations 0146–0159)
+
+- **Consent is instant only (0146, 0147, 8 Nov):** 0146's *Stop using my data* requests were replaced the same day by 0147: every consent change happens at once in the app (the Data sharing switches, *Withdraw* on a meeting); the *Stop using my data* and *Delete all my data* requests are gone. Rules, how each is met and gaps: [pdpa-baseline.md](../pdpa-baseline.md).
+- **UBS Connect (0148, 8 Nov):** every client-readable use of the old product name is renamed (knowledge, categories, templates, meeting details; ids and versions unchanged; re-run `embed_knowledge` after it), with new prompt versions for the same rename (`answer/v4`, `planner/v11`, `guide/v3`, `accounts/v2`, `runner_common/v3`, `retail/v12`, `compliance/v8`, `relationship/v8`, `document/v6`, `rm_planner/v6`, `rm_assistant/v8`).
+- **Meeting transcripts (0149, 8 Nov):** she agrees once for every meeting on Data sharing › Meeting recording (or on each meeting, and can say *Not for this meeting*); the RM no longer has to agree.
+- **Tools and prompts (8–11 Nov):** every read is an MCP tool call (`TOOL_TRANSPORT` removed); the public holiday and FX tools are gone (`accounts/v3`, `guide/v4`, `planner/v12`); `planner/v13` (10 Nov) keeps one card's figures in one Accounts task and a fee waiver in its own task; since 11 Nov Compliance, Relationship and the Accounts rules read under their v5 specs.
+- **RM Zoom check (0150, 8–9 Nov):** the RM Calendar's read-only `zoom_meeting_check`, which `schedule` runs on Zoom wording (`rm_assistant/v9`); hosted `55_apply_0150_hosted.sql`.
+- **Meetings and knowledge (10–11 Nov):** meeting brief, pack and date fixes (0151, 0153–0156, meeting side); knowledge retrieval scope (0152).
+- **Evaluation and admin (11 Nov):** every set at 100% (P14 and R22 removed as not critical); chat insights lane 1 back on `talking_points/v2`; the judge runs the meeting sets on OpenRouter; the admin Overview leads with headline tiles, the Agents page is trimmed and *Latency and cost* replaces Latency.
+- **No weekly meeting limit (0159, 11 Nov):** run by hand on hosted; `62_apply_0159_hosted.sql` records it.
+- **Evaluation and tracing (10 Nov):** local suites published to LangSmith (`evaluation/publish.py`: `demobank-search`, `demobank-chat-insights` and `-conversations`, `demobank-meeting-tool-rules`); 17 failing search cases dropped as known limits (156 left, no-match floors 0.9); TP04 fixed (55 messages and 14 conversations, all passing); page-load reads are audited, not traced ([trace-page-reads.md](trace-page-reads.md)). Results: [evaluation README](../evaluation/README.md).
+- **RM and tokens (11 Nov):** evidence reaches the model as compact JSON; the ticket inbox shows the model the first 10 of her tickets and 5 specialist-managed ones, and code counts the rest.
+- **Demo and docs (11 Nov):** `58_reset_storyline_demo.sql` resets Michelle and Sophie for the end-to-end demo and leaves Michelle with no booked meeting. README rewritten (setup, dependencies, keys, datasets), with [datasets.md](../datasets.md) and [setup/zoom-wsl.md](../setup/zoom-wsl.md).
 
 ## Done on 8 Nov (client chat insights v2, naming, care pause retired; migrations 0143-0145, on hosted with 0142)
 
@@ -50,7 +64,7 @@ Demo script and metrics: [storyline-michelle.md](../workflows/storyline-michelle
 - **Demo data (0117):** time deposit wording, the meeting "Property financing options", topic labels, the `financing_specialist` request type.
 - **Brief Writer (0118, meeting side):** saved, versioned briefs per meeting, prepared in the background for the next 7 days, re-checked against consent on open (*Removed by client on <date>*), approved by exact version; `prepare`, `decide` (brief) and `status` in the seam.
 - **Checked here:** every migration applied to a fresh PostgreSQL 16; the new SQL (RLS, refusals, collateral alert, brief save/replay/recheck/approve) by hand with psql; hosted batch 42 applied and re-run (identical SQL notice) on a copy without 0115–0117/0118; frontend unit tests (`node --test`) and an esbuild bundle of the app; the pure Python tests that import without the full dependency set. **Not run here** (no package registry in that sandbox): the full `pytest` suite with `TEST_DATABASE_LOCAL=1` (new `test_storyline_db.py`), the Playwright suites and a live model brief. Run them before merging.
-- **Still open:** the Proposal Drafter, the durable lifecycle graph and `on_event`; automatic Zoom capture (free Zoom has no cloud transcript); longer-call chunking; Advisor Messaging (vision only).
+- **Still open:** the Proposal Drafter, the durable lifecycle graph and `on_event`; automatic Zoom capture (free Zoom has no cloud transcript); longer-call chunking; Advisor Messaging (vision only). (Since built by the meeting side: the Proposal Drafter (`proposal_drafter/v1`), `on_event`, the durable signed lifecycle graph (0137) and longer transcripts (0128); see AGENTS.md's meeting lifecycle row.)
 
 ## Admin dashboard (5 Nov 2026)
 
@@ -58,8 +72,8 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 
 ## Persona 1 (client) – open items
 
-- **Hosted project:** the migration batches through `40` are applied (36–40 on 5 Nov), and the meeting side applied 0120–0124 itself; `32_admin_login_hosted.sql` is the owner's step under *Admin dashboard* above. Run `41_eval_cleanup.sql` before each client evaluation run.
-- **Reminders:** off until the worker runs. README step 5: create the `demobank_reminders` login, set `WORKER_DATABASE_URL` and `RUN_WORKER_IN_API=true`.
+- **Hosted project:** the migration batches through `40` were applied on 5 Nov and 48–49 on 8 Nov, 0159 (no weekly limit) was run by hand on 11 Nov (`62_apply_0159_hosted.sql` records it), and the meeting side applied its own migrations; check the other later batches against `01_inventory.sql` and [hosted/README.md](../../backend/supabase/hosted/README.md); `32_admin_login_hosted.sql` is the owner's step under *Admin dashboard* above. Run `41_eval_cleanup.sql` before each client evaluation run.
+- **Reminders:** off until the worker runs. README sections 2 and 3: create the `demobank_reminders` login, set `WORKER_DATABASE_URL` and `RUN_WORKER_IN_API=true`.
 - **Re-run QA1** and record the results (F22 evidence); the 5 Nov hosted run was client 10 of 16, RM 16 of 17.
 - **Assign owners** where the backlog or `test-cases.md` still says TBC.
 
@@ -90,7 +104,7 @@ Built in six slices on `claude/langsmith-admin-dashboard-eeeca0` ([plan](admin-d
 - **Consent v2 (6a, 6b, 6d–6f):** each category can have a scope and an end, and topics can be deleted with Undo. Also built: an access log, RM asks to share, and share switches on the meeting request card (0109, 0110, 0112–0114, `relationship/v7`). Since 0147 (8 Nov) every consent change is instant in the app (the switches and *Withdraw* on each meeting); *Delete all my data* and *Stop using my data* were removed. Checked natively only. Hosted batches `36`–`40` were applied on 5 Nov 2026. On hosted, only the two-argument `offer_group_confirm` has been exercised so far, by C11 and C11b.
 - **Evaluation (5b):** on the hosted project, safety 8/8, planner 11/16, RM QA1 16/17 (R24–R27 all pass), graph 3/5 and client QA1 10/16. The consent step was rehearsed twice. Results, transport and failures: [evaluation README §8](../evaluation/README.md#8-results-on-the-hosted-project-5-nov-2026-build-plan-5b).
 - **Still open:**
-  - 5a: waits for the meeting side's `prepare`/`status`;
+  - 5a: waits for the meeting side's `prepare`/`status`; (since 7 Nov the copilot's meeting brief opens the meeting side's saved brief, `rm/handlers.h_brief`)
   - RM usefulness ratings from teammates;
   - phase 4's done-when steps in the browser on hosted;
   - the full copilot demo twice in a row (needs 5a);

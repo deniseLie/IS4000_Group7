@@ -13,7 +13,7 @@ Checked 11 Nov 2026. What data the code package contains, where each set came fr
 | Background research | `docs/research/` | Notes on how a real private bank explains the same topics | The team's own paraphrase of public web pages, with the date checked. Never copied into articles | Shaped the wording of the articles; not read by the app |
 | Evaluation cases | `backend/evaluation/*.json` (table in section 2) | Questions, turns, expected routes, sources and checks | Written by the team against the synthetic personas | Run by `evaluation.run`, `evaluation.retrieval`, `evaluation.langsmith_run` and other suites. `evaluation.langsmith_sync` copies seven of them to LangSmith datasets named `demobank-*`; the JSON files are the source of truth |
 | Judge prompts | `backend/evaluation/judge/` | Grading instructions for the optional model judge | Written by the team | `langsmith_run.py --judge` |
-| Test fixtures | `tests/fixtures/privacy-cases.json` (21 cases: made-up PINs, OTPs and card numbers, and ordinary text that must stay unchanged), `backend/tests/fixtures/external/` (two saved responses from the public holiday and exchange-rate APIs), `frontend/tests/fixtures/documents/Synthetic DEMO.*` (a fake PDF, DOCX, JPG and PNG) | Inputs for the redaction, external-tool and upload tests | Made up by the team; the two API responses are public data from `date.nager.at` and `api.frankfurter.dev` | Unit and browser tests |
+| Test fixtures | `tests/fixtures/privacy-cases.json` (21 cases: made-up PINs, OTPs and card numbers, and ordinary text that must stay unchanged), `backend/tests/fixtures/external/zoom_meeting_waiting.json` (a made-up Zoom meeting response), `frontend/tests/fixtures/documents/Synthetic DEMO.*` (a fake PDF, DOCX, JPG and PNG) | Inputs for the redaction, RM Zoom check and upload tests | Made up by the team (the Zoom response has synthetic ids, host and `example.com` email) | Unit and browser tests |
 | Demo transcripts | `docs/workflows/demo-files/*.vtt` | Scripted calls between Sophie and Michelle | Written by the team and read aloud by team members | Uploaded on a meeting to make minutes without Zoom |
 | Saved evaluation evidence | `docs/evaluation/evidence/`, `docs/evaluation/assistant-prompt-tests.xlsx` | Outputs of earlier runs and a manual test sheet | Produced from the synthetic data above | Supports the results in [evaluation/README.md](evaluation/README.md) |
 | Font | `backend/app/assets/fonts/NotoSansSC-Regular.ttf` with `OFL.txt` | A font for PDF recaps | Google Noto, SIL Open Font Licence (included) | `reportlab` PDF output |
@@ -28,8 +28,8 @@ Checked 11 Nov 2026. What data the code package contains, where each set came fr
 | `offline_cases.json` | 19 | Answer validators on fixed sample answers; no model call, stays local |
 | `qa1_client_cases.json` | 25 | Michelle C01–C24 and C11b (`demobank-qa1-client`); mirror [test-cases.md](evaluation/test-cases.md) |
 | `qa1_rm_cases.json` | 24 | Sophie R01–R20, R24–R27 (`demobank-qa1-rm`) |
-| `graph_cases.json` | 5 | Agent dependencies and fault cases (`demobank-graph`) |
-| `planner_cases.json` | 16 | The planner alone: route, agents, links, priority (`demobank-planner`) |
+| `graph_cases.json` | 4 | Agent dependencies and fault cases (`demobank-graph`) |
+| `planner_cases.json` | 15 | The planner alone: route, agents, links, priority (`demobank-planner`) |
 | `retrieval_cases.json` | 156 | Knowledge search: 72 `tune`, 84 `holdout` (covered, informal, gap, non-English, off-topic) |
 | `talking_points_cases.json`, `talking_points_conversations.json` | 55, 14 | Client chat insights classifier, single messages and multi-turn |
 | `meeting_cases.json`, `meeting_boundary_cases.json` | 12, 22 | Meeting minutes and the meeting tools' boundaries |
@@ -58,6 +58,6 @@ Tune search settings on `split=tune` only; the `holdout` cases measure the resul
 2. **Seed rows go in a new migration** with the next free number. Never edit an applied migration. A demo reset may delete, re-seed or re-date rows, never add new kinds of data.
 3. **Knowledge articles** are team-written, or a short summary in the team's own words of an allowed public source (`www.moneysense.gov.sg`, `www.abs.org.sg`) with `reference_url`, `checked_on` and `review_due`. Never copy source text. A change is a new article version in a new migration; then run `python -m scripts.embed_knowledge` again.
 4. **Evaluation cases** are added to the JSON file with a new stable id; never reuse or renumber an id. QA1 cases must match [evaluation/test-cases.md](evaluation/test-cases.md) (`backend/tests/test_qa1_cases.py` checks this). After changing a live case file, run `python -m evaluation.langsmith_sync`.
-5. **External data** comes only from the allowed read-only hosts (`date.nager.at`, `api.frankfurter.dev`); saved responses go in `backend/tests/fixtures/external/`.
+5. **External data** comes only from the allowed read-only host (`api.zoom.us`, the RM Zoom meeting check; `EXTERNAL_HOSTS`); a saved response goes in `backend/tests/fixtures/external/` with made-up ids and names.
 6. **No personal data in logs, traces or screenshots.** Logs and the audit trail hold ids and counts only; LangSmith uploads go through the redacting client (`backend/app/core/langsmith_client.py`).
 7. **Keep large binaries out of Git** unless a test needs them; then keep them small and synthetic, like the `Synthetic DEMO.*` files.

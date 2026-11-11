@@ -1,7 +1,9 @@
-# Storyline × architecture: the end-to-end flow (7 Nov 2026)
+# Storyline × architecture: the end-to-end flow (7 Nov 2026; checked 11 Nov 2026)
 
 How each scene of the Michelle / Sophie storyline runs through the architecture diagram (page V4, numbers ①–⑳), who
-approves what, and what is still to build. Synthetic data only.
+approves what, and what is still to build. Synthetic data only. Since 11 Nov the storyline is a Lombard loan (she
+borrows against her advised portfolio for a condo) rather than a mortgage; the paths below are the same
+(`docs/workflows/demo-end-to-end.md`).
 
 ## The one rule to say in class
 
@@ -27,15 +29,15 @@ function (`rm_meeting_brief_approve`, `meeting_approve_pack`, minutes review) ch
 | 1b | Downloads her statement | Web Client ① → Customer Data ⑬ → Document Storage | Built (the app calls it *Statements*, not Mailbox) |
 | 1c | Uploads the sale agreement for her periodic review; the app checks it | **Compliance & Documents** agent ⑩ → Approved Actions ⑬ (upload offer she confirms) → Document Storage; check before submit | Built |
 | 1d | "I'm thinking of buying a condo next year" passes to Sophie | Client graph ⑥ → **Chat insights** ⑭ records the topic, only because Consent ⑬ shows chat-topic sharing on | Built |
-| 1e | Assistant drafts "Property financing options"; she confirms | **Relationship** agent ⑩ → Approved Actions ⑬ → meeting request (0106) → Notification ⑬ | Built |
-| 2a | Today ranks the request, maturity in 4 days, review due 30 Nov | RM graph ⑦ (book check) → **RM Requests**, **RM Client**, **RM Calendar** ⑩ → priority ranking | Built |
+| 1e | Assistant drafts a meeting request from her words (topics *Property financing, Loan terms, Investments*); she confirms, and may switch on sharing her transaction insights until it is answered | **Relationship** agent ⑩ → Approved Actions ⑬ → meeting request (0106) + optional `consent.grant` (0114) → Notification ⑬ | Built |
+| 2a | Today ranks the request and the time deposit maturity (`58_reset_storyline_demo.sql` dates it this Friday); the review due 30 Nov joins from 16 Nov (due within 14 days) | RM graph ⑦ (book check) → **RM Requests**, **RM Client**, **RM Calendar** ⑩ → priority ranking | Built |
 | 2b | Sophie accepts a time | **RM Calendar** ⑩ → Approved Actions ⑬ → appointment; Michelle notified; `meeting.scheduled` queued for the Meeting worker ⑳ | Built (retest end to end) |
-| 2c | Her brief (5 points, each labelled and sourced) | Meeting graph ⑧ **brief** node (`preparation.py`) → scoped readers ⑫ under Sophie's login, consent-gated ⑬ → LLM Gateway ⑮ only *chooses* references → SQL rechecks → **RM reviews the brief** | Built by the meeting team; 3 refinements below |
+| 2c | Her brief (5 points, each labelled and sourced) | Meeting graph ⑧ **brief** node (`preparation.py`) → scoped readers ⑫ under Sophie's login, consent-gated ⑬ → LLM Gateway ⑮ only *chooses* references → SQL rechecks → **RM reviews the brief** | Built by the meeting team; the 3 refinements below were built on 7 Nov (0140) |
 | 3a | Meeting in person or by video | Zoom (meeting team) or in person. Sophie advises; the AI gives no advice | Zoom: meeting team |
-| 3b | Minutes from Sophie's notes or the transcript, with quotes; Sophie approves | Transcript upload or typed notes → Meeting graph ⑧ **minutes** (`writer.py`) → **RM reviews the minutes** | Built (0120–0124, 0131); new speaker dropdowns planned |
-| 3c | Hand-off to the mortgage specialist, compliance question, her own follow-up | RM graph ⑦ "Document this meeting" → **RM Requests** ⑩ drafts → Validator ⑪ → on Send: Approved Actions ⑬ → tickets `financing_specialist` (0117) and `compliance_documents` (0071) + RM task → Audit Log | Built; one-review UX planned |
+| 3b | Minutes from Sophie's notes or the transcript, with quotes; Sophie approves | Transcript upload or typed notes → Meeting graph ⑧ **minutes** (`writer.py`) → **RM reviews the minutes** | Built (0120–0124, 0131); "who is who" speaker dropdowns built 7 Nov (below) |
+| 3c | Hand-off to the financing specialist (Lombard loan), compliance question, her own follow-up | RM graph ⑦ "Document this meeting" → **RM Requests** ⑩ drafts → Validator ⑪ → on Send: Approved Actions ⑬ → tickets `financing_specialist` (0117) and `compliance_documents` (0071) + RM task → Audit Log | Built; one-review UX planned |
 | 4a | Michelle gets the recap with next steps | Notification ⑬ → Background Worker ⑯ → her Inbox | Built; add "what the specialist will ask for" from the home-loans article ⑰ |
-| 4b | Specialist starts from the hand-off | Ticket in the support queue (owner *Mortgage and Lombard specialists*) carries goal, timeline, context, minutes | No specialist screen: demo script needed (below) |
+| 4b | Specialist starts from the hand-off | Ticket in the support queue (owner *Mortgage and Lombard specialists*) carries goal, timeline, context, minutes | No specialist screen: the reply is simulated by `45_demo_specialist_reply.sql` (below) |
 | 4c | Compliance answers from the request alone | Ticket (owner *Compliance review team*) carries the question and the document | Same |
 | 5a | The next brief holds the whole story | Meeting graph ⑧ brief reads meeting history, approved commitments (0134) and open requests | Built |
 | 5b | Collateral below the limit → alert with source | `44_demo_lombard_alert.sql` → `rm.check_collateral` → Today *Do first* + brief alert source (0139) | Built |
@@ -50,13 +52,13 @@ read and write lands in the Audit Log.
    request fields and the approved minutes as context. Audit Log records it.
 2. Michelle gets one Inbox notice when the ticket is opened (`rm.request_raised`: "Your relationship manager raised
    request TCK-… with the Mortgage and Lombard specialists on your behalf. Check My requests for updates."). It
-   shows in **My requests**. Sophie sees it in **Ticket inbox** as specialist-managed (she can't change its status).
+   shows in **Requests**. Sophie sees it in **Ticket inbox** as specialist-managed (she can't change its status).
 3. The team replies. There is no specialist persona in the app, so in the demo `45_demo_specialist_reply.sql`
    records one reply from each team with `support.set_ticket_status(reference, status, '<public note>')`
    (statuses `in_review`, `waiting_on_client`, `resolved`, `closed`).
-4. The note reaches Michelle in **My requests** (*Latest update*) and Sophie in **Ticket inbox**, and the next brief
+4. The note reaches Michelle in **Requests** (*What the bank told you*) and Sophie in **Ticket inbox**, and the next brief
    lists the request with its new status. A status change sends **no Inbox notice** (it writes a ticket event and
-   an audit row, no outbox event), so in the demo open My requests to show her the reply.
+   an audit row, no outbox event), so in the demo open Requests to show her the reply.
 
 Say in class: "The specialist and compliance teams work in the bank's own case tools. We show the hand-off and
 their reply arriving; their screens are out of scope."
@@ -91,8 +93,9 @@ Refinements so it produces the storyline brief:
    meeting, After a meeting, Any time) and a **Next:** button after each answer.
 4. `45_demo_specialist_reply.sql`: the bank teams' replies for scene 4.
 
-Still open: editing follow-up and recap wording after the minutes are approved (today: request changes to the
-minutes before approving), and a demo date so the maturity reads "in 4 days".
+Built since: editing each follow-up (text, owner, due date) and the recap before Send, after the minutes are approved
+(0141, hosted `47_apply_0141_hosted.sql`), and dates that fit the demo day: `58_reset_storyline_demo.sql` re-dates
+Sophie's seeded book from the day it runs, so the maturity is this Friday (next Friday when fewer than 2 days away).
 
 ## Wording to align
 

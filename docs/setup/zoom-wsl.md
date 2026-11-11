@@ -2,7 +2,7 @@
 
 Checked 11 Nov 2026 on Windows 11 with WSL 2 and Ubuntu 24.04 (Python 3.12.3).
 
-Zoom is **optional**. Without it, everything else works, including meeting minutes: the RM uploads a transcript file (`.vtt` or `.txt`, for example [`demo-files/lombard-call.vtt`](../workflows/demo-files/lombard-call.vtt)). You only need this page to press **Create Zoom link** on a meeting, or to fetch Zoom My Notes automatically.
+Zoom is **optional**. Without it, everything else works, including meeting minutes: the RM uploads a transcript file (`.vtt` or `.txt`, for example [`demo-files/property-financing-call.vtt`](../workflows/demo-files/property-financing-call.vtt)). You only need this page to press **Create Zoom link** on a meeting, or to fetch Zoom My Notes automatically.
 
 ## Why WSL
 

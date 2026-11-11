@@ -4,9 +4,9 @@ Sophie's book: **Michelle Ng** and **Tan Mei Ling** (inherited from Rachel Goh).
 Ticket numbers differ per project, so tickets are named by topic. Each table ends with **AC** = the acceptance criterion it proves (numbered in the matrix at the bottom).
 
 **Setup**
-1. Optional clean start: run `17_reset_michelle_demo.sql` and `21_reset_michelle_meetings.sql`.
+1. Optional clean start: run `17_reset_michelle_demo.sql` and `21_reset_michelle_meetings.sql` (21 books the seeded meeting again for next Wednesday 14:30, video). Do not use `58_reset_storyline_demo.sql` for this script: it leaves Michelle with no booked meeting.
 2. Two windows: Sophie (`demo.sophie@example.com`) and Michelle (private window).
-3. As Michelle, create a fraud case: Assistant → `There's a card payment I didn't make yesterday` → tap **Yes, report it**. (Gives Sophie a restricted specialist case for RM7/RM8.)
+3. As Michelle, report a charge: Assistant → `There's a card payment I didn't make yesterday` → **Confirm**. Since build plan 2b this opens an urgent request to Sophie (topic *Urgent card*, first in her Ticket inbox), not a fraud-team case, so the restricted specialist checks (7.2, 8.5) need a `suspected_fraud` ticket for Michelle that no chat path opens any more (see *Known limits*).
 4. In Sophie's assistant, start each block with **New conversation**. "Client: X" = pick X in the client dropdown.
 
 **Check on every answer:** numbers after points open the right record; only *Client said*, *AI suggestion*, *Gap*, *Guidance* are labelled; no advice; never "I sent / booked / approved".
@@ -31,7 +31,7 @@ Ticket numbers differ per project, so tickets are named by topic. Each table end
 
 | # | Do / type | Expected | Must not | AC |
 |---|---|---|---|---|
-| 2.1 | Client: Michelle. `Give me an overview of Michelle` | Profile (self-employed, SGD 20,000+, your client since 14 Feb 2022); account ****7734 SGD 250,000.00; cards ••7310 SGD 5,169.60 of 20,000.00 and ••5592 SGD 316.20 of 10,000.00; FD ****4410 SGD 150,000 matures 11 Nov 2026; review due 30 Nov 2026; recent notes (20 Oct, 24 Sep, 15 Apr); meeting Wed 4 Nov 2:30 pm video; her open requests with what the client sees (statement copy, address change, fraud case – restricted); *Client said*: prefers video meetings in the afternoon; *AI suggestion* items separate; *Gap* items | Figures not in records | 2.1, 2.2, 2.4, 2.5 |
+| 2.1 | Client: Michelle. `Give me an overview of Michelle` | Profile (self-employed, SGD 20,000+, your client since 14 Feb 2022); account ****7734 SGD 250,000.00; cards ••7310 SGD 5,169.60 of 20,000.00 and ••5592 SGD 316.20 of 10,000.00; FD ****4410 SGD 150,000 matures 11 Nov 2026; review due 30 Nov 2026; recent notes (20 Oct, 24 Sep, 15 Apr); meeting next Wednesday 2:30 pm video (rebooked by 21); her open requests with what the client sees (statement copy, address change, fraud case – restricted); *Client said*: prefers video meetings in the afternoon; *AI suggestion* items separate; *Gap* items | Figures not in records | 2.1, 2.2, 2.4, 2.5 |
 | 2.2 | Click a number, e.g. the accounts source | Record opens in the Sources list with "as of 1 Nov 2026, …" | – | 2.3 |
 | 2.3 | My clients → Michelle | Each card shows "Source: … · as of …" | – | 2.3 |
 | 2.4 | `What's her card limit?` | Answers for Michelle without asking which client | "Which client?" | 2.7 |
@@ -54,11 +54,11 @@ Ticket numbers differ per project, so tickets are named by topic. Each table end
 
 | # | Do / type | Expected | Must not | AC |
 |---|---|---|---|---|
-| 4.1 | Schedule → Michelle Wed 4 Nov 2:30 pm → **Prepare briefing** | Uses that confirmed meeting (video, purpose shown). Sections: meeting, who she is, history and commitments, open matters (FD 11 Nov, review 30 Nov, **request statuses**: statement copy, address change, fraud case status only), what she told us (*Client said*), prioritised discussion points each with a reason and source number, questions to ask, gaps | Rate or product advice | 4.1, 4.2, 4.3, 4.4, 4.5, 4.7 |
+| 4.1 | Schedule → Michelle next Wednesday 2:30 pm → **Briefing** | Uses that confirmed meeting (video, purpose shown). Sections: meeting, who she is, history and commitments, open matters (FD 11 Nov, review 30 Nov, **request statuses**: statement copy, address change, fraud case status only), what she told us (*Client said*), prioritised discussion points each with a reason and source number, questions to ask, gaps | Rate or product advice | 4.1, 4.2, 4.3, 4.4, 4.5, 4.7 |
 | 4.2 | `Add a question about the sale agreement` | Same client and meeting, briefing refined | Context lost | 4.8 |
 | 4.3 | `Which fixed deposit should she choose?` | No recommendation; may suggest discussing her goals | Advice | 4.6 |
 | 4.4 | Client: Tan Mei Ling. `Brief me for my next meeting with Mei Ling` | *Gap*: no meeting booked; preparation from her records only | An invented meeting; Michelle's details | 4.7, 4.9 |
-| 4.5 | After 12.3 (two new Michelle bookings): Schedule → **Prepare briefing** on one of them | Uses the selected meeting; purpose "not recorded" | The Wednesday meeting's purpose | 4.9 |
+| 4.5 | After 12.5 (new Michelle meetings): Schedule → **Briefing** on one of them | Uses the selected meeting; purpose "not recorded" | The Wednesday meeting's purpose | 4.9 |
 
 ## RM5 – Documenting a call
 
@@ -146,14 +146,14 @@ Paste the long note from `michelle-call-note.md` via My clients → Michelle →
 
 | # | Do / type | Expected | Must not | AC |
 |---|---|---|---|---|
-| 12.1 | Schedule → Appointments | Michelle, Wed 4 Nov 2:30 pm, video, Confirmed, purpose | Other RMs' clients | 12.2, 12.3 |
+| 12.1 | Schedule → Appointments | Michelle, next Wednesday 2:30 pm, video, Confirmed, purpose | Other RMs' clients | 12.2, 12.3 |
 | 12.2 | Availability and hours → block a free slot this week | Shows Blocked; Michelle's Meetings tab no longer offers it | – | 12.1 |
 | 12.3 | Working hours → Edit → Friday ends 12:00 → Save | Friday afternoon gone from Michelle's free times | – | 12.1 |
-| 12.4 | As Michelle: book a time; **while held** (before confirming) look at Sophie's Availability | Slot "Held", not in Appointments as confirmed | Treated as confirmed | 12.5 |
-| 12.5 | Confirm the booking; book a second in the same week; try a third | Both appear on Sophie's Schedule; third week-slot not offered | A third booking | 12.4, 12.5 |
+| 12.4 | As Michelle: My requests → Meetings → **Request a meeting** with two free times; before Sophie answers, look at her Schedule | The request under *Requests* (accept one of her times, propose another time, decline with a reason); nothing under Appointments yet. Since 2a (0106) the client sends requests and the RM decides; a time Sophie proposes reaches Michelle as a held time she accepts or declines | Treated as confirmed | 12.5 |
+| 12.5 | Sophie accepts one time; Michelle asks for two more meetings in the same week and Sophie accepts them | Each accepted meeting appears on both sides. No weekly limit since 0159 (0092's two a week is gone); at most 3 requests can be open at a time | A double booking | 12.4, 12.5 |
 | 12.6 | Try to block a booked slot | Not possible (booked cells disabled) | Double booking | 12.5 |
 | 12.7 | As Michelle: cancel one meeting | Gone from Sophie's Schedule; slot free again; RM11 and briefing no longer use it | – | 12.4, 12.7 |
-| 12.8 | **Prepare briefing** on a booking (4.5) | Briefing for that meeting | – | 12.6 |
+| 12.8 | Schedule → **Briefing** on a booking (4.5) | Briefing for that meeting | – | 12.6 |
 | 12.9 | `What meetings do I have this week?` | Confirmed ones with time, format, purpose | Held as confirmed | 12.2, 12.5 |
 | 12.10 | `Brief me for my meeting with Michelle` (two booked) | "Which meeting?" with both as buttons | Picking one | 12.9 |
 | 12.11 | Tap one, then `What's it about?` | Same meeting; "No purpose recorded" for client bookings | Invented purpose | 12.8, 12.9 |
@@ -175,7 +175,7 @@ Paste the long note from `michelle-call-note.md` via My clients → Michelle →
 | N2 | Today → **Document this meeting** | Assistant opens with Michelle and the meeting selected and "Notes from my phone meeting with Michelle Ng on …: " in the box | – |
 | N3 | Add notes, send, **Approve and save** | Date and format taken from the meeting; "linked to the meeting"; Today no longer lists it | Another date |
 | N4 | **Draft a recap for Michelle** | Draft labelled "AI draft – not sent", built from that note only | Private observations; other clients |
-| N5 | Schedule → Michelle's meeting → **Prepare briefing** | New section "Conversation starters": e.g. the SGD 120,000.00 incoming transfer on 22 Sep 2026, the fixed deposit maturity, each with a source | A reason for the transfer that is not in the notes; product advice |
+| N5 | Schedule → Michelle's meeting → **Briefing** | New section "Conversation starters": e.g. the SGD 120,000.00 incoming transfer on 22 Sep 2026, the fixed deposit maturity, each with a source | A reason for the transfer that is not in the notes; product advice |
 | N6 | Today → "Which clients have a maturity or review in the next 30 days?" | Report "Across your book": only items dated within the next 30 days, each with the client, title and date and that client's source (for example Michelle's review on 30 Nov 2026). Items outside the period, such as Mei Ling's fixed deposit on 15 Dec 2026, are not listed at all: the period is applied in code before the model sees the facts | Mentioning an out-of-period item, even to say it is outside |
 | N7 | `Who haven't I met in the last 90 days?` (Whole book) | Tan Mei Ling (last 19 Jun 2026) | Invented dates |
 | N8 | Assistant → microphone → speak | Text appears in the box; notice about the browser's speech service; nothing sent until you press send | Auto-send |
@@ -208,7 +208,8 @@ Paste the long note from `michelle-call-note.md` via My clients → Michelle →
 
 ## Known limits to note in the report
 - 6.12: corrections by chat work until the documentation is saved; after that the RM edits the request form directly.
-- 12.4: clients cancel and rebook; there is no separate "change time" action.
+- 12.4: the client cancels and asks again; only the RM can move a confirmed meeting (Schedule → *Move*, 2a).
+- 7.2, 8.5: since build plan 2b a reported charge goes to the RM as an urgent request, so Michelle has no restricted `suspected_fraud` case unless one is opened outside the chat (the only seeded one is Grace's, outside Sophie's book since 0093).
 - "Does not invent" (3.6, 8.8) relies on the prompt plus format checks (figures, dates, references), not a proof that every sentence is true.
 - MFA is not required for the RM in the demo.
 

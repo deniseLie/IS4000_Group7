@@ -1,6 +1,8 @@
 # v5 orchestrator build plan
 
-The target design is [architecture.md §14](../architecture.md#14-target-architecture-v5-redesign-agreed-3-nov-2026-not-built-yet), and the target agents are in §5.6.1. This plan says **in what order to build it**, and **when each phase counts as done**. All the design decisions are settled (table at the end). If something here disagrees with §14, follow this plan and fix §14.
+Status (11 Nov 2026): built; phases 0–9 landed by 4 Nov 2026 (migrations 0100–0101). Since then the Security agent it names was retired (RM copilot build plan 2b, 5 Nov), C23–C27 left the graph set (4 Nov), and the RM graph has three agents (3a) instead of phase 9's two specs.
+
+The target design is [architecture.md §14](../architecture.md#14-v5-design-record-agreed-3-nov-2026-built-4-nov-2026), and the target agents are in §5.6.1. This plan says **in what order to build it**, and **when each phase counts as done**. All the design decisions are settled (table at the end). If something here disagrees with §14, follow this plan and fix §14.
 
 - **Branch:** `claude/orchestrator-architecture-28c920`, on top of `6b8c39d`.
 - **Commits:** one per phase, never a PR per phase.

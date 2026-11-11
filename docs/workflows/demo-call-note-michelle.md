@@ -1,6 +1,6 @@
 # Demo call note – Michelle Ng (phone)
 
-Use in the RM workspace as Sophie: **My clients → Michelle Ng → Document a call**, then replace the starter text with everything inside the box below and send. It is about 4,500 characters (the limit is 8,000).
+Use in the RM workspace as Sophie: **My clients → Michelle Ng → Document a call**, then replace the starter text with everything inside the box below and send. It is about 2,800 characters (the limit is 8,000).
 
 ```
 Notes from my call today with Michelle Ng (phone, about 25 minutes, she called me from the office).
@@ -56,7 +56,7 @@ Wrap-up
 | Sale agreement upload this week | Client commitment (hers, not Sophie's) |
 | Compliance question on Thai + certified translation | Proposed **service request** to the compliance team (needs review form, verification tick, then TCK- reference) |
 | Fixed deposit ****4410, 11 Nov | Fact; renewal **tentative / not decided**; no rate or product advice |
-| "Send FD options by Friday" | Sophie's commitment; task flagged as **similar to the existing open task** "Send Michelle fixed deposit options" |
+| "Send FD options by Friday" | Sophie's commitment; task flagged as **similar to the existing open task** "Send Michelle time deposit options" (renamed from "fixed deposit" by 0117) |
 | September statement copy | Client request, flagged as a **possible duplicate** of her open statement request |
 | Address change | Noted only; **not** proposed as a new request (already open) |
 | Signature Card limit in December | **Tentative**, no request proposed; cards and credit team decides |

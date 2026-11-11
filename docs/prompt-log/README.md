@@ -4,7 +4,7 @@ One file per released prompt version, under `<agent>/`. Prompt files live in `ba
 
 ## Where the notes are
 
-Each `<agent>/` folder holds one note per released version (`v<N>.md`), for every model prompt: the answer agents, the client and RM planners, the runner, the RM assistant, talking points, the document checks and the meeting side's minutes writer. The admin dashboard's Prompts page lists them next to each version's live and evaluation use (`prompts.notes()`), and `prompts.in_use()` names the versions the code runs now.
+Each `<agent>/` folder holds one note per released version (`v<N>.md`), for every model prompt: the answer agents, the client and RM planners, the runner, the RM assistant, talking points, the document checks and the meeting side's brief writer, proposal drafter and minutes writer. The admin dashboard's Prompts page lists them next to each version's live and evaluation use (`prompts.notes()`), and `prompts.in_use()` names the versions the code runs now.
 
 ## How to record a version
 

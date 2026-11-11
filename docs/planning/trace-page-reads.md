@@ -1,5 +1,7 @@
 # Page-load reads: audited, not traced
 
+Status (11 Nov 2026): built 10 Nov 2026 (`observability.ROOTLESS`); not checked live yet, and evaluator tracing is still on (`langsmith_run.py` does not pass `disable_evaluator_tracing`).
+
 Plan and build, 10 Nov 2026 (see *What was built* at the end). One commit.
 
 ## What was measured (9 Nov 2026)

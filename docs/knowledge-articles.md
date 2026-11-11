@@ -1,6 +1,6 @@
 # Knowledge articles
 
-The approved articles the assistant can retrieve, as of 4 Nov 2026 (migrations up to `0102`).
+The approved articles the assistant can retrieve, as of 11 Nov 2026 (knowledge migrations up to `0148`: the last new versions are `0115`'s financing articles, and `0148` renames DemoBank to UBS Connect in titles, sections and publisher without changing ids or versions).
 
 **One store.** Since 4 Nov 2026 (`0102`) articles live only in the database; the in-memory copy (`knowledge.py`) and the `KNOWLEDGE_STORE` switch are gone.
 - **Articles and sections** (`kb.articles`, `kb.sections`) keep each section separately (anchors below), plus retired versions, which stay citable.
@@ -31,8 +31,8 @@ All content is synthetic demo guidance or a summary of an allowed public source.
 | `card-controls` | Freezing, replacing and disputing a card | UBS Connect | v1 · freeze, replace, dispute | Freeze and unfreeze your own card; replacement for a lost, stolen or damaged card; disputing a recognised charge within 60 days |
 | `sg-card-payments` | Singapore credit card payments | MoneySense | v1 · main | Credit limits, minimum payments, interest on unpaid balances, due dates |
 | `loans` | Demo financing enquiries | UBS Connect | v3 · main | Property financing and borrowing against investments; no personal or car loans; ask which one; arranged through the RM; only the bank decides (0115) |
-| `home-loans` | Home loans and property financing | UBS Connect | v2 · main, steps, documents | Uncommitted, variable rate, no early repayment penalty; RM → mortgage specialist's borrowing plan → valuation and conveyancing → credit decision; documents (0115) |
-| `lombard-financing` | Lombard loans: borrowing against your investments | UBS Connect | v1 · main, facilities, collateral, apply | Variable loan facility and fixed term advance; the bank decides collateral and lending values; what happens when values fall; through the RM (0115) |
+| `home-loans` | Property financing | UBS Connect | v2 · main, steps, documents | Uncommitted, variable rate, no early repayment penalty; RM → mortgage specialist's borrowing plan → valuation and conveyancing → credit decision; documents (0115) |
+| `lombard-financing` | Borrowing against your investments | UBS Connect | v1 · main, facilities, collateral, apply | Variable loan facility and fixed term advance; the bank decides collateral and lending values; what happens when values fall; through the RM (0115) |
 | `sg-loan-types` | Singapore loan types | MoneySense | v1 · main | Secured vs unsecured, term loans, revolving credit |
 | `statements` | Getting a statement | UBS Connect | v3 · monthly, older-copies, missing | Overview → Statements for the last 3 full months; older, certified or paper copies and bank letters by request; why the current month or a pending payment is not shown |
 
@@ -118,7 +118,6 @@ Kept so old citations still open; search never returns them:
 - **"Safe account" scam.** The `security` never-share section says the bank never asks you to move money to a safe account, but "safe" is in neither security section's heading or keywords. Since `0097` a section matches only on those, so "Someone from 'the bank' wants me to move my savings to a safe account" finds savings and account articles instead. Its search-evaluation case was dropped on 10 Nov 2026.
 - **Fixed safety replies keep their own text.** Lost card, human support, secrets and guest balance answer without the model or the database and cite pinned sections (`answers.PINNED`: lost-card v4, support v5, security v2, accounts v1, unrecognised-charge v3). Revising one of those articles means updating the text and pin in `answers.py`; `test_knowledge_checks.py` fails until then.
 - **Gaps:**
-  - borrowing against investments;
   - transfer and ATM limits;
   - PayNow and GIRO;
   - deposit insurance;

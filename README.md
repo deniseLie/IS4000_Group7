@@ -31,7 +31,7 @@ Open http://localhost:5173. Windows commands are in section 2.
 | 2 – Relationship manager | Sophie (`demo.sophie@example.com`, app_metadata `demobank_role=rm`) | [docs/workflows/workflow-2-relationship-manager.md](docs/workflows/workflow-2-relationship-manager.md) |
 | AI engineering (admin dashboard) | `demo.admin@example.com` (app_metadata `demobank_role=admin`) | [docs/planning/admin-dashboard.md](docs/planning/admin-dashboard.md) |
 
-The client uses the assistant for everyday banking questions within guardrails; her compliance review (checklist, upload, a quick template check, then submit); handover to her RM or the right specialist team, with a ticket she follows in **My requests**; meetings with her RM; and monthly statements she can print. The RM gets a ranked day, client briefs and overviews, meeting requests, minutes from a call transcript, and drafted follow-ups that she approves before anything is sent.
+The client uses the assistant for everyday banking questions within guardrails; her periodic review (checklist, upload, a quick template check, then submit); handover to her RM or the right specialist team, with a ticket she follows in **Requests**; meetings with her RM; and monthly statements she can print. The RM gets a ranked day, client briefs and overviews, meeting requests, minutes from a call transcript, and drafted follow-ups that she approves before anything is sent.
 
 What is done and what is open: [docs/planning/status.md](docs/planning/status.md).
 
@@ -89,7 +89,7 @@ Copy-Item .env.example .env
 - new SQL from `backend/supabase/hosted/` is pasted into the SQL editor in order; [its README](backend/supabase/hosted/README.md) says what each file does;
 - `58_reset_storyline_demo.sql` puts Michelle and Sophie back to the demo start.
 
-`backend/supabase/migrations/` is the full schema with its synthetic data (numbered 0001–0150; never edit an applied one). The local tests apply them to a temporary PostgreSQL. A brand-new Supabase project is not a tested path: the hosted batches assume the team project's history (`backend/scripts/prepare_hosted_migrations.py`), and the demo logins have to be created in Authentication → Users (Sophie's steps: *Set up on the hosted project* in the Workflow 2 doc; admin: `32_admin_login_hosted.sql`).
+`backend/supabase/migrations/` is the full schema with its synthetic data (numbered 0001–0159, with 0111, 0119, 0157 and 0158 unused; never edit an applied one). The local tests apply them to a temporary PostgreSQL. A brand-new Supabase project is not a tested path: the hosted batches assume the team project's history (`backend/scripts/prepare_hosted_migrations.py`), and the demo logins have to be created in Authentication → Users (Sophie's steps: *Set up on the hosted project* in the Workflow 2 doc; admin: `32_admin_login_hosted.sql`).
 
 **Run.** Two terminals.
 
@@ -174,7 +174,7 @@ select compliance.record_bank_decision('<item_id>','rejected','Please send a cle
 select request_id,question,status,response from compliance.info_requests where customer_id=1002;
 select compliance.record_request_decision('<request_id>','more_info','Please also send the sale agreement.');
 ```
-A correction shows on her Compliance review as *The bank asked you* and closes when she uploads a new file for that item.
+A correction shows on her **Periodic review** page as *The bank asked you* and closes when she uploads a new file for that item.
 
 ## 5. Tests
 

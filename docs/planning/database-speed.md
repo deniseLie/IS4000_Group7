@@ -1,6 +1,6 @@
 # Making database calls faster
 
-Ideas to try later. Nothing here is implemented yet.
+Status (11 Nov 2026): not built; ideas to try later. Still true in the code: `data_api.http_client()` makes a new client for every `connect()` (option 4) and nothing starts or warms the embedding request early (option 5); one agent's default reads already run in parallel (`runner.default_reads`), so option 2 is about the other reads.
 
 ## What was measured (4 Nov 2026)
 

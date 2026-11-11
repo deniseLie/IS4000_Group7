@@ -1,5 +1,7 @@
 # Client chat insights: what changed on 8 Nov 2026
 
+Status (11 Nov 2026): a record of what was built and applied on hosted on 8 Nov 2026 (0142–0145). Since then the TP04 fix and the case changes of 10 Nov (55 messages) are in `docs/evaluation/README.md`, *Client chat insights*.
+
 Client chat insights (`talking_points` in the code) are what the assistant picks up from a signed-in client's chats about what she is planning (property financing, investments, time deposits, insurance), so her RM can prepare for a meeting. Only list values reach the RM, never her words. Synthetic data only.
 
 Four changes landed on 8 Nov 2026. They were built on `claude/implicit-insights-check-137929`, merged into `main` (merge `9e1de6d`), and the migrations (0142–0145) were applied to the hosted Supabase project the same day.
